@@ -1,0 +1,421 @@
+"""Lightweight algebraic circuit validation for generated schematic components."""
+
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import dataclass
+
+from .component_db import ComponentDef
+
+_FEEDBACK_VREF = {
+    "AP62300TWU": 0.8,
+}
+
+_KNOWN_RAIL_VOLTAGES = {
+    "VCCAUX": 1.8,
+    "VCCINT": 1.0,
+    "VDD_DDR": 1.35,
+    "VDDA_1P8": 1.8,
+    "VDD_1P2": 1.2,
+    "VDD_1P3": 1.3,
+    "VDD_3P3": 3.3,
+    "VBUS_5V": 5.0,
+}
+
+_GROUND_PREFIXES = ("GND", "AGND", "DGND", "PGND")
+
+
+@dataclass(frozen=True)
+class ValidationIssue:
+    code: str
+    level: str
+    ref: str
+    mpn: str
+    message: str
+
+
+@dataclass(frozen=True)
+class ValidationCheckResult:
+    code: str
+    label: str
+    status: str
+    issues: tuple[ValidationIssue, ...]
+
+
+def _issue(comp: ComponentDef, code: str, message: str, level: str = "warning") -> ValidationIssue:
+    return ValidationIssue(
+        code=code,
+        level=level,
+        ref=comp.source_ref or comp.ref_prefix,
+        mpn=comp.source_mpn or comp.mpn,
+        message=message,
+    )
+
+
+def _is_ground_net(net: str) -> bool:
+    net = (net or "").upper()
+    return any(net == prefix or net.startswith(f"{prefix}_") for prefix in _GROUND_PREFIXES)
+
+
+def _parse_resistance_ohms(value: str) -> float | None:
+    raw = (value or "").strip().replace(" ", "").replace("Ω", "").lower()
+    raw = raw.replace("ohm", "").replace("ohms", "")
+    if not raw:
+        return None
+
+    embedded = re.fullmatch(r"(\d*)([rkm])(\d+)", raw)
+    if embedded:
+        whole, unit, frac = embedded.groups()
+        whole = whole or "0"
+        num = float(f"{whole}.{frac}")
+        return num * {"r": 1.0, "k": 1e3, "m": 1e6}[unit]
+
+    prefix = re.fullmatch(r"([rkm])(\d+)", raw)
+    if prefix:
+        unit, frac = prefix.groups()
+        num = float(f"0.{frac}")
+        return num * {"r": 1.0, "k": 1e3, "m": 1e6}[unit]
+
+    match = re.fullmatch(r"([\d.]+)([rkm]?)", raw)
+    if not match:
+        return None
+    number, unit = match.groups()
+    return float(number) * {"": 1.0, "r": 1.0, "k": 1e3, "m": 1e6}[unit]
+
+
+def _parse_capacitance_f(value: str) -> float | None:
+    raw = (value or "").strip().replace(" ", "").replace("µ", "u").replace("μ", "u").lower()
+    match = re.match(r"([\d.]+)(pf|nf|uf|mf|f)(?=[^a-z]|$)", raw)
+    if not match:
+        return None
+    number, unit = match.groups()
+    return float(number) * {"pf": 1e-12, "nf": 1e-9, "uf": 1e-6, "mf": 1e-3, "f": 1.0}[unit]
+
+
+def _parse_inductance_h(value: str) -> float | None:
+    raw = (value or "").strip().replace(" ", "").replace("µ", "u").replace("μ", "u").lower()
+    match = re.match(r"([\d.]+)(nh|uh|mh|h)(?=[^a-z]|$)", raw)
+    if not match:
+        return None
+    number, unit = match.groups()
+    return float(number) * {"nh": 1e-9, "uh": 1e-6, "mh": 1e-3, "h": 1.0}[unit]
+
+
+def _rail_voltage(net: str) -> float | None:
+    net = (net or "").upper()
+    if net in _KNOWN_RAIL_VOLTAGES:
+        return _KNOWN_RAIL_VOLTAGES[net]
+
+    for pattern in (r"(\d+)P(\d+)", r"(\d+)V(\d+)", r"(\d+)V"):
+        match = re.search(pattern, net)
+        if not match:
+            continue
+        if len(match.groups()) == 2:
+            return float(f"{match.group(1)}.{match.group(2)}")
+        return float(match.group(1))
+
+    return None
+
+
+def _normalize_supply_name(value: str) -> str:
+    raw = (value or "").lower()
+    raw = re.sub(r"(\d)[pv](\d)", r"\1\2", raw)
+    return re.sub(r"[^a-z0-9]", "", raw)
+
+
+def _supply_names_match(target: str, *candidates: str) -> bool:
+    target_norm = _normalize_supply_name(target)
+    target_v = _rail_voltage(target)
+    for candidate in candidates:
+        cand_norm = _normalize_supply_name(candidate)
+        if not cand_norm:
+            continue
+        if (
+            target_norm == cand_norm
+            or target_norm in cand_norm
+            or cand_norm in target_norm
+        ):
+            return True
+        cand_v = _rail_voltage(candidate)
+        if target_v is not None and cand_v is not None and abs(target_v - cand_v) <= 0.05:
+            return True
+    return False
+
+
+def _format_value(value: float, scale: float, suffix: str) -> str:
+    return f"{value / scale:.2f}{suffix}"
+
+
+def _filter_range(comp: ComponentDef, net: str) -> tuple[float, float, str] | None:
+    text = " ".join(
+        filter(
+            None,
+            [
+                comp.description,
+                comp.source_description,
+                " ".join(comp.annotations),
+                net,
+            ],
+        )
+    ).lower()
+    if any(token in text for token in ("pll", "loop filter", "pllfilt", "clk_lf")):
+        return (10e3, 100e3, "PLL filter")
+    if comp.category == "power":
+        return (1e3, 100e3, "power filter")
+    return None
+
+
+def _validate_feedback_dividers(components: list[ComponentDef]) -> list[ValidationIssue]:
+    issues = []
+    for comp in components:
+        vref = _FEEDBACK_VREF.get(comp.mpn)
+        if vref is None:
+            continue
+
+        divider_nets = {}
+        for strap in comp.straps:
+            if "fb" not in (strap.net or "").lower():
+                continue
+            divider_nets.setdefault(strap.net, []).append(strap)
+
+        for net, straps in divider_nets.items():
+            bottoms = [s for s in straps if _is_ground_net(s.rail)]
+            tops = [s for s in straps if not _is_ground_net(s.rail)]
+            if not bottoms or not tops:
+                continue
+
+            r_bottom = _parse_resistance_ohms(bottoms[0].value)
+            r_top = _parse_resistance_ohms(tops[0].value)
+            target = _rail_voltage(tops[0].rail)
+            if not r_bottom or not r_top or not target:
+                continue
+
+            vout = vref * (1.0 + r_top / r_bottom)
+            if abs(vout - target) / target > 0.05:
+                issues.append(
+                    _issue(
+                        comp,
+                        "feedback-divider",
+                        (
+                            f"{net}: computed {vout:.2f}V from {tops[0].value}/{bottoms[0].value}, "
+                            f"expected {target:.2f}V on {tops[0].rail}"
+                        ),
+                    )
+                )
+    return issues
+
+
+def _validate_filter_cutoffs(components: list[ComponentDef]) -> list[ValidationIssue]:
+    issues = []
+    for comp in components:
+        caps_by_net = {}
+        inds_by_net = {}
+        for bc in comp.bypass_caps:
+            cap_f = _parse_capacitance_f(bc.value)
+            ind_h = _parse_inductance_h(bc.value)
+            if cap_f and _is_ground_net(bc.gnd_net):
+                caps_by_net.setdefault(bc.net, []).append(cap_f)
+            if ind_h:
+                inds_by_net.setdefault(bc.net, []).append(ind_h)
+
+        resistors_by_net = {}
+        for strap in comp.straps:
+            resistance = _parse_resistance_ohms(strap.value)
+            if resistance:
+                resistors_by_net.setdefault(strap.net, []).append(resistance)
+
+        for net, resistors in resistors_by_net.items():
+            caps = caps_by_net.get(net, [])
+            expected = _filter_range(comp, net)
+            if not caps or expected is None:
+                continue
+            r_val = min(resistors)
+            c_val = min(caps)
+            fc = 1.0 / (2 * math.pi * r_val * c_val)
+            low, high, label = expected
+            if fc < low or fc > high:
+                issues.append(
+                    _issue(
+                        comp,
+                        "rc-filter",
+                        (
+                            f"{label} on {net}: fc={fc:.0f}Hz from R={_format_value(r_val, 1e3, 'k')} "
+                            f"and C={_format_value(c_val, 1e-9, 'nF')} is outside {low:.0f}-{high:.0f}Hz"
+                        ),
+                    )
+                )
+
+        for net, inductors in inds_by_net.items():
+            caps = caps_by_net.get(net, [])
+            expected = _filter_range(comp, net)
+            if not caps or expected is None:
+                continue
+            l_val = min(inductors)
+            c_val = min(caps)
+            fc = 1.0 / (2 * math.pi * math.sqrt(l_val * c_val))
+            low, high, label = expected
+            if fc < low or fc > high:
+                issues.append(
+                    _issue(
+                        comp,
+                        "lc-filter",
+                        (
+                            f"{label} on {net}: fc={fc:.0f}Hz from L={_format_value(l_val, 1e-6, 'uH')} "
+                            f"and C={_format_value(c_val, 1e-6, 'uF')} is outside {low:.0f}-{high:.0f}Hz"
+                        ),
+                    )
+                )
+    return issues
+
+
+def _crystal_load_spec_f(comp: ComponentDef) -> float | None:
+    text = " ".join(filter(None, [comp.description, comp.source_description, " ".join(comp.annotations)]))
+    match = re.search(r"(?:CL|load)\s*=?\s*([\d.]+)\s*pF", text, re.IGNORECASE)
+    if not match:
+        return None
+    return float(match.group(1)) * 1e-12
+
+
+def _looks_like_crystal(comp: ComponentDef) -> bool:
+    return comp.ref_prefix.upper() == "Y" or "crystal" in (comp.mpn or "").lower()
+
+
+def _validate_crystal_caps(components: list[ComponentDef]) -> list[ValidationIssue]:
+    issues = []
+    caps_by_net = {}
+    for comp in components:
+        for bc in comp.bypass_caps:
+            cap_f = _parse_capacitance_f(bc.value)
+            if cap_f and _is_ground_net(bc.gnd_net):
+                caps_by_net.setdefault(bc.net, []).append(cap_f)
+
+    for comp in components:
+        if not _looks_like_crystal(comp):
+            continue
+        nets = list(comp.pin_nets.values())
+        if len(nets) < 2:
+            continue
+        xi, xo = nets[0], nets[1]
+        caps_xi = caps_by_net.get(xi, [])
+        caps_xo = caps_by_net.get(xo, [])
+        if not caps_xi or not caps_xo:
+            issues.append(
+                _issue(comp, "crystal-load", f"missing load capacitor coverage on {xi}/{xo}")
+            )
+            continue
+
+        target_cl = _crystal_load_spec_f(comp)
+        if target_cl is None:
+            continue
+        c1 = min(caps_xi)
+        c2 = min(caps_xo)
+        effective_cl = (c1 * c2) / (c1 + c2) + 2e-12
+        if abs(effective_cl - target_cl) / target_cl > 0.15:
+            issues.append(
+                _issue(
+                    comp,
+                    "crystal-load",
+                    (
+                        f"effective CL={effective_cl / 1e-12:.1f}pF from {c1 / 1e-12:.1f}pF/"
+                        f"{c2 / 1e-12:.1f}pF differs from target {target_cl / 1e-12:.1f}pF"
+                    ),
+                )
+            )
+    return issues
+
+
+def _validate_decoupling(components: list[ComponentDef]) -> list[ValidationIssue]:
+    standalone_caps: list[tuple[str, float]] = []
+    for comp in components:
+        if comp.ref_prefix.upper() != "C":
+            continue
+        cap_f = _parse_capacitance_f(comp.source_value or comp.value)
+        if not cap_f:
+            continue
+        nets = []
+        for pin in comp.pins:
+            net = comp.power_pins.get(pin.number) or comp.pin_nets.get(pin.number)
+            if net:
+                nets.append(net)
+        if len(nets) != 2:
+            continue
+        non_ground = [net for net in nets if not _is_ground_net(net)]
+        ground = [net for net in nets if _is_ground_net(net)]
+        if len(non_ground) == 1 and ground:
+            standalone_caps.append((non_ground[0], cap_f))
+
+    issues = []
+    for comp in components:
+        if comp.ref_prefix.upper() != "U":
+            continue
+        if not comp.power_pins and not comp.power_reqs:
+            continue
+
+        pin_names = {pin.number: pin.name for pin in comp.pins}
+        capacitor_caps = [bc for bc in comp.bypass_caps if _parse_capacitance_f(bc.value)]
+
+        for pin_num, net in comp.power_pins.items():
+            if _is_ground_net(net):
+                continue
+            pin_name = pin_names.get(pin_num, "")
+            covered = any(
+                bc.pin == pin_num
+                or _supply_names_match(net, bc.pin, bc.net, pin_name)
+                or _supply_names_match(pin_name, bc.pin, bc.net, net)
+                for bc in capacitor_caps
+            ) or any(
+                cap_f > 0
+                and (
+                    _supply_names_match(net, cap_net, pin_name)
+                    or _supply_names_match(pin_name, cap_net, net)
+                )
+                for cap_net, cap_f in standalone_caps
+            )
+            if not covered:
+                issues.append(
+                    _issue(comp, "decoupling", f"{net} on pin {pin_num} has no matching bypass cap")
+                )
+
+        for req in comp.power_reqs:
+            if _is_ground_net(req.net):
+                continue
+            if not any(bc.net == req.net for bc in capacitor_caps) and not any(
+                _supply_names_match(req.net, cap_net) for cap_net, _cap_f in standalone_caps
+            ):
+                issues.append(
+                    _issue(comp, "decoupling", f"{req.net} has no matching bypass cap")
+                )
+
+    return issues
+
+
+_VALIDATION_CHECKS = (
+    ("feedback-divider", "Feedback dividers", _validate_feedback_dividers),
+    ("rc-lc-filter", "RC/LC filters", _validate_filter_cutoffs),
+    ("crystal-load", "Crystal load caps", _validate_crystal_caps),
+    ("decoupling", "Decoupling coverage", _validate_decoupling),
+)
+
+
+def run_validation_checks(components: list[ComponentDef]) -> list[ValidationCheckResult]:
+    """Run all validation checks and return grouped per-check results."""
+    results = []
+    for code, label, check in _VALIDATION_CHECKS:
+        issues = tuple(check(components))
+        if not issues:
+            status = "PASS"
+        elif any(issue.level.lower() == "error" for issue in issues):
+            status = "FAIL"
+        else:
+            status = "WARN"
+        results.append(ValidationCheckResult(code=code, label=label, status=status, issues=issues))
+    return results
+
+
+def validate_circuit(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Run heuristic passive-value validation on resolved component instances."""
+    issues = []
+    for result in run_validation_checks(components):
+        issues.extend(result.issues)
+    return issues

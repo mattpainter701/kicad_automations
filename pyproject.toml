@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "circuit-weaver"
+version = "0.1.0"
+description = "Programmatic circuit design, validation, and KiCad artifact generation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Matt Painter" },
+]
+keywords = ["kicad", "eda", "schematic", "pcb", "automation", "circuit"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = []
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+yaml = ["PyYAML>=6.0"]
+lookup = ["requests>=2.31"]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+all = ["circuit-weaver[api,yaml,lookup]"]
+
+[project.scripts]
+circuit-weaver = "circuit_weaver.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

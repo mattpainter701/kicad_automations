@@ -1,0 +1,591 @@
+"""FastAPI web API for the schematic engine.
+
+Exposes the BOM-to-schematic engine over HTTP for SaaS / integration use.
+
+Endpoints:
+    POST /generate             — YAML project spec -> ZIP of .kicad_sch files + report
+    POST /generate/from-bom    — CSV BOM upload -> ZIP of schematics
+    GET  /templates            — available subcircuit template list
+    POST /validate             — YAML project spec -> validation results JSON
+    POST /mvp/validate         — canonical/legacy design spec -> strict grouped validation
+    POST /mvp/generate         — canonical/legacy design spec -> strict derived artifact ZIP
+    POST /mvp/apply-patch      — transactional patch application + validation
+    POST /mvp/diff             — semantic diff between two specs
+    POST /mvp/pcb-feedback     — merge PCB feedback into canonical spec
+    GET  /health               — service health check
+
+Usage:
+    uvicorn circuit_weaver.api:app
+    # or:
+    python -m circuit_weaver.api
+"""
+
+from __future__ import annotations
+
+import io
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Any
+
+try:
+    from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+    from fastapi.responses import StreamingResponse
+
+    _FASTAPI_AVAILABLE = True
+except ImportError:
+    _FASTAPI_AVAILABLE = False
+
+# Engine version — read from pyproject.toml at import time or fall back
+_VERSION = "3.69.2"
+
+
+def _get_version() -> str:
+    """Try to read version from pyproject.toml; fall back to hardcoded."""
+    try:
+        toml_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        if toml_path.exists():
+            for line in toml_path.read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("version"):
+                    _, _, val = line.partition("=")
+                    return val.strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return _VERSION
+
+
+def _parse_yaml_text(text: str) -> dict:
+    """Parse YAML from a string, preferring PyYAML with simple fallback."""
+    try:
+        import yaml
+
+        return yaml.safe_load(text) or {}
+    except ImportError:
+        from .project_spec import _simple_yaml_parse
+
+        return _simple_yaml_parse(text)
+
+
+def _decode_utf8(body: bytes, *, detail: str) -> str:
+    """Decode request bytes as UTF-8 with a consistent 400-style failure."""
+    try:
+        return body.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        if _FASTAPI_AVAILABLE:
+            raise HTTPException(status_code=400, detail=detail)
+        raise ValueError(detail) from exc
+
+
+def _parse_spec_body_bytes(body_text: str, content_type: str) -> dict:
+    """Parse a request body containing a design spec in YAML or JSON form."""
+    if "yaml" in content_type or "text/plain" in content_type:
+        spec = _parse_yaml_text(body_text)
+    elif "json" in content_type:
+        import json
+
+        try:
+            payload = json.loads(body_text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        if isinstance(payload, dict) and "yaml" in payload:
+            spec = _parse_yaml_text(payload["yaml"])
+        else:
+            spec = payload
+    else:
+        spec = _parse_yaml_text(body_text)
+        if not spec:
+            import json
+
+            try:
+                payload = json.loads(body_text)
+                if isinstance(payload, dict) and "yaml" in payload:
+                    spec = _parse_yaml_text(payload["yaml"])
+                else:
+                    spec = payload
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not parse body as YAML or JSON",
+                )
+
+    if not spec or not isinstance(spec, dict):
+        raise HTTPException(status_code=400, detail="Empty or invalid project spec")
+    return spec
+
+
+def _resolve_project_from_spec(
+    spec: dict,
+    *,
+    enrich_parts: bool = False,
+) -> tuple[list[Any], dict, list[Any]]:
+    """Resolve a parsed YAML spec into (components, metadata, validation_results).
+
+    Returns the component list, metadata dict, and validation results.
+    """
+    from .project_spec import resolve_project_spec
+    from .validator import run_validation_checks
+
+    components, metadata = resolve_project_spec(spec, enrich_parts=enrich_parts)
+    validation_results = run_validation_checks(components) if components else []
+    return components, metadata, validation_results
+
+
+def _generate_to_zip(
+    components: list[Any],
+    metadata: dict,
+    validation_results: list[Any],
+    *,
+    validate: bool = True,
+    hierarchical: bool = False,
+    pcb: bool = False,
+) -> io.BytesIO:
+    """Generate schematics into a temporary directory and return a ZIP buffer."""
+    from .generator import generate_from_components
+
+    project_name = metadata.get("project", "project")
+    company = metadata.get("company", "")
+
+    with tempfile.TemporaryDirectory(prefix="schematic_engine_") as tmpdir:
+        generated_files = generate_from_components(
+            components,
+            output_dir=tmpdir,
+            project_name=project_name,
+            company=company,
+            validate=validate,
+            hierarchical=hierarchical,
+            pcb=pcb,
+            stable_uuids=True,
+        )
+
+        # Build ZIP
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for fpath in generated_files:
+                zf.write(fpath, Path(fpath).name)
+        buf.seek(0)
+        return buf
+
+
+def _validation_results_to_json(results: list[Any]) -> list[dict]:
+    """Convert ValidationCheckResult list to JSON-serializable dicts."""
+    out = []
+    for r in results:
+        out.append(
+            {
+                "code": r.code,
+                "label": r.label,
+                "status": r.status,
+                "issues": [
+                    {
+                        "code": issue.code,
+                        "level": issue.level,
+                        "ref": issue.ref,
+                        "mpn": issue.mpn,
+                        "message": issue.message,
+                    }
+                    for issue in r.issues
+                ],
+            }
+        )
+    return out
+
+
+def _get_template_info() -> list[dict]:
+    """Build the template info list from the subcircuit registry."""
+    from .subcircuits.base import get_default_registry
+
+    registry = get_default_registry()
+    templates = []
+    for type_name in registry.available_types():
+        tmpl = registry.get(type_name)
+        if tmpl is None:
+            continue
+        params = tmpl.get_param_schema() or _infer_template_params(tmpl)
+        templates.append(
+            {
+                "type": tmpl.template_type,
+                "description": tmpl.description,
+                "params": params,
+            }
+        )
+    return templates
+
+
+def _infer_template_params(tmpl: Any) -> list[str]:
+    """Infer a minimal parameter schema from template source.
+
+    Explicit schema declarations on templates are preferred. This fallback
+    exists for custom templates that do not define ``param_schema`` yet.
+    """
+    import inspect
+    import re
+
+    try:
+        source = inspect.getsource(tmpl.validate_params)
+        # Match params.get("key") or params.get('key')
+        found = re.findall(r'params\.get\(["\'](\w+)["\']', source)
+        if found:
+            seen = set()
+            result = []
+            for p in found:
+                if p not in seen:
+                    seen.add(p)
+                    result.append(
+                        {
+                            "name": p,
+                            "type": "unknown",
+                            "required": False,
+                            "description": "Inferred from template source",
+                        }
+                    )
+            return result
+    except (TypeError, OSError):
+        pass
+    # Fallback — inspect generate() for common params
+    try:
+        source = inspect.getsource(tmpl.generate)
+        found = re.findall(r'params(?:\.get\(|\[)["\'](\w+)["\']', source)
+        if found:
+            seen = set()
+            result = []
+            for p in found:
+                if p not in seen:
+                    seen.add(p)
+                    result.append(
+                        {
+                            "name": p,
+                            "type": "unknown",
+                            "required": False,
+                            "description": "Inferred from template source",
+                        }
+                    )
+            return result
+    except (TypeError, OSError):
+        pass
+    return []
+
+
+# ================================================================
+# App factory
+# ================================================================
+
+
+def create_app() -> Any:
+    """Create and return the FastAPI application.
+
+    Returns None if FastAPI is not installed.
+    """
+    if not _FASTAPI_AVAILABLE:
+        return None
+
+    app = FastAPI(
+        title="Schematic Engine API",
+        description="BOM-to-KiCad schematic generation service",
+        version=_get_version(),
+    )
+
+    @app.get("/health")
+    async def health():
+        from .subcircuits.base import get_default_registry
+
+        registry = get_default_registry()
+        return {
+            "status": "ok",
+            "version": _get_version(),
+            "templates": len(registry),
+        }
+
+    @app.get("/templates")
+    async def templates():
+        return _get_template_info()
+
+    @app.post("/generate")
+    async def generate(
+        request: Request,
+        validate: bool = Query(True),
+        hierarchical: bool = Query(False),
+        pcb: bool = Query(False),
+        enrich_parts: bool = Query(False),
+    ):
+        content_type = request.headers.get("content-type", "")
+        body = await request.body()
+        body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
+        spec = _parse_spec_body_bytes(body_text, content_type)
+
+        try:
+            components, metadata, validation_results = _resolve_project_from_spec(
+                spec,
+                enrich_parts=enrich_parts,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to resolve project spec: {exc}")
+
+        if not components:
+            raise HTTPException(
+                status_code=422,
+                detail="No components could be resolved from the spec",
+            )
+
+        try:
+            buf = _generate_to_zip(
+                components,
+                metadata,
+                validation_results,
+                validate=validate,
+                hierarchical=hierarchical,
+                pcb=pcb,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Generation failed: {exc}")
+
+        project_name = metadata.get("project", "project")
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{project_name}_schematics.zip"'
+            },
+        )
+
+    @app.post("/generate/from-bom")
+    async def generate_from_bom_upload(
+        file: UploadFile = File(...),
+        project: str = Query("project"),
+        company: str = Query(""),
+        validate: bool = Query(True),
+        hierarchical: bool = Query(False),
+        pcb: bool = Query(False),
+    ):
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file uploaded")
+
+        content = await file.read()
+        csv_text = _decode_utf8(content, detail="Uploaded BOM must be valid UTF-8 CSV")
+
+        with tempfile.TemporaryDirectory(prefix="schematic_engine_bom_") as tmpdir:
+            # Write the CSV to a temp file for the BOM parser
+            csv_path = Path(tmpdir) / "upload.csv"
+            csv_path.write_text(csv_text, encoding="utf-8")
+
+            from .generator import generate_from_bom as _gen_bom
+
+            try:
+                generated_files = _gen_bom(
+                    str(csv_path),
+                    output_dir=tmpdir,
+                    project_name=project,
+                    company=company,
+                    validate=validate,
+                    pcb=pcb,
+                    hierarchical=hierarchical,
+                    stable_uuids=True,
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail=f"BOM generation failed: {exc}")
+
+            if not generated_files:
+                raise HTTPException(
+                    status_code=422,
+                    detail="No schematics generated — BOM may have no recognized components",
+                )
+
+            # Build ZIP
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for fpath in generated_files:
+                    p = Path(fpath)
+                    if p.exists():
+                        zf.write(fpath, p.name)
+                # Include any report if generated
+                report_path = Path(tmpdir) / "design_report.md"
+                if report_path.exists():
+                    zf.write(str(report_path), report_path.name)
+            buf.seek(0)
+
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{project}_schematics.zip"'},
+        )
+
+    @app.post("/validate")
+    async def validate_spec(request: Request, enrich_parts: bool = Query(False)):
+        content_type = request.headers.get("content-type", "")
+        body = await request.body()
+        body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
+        spec = _parse_spec_body_bytes(body_text, content_type)
+
+        try:
+            components, metadata, validation_results = _resolve_project_from_spec(
+                spec,
+                enrich_parts=enrich_parts,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to resolve project spec: {exc}")
+
+        return {
+            "project": metadata.get("project", "project"),
+            "component_count": len(components),
+            "validation": _validation_results_to_json(validation_results),
+        }
+
+    @app.post("/mvp/validate")
+    async def mvp_validate_spec(
+        request: Request,
+        profile: str = Query("mvp_strict"),
+        enrich_parts: bool = Query(False),
+    ):
+        from .mvp import validate_design
+
+        content_type = request.headers.get("content-type", "")
+        body = await request.body()
+        body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
+        spec = _parse_spec_body_bytes(body_text, content_type)
+        try:
+            report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"MVP validation failed: {exc}")
+        return report.to_dict()
+
+    @app.post("/mvp/apply-patch")
+    async def mvp_apply_patch(
+        request: Request,
+        profile: str = Query("mvp_strict"),
+        enrich_parts: bool = Query(False),
+    ):
+        import json
+
+        from .mvp import apply_design_patch
+
+        body = await request.body()
+        body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
+        try:
+            payload = json.loads(body_text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        spec = payload.get("spec")
+        patch = payload.get("patch")
+        if not isinstance(spec, dict) or not isinstance(patch, dict):
+            raise HTTPException(status_code=400, detail="Payload must include object fields 'spec' and 'patch'")
+        try:
+            result = apply_design_patch(spec, patch, profile=profile, enrich_parts=enrich_parts)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to apply design patch: {exc}")
+        return result
+
+    @app.post("/mvp/diff")
+    async def mvp_diff(request: Request):
+        import json
+
+        from .mvp import diff_designs
+
+        body = await request.body()
+        body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
+        try:
+            payload = json.loads(body_text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        old_spec = payload.get("old_spec")
+        new_spec = payload.get("new_spec")
+        if not isinstance(old_spec, dict) or not isinstance(new_spec, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="Payload must include object fields 'old_spec' and 'new_spec'",
+            )
+        try:
+            return diff_designs(old_spec, new_spec)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to diff specs: {exc}")
+
+    @app.post("/mvp/pcb-feedback")
+    async def mvp_pcb_feedback(request: Request):
+        import json
+
+        from .mvp import ingest_pcb_feedback
+
+        body = await request.body()
+        body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
+        try:
+            payload = json.loads(body_text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        spec = payload.get("spec")
+        feedback = payload.get("feedback")
+        if not isinstance(spec, dict) or not isinstance(feedback, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="Payload must include object fields 'spec' and 'feedback'",
+            )
+        try:
+            return ingest_pcb_feedback(spec, feedback).to_dict()
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Failed to ingest PCB feedback: {exc}")
+
+    @app.post("/mvp/generate")
+    async def mvp_generate(
+        request: Request,
+        profile: str = Query("mvp_strict"),
+        require_valid: bool = Query(True),
+        enrich_parts: bool = Query(False),
+        export_svg: bool = Query(True),
+    ):
+        from .mvp import generate_artifacts
+
+        content_type = request.headers.get("content-type", "")
+        body = await request.body()
+        body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
+        spec = _parse_spec_body_bytes(body_text, content_type)
+
+        with tempfile.TemporaryDirectory(prefix="schematic_engine_mvp_") as tmpdir:
+            try:
+                result = generate_artifacts(
+                    spec,
+                    output_dir=tmpdir,
+                    profile=profile,
+                    require_valid=require_valid,
+                    enrich_parts=enrich_parts,
+                    export_svg=export_svg,
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail=f"MVP artifact generation failed: {exc}")
+
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for path in sorted(Path(tmpdir).rglob("*")):
+                    if path.is_file():
+                        zf.write(path, path.relative_to(tmpdir).as_posix())
+            buf.seek(0)
+
+        project_name = result.get("project", "project")
+        return StreamingResponse(
+            buf,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{project_name}_mvp_artifacts.zip"'
+            },
+        )
+
+    return app
+
+
+# Module-level app instance for `uvicorn circuit_weaver.api:app`
+app = create_app()
+
+
+if __name__ == "__main__":
+    if not _FASTAPI_AVAILABLE:
+        print("ERROR: FastAPI is not installed. Install with: pip install fastapi uvicorn")
+        raise SystemExit(1)
+
+    try:
+        import uvicorn
+    except ImportError:
+        print("ERROR: uvicorn is not installed. Install with: pip install uvicorn")
+        raise SystemExit(1)
+
+    uvicorn.run(
+        "circuit_weaver.api:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )

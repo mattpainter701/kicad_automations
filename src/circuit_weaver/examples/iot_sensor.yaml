@@ -1,0 +1,35 @@
+# Example: IoT sensor board with buck + LDO power, ESP32, BME280
+# Generate: py -m circuit_weaver.generator examples/iot_sensor.yaml -o output/
+
+project: IoT_Sensor
+company: Demo Corp
+
+power:
+  - type: buck
+    ic: AP62300
+    ref: U1
+    vin: 5
+    vout: 3.3
+    iout: 2
+    vin_net: VBUS_5V
+    rail_name: VDD_3P3
+    en_net: VBUS_5V
+  - type: ldo
+    ic: TLV75518
+    ref: U2
+    vin: 3.3
+    vout: 1.8
+    vin_net: VDD_3P3
+    rail_name: VDD_1P8
+
+digital:
+  - ic: ESP32-WROOM-32E
+    ref: U3
+
+sensors:
+  - ic: BME280
+    ref: U4
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1

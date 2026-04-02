@@ -1,0 +1,1252 @@
+"""Transactional MVP workflow for the schematic engine.
+
+This module layers a canonical Design IR, patch application, strict grouped
+validation, derived artifact generation, semantic diffing, and PCB constraint
+feedback on top of the existing schematic engine.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import copy
+import io
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+from xml.etree import ElementTree as ET
+
+from .component_db import ComponentDef, PresentationWiringPolicy
+from .design_ir import (
+    DesignBlock,
+    DesignInterface,
+    DesignIR,
+    design_ir_to_engine_spec,
+    design_ir_to_spec,
+    normalize_design_spec,
+    semantic_diff,
+)
+from .generator import generate_from_components
+from .project_spec import _parse_yaml, _simple_yaml_parse, resolve_project_spec
+from .subcircuits.base import BoundaryPort, get_default_registry
+from .validator import run_validation_checks
+
+_MVP_PROFILE = "mvp_strict"
+_POWER_NET_PREFIXES = ("GND", "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
+_PRESENTATION_SVG_MARGIN = 0.5
+
+
+@dataclass(frozen=True)
+class ValidationMessage:
+    category: str
+    code: str
+    level: str
+    subject: str
+    message: str
+
+
+@dataclass
+class ValidationReport:
+    profile: str
+    valid: bool
+    categories: dict[str, list[ValidationMessage]] = field(default_factory=dict)
+    summary: dict[str, int] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "profile": self.profile,
+            "valid": self.valid,
+            "categories": {
+                key: [asdict(item) for item in values] for key, values in self.categories.items()
+            },
+            "summary": dict(self.summary),
+            "metadata": copy.deepcopy(self.metadata),
+        }
+
+
+@dataclass
+class ConstraintFeedbackReport:
+    accepted_constraints: int
+    accepted_overrides: int
+    rejected: list[dict[str, Any]] = field(default_factory=list)
+    updated_spec: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "accepted_constraints": self.accepted_constraints,
+            "accepted_overrides": self.accepted_overrides,
+            "rejected": copy.deepcopy(self.rejected),
+            "updated_spec": copy.deepcopy(self.updated_spec),
+        }
+
+
+@dataclass
+class CompiledDesign:
+    ir: DesignIR
+    components: list[ComponentDef]
+    metadata: dict[str, Any]
+    engine_spec: dict[str, Any]
+
+
+def _ensure_profile(profile: str) -> str:
+    normalized = (profile or _MVP_PROFILE).strip().lower()
+    if normalized != _MVP_PROFILE:
+        raise ValueError(f"Unsupported MVP validation profile '{profile}'")
+    return normalized
+
+
+def _is_power_net(name: str) -> bool:
+    net = str(name or "").upper()
+    return any(net == prefix or net.startswith(f"{prefix}_") for prefix in _POWER_NET_PREFIXES)
+
+
+def _block_primary_key(block: DesignBlock) -> str:
+    return block.ref or block.id
+
+
+def _group_components_by_block_key(components: list[ComponentDef]) -> dict[str, list[ComponentDef]]:
+    groups: dict[str, list[ComponentDef]] = {}
+    for comp in components:
+        key = comp.source_ref or ""
+        if not key:
+            continue
+        groups.setdefault(key, []).append(comp)
+    return groups
+
+
+def _derive_required_support(group: list[ComponentDef]) -> dict[str, Any]:
+    boundary_ports = 0
+    local_wires = 0
+    bypass_caps = 0
+    straps = 0
+    power_reqs = 0
+    for comp in group:
+        boundary_ports += len(comp.template_boundary_ports)
+        local_wires += len(comp.template_local_wires)
+        bypass_caps += len(comp.bypass_caps)
+        straps += len(comp.straps)
+        power_reqs += len(comp.power_reqs)
+    return {
+        "bypass_caps": bypass_caps,
+        "straps": straps,
+        "power_reqs": power_reqs,
+        "boundary_ports": boundary_ports,
+        "local_wires": local_wires,
+    }
+
+
+def _derive_part_bindings(primary: ComponentDef) -> dict[str, Any]:
+    return {
+        "mpn": primary.source_mpn or primary.mpn,
+        "value": primary.source_value or primary.value,
+        "footprint": primary.footprint,
+        "manufacturer": primary.source_manufacturer,
+    }
+
+
+def _apply_block_attributes(ir: DesignIR, components: list[ComponentDef]) -> None:
+    groups = _group_components_by_block_key(components)
+    for block in ir.blocks:
+        group = groups.get(_block_primary_key(block))
+        if not group:
+            continue
+        primary = group[0]
+        if block.interfaces:
+            primary.template_boundary_ports = [
+                BoundaryPort(iface.name, iface.direction) for iface in block.interfaces
+            ]
+        if block.presentation_group:
+            for comp in group:
+                comp.presentation_group = block.presentation_group
+        if block.part_bindings:
+            footprint = str(block.part_bindings.get("footprint", "")).strip()
+            mpn = str(block.part_bindings.get("mpn", "")).strip()
+            value = str(block.part_bindings.get("value", "")).strip()
+            if footprint:
+                primary.footprint = footprint
+            if mpn:
+                primary.source_mpn = mpn
+                primary.mpn = mpn
+            if value:
+                primary.value = value
+                primary.source_value = value
+
+
+def _apply_approved_overrides(ir: DesignIR, components: list[ComponentDef]) -> None:
+    groups = _group_components_by_block_key(components)
+    for override in ir.approved_overrides:
+        target = str(override.get("target", "")).strip()
+        kind = str(override.get("kind", "")).strip().lower()
+        value = override.get("value")
+        group = groups.get(target)
+        if not group:
+            continue
+        primary = group[0]
+        if kind == "annotation_append" and value:
+            primary.annotations.append(str(value))
+        elif kind == "footprint_override" and value:
+            primary.footprint = str(value)
+        elif kind == "presentation_group" and value:
+            for comp in group:
+                comp.presentation_group = str(value)
+        elif kind == "part_binding" and isinstance(value, dict):
+            footprint = str(value.get("footprint", "")).strip()
+            mpn = str(value.get("mpn", "")).strip()
+            part_value = str(value.get("value", "")).strip()
+            if footprint:
+                primary.footprint = footprint
+            if mpn:
+                primary.source_mpn = mpn
+                primary.mpn = mpn
+            if part_value:
+                primary.value = part_value
+                primary.source_value = part_value
+        elif kind == "support_passives" and value:
+            primary.presentation_wiring_policy = PresentationWiringPolicy(
+                support_passives=str(value)
+            )
+
+
+def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) -> DesignIR:
+    groups = _group_components_by_block_key(components)
+    hydrated_blocks = []
+    for block in ir.blocks:
+        group = groups.get(_block_primary_key(block))
+        interfaces = list(block.interfaces)
+        required_support = copy.deepcopy(block.required_support or {})
+        part_bindings = copy.deepcopy(block.part_bindings or {})
+        if group:
+            primary = group[0]
+            if not interfaces and primary.template_boundary_ports:
+                interfaces = [
+                    DesignInterface(
+                        block_id=block.id,
+                        name=port.name,
+                        direction=port.direction,
+                    ).normalized()
+                    for port in primary.template_boundary_ports
+                ]
+            if not required_support:
+                required_support = _derive_required_support(group)
+            if not part_bindings:
+                part_bindings = _derive_part_bindings(primary)
+        hydrated_blocks.append(
+            DesignBlock(
+                id=block.id,
+                section=block.section,
+                kind=block.kind,
+                ref=block.ref,
+                template_type=block.template_type,
+                ic=block.ic,
+                params=copy.deepcopy(block.params),
+                value=block.value,
+                description=block.description,
+                mpn=block.mpn,
+                required_support=required_support,
+                part_bindings=part_bindings,
+                presentation_group=block.presentation_group,
+                interfaces=interfaces,
+            ).normalized()
+        )
+
+    all_interfaces = []
+    for block in hydrated_blocks:
+        all_interfaces.extend(block.interfaces)
+
+    return DesignIR(
+        metadata=copy.deepcopy(ir.metadata),
+        blocks=hydrated_blocks,
+        interfaces=all_interfaces,
+        approved_overrides=copy.deepcopy(ir.approved_overrides),
+        pcb_constraints=copy.deepcopy(ir.pcb_constraints),
+    )
+
+
+def compile_design_ir(
+    spec: dict[str, Any],
+    *,
+    enrich_parts: bool = False,
+) -> CompiledDesign:
+    """Compile a design spec into normalized IR + resolved engine components."""
+    ir = normalize_design_spec(spec)
+    engine_spec = design_ir_to_engine_spec(ir)
+    components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
+    components = copy.deepcopy(components)
+    _apply_block_attributes(ir, components)
+    _apply_approved_overrides(ir, components)
+    hydrated_ir = _hydrate_ir_from_components(ir, components)
+    metadata.update(
+        {
+            "project": hydrated_ir.metadata.get("project", metadata.get("project", "project")),
+            "company": hydrated_ir.metadata.get("company", metadata.get("company", "")),
+            "version": hydrated_ir.metadata.get("version", metadata.get("version", "")),
+            "description": hydrated_ir.metadata.get("description", metadata.get("description", "")),
+        }
+    )
+    return CompiledDesign(
+        ir=hydrated_ir,
+        components=components,
+        metadata=metadata,
+        engine_spec=engine_spec,
+    )
+
+
+def _validate_block_definitions(ir: DesignIR) -> tuple[list[ValidationMessage], list[ValidationMessage]]:
+    structural: list[ValidationMessage] = []
+    electrical: list[ValidationMessage] = []
+    registry = get_default_registry()
+
+    seen_ids: set[str] = set()
+    seen_refs: set[str] = set()
+    for block in ir.blocks:
+        if block.id in seen_ids:
+            structural.append(
+                ValidationMessage(
+                    category="structural",
+                    code="duplicate-block-id",
+                    level="error",
+                    subject=block.id,
+                    message=f"Block id '{block.id}' is duplicated",
+                )
+            )
+        seen_ids.add(block.id)
+
+        if not block.ref:
+            structural.append(
+                ValidationMessage(
+                    category="structural",
+                    code="missing-ref",
+                    level="error",
+                    subject=block.id,
+                    message="Every MVP block must declare a stable reference designator",
+                )
+            )
+        elif block.ref in seen_refs:
+            structural.append(
+                ValidationMessage(
+                    category="structural",
+                    code="duplicate-ref",
+                    level="error",
+                    subject=block.ref,
+                    message=f"Reference '{block.ref}' is duplicated across blocks",
+                )
+            )
+        seen_refs.add(block.ref)
+
+        if block.kind == "template":
+            if not block.template_type:
+                structural.append(
+                    ValidationMessage(
+                        category="structural",
+                        code="missing-template-type",
+                        level="error",
+                        subject=block.id,
+                        message="Template blocks must declare a template type",
+                    )
+                )
+                continue
+            template = registry.get(block.template_type)
+            if template is None:
+                structural.append(
+                    ValidationMessage(
+                        category="structural",
+                        code="unknown-template",
+                        level="error",
+                        subject=block.template_type,
+                        message=f"Unknown subcircuit template '{block.template_type}'",
+                    )
+                )
+                continue
+            params = copy.deepcopy(block.params)
+            if block.ref:
+                params.setdefault("ref", block.ref)
+            for error in template.validate_params(params):
+                electrical.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="template-param",
+                        level="error",
+                        subject=block.ref or block.id,
+                        message=error,
+                    )
+                )
+        else:
+            if not block.ic:
+                structural.append(
+                    ValidationMessage(
+                        category="structural",
+                        code="missing-ic",
+                        level="error",
+                        subject=block.id,
+                        message="Component blocks must declare an IC/part identifier",
+                    )
+                )
+    return structural, electrical
+
+
+def _validate_component_resolution(
+    compiled: CompiledDesign,
+) -> tuple[list[ValidationMessage], list[ValidationMessage]]:
+    structural: list[ValidationMessage] = []
+    implementation: list[ValidationMessage] = []
+    groups = _group_components_by_block_key(compiled.components)
+
+    for block in compiled.ir.blocks:
+        group = groups.get(_block_primary_key(block), [])
+        if not group:
+            structural.append(
+                ValidationMessage(
+                    category="structural",
+                    code="unresolved-block",
+                    level="error",
+                    subject=block.ref or block.id,
+                    message="Block did not resolve into any schematic components",
+                )
+            )
+            continue
+        primary = group[0]
+        if not primary.pins and not primary.lib_symbol_sexpr:
+            implementation.append(
+                ValidationMessage(
+                    category="implementation",
+                    code="missing-symbol-definition",
+                    level="error",
+                    subject=block.ref or block.id,
+                    message="Resolved block has neither pins nor an embedded symbol definition",
+                )
+            )
+        if not primary.footprint:
+            implementation.append(
+                ValidationMessage(
+                    category="implementation",
+                    code="missing-footprint",
+                    level="error",
+                    subject=block.ref or block.id,
+                    message="Resolved block has no footprint binding",
+                )
+            )
+        if block.kind == "component":
+            support = block.required_support or {}
+            has_contract = bool(block.interfaces or support or block.part_bindings)
+            if not has_contract:
+                structural.append(
+                    ValidationMessage(
+                        category="structural",
+                        code="component-block-missing-contract",
+                        level="error",
+                        subject=block.ref or block.id,
+                        message=(
+                            "Atomic component blocks must declare interfaces, required support, "
+                            "or part bindings before they can become canonical MVP blocks"
+                        ),
+                    )
+                )
+    return structural, implementation
+
+
+def _validate_shared_net_interfaces(compiled: CompiledDesign) -> list[ValidationMessage]:
+    issues: list[ValidationMessage] = []
+    groups = _group_components_by_block_key(compiled.components)
+    declared_ports: dict[str, set[str]] = {}
+    nets_to_blocks: dict[str, set[str]] = {}
+
+    for block in compiled.ir.blocks:
+        block_key = _block_primary_key(block)
+        group = groups.get(block_key, [])
+        if not group:
+            continue
+        declared = {iface.name for iface in block.interfaces}
+        if not declared:
+            for comp in group:
+                declared.update(port.name for port in comp.template_boundary_ports)
+        declared_ports[block_key] = declared
+
+        for comp in group:
+            for net in comp.pin_nets.values():
+                if net and not _is_power_net(net):
+                    nets_to_blocks.setdefault(net, set()).add(block_key)
+            for net in comp.power_pins.values():
+                if net and not _is_power_net(net):
+                    nets_to_blocks.setdefault(net, set()).add(block_key)
+
+    for net, block_keys in sorted(nets_to_blocks.items()):
+        if len(block_keys) < 2:
+            continue
+        for block_key in sorted(block_keys):
+            if net in declared_ports.get(block_key, set()):
+                continue
+            issues.append(
+                ValidationMessage(
+                    category="structural",
+                    code="undeclared-shared-net",
+                    level="error",
+                    subject=block_key,
+                    message=f"Shared signal '{net}' crosses blocks without an explicit interface declaration",
+                )
+            )
+    return issues
+
+
+def _validate_required_support(compiled: CompiledDesign) -> list[ValidationMessage]:
+    issues: list[ValidationMessage] = []
+    groups = _group_components_by_block_key(compiled.components)
+    for block in compiled.ir.blocks:
+        group = groups.get(_block_primary_key(block))
+        if not group or not block.required_support:
+            continue
+        actual = _derive_required_support(group)
+        for key, required in block.required_support.items():
+            if not isinstance(required, (int, float)):
+                continue
+            if actual.get(key, 0) < required:
+                issues.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="required-support-missing",
+                        level="error",
+                        subject=block.ref or block.id,
+                        message=(
+                            f"Required support '{key}' expects >= {required}, "
+                            f"but only {actual.get(key, 0)} resolved"
+                        ),
+                    )
+                )
+    return issues
+
+
+def _validate_power_domains(compiled: CompiledDesign) -> list[ValidationMessage]:
+    issues: list[ValidationMessage] = []
+    for comp in compiled.components:
+        if comp.ref_prefix.upper() != "U":
+            continue
+        for pin_num, net in comp.power_pins.items():
+            if not net:
+                issues.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="missing-power-net",
+                        level="error",
+                        subject=comp.source_ref or comp.mpn,
+                        message=f"Power pin {pin_num} has no resolved rail assignment",
+                    )
+                )
+    return issues
+
+
+def _kicad_cli_path() -> Path | None:
+    from_path = shutil.which("kicad-cli")
+    if from_path:
+        return Path(from_path)
+    for ver in ("10.0", "9.0", "8.0"):
+        candidate = Path(f"C:/Program Files/KiCad/{ver}/bin/kicad-cli.exe")
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _find_root_schematic(files: list[str], project_name: str) -> Path | None:
+    sch_files = [Path(path) for path in files if str(path).endswith(".kicad_sch")]
+    for path in sch_files:
+        if path.stem == project_name:
+            return path
+    return sch_files[0] if sch_files else None
+
+
+def _generate_compiled_artifacts(
+    compiled: CompiledDesign,
+    output_dir: Path,
+    *,
+    export_svg: bool,
+) -> tuple[list[str], Path | None]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    files = generate_from_components(
+        compiled.components,
+        str(output_dir),
+        project_name=compiled.metadata.get("project", "project"),
+        company=compiled.metadata.get("company", ""),
+        stable_uuids=True,
+        validate=True,
+        pcb=True,
+        hierarchical=True,
+        interface_policy="explicit",
+    )
+    root = _find_root_schematic(files, compiled.metadata.get("project", "project"))
+    if export_svg and root is not None:
+        cli = _kicad_cli_path()
+        if cli is None:
+            raise RuntimeError("KiCad CLI is required for strict artifact export smoke")
+        svg_dir = output_dir / "svg"
+        svg_dir.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [str(cli), "sch", "export", "svg", "-o", str(svg_dir), str(root)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    return files, root
+
+
+def _kicad_text_map(output_dir: Path) -> dict[str, str]:
+    result = {}
+    for path in sorted(output_dir.glob("*.kicad_sch")):
+        result[path.name] = path.read_text(encoding="utf-8")
+    return result
+
+
+def _svg_content_metrics(svg_path: Path) -> dict[str, float]:
+    root = ET.fromstring(svg_path.read_text(encoding="utf-8"))
+    view_box = root.attrib.get("viewBox", "")
+    _vx, _vy, page_w, page_h = [float(part) for part in view_box.split()]
+
+    coords = []
+    for element in root.iter():
+        tag = element.tag.rsplit("}", 1)[-1]
+        if tag == "path":
+            nums = [
+                float(n)
+                for n in __import__("re").findall(r"-?\d+(?:\.\d+)?", element.attrib.get("d", ""))
+            ]
+            if len(nums) < 4:
+                continue
+            xs = nums[0::2]
+            ys = nums[1::2]
+            if (max(xs) - min(xs)) > page_w * 0.98 and (max(ys) - min(ys)) > page_h * 0.98:
+                continue
+            coords.extend(zip(xs, ys))
+        elif tag == "rect":
+            x = float(element.attrib.get("x", 0))
+            y = float(element.attrib.get("y", 0))
+            w = float(element.attrib.get("width", 0))
+            h = float(element.attrib.get("height", 0))
+            if w > page_w * 0.98 and h > page_h * 0.98:
+                continue
+            coords.extend([(x, y), (x + w, y + h)])
+        elif tag == "text":
+            x = float(element.attrib.get("x", 0))
+            y = float(element.attrib.get("y", 0))
+            coords.append((x, y))
+
+    if not coords:
+        return {
+            "page_w": page_w,
+            "page_h": page_h,
+            "min_x": page_w,
+            "min_y": page_h,
+            "max_x": 0.0,
+            "max_y": 0.0,
+        }
+    xs = [x for x, _ in coords]
+    ys = [y for _, y in coords]
+    return {
+        "page_w": page_w,
+        "page_h": page_h,
+        "min_x": min(xs),
+        "min_y": min(ys),
+        "max_x": max(xs),
+        "max_y": max(ys),
+    }
+
+
+def _presentation_issues(output_dir: Path) -> list[ValidationMessage]:
+    svg_dir = output_dir / "svg"
+    issues: list[ValidationMessage] = []
+    for svg_path in sorted(svg_dir.glob("*.svg")):
+        metrics = _svg_content_metrics(svg_path)
+        if metrics["min_x"] < -_PRESENTATION_SVG_MARGIN:
+            issues.append(
+                ValidationMessage(
+                    category="presentation",
+                    code="svg-left-overflow",
+                    level="error",
+                    subject=svg_path.name,
+                    message=f"SVG content exceeds the left page bound ({metrics['min_x']:.2f}mm)",
+                )
+            )
+        if metrics["min_y"] < -_PRESENTATION_SVG_MARGIN:
+            issues.append(
+                ValidationMessage(
+                    category="presentation",
+                    code="svg-top-overflow",
+                    level="error",
+                    subject=svg_path.name,
+                    message=f"SVG content exceeds the top page bound ({metrics['min_y']:.2f}mm)",
+                )
+            )
+        if metrics["max_x"] > metrics["page_w"] + _PRESENTATION_SVG_MARGIN:
+            issues.append(
+                ValidationMessage(
+                    category="presentation",
+                    code="svg-right-overflow",
+                    level="error",
+                    subject=svg_path.name,
+                    message=(
+                        f"SVG content exceeds the right page bound "
+                        f"({metrics['max_x']:.2f}mm > {metrics['page_w']:.2f}mm)"
+                    ),
+                )
+            )
+        if metrics["max_y"] > metrics["page_h"] + _PRESENTATION_SVG_MARGIN:
+            issues.append(
+                ValidationMessage(
+                    category="presentation",
+                    code="svg-bottom-overflow",
+                    level="error",
+                    subject=svg_path.name,
+                    message=(
+                        f"SVG content exceeds the bottom page bound "
+                        f"({metrics['max_y']:.2f}mm > {metrics['page_h']:.2f}mm)"
+                    ),
+                )
+            )
+    return issues
+
+
+def validate_design(
+    spec: dict[str, Any],
+    *,
+    profile: str = _MVP_PROFILE,
+    enrich_parts: bool = False,
+) -> ValidationReport:
+    """Validate a design spec against the strict MVP profile."""
+    profile = _ensure_profile(profile)
+    compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
+
+    categories: dict[str, list[ValidationMessage]] = {
+        "structural": [],
+        "electrical": [],
+        "implementation": [],
+        "presentation": [],
+    }
+
+    structural, electrical = _validate_block_definitions(compiled.ir)
+    categories["structural"].extend(structural)
+    categories["electrical"].extend(electrical)
+
+    structural, implementation = _validate_component_resolution(compiled)
+    categories["structural"].extend(structural)
+    categories["implementation"].extend(implementation)
+    categories["structural"].extend(_validate_shared_net_interfaces(compiled))
+    categories["electrical"].extend(_validate_required_support(compiled))
+    categories["electrical"].extend(_validate_power_domains(compiled))
+
+    for result in run_validation_checks(compiled.components):
+        for issue in result.issues:
+            categories["electrical"].append(
+                ValidationMessage(
+                    category="electrical",
+                    code=result.code,
+                    level=issue.level,
+                    subject=issue.ref or issue.mpn,
+                    message=issue.message,
+                )
+            )
+
+    can_check_artifacts = (
+        not categories["structural"]
+        and not categories["electrical"]
+        and not categories["implementation"]
+    )
+    if can_check_artifacts:
+        with tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_a_") as tmp_a, tempfile.TemporaryDirectory(
+            prefix="schematic_mvp_validate_b_"
+        ) as tmp_b:
+            try:
+                files_a, root_a = _generate_compiled_artifacts(compiled, Path(tmp_a), export_svg=True)
+                _files_b, _root_b = _generate_compiled_artifacts(compiled, Path(tmp_b), export_svg=False)
+                if root_a is None:
+                    categories["implementation"].append(
+                        ValidationMessage(
+                            category="implementation",
+                            code="missing-root-schematic",
+                            level="error",
+                            subject=compiled.metadata.get("project", "project"),
+                            message="Artifact generation did not produce a root schematic",
+                        )
+                    )
+                if _kicad_text_map(Path(tmp_a)) != _kicad_text_map(Path(tmp_b)):
+                    categories["implementation"].append(
+                        ValidationMessage(
+                            category="implementation",
+                            code="nondeterministic-generation",
+                            level="error",
+                            subject=compiled.metadata.get("project", "project"),
+                            message="Repeated stable-UUID generation produced different KiCad schematic text",
+                        )
+                    )
+                categories["presentation"].extend(_presentation_issues(Path(tmp_a)))
+            except subprocess.CalledProcessError as exc:
+                detail = (exc.stderr or exc.stdout or str(exc)).strip()
+                categories["implementation"].append(
+                    ValidationMessage(
+                        category="implementation",
+                        code="kicad-export-failed",
+                        level="error",
+                        subject=compiled.metadata.get("project", "project"),
+                        message=f"KiCad CLI load/export smoke failed: {detail}",
+                    )
+                )
+            except Exception as exc:
+                categories["implementation"].append(
+                    ValidationMessage(
+                        category="implementation",
+                        code="artifact-generation-failed",
+                        level="error",
+                        subject=compiled.metadata.get("project", "project"),
+                        message=f"Derived artifact generation failed: {exc}",
+                    )
+                )
+
+    summary = {key: len(value) for key, value in categories.items()}
+    valid = all(count == 0 for count in summary.values())
+    return ValidationReport(
+        profile=profile,
+        valid=valid,
+        categories=categories,
+        summary=summary,
+        metadata={
+            "project": compiled.metadata.get("project", "project"),
+            "component_count": len(compiled.components),
+            "block_count": len(compiled.ir.blocks),
+        },
+    )
+
+
+def apply_design_patch(
+    spec: dict[str, Any],
+    patch: dict[str, Any],
+    *,
+    profile: str = _MVP_PROFILE,
+    enrich_parts: bool = False,
+) -> dict[str, Any]:
+    """Apply a design patch transactionally and validate before acceptance."""
+    profile = _ensure_profile(profile)
+    original_ir = normalize_design_spec(spec)
+    working_ir = normalize_design_spec(spec)
+
+    metadata_updates = patch.get("set_metadata") or {}
+    if isinstance(metadata_updates, dict):
+        for key, value in metadata_updates.items():
+            if value is None:
+                working_ir.metadata.pop(key, None)
+            else:
+                working_ir.metadata[key] = value
+
+    remove_blocks = {
+        str(item).strip() for item in (patch.get("remove_blocks") or []) if str(item).strip()
+    }
+    if remove_blocks:
+        filtered = []
+        for block in working_ir.blocks:
+            if block.id in remove_blocks or block.ref in remove_blocks:
+                continue
+            filtered.append(block)
+        working_ir.blocks = filtered
+
+    upsert_blocks = patch.get("upsert_blocks") or []
+    if upsert_blocks:
+        block_map = {block.id: block for block in working_ir.blocks}
+        ref_map = {block.ref: block.id for block in working_ir.blocks if block.ref}
+        for raw_block in upsert_blocks:
+            candidate = normalize_design_spec(
+                {
+                    **working_ir.metadata,
+                    "blocks": [raw_block],
+                    "interfaces": [],
+                    "approved_overrides": [],
+                    "pcb_constraints": [],
+                }
+            ).blocks[0]
+            existing = block_map.get(candidate.id)
+            if existing is None and candidate.ref and candidate.ref in ref_map:
+                existing = block_map.get(ref_map[candidate.ref])
+            if existing is not None:
+                block_map.pop(existing.id, None)
+            block_map[candidate.id] = candidate
+        working_ir.blocks = [block_map[key] for key in sorted(block_map)]
+
+    current_ref_map = {block.ref: block.id for block in working_ir.blocks if block.ref}
+    interfaces_map: dict[tuple[str, str], DesignInterface] = {
+        (iface.block_id, iface.name): iface for iface in working_ir.interfaces
+    }
+    for raw_iface in patch.get("upsert_interfaces") or []:
+        if not isinstance(raw_iface, dict):
+            continue
+        raw_block_id = str(raw_iface.get("block_id") or raw_iface.get("ref") or "").strip()
+        resolved_block_id = current_ref_map.get(raw_block_id, raw_block_id)
+        iface = DesignInterface(
+            block_id=resolved_block_id,
+            name=str(raw_iface.get("name", "")).strip(),
+            direction=str(raw_iface.get("direction", "bidirectional")).strip(),
+            description=str(raw_iface.get("description", "")).strip(),
+        ).normalized()
+        interfaces_map[(iface.block_id, iface.name)] = iface
+
+    for raw_iface in patch.get("remove_interfaces") or []:
+        if isinstance(raw_iface, str):
+            block_id, _, name = raw_iface.partition(":")
+            key = (current_ref_map.get(block_id.strip(), block_id.strip()), name.strip())
+        elif isinstance(raw_iface, dict):
+            key = (
+                current_ref_map.get(
+                    str(raw_iface.get("block_id") or raw_iface.get("ref") or "").strip(),
+                    str(raw_iface.get("block_id") or raw_iface.get("ref") or "").strip(),
+                ),
+                str(raw_iface.get("name", "")).strip(),
+            )
+        else:
+            continue
+        interfaces_map.pop(key, None)
+
+    block_interfaces: dict[str, list[DesignInterface]] = {}
+    for iface in interfaces_map.values():
+        block_interfaces.setdefault(iface.block_id, []).append(iface)
+
+    working_ir.blocks = [
+        DesignBlock(
+            id=block.id,
+            section=block.section,
+            kind=block.kind,
+            ref=block.ref,
+            template_type=block.template_type,
+            ic=block.ic,
+            params=copy.deepcopy(block.params),
+            value=block.value,
+            description=block.description,
+            mpn=block.mpn,
+            required_support=copy.deepcopy(block.required_support),
+            part_bindings=copy.deepcopy(block.part_bindings),
+            presentation_group=block.presentation_group,
+            interfaces=block_interfaces.get(block.id, []),
+        ).normalized()
+        for block in working_ir.blocks
+    ]
+    working_ir.interfaces = [iface for block in working_ir.blocks for iface in block.interfaces]
+
+    if "approved_overrides" in patch:
+        updated = copy.deepcopy(working_ir.to_dict())
+        updated["approved_overrides"] = patch.get("approved_overrides") or []
+        working_ir = normalize_design_spec(updated)
+    if "pcb_constraints" in patch:
+        updated = copy.deepcopy(working_ir.to_dict())
+        updated["pcb_constraints"] = patch.get("pcb_constraints") or []
+        working_ir = normalize_design_spec(updated)
+
+    updated_spec = design_ir_to_spec(working_ir)
+    report = validate_design(updated_spec, profile=profile, enrich_parts=enrich_parts)
+    if not report.valid:
+        return {
+            "accepted": False,
+            "updated_spec": None,
+            "report": report.to_dict(),
+            "diff": semantic_diff(design_ir_to_spec(original_ir), updated_spec),
+        }
+
+    return {
+        "accepted": True,
+        "updated_spec": updated_spec,
+        "report": report.to_dict(),
+        "diff": semantic_diff(design_ir_to_spec(original_ir), updated_spec),
+    }
+
+
+def generate_artifacts(
+    spec: dict[str, Any],
+    *,
+    output_dir: str | Path,
+    profile: str = _MVP_PROFILE,
+    require_valid: bool = True,
+    enrich_parts: bool = False,
+    export_svg: bool = True,
+) -> dict[str, Any]:
+    """Generate derived artifacts from a validated design spec."""
+    profile = _ensure_profile(profile)
+    report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
+    if require_valid and not report.valid:
+        raise ValueError("Design failed mvp_strict validation")
+
+    compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
+    output_path = Path(output_dir)
+    files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg)
+
+    spec_path = output_path / "canonical_spec.yaml"
+    spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")
+    ir_path = output_path / "design_ir.json"
+    ir_path.write_text(json.dumps(compiled.ir.to_dict(), indent=2), encoding="utf-8", newline="")
+    report_path = output_path / "validation_report.json"
+    report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="")
+
+    return {
+        "output_dir": str(output_path),
+        "project": compiled.metadata.get("project", "project"),
+        "root_schematic": str(root) if root else "",
+        "files": [str(path) for path in files],
+        "validation_report": str(report_path),
+        "design_ir": str(ir_path),
+        "canonical_spec": str(spec_path),
+        "valid": report.valid,
+    }
+
+
+def ingest_pcb_feedback(
+    spec: dict[str, Any],
+    feedback: dict[str, Any],
+) -> ConstraintFeedbackReport:
+    """Merge PCB-derived constraints/approved substitutions into canonical spec."""
+    ir = normalize_design_spec(spec)
+    accepted_constraints = 0
+    accepted_overrides = 0
+    rejected: list[dict[str, Any]] = []
+
+    for item in feedback.get("constraints", []) or []:
+        if not isinstance(item, dict) or not item.get("kind") or not item.get("target"):
+            rejected.append(
+                {"item": copy.deepcopy(item), "reason": "Constraint must declare kind and target"}
+            )
+            continue
+        ir.pcb_constraints.append(copy.deepcopy(item))
+        accepted_constraints += 1
+
+    for section_name, kind in (
+        ("placement_constraints", "placement"),
+        ("keepouts", "keepout"),
+        ("length_constraints", "length_match"),
+        ("net_classes", "net_class"),
+        ("route_channels", "route_channel"),
+    ):
+        for item in feedback.get(section_name, []) or []:
+            if not isinstance(item, dict) or not item.get("target"):
+                rejected.append(
+                    {"item": copy.deepcopy(item), "reason": f"{section_name} entries must declare target"}
+                )
+                continue
+            constraint = {"kind": kind, **copy.deepcopy(item)}
+            ir.pcb_constraints.append(constraint)
+            accepted_constraints += 1
+
+    for item in feedback.get("approved_substitutions", []) or []:
+        if not isinstance(item, dict) or not item.get("target"):
+            rejected.append(
+                {"item": copy.deepcopy(item), "reason": "Approved substitutions must declare target"}
+            )
+            continue
+        override = {
+            "kind": "part_binding",
+            "target": str(item["target"]),
+            "value": {key: item[key] for key in ("mpn", "value", "footprint") if item.get(key)},
+            "source": "pcb_feedback",
+        }
+        ir.approved_overrides.append(override)
+        accepted_overrides += 1
+
+    for item in feedback.get("footprint_substitutions", []) or []:
+        if not isinstance(item, dict) or not item.get("target") or not item.get("footprint"):
+            rejected.append(
+                {
+                    "item": copy.deepcopy(item),
+                    "reason": "Footprint substitutions must declare target and footprint",
+                }
+            )
+            continue
+        ir.approved_overrides.append(
+            {
+                "kind": "footprint_override",
+                "target": str(item["target"]),
+                "value": str(item["footprint"]),
+                "source": "pcb_feedback",
+            }
+        )
+        accepted_overrides += 1
+
+    updated_spec = design_ir_to_spec(ir)
+    return ConstraintFeedbackReport(
+        accepted_constraints=accepted_constraints,
+        accepted_overrides=accepted_overrides,
+        rejected=rejected,
+        updated_spec=updated_spec,
+    )
+
+
+def diff_designs(old_spec: dict[str, Any], new_spec: dict[str, Any]) -> dict[str, Any]:
+    return semantic_diff(old_spec, new_spec)
+
+
+def _simple_yaml_dump(value: Any, indent: int = 0) -> str:
+    prefix = " " * indent
+    if isinstance(value, dict):
+        lines = []
+        for key, item in value.items():
+            if isinstance(item, (dict, list)):
+                lines.append(f"{prefix}{key}:")
+                lines.append(_simple_yaml_dump(item, indent + 2))
+            else:
+                if item is None:
+                    rendered = "null"
+                elif isinstance(item, bool):
+                    rendered = "true" if item else "false"
+                elif isinstance(item, str) and (":" in item or "#" in item):
+                    rendered = json.dumps(item)
+                else:
+                    rendered = str(item)
+                lines.append(f"{prefix}{key}: {rendered}")
+        return "\n".join(lines)
+    if isinstance(value, list):
+        lines = []
+        for item in value:
+            if isinstance(item, (dict, list)):
+                dumped = _simple_yaml_dump(item, indent + 2).splitlines()
+                if dumped:
+                    lines.append(f"{prefix}- {dumped[0].lstrip()}")
+                    for line in dumped[1:]:
+                        lines.append(f"{' ' * (indent + 2)}{line.lstrip()}")
+            else:
+                if item is None:
+                    rendered = "null"
+                elif isinstance(item, bool):
+                    rendered = "true" if item else "false"
+                elif isinstance(item, str) and (":" in item or "#" in item):
+                    rendered = json.dumps(item)
+                else:
+                    rendered = str(item)
+                lines.append(f"{prefix}- {rendered}")
+        return "\n".join(lines)
+    return f"{prefix}{value}"
+
+
+def spec_to_yaml_text(spec: dict[str, Any]) -> str:
+    try:
+        import yaml
+
+        return yaml.safe_dump(spec, sort_keys=False, allow_unicode=False)
+    except ImportError:
+        return _simple_yaml_dump(spec) + "\n"
+
+
+def _load_spec_file(path: str | Path) -> dict[str, Any]:
+    path = Path(path)
+    if path.suffix.lower() == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+    return _parse_yaml(path)
+
+
+def _load_patch_file(path: str | Path) -> dict[str, Any]:
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        try:
+            import yaml
+
+            return yaml.safe_load(text) or {}
+        except ImportError:
+            return _simple_yaml_parse(text)
+    return json.loads(text)
+
+
+def _print_json(data: Any) -> None:
+    print(json.dumps(data, indent=2))
+
+
+def _run_with_stderr_capture(func: Any) -> Any:
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        result = func()
+    captured = buffer.getvalue()
+    if captured:
+        sys.stderr.write(captured)
+        if not captured.endswith("\n"):
+            sys.stderr.write("\n")
+        sys.stderr.flush()
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Transactional MVP workflow for circuit_weaver")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    validate_p = subparsers.add_parser("validate", help="Validate a canonical/legacy design spec")
+    validate_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    validate_p.add_argument("--enrich-parts", action="store_true", default=False)
+
+    patch_p = subparsers.add_parser("apply-patch", help="Apply a transactional patch to a design spec")
+    patch_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    patch_p.add_argument("patch", help="Path to JSON/YAML patch payload")
+    patch_p.add_argument("--output", help="Write accepted updated spec to this YAML path")
+    patch_p.add_argument("--enrich-parts", action="store_true", default=False)
+
+    gen_p = subparsers.add_parser("generate", help="Generate derived KiCad artifacts from a spec")
+    gen_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    gen_p.add_argument("--output", "-o", required=True, help="Artifact output directory")
+    gen_p.add_argument("--no-require-valid", dest="require_valid", action="store_false")
+    gen_p.add_argument("--no-svg", dest="export_svg", action="store_false")
+    gen_p.add_argument("--enrich-parts", action="store_true", default=False)
+    gen_p.set_defaults(require_valid=True, export_svg=True)
+
+    diff_p = subparsers.add_parser("diff", help="Semantic diff between two design specs")
+    diff_p.add_argument("old_spec", help="Path to the original YAML/JSON spec")
+    diff_p.add_argument("new_spec", help="Path to the updated YAML/JSON spec")
+
+    pcb_p = subparsers.add_parser("ingest-pcb-feedback", help="Merge PCB feedback into a design spec")
+    pcb_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    pcb_p.add_argument("feedback", help="Path to PCB feedback JSON/YAML")
+    pcb_p.add_argument("--output", help="Write updated spec to this YAML path")
+
+    args = parser.parse_args()
+
+    if args.command == "validate":
+        report = _run_with_stderr_capture(
+            lambda: validate_design(_load_spec_file(args.spec), enrich_parts=args.enrich_parts)
+        )
+        _print_json(report.to_dict())
+        raise SystemExit(0 if report.valid else 2)
+
+    if args.command == "apply-patch":
+        result = _run_with_stderr_capture(
+            lambda: apply_design_patch(
+                _load_spec_file(args.spec),
+                _load_patch_file(args.patch),
+                enrich_parts=args.enrich_parts,
+            )
+        )
+        if result["accepted"] and args.output:
+            Path(args.output).write_text(
+                spec_to_yaml_text(result["updated_spec"]), encoding="utf-8", newline=""
+            )
+        _print_json(result)
+        raise SystemExit(0 if result["accepted"] else 2)
+
+    if args.command == "generate":
+        result = _run_with_stderr_capture(
+            lambda: generate_artifacts(
+                _load_spec_file(args.spec),
+                output_dir=args.output,
+                require_valid=args.require_valid,
+                enrich_parts=args.enrich_parts,
+                export_svg=args.export_svg,
+            )
+        )
+        _print_json(result)
+        raise SystemExit(0)
+
+    if args.command == "diff":
+        _print_json(diff_designs(_load_spec_file(args.old_spec), _load_spec_file(args.new_spec)))
+        raise SystemExit(0)
+
+    if args.command == "ingest-pcb-feedback":
+        result = _run_with_stderr_capture(
+            lambda: ingest_pcb_feedback(_load_spec_file(args.spec), _load_patch_file(args.feedback))
+        )
+        if args.output and result.updated_spec is not None:
+            Path(args.output).write_text(
+                spec_to_yaml_text(result.updated_spec), encoding="utf-8", newline=""
+            )
+        _print_json(result.to_dict())
+        raise SystemExit(0 if not result.rejected else 2)
+
+
+if __name__ == "__main__":
+    main()

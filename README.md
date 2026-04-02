@@ -1,8 +1,92 @@
-# kicad-automations — Claude Code Skills for EDA
+# kicad-automations — Skills + Circuit Weaver Package
 
 Production-grade Claude Code skills for KiCad schematic + PCB design, BOM management, component sourcing, fabrication, FPGA integration, and electrical engineering reference.
 
+This repo is also becoming the home of the standalone Python package:
+
+- package/import: `circuit_weaver`
+- install name: `circuit-weaver`
+- CLI: `circuit-weaver`
+
+`circuit_weaver` is the generic programmatic circuit-design engine that Varta will consume as a downstream dependency. The skills in this repo are the workflow layer around that package.
+
 Battle-tested on complex multi-layer RF PCBs: 6-layer designs with BGAs, multi-distributor BOM pipelines, and full pre-fab simulation chains.
+
+---
+
+## Package Bootstrap
+
+The package shell now exists under `src/circuit_weaver/`.
+
+Current status:
+- package identity is locked
+- CLI entrypoint exists
+- generic engine modules are extracted under `src/circuit_weaver/`
+- reusable helper modules now live under `src/circuit_weaver/helpers/`
+- remaining extraction work is the workflow-asset sync and downstream cutover
+
+### Install locally
+
+```bash
+pip install -e .
+circuit-weaver --version
+```
+
+### Repository status
+
+This repo currently has two layers:
+
+- `skills/` and `project-skills/`: the existing Claude/Codex workflow layer
+- `src/circuit_weaver/`: the generic Python package surface, including the extracted engine, MVP flow, and helpers
+- `agents/` and `rules/`: repo-native workflow policy and reviewer personas
+
+Near-term extraction order:
+
+1. lock package/API identity
+2. scaffold package + CI
+3. move generic engine modules
+4. finish workflow-asset extraction
+5. switch downstream projects like Varta to import `circuit_weaver`
+
+### Planned public surface
+
+The extracted engine will expose workflows like:
+
+```python
+from circuit_weaver.mvp import (
+    validate_design,
+    apply_design_patch,
+    generate_artifacts,
+    ingest_pcb_feedback,
+    diff_designs,
+)
+```
+
+`circuit-weaver` now runs the extracted MVP/engine flow directly.
+
+### Development checks
+
+```bash
+pip install -e ".[dev]"
+python -m ruff check src tests
+python -m pytest tests -q
+```
+
+### Downstream boundary
+
+Keep downstream-project assets local:
+
+- project wrappers such as `generate_via_engine.py`
+- project BOMs and pin maps
+- project-specific symbol and footprint libraries
+- generated KiCad artifacts
+
+Keep reusable assets upstream here:
+
+- `circuit_weaver` package code
+- generic skills and project-skill templates
+- generic helper modules
+- repo-native agents and KiCad rules
 
 ---
 
