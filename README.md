@@ -1,432 +1,305 @@
-# kicad-automations — Skills + Circuit Weaver Package
+<p align="center">
+  <img src="assets/circuit-weaver-banner.svg" alt="Circuit Weaver — KiCad automation engine and workflow toolkit" width="100%">
+</p>
 
-Production-grade Claude Code skills for KiCad schematic + PCB design, BOM management, component sourcing, fabrication, FPGA integration, and electrical engineering reference.
+<p align="center">
+  <a href="https://github.com/mattpainter701/kicad_automations/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/mattpainter701/kicad_automations/ci.yml?branch=main&label=CI" alt="CI status">
+  </a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-0b1320?logo=python&logoColor=ffd43b" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/package-circuit__weaver-0f766e" alt="Package circuit_weaver">
+  <img src="https://img.shields.io/badge/target-KiCad%2010-0ea5e9" alt="Target KiCad 10">
+  <img src="https://img.shields.io/badge/license-MIT-1f2937" alt="MIT License">
+</p>
 
-This repo is also becoming the home of the standalone Python package:
-
-- package/import: `circuit_weaver`
-- install name: `circuit-weaver`
-- CLI: `circuit-weaver`
-
-`circuit_weaver` is the generic programmatic circuit-design engine that Varta will consume as a downstream dependency. The skills in this repo are the workflow layer around that package.
-
-Battle-tested on complex multi-layer RF PCBs: 6-layer designs with BGAs, multi-distributor BOM pipelines, and full pre-fab simulation chains.
+<p align="center">
+  <strong>KiCad automation for people building real hardware.</strong><br>
+  Programmatic schematic generation, transactional design validation, BOM + sourcing workflows, PCB review helpers, and agent-friendly hardware automation.
+</p>
 
 ---
 
-## Package Bootstrap
+## What This Is
 
-The package shell now exists under `src/circuit_weaver/`.
+`kicad_automations` has two product layers:
 
-Current status:
-- package identity is locked
-- CLI entrypoint exists
-- generic engine modules are extracted under `src/circuit_weaver/`
-- reusable helper modules now live under `src/circuit_weaver/helpers/`
-- remaining extraction work is the workflow-asset sync and downstream cutover
+| Layer | What it is | Use it for |
+|---|---|---|
+| `circuit_weaver` | Python package | Canonical design IR, transactional patching, strict validation, KiCad artifact generation |
+| `skills/`, `project-skills/`, `agents/`, `rules/` | Workflow layer | Review, BOM, sourcing, KiCad analysis, placement, manufacturing, AI/operator playbooks |
 
-### Install locally
+This repo is designed for:
 
-```bash
-pip install -e .
-circuit-weaver --version
-```
+- engineers who want KiCad-native automation without giving up real schematic outputs
+- AI/agent workflows that need a strict, machine-readable contract instead of ad hoc script chains
+- downstream hardware projects that want to consume a reusable engine instead of maintaining a custom generator forever
 
-### Repository status
+---
 
-This repo currently has two layers:
+## Why Circuit Weaver
 
-- `skills/` and `project-skills/`: the existing Claude/Codex workflow layer
-- `src/circuit_weaver/`: the generic Python package surface, including the extracted engine, MVP flow, and helpers
-- `agents/` and `rules/`: repo-native workflow policy and reviewer personas
+Most hardware automation stops at one of two bad extremes:
 
-Near-term extraction order:
+- a pile of one-off scripts that only the original author can operate
+- a flashy design layer that is disconnected from the actual KiCad deliverables
 
-1. lock package/API identity
-2. scaffold package + CI
-3. move generic engine modules
-4. finish workflow-asset extraction
-5. switch downstream projects like Varta to import `circuit_weaver`
+`circuit_weaver` sits in the useful middle:
 
-### Planned public surface
+- **canonical spec first**: YAML/Design IR is the source of truth
+- **KiCad-native outputs**: generate real `.kicad_sch` artifacts, reports, and review SVGs
+- **strict validity gates**: no accepted design state should be structurally, electrically, or implementation-invalid
+- **agent-compatible**: patch, validate, diff, generate, and feed PCB constraints back in predictable machine-readable flows
+- **downstream-friendly**: VartaSDR is one consumer, not the identity of the engine
 
-The extracted engine will expose workflows like:
+---
 
-```python
-from circuit_weaver.mvp import (
-    validate_design,
-    apply_design_patch,
-    generate_artifacts,
-    ingest_pcb_feedback,
-    diff_designs,
-)
-```
+## What You Can Do
 
-`circuit-weaver` now runs the extracted MVP/engine flow directly.
+### `circuit_weaver` package
 
-### Development checks
+- validate a canonical design with `mvp_strict`
+- apply transactional patches to a design spec
+- generate KiCad schematics, reports, placement hints, and review artifacts
+- diff two canonical designs semantically
+- ingest PCB feedback as constraints instead of silently mutating topology
+
+### workflow layer
+
+- analyze KiCad schematics, PCBs, and Gerbers
+- audit BOMs and sync part metadata
+- source alternates from DigiKey, Mouser, LCSC, JLCPCB, or PCBWay workflows
+- run project-specific generation/validation/placement playbooks
+- attach repo-native agents/rules to hardware review pipelines
+
+---
+
+## Quick Start
+
+### Install
 
 ```bash
 pip install -e ".[dev]"
-python -m ruff check src tests
-python -m pytest tests -q
+circuit-weaver --version
 ```
 
-### Downstream boundary
+### Validate a design
 
-Keep downstream-project assets local:
+```bash
+circuit-weaver validate src/circuit_weaver/examples/iot_sensor.yaml
+```
+
+### Generate KiCad artifacts
+
+```bash
+circuit-weaver generate src/circuit_weaver/examples/iot_sensor.yaml --output out/iot_sensor
+```
+
+### Use the Python API
+
+```python
+from circuit_weaver.mvp import (
+    apply_design_patch,
+    diff_designs,
+    generate_artifacts,
+    ingest_pcb_feedback,
+    validate_design,
+)
+
+report = validate_design(spec)
+result = apply_design_patch(spec, patch)
+bundle = generate_artifacts(spec, output_dir="out/design")
+```
+
+---
+
+## Product Surface
+
+### Core transaction flow
+
+```text
+spec -> normalize -> validate -> patch -> revalidate -> generate KiCad artifacts
+```
+
+### Public workflows
+
+| Workflow | Purpose |
+|---|---|
+| `validate_design()` | strict grouped validation |
+| `apply_design_patch()` | transactional in-memory mutation with reject-on-failure |
+| `generate_artifacts()` | derived KiCad bundle generation |
+| `diff_designs()` | semantic design change reporting |
+| `ingest_pcb_feedback()` | constraint/override feedback loop from layout back to design spec |
+
+### Validation model
+
+`mvp_strict` groups failures into:
+
+- `structural`
+- `electrical`
+- `implementation`
+- `presentation`
+
+That means “the schematic generated” is not enough. The output also needs to be loadable, internally coherent, and reviewable.
+
+---
+
+## Repo Layout
+
+```text
+kicad_automations/
+├─ src/circuit_weaver/        # package: engine, IR, MVP, validators, exporters, helpers
+├─ tests/                     # package-level regression coverage
+├─ skills/                    # reusable KiCad/BOM/sourcing skills
+├─ project-skills/            # project workflow templates
+├─ agents/                    # hardware reviewer personas
+├─ rules/                     # repo-native KiCad workflow policy
+└─ assets/                    # README visuals and branding
+```
+
+### Helper modules
+
+The extracted helper layer lives under `src/circuit_weaver/helpers/`:
+
+- `placement.py` — footprint matching and passive-placement helpers
+- `silkscreen.py` — managed silkscreen ownership and collision-aware label updates
+- `impedance.py` — reusable controlled-impedance math helpers
+
+---
+
+## Skills and Project Skills
+
+### Global skills
+
+- `kicad`
+- `bom`
+- `digikey`
+- `mouser`
+- `lcsc`
+- `jlcpcb`
+- `pcbway`
+- `ee`
+- `vivado`
+
+### Project skill templates
+
+- `kicad_gen`
+- `kicad_hierarchy`
+- `kicad_validate`
+- `kicad_pinmap`
+- `kicad_pcb_place`
+- `autoroute`
+- `sim`
+
+Install global skills:
+
+```bash
+./install.sh
+```
+
+Install project-skill templates into a downstream repo:
+
+```bash
+./install.sh --project-skills-dir .claude/skills
+```
+
+---
+
+## Downstream Boundary
+
+Keep these **upstream** in `kicad_automations`:
+
+- `circuit_weaver` package code
+- generic helpers
+- generic skills and project-skill templates
+- repo-native agents and rules
+
+Keep these **downstream** in each hardware project:
 
 - project wrappers such as `generate_via_engine.py`
 - project BOMs and pin maps
-- project-specific symbol and footprint libraries
+- project-local symbol and footprint libraries
 - generated KiCad artifacts
+- project-specific integration tests
 
-Keep reusable assets upstream here:
-
-- `circuit_weaver` package code
-- generic skills and project-skill templates
-- generic helper modules
-- repo-native agents and KiCad rules
+That boundary is intentional. It keeps the engine generic while still letting each hardware program own its actual design assets.
 
 ---
 
-## Design Flow
+## Example Output Story
 
-```mermaid
-flowchart TD
-    A[KiCad Schematic] -->|analyze_schematic.py| B[Structural Analysis]
-    B --> C{Gaps found?}
-    C -->|Missing MPNs / PNs| D[bom_manager.py analyze]
-    D -->|search by MPN| E[DigiKey / LCSC / Mouser APIs]
-    E -->|prices + stock| F[BOM tracking CSV]
-    F -->|edit_properties.py| G[Write PNs back to symbols]
-    G --> H[Download Datasheets]
-    H -->|sync_datasheets_*.py| I[datasheets/ directory]
-    C -->|Schematic clean| J[KiCad PCB Layout]
-    J -->|analyze_pcb.py| K[DFM + Routing Review]
-    K -->|Freerouting DSN/SES| L[Auto-routed PCB]
-    L -->|Fill zones, teardrops, DRC| M[Gerber Export]
-    M -->|analyze_gerbers.py| N[Fab Check]
-    N -->|bom_manager.py order| O[JLCPCB / PCBWay Order CSV]
+<details>
+<summary><strong>Worked example: buck converter flow</strong></summary>
 
-    style A fill:#f5f5f5
-    style O fill:#d4edda
-    style C fill:#fff3cd
-```
-
----
-
-## Skill Map
-
-```mermaid
-graph LR
-    subgraph Core["Core Analysis"]
-        K[kicad]
-        EE[ee]
-    end
-
-    subgraph Sourcing["Component Sourcing"]
-        DK[digikey]
-        LC[lcsc]
-        MO[mouser]
-    end
-
-    subgraph BOM["BOM Management"]
-        B[bom]
-    end
-
-    subgraph Fab["Fabrication"]
-        JL[jlcpcb]
-        PW[pcbway]
-    end
-
-    subgraph FPGA["FPGA"]
-        VIV[vivado]
-    end
-
-    subgraph ProjectSkills["Project Skills  templates "]
-        KG[kicad_gen]
-        KH[kicad_hierarchy]
-        KV[kicad_validate]
-        KP[kicad_pinmap]
-        KPL[kicad_pcb_place]
-        AR[autoroute]
-        SIM[sim]
-    end
-
-    K --> B
-    B --> DK
-    B --> LC
-    B --> MO
-    B --> JL
-    B --> PW
-    EE --> K
-    KG --> KH
-    KH --> KV
-    KV --> KP
-    KPL --> AR
-    VIV --> K
-```
-
----
-
-## Worked Example — Buck Converter Board
-
-A complete 5V → 3.3V buck converter, built with these skills end-to-end.
-
-**Circuit:** TPS62130 adjustable buck — feedback resistor divider sets Vout, 10µH inductor, MLCC input/output caps.
-
-### Step 1 — Analyze the Schematic
+### 1. Analyze the schematic
 
 ```bash
 python3 skills/kicad/scripts/analyze_schematic.py buck.kicad_sch --output buck_analysis.json
 ```
 
-Sample output (signal_analysis):
-```json
-{
-  "power_regulators": [{
-    "reference": "U1",
-    "topology": "buck",
-    "vout_estimated": 3.3,
-    "vref_source": "lookup",
-    "output_net": "VCC_3V3",
-    "vout_net_mismatch": false,
-    "feedback_r_top": "R1",
-    "feedback_r_bottom": "R2"
-  }],
-  "rc_filters": [{
-    "reference": "C3",
-    "cutoff_hz": 723000,
-    "type": "low_pass"
-  }]
-}
-```
-
-The analyzer finds: regulator topology, estimated Vout (via ~60-family Vref lookup), feedback network, decoupling gaps, missing PWR_FLAGs.
-
-### Step 2 — Find Missing Parts
+### 2. Find missing sourcing data
 
 ```bash
 python3 skills/bom/scripts/bom_manager.py analyze buck.kicad_sch --json
 ```
 
-Flags:
-- `U1`: MPN set (`TPS62130ARGTR`), no DigiKey PN
-- `L1`: value `10uH` — generic, needs MPN and LCSC PN for JLCPCB
-- `C1,C2`: `10uF 16V X7R 0805` — needs sourcing
-
-### Step 3 — Source Parts + Download Datasheets
+### 3. Pull datasheets and vendor metadata
 
 ```bash
-# Download all datasheets via DigiKey API
 python3 skills/digikey/scripts/sync_datasheets_digikey.py buck.kicad_sch
-# -> datasheets/TPS62130ARGTR.pdf  (Texas Instruments, 2.4MB)
-# -> datasheets/SRR6028-100Y.pdf   (Bourns, 1.1MB)
-
-# Write DigiKey PNs back to schematic symbols
-echo '{"U1": {"DigiKey": "296-TPS62130ARGTR-ND", "Manufacturer": "Texas Instruments"},
-      "L1": {"MPN": "SRR6028-100Y", "LCSC": "C408337"}}' \
-  | python3 skills/bom/scripts/edit_properties.py buck.kicad_sch
 ```
 
-### Step 4 — Export BOM + Generate Order Files
+### 4. Export manufacturing BOMs
 
 ```bash
 python3 skills/bom/scripts/bom_manager.py export buck.kicad_sch -o bom/bom.csv
 python3 skills/bom/scripts/bom_manager.py order bom/bom.csv --boards 3 --spares 2
-# -> bom/orders/digikey_order.csv   (U1, passives)
-# -> bom/orders/lcsc_order.csv      (L1, MLCC caps)
 ```
 
-### Step 5 — PCB Analysis
+### 5. Review PCB quality
 
 ```bash
 python3 skills/kicad/scripts/analyze_pcb.py buck.kicad_pcb
 ```
 
-Catches: power trace too narrow for 2A (needs 0.5mm min per IPC-2221), thermal pad under U1 has 0 vias (should have 4+), C1 decoupling cap 3.2mm from VIN pin (should be <1mm).
+</details>
 
-### Step 6 — Autoroute
+---
+
+## Status
+
+### Working now
+
+- standalone `circuit_weaver` package scaffold
+- extracted engine + MVP surface
+- package-level tests and CI
+- helper extraction
+- downstream cutover path for Varta-style projects
+
+### Active next steps
+
+- continue polishing downstream package consumption
+- deepen workflow asset extraction and cleanup
+- expand acceptance fixtures beyond the current example designs
+
+---
+
+## Development
+
+Run checks locally:
 
 ```bash
-# In KiCad: File -> Export -> Specctra DSN -> buck.dsn
-# Manual first: route feedback resistors to FB pin, decoupling caps to VIN/VOUT
-java -jar freerouting.jar -de buck.dsn -do buck.ses -mp 100
-# In KiCad: File -> Import -> Specctra Session -> buck.ses
-# Then: Edit -> Fill All Zones (B)
+python -m ruff check src tests
+python -m pytest tests -q
 ```
 
----
-
-## What's in This Repo
-
-```
-skills/                        Global skills -> install to ~/.claude/skills/
-  kicad/                       Schematic, PCB, Gerber analyzers + 12 reference docs
-  bom/                         BOM lifecycle: analyze, enrich, export, order
-  digikey/                     DigiKey OAuth2 API: part search + datasheet sync
-  lcsc/                        LCSC via jlcsearch: production sourcing, no key needed
-  mouser/                      Mouser Search API: secondary prototype sourcing
-  jlcpcb/                      JLCPCB Partner API: PCB quoting + assembly ordering
-  pcbway/                      PCBWay: alternative fab + turnkey assembly
-  ee/                          EE reference: circuits, power supply, RF, thermal, EMC
-  vivado/                      Vivado FPGA build, ADI HDL, Zynq PS7/MPSoC block design
-
-project-skills/                Templates -> copy to .claude/skills/ and customize
-  kicad_gen/                   Programmatic schematic generation (BGA/QFN pin maps)
-  kicad_hierarchy/             Root schematic management across sub-sheets
-  kicad_validate/              Cross-reference audit: spec vs schematic vs BOM vs layout
-  kicad_pinmap/                IC pin-to-net mapping auditor and gap filler
-  kicad_pcb_place/             Constraint-driven placement + pcbnew scripting API
-  autoroute/                   Freerouting integration + post-route cleanup checklist
-  sim/                         RF chain (scikit-rf), power (LTspice), PCB EM (openEMS)
-```
-
----
-
-## Current Gaps / Roadmap
-
-| Skill | Status | Notes |
-|-|-|-|
-| `element14` | Planned | Newark / Farnell / element14 API — EU + international sourcing |
-| `openscad` | Planned | Parametric enclosures and mounting hardware for PCB housings |
-| `drc_rules` | Planned | KiCad DRU authoring skill for JLCPCB / PCBWay / custom fabs |
-| `ci` | Planned | KiBot-based CI pipeline — DRC, ERC, Gerber, BOM in GitHub Actions |
-| `signal_integrity` | Planned | Dedicated SI skill — stackup design, impedance calc, eye diagrams |
-
----
-
-## Quick Install
+If you are consuming this from another repo in editable mode:
 
 ```bash
-git clone https://github.com/mattpainter701/kicad_automations.git
-cd kicad_automations
-
-# Install all global skills to ~/.claude/skills/
-./install.sh
-
-# Also install project-skill templates into your project
-./install.sh --project-skills-dir .claude/skills
+pip install -e /path/to/kicad_automations
 ```
-
-Add to your project's `CLAUDE.md`:
-
-```markdown
-## Skills
-- **KiCad:** @~/.claude/skills/kicad/SKILL.md
-- **BOM:** @~/.claude/skills/bom/SKILL.md
-- **DigiKey:** @~/.claude/skills/digikey/SKILL.md
-- **LCSC:** @~/.claude/skills/lcsc/SKILL.md
-- **Mouser:** @~/.claude/skills/mouser/SKILL.md
-- **JLCPCB:** @~/.claude/skills/jlcpcb/SKILL.md
-- **PCBWay:** @~/.claude/skills/pcbway/SKILL.md
-- **EE:** @~/.claude/skills/ee/SKILL.md
-- **Vivado:** @~/.claude/skills/vivado/SKILL.md
-```
-
----
-
-## Analyzer Scripts — Capability Reference
-
-### `analyze_schematic.py`
-
-| Category | What It Detects |
-|-|-|
-| Components | Reference, value, footprint, lib_id, MPN, datasheet, DNP |
-| Regulators | LDO / buck / boost topology, Vout via ~60-family Vref lookup, feedback network |
-| Filters | RC/LC cutoff frequency |
-| Op-amps | Configuration, closed-loop gain |
-| Transistors | SOT-23 pinout ambiguity, load classification (motor/relay/LED/speaker) |
-| Bridges | H-bridge, 3-phase bridge, cross-sheet detection |
-| Protection | ESD/TVS devices, reverse polarity, overcurrent |
-| Buses | I2C (pull-ups, addresses), SPI, UART, CAN, RS-485 |
-| Diff pairs | USB, LVDS, Ethernet, HDMI, PCIe, SATA, MIPI |
-| Power | PDN impedance 1 kHz–1 GHz, budget, sequencing, sleep current, inrush |
-| Quality | ERC, annotation, PWR_FLAG, missing MPNs, SOT-23 pinout risk |
-
-### `analyze_pcb.py`
-
-| Category | What It Detects |
-|-|-|
-| Routing | Completeness, per-net trace length, via types and annular ring |
-| Thermal | Thermal pad via count, copper area per component, zone fill ratio |
-| Power | Current capacity (IPC-2221/2152), ground domain mapping |
-| DFM | JLCPCB standard/advanced tier scoring, tombstoning risk (0201/0402) |
-| SI | Crosstalk (with `--proximity`), return path layer transitions |
-
-### `analyze_gerbers.py`
-
-Layer identification (X2 attributes), component/net mapping (KiCad 6+ TO attributes), trace width distribution, drill classification, layer completeness, alignment verification.
-
----
-
-## Credential Setup
-
-Store in `~/.config/secrets.env` (outside all git repos):
-
-```bash
-DIGIKEY_CLIENT_ID=your_client_id
-DIGIKEY_CLIENT_SECRET=your_client_secret
-MOUSER_SEARCH_API_KEY=your_mouser_uuid
-JLCPCB_Accesskey=your_jlcpcb_key
-JLCPCB_SecretKey=your_jlcpcb_secret
-PERPLEXITY_API_KEY=pplx-xxxx     # optional, for /research skill
-```
-
-Load before running scripts:
-```bash
-export $(grep -v '^#' ~/.config/secrets.env | grep -v '^$' | xargs)
-```
-
-| API | Registration | Auth | Cost |
-|-|-|-|-|
-| DigiKey | [developer.digikey.com](https://developer.digikey.com) | OAuth2 client credentials | Free tier |
-| Mouser | [mouser.com](https://www.mouser.com) developer portal | UUID key | Free |
-| LCSC | None — uses jlcsearch | None | Free |
-| JLCPCB | [api.jlcpcb.com](https://api.jlcpcb.com) (gated) | HMAC-SHA256 | By approval |
-
----
-
-## Requirements
-
-```bash
-pip install requests        # Required by all download scripts
-pip install scikit-rf       # RF chain simulation (sim skill, Layer 1)
-pip install PyLTSpice       # Power simulation (sim skill, Layer 2)
-
-# Optional: headless browser for protected manufacturer sites
-pip install playwright && playwright install chromium
-```
-
-Python 3.10+. Java 11+ required for Freerouting.
-
----
-
-## Reference Documentation
-
-| Reference | Skill | What It Covers |
-|-|-|-|
-| `schematic-analysis.md` | kicad | Deep review methodology, error taxonomy, GPIO audit |
-| `pcb-layout-analysis.md` | kicad | Impedance calc, return paths, copper balance, DFM |
-| `standards-compliance.md` | kicad | IPC-2221A, IPC-2152, IEC 60664-1 tables |
-| `report-generation.md` | kicad | Review report template, severity definitions |
-| `file-formats.md` | kicad | KiCad S-expression format, field-by-field docs |
-| `ordering-and-fabrication.md` | bom | Gerber export, CPL format, cost templates |
-| `part-number-conventions.md` | bom | MPN patterns across 56+ real KiCad projects |
-
----
-
-## Related Projects
-
-- [kicad-happy](https://github.com/aklofas/kicad-happy) — upstream of the analyzer scripts
-- [ADI HDL](https://github.com/analogdevicesinc/hdl) — ADI reference designs for Vivado (used by `vivado` skill)
-- [KiBot](https://pypi.org/project/kibot/) — CI/CD Gerber, BOM, DRC output automation
-- [kicad-python (kipy)](https://github.com/atait/kicad-python) — IPC API for live KiCad session scripting
-- [Freerouting](https://github.com/freerouting/freerouting) — open-source autorouter (used by `autoroute` skill)
 
 ---
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

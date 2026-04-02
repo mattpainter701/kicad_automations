@@ -1,0 +1,122 @@
+<svg width="1400" height="420" viewBox="0 0 1400 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06111d"/>
+      <stop offset="0.45" stop-color="#0a1730"/>
+      <stop offset="1" stop-color="#041019"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(700 150) rotate(90) scale(180 300)">
+      <stop offset="0" stop-color="#56f5dc" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#56f5dc" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7cf7ff"/>
+      <stop offset="1" stop-color="#4cf1b8"/>
+    </linearGradient>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      .grid { stroke: rgba(126,236,255,0.14); stroke-width: 1.2; }
+      .trace { stroke: rgba(126,236,255,0.35); stroke-width: 2.4; stroke-linecap: round; }
+      .trace2 { stroke: rgba(111,255,201,0.28); stroke-width: 1.8; stroke-linecap: round; }
+      .node { fill: #bfffff; filter: url(#softGlow); }
+      .web { stroke: rgba(173,248,255,0.6); stroke-width: 2.2; stroke-linecap: round; }
+      .chip { fill: #0c2731; stroke: url(#accent); stroke-width: 3; }
+      .leg { stroke: url(#accent); stroke-width: 8; stroke-linecap: round; }
+      .legThin { stroke: #e9fbff; stroke-width: 3; stroke-linecap: round; opacity: 0.92; }
+      .title { font: 800 66px 'Segoe UI', Arial, sans-serif; letter-spacing: 2px; fill: #f4ffff; }
+      .subtitle { font: 500 28px 'Segoe UI', Arial, sans-serif; letter-spacing: 1px; fill: #9fefff; }
+      .small { font: 600 17px 'Segoe UI', Arial, sans-serif; letter-spacing: 2px; fill: #6cf0c8; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="420" fill="url(#bg)"/>
+  <rect width="1400" height="420" fill="url(#glow)"/>
+
+  <!-- background circuit field -->
+  <g opacity="0.9">
+    <path class="grid" d="M0 64H1400M0 140H1400M0 216H1400M0 292H1400M0 368H1400"/>
+    <path class="grid" d="M120 0V420M320 0V420M520 0V420M720 0V420M920 0V420M1120 0V420M1320 0V420"/>
+    <path class="trace" d="M40 88H170V130H260"/>
+    <path class="trace" d="M1140 64H1270V150H1360"/>
+    <path class="trace" d="M62 250H180V202H258V162"/>
+    <path class="trace" d="M1040 300H1190V250H1304"/>
+    <path class="trace2" d="M110 332H240V356H312V388"/>
+    <path class="trace2" d="M1092 344H1188V310H1296V280"/>
+    <path class="trace2" d="M380 38V82H430V110"/>
+    <path class="trace2" d="M1022 46V98H962V126"/>
+    <circle class="node" cx="170" cy="88" r="4"/>
+    <circle class="node" cx="260" cy="130" r="4"/>
+    <circle class="node" cx="1270" cy="64" r="4"/>
+    <circle class="node" cx="62" cy="250" r="4"/>
+    <circle class="node" cx="1304" cy="280" r="4"/>
+  </g>
+
+  <!-- spider web -->
+  <g opacity="0.95">
+    <path class="web" d="M700 44V194"/>
+    <path class="web" d="M548 78L700 194L852 78"/>
+    <path class="web" d="M476 124L700 194L924 124"/>
+    <path class="web" d="M420 186L700 194L980 186"/>
+    <path class="web" d="M390 252L700 194L1010 252"/>
+    <path class="web" d="M474 80L420 186L390 252"/>
+    <path class="web" d="M926 80L980 186L1010 252"/>
+    <path class="web" d="M546 78L476 124L420 186"/>
+    <path class="web" d="M854 78L924 124L980 186"/>
+    <circle class="node" cx="700" cy="194" r="7"/>
+    <circle class="node" cx="548" cy="78" r="5"/>
+    <circle class="node" cx="852" cy="78" r="5"/>
+    <circle class="node" cx="476" cy="124" r="4"/>
+    <circle class="node" cx="924" cy="124" r="4"/>
+    <circle class="node" cx="420" cy="186" r="4"/>
+    <circle class="node" cx="980" cy="186" r="4"/>
+  </g>
+
+  <!-- chip spider -->
+  <g transform="translate(700 180)">
+    <ellipse cx="0" cy="-16" rx="56" ry="62" fill="#102738" stroke="url(#accent)" stroke-width="4"/>
+    <rect x="-44" y="32" width="88" height="84" rx="16" fill="#0a2130" stroke="url(#accent)" stroke-width="4"/>
+    <rect x="-28" y="48" width="56" height="56" rx="8" fill="#ffe98f" stroke="#fff7d1" stroke-width="4" filter="url(#softGlow)"/>
+    <g fill="#14384a">
+      <rect x="-56" y="66" width="10" height="8" rx="2"/>
+      <rect x="46" y="66" width="10" height="8" rx="2"/>
+      <rect x="-56" y="84" width="10" height="8" rx="2"/>
+      <rect x="46" y="84" width="10" height="8" rx="2"/>
+    </g>
+    <path class="leg" d="M-44 44L-122 18L-178 -16"/>
+    <path class="legThin" d="M-44 44L-122 18L-178 -16"/>
+    <path class="leg" d="M-46 56L-132 56L-206 36"/>
+    <path class="legThin" d="M-46 56L-132 56L-206 36"/>
+    <path class="leg" d="M-42 74L-132 98L-190 132"/>
+    <path class="legThin" d="M-42 74L-132 98L-190 132"/>
+    <path class="leg" d="M-28 102L-98 142L-132 178"/>
+    <path class="legThin" d="M-28 102L-98 142L-132 178"/>
+    <path class="leg" d="M44 44L122 18L178 -16"/>
+    <path class="legThin" d="M44 44L122 18L178 -16"/>
+    <path class="leg" d="M46 56L132 56L206 36"/>
+    <path class="legThin" d="M46 56L132 56L206 36"/>
+    <path class="leg" d="M42 74L132 98L190 132"/>
+    <path class="legThin" d="M42 74L132 98L190 132"/>
+    <path class="leg" d="M28 102L98 142L132 178"/>
+    <path class="legThin" d="M28 102L98 142L132 178"/>
+    <path class="leg" d="M-12 116L-28 148"/>
+    <path class="legThin" d="M-12 116L-28 148"/>
+    <path class="leg" d="M12 116L28 148"/>
+    <path class="legThin" d="M12 116L28 148"/>
+    <circle cx="0" cy="-16" r="11" fill="#56f5dc" filter="url(#softGlow)"/>
+    <path d="M-24 -62Q0 -98 24 -62" stroke="#ecfbff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- title block -->
+  <g transform="translate(700 352)">
+    <rect x="-360" y="-58" width="720" height="92" rx="18" fill="rgba(4,16,25,0.7)" stroke="rgba(124,247,255,0.25)"/>
+    <text class="title" text-anchor="middle" x="0" y="-2">CIRCUIT WEAVER</text>
+    <text class="subtitle" text-anchor="middle" x="0" y="40">KiCad automation engine + workflow toolkit</text>
+    <text class="small" text-anchor="middle" x="0" y="-80">PROGRAMMATIC CIRCUIT DESIGN • REVIEW • GENERATION • VALIDATION</text>
+  </g>
+</svg>
