@@ -1,0 +1,154 @@
+<svg width="1600" height="920" viewBox="0 0 1600 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="920" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#07101c"/>
+      <stop offset="0.55" stop-color="#0b1630"/>
+      <stop offset="1" stop-color="#05111a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 180) rotate(90) scale(320 760)">
+      <stop offset="0" stop-color="#57f4db" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#57f4db" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7cf8ff"/>
+      <stop offset="1" stop-color="#51f3b4"/>
+    </linearGradient>
+    <linearGradient id="boxFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c1c2d"/>
+      <stop offset="1" stop-color="#10243a"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="arrow" markerWidth="16" markerHeight="16" refX="13" refY="8" orient="auto">
+      <path d="M1 1L14 8L1 15" stroke="url(#accent)" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .grid { stroke: rgba(133,240,255,0.09); stroke-width: 1.2; }
+      .trace { stroke: rgba(127,246,255,0.20); stroke-width: 2; stroke-linecap: round; }
+      .arrow { stroke: url(#accent); stroke-width: 4; stroke-linecap: round; fill: none; marker-end: url(#arrow); }
+      .box { fill: url(#boxFill); stroke: rgba(128,247,255,0.65); stroke-width: 2.4; rx: 20; }
+      .boxAlt { fill: rgba(10,29,42,0.92); stroke: rgba(81,243,180,0.55); stroke-width: 2.4; rx: 20; }
+      .title { font: 800 46px 'Segoe UI', Arial, sans-serif; fill: #f6ffff; letter-spacing: 1px; }
+      .subtitle { font: 500 24px 'Segoe UI', Arial, sans-serif; fill: #9feeff; }
+      .stepNum { font: 800 26px 'Segoe UI', Arial, sans-serif; fill: #79f7ff; }
+      .stepTitle { font: 700 24px 'Segoe UI', Arial, sans-serif; fill: #ffffff; }
+      .stepBody { font: 500 16px 'Segoe UI', Arial, sans-serif; fill: #b6f7ff; }
+      .mini { font: 700 16px 'Segoe UI', Arial, sans-serif; fill: #7ef6c8; letter-spacing: 1px; }
+      .chip { fill: #0b2634; stroke: url(#accent); stroke-width: 2.8; }
+      .chipPin { stroke: #e7fbff; stroke-width: 3; stroke-linecap: round; }
+      .node { fill: #c7ffff; filter: url(#soft); }
+    </style>
+  </defs>
+
+  <rect width="1600" height="920" fill="url(#bg)"/>
+  <rect width="1600" height="920" fill="url(#glow)"/>
+
+  <g>
+    <path class="grid" d="M0 110H1600M0 250H1600M0 390H1600M0 530H1600M0 670H1600M0 810H1600"/>
+    <path class="grid" d="M120 0V920M360 0V920M600 0V920M840 0V920M1080 0V920M1320 0V920"/>
+    <path class="trace" d="M70 160H180V205H252"/>
+    <path class="trace" d="M1328 146H1440V208H1520"/>
+    <path class="trace" d="M88 734H172V690H246"/>
+    <path class="trace" d="M1340 728H1432V768H1510"/>
+    <circle class="node" cx="180" cy="160" r="4"/>
+    <circle class="node" cx="1440" cy="146" r="4"/>
+    <circle class="node" cx="172" cy="734" r="4"/>
+    <circle class="node" cx="1432" cy="728" r="4"/>
+  </g>
+
+  <text class="title" x="800" y="74" text-anchor="middle">How Circuit Weaver Fits a Real Hardware Workflow</text>
+  <text class="subtitle" x="800" y="112" text-anchor="middle">From Codex/Claude requirements capture to quote-ready KiCad outputs</text>
+
+  <!-- center emblem -->
+  <g transform="translate(800 250)">
+    <circle cx="0" cy="0" r="64" fill="#0c1c30" stroke="url(#accent)" stroke-width="4"/>
+    <rect class="chip" x="-38" y="-38" width="76" height="76" rx="14"/>
+    <rect x="-22" y="-22" width="44" height="44" rx="8" fill="#ffef9d" stroke="#fff8d4" stroke-width="3" filter="url(#soft)"/>
+    <path class="chipPin" d="M-60 -12H-38M-60 12H-38M38 -12H60M38 12H60M-12 -60V-38M12 -60V-38M-12 38V60M12 38V60"/>
+    <circle class="node" cx="0" cy="0" r="8"/>
+  </g>
+
+  <!-- Step boxes -->
+  <g>
+    <rect class="box" x="86" y="170" width="370" height="150" rx="20"/>
+    <text class="stepNum" x="120" y="214">01</text>
+    <text class="stepTitle" x="120" y="252">Engineer + Codex / Claude</text>
+    <text class="stepBody" x="120" y="286">Define system intent, interfaces, rails,</text>
+    <text class="stepBody" x="120" y="310">constraints, buses, and circuit requirements</text>
+    <text class="stepBody" x="120" y="334">instead of hand-drawing every page first.</text>
+
+    <rect class="boxAlt" x="574" y="170" width="452" height="150" rx="20"/>
+    <text class="stepNum" x="608" y="214">02</text>
+    <text class="stepTitle" x="608" y="252">Source real parts with skills</text>
+    <text class="stepBody" x="608" y="286">Use <tspan fill="#7ef6c8">DigiKey</tspan>, <tspan fill="#7ef6c8">Mouser</tspan>, and <tspan fill="#7ef6c8">LCSC</tspan> workflows to turn</text>
+    <text class="stepBody" x="608" y="310">generic parts into concrete MPNs, package choices,</text>
+    <text class="stepBody" x="608" y="334">datasheets, and purchasing options.</text>
+
+    <rect class="box" x="1144" y="170" width="372" height="150" rx="20"/>
+    <text class="stepNum" x="1178" y="214">03</text>
+    <text class="stepTitle" x="1178" y="252">Canonical spec + BOM</text>
+    <text class="stepBody" x="1178" y="286">Part bindings, block intent, support-circuit</text>
+    <text class="stepBody" x="1178" y="310">requirements, interfaces, overrides, and</text>
+    <text class="stepBody" x="1178" y="334">design truth all live in one machine-readable layer.</text>
+
+    <rect class="boxAlt" x="86" y="430" width="430" height="178" rx="20"/>
+    <text class="stepNum" x="120" y="474">04</text>
+    <text class="stepTitle" x="120" y="512">Generate schematics + validate</text>
+    <text class="stepBody" x="120" y="546">Circuit Weaver emits KiCad schematics, reports,</text>
+    <text class="stepBody" x="120" y="570">review outputs, and placement hints.</text>
+    <text class="mini" x="120" y="612">AUTO SUPPORT</text>
+    <text class="stepBody" x="250" y="612">bypass caps, support passives, topology motifs</text>
+    <text class="mini" x="120" y="638">STRICT CHECKS</text>
+    <text class="stepBody" x="250" y="638">structural, electrical, implementation, presentation</text>
+
+    <rect class="box" x="586" y="430" width="430" height="178" rx="20"/>
+    <text class="stepNum" x="620" y="474">05</text>
+    <text class="stepTitle" x="620" y="512">KiCad review + cosmetic polish</text>
+    <text class="stepBody" x="620" y="546">Generated schematics are typically around</text>
+    <text class="stepBody" x="620" y="570"><tspan fill="#7ef6c8" font-weight="700">~90% complete</tspan> for serious hardware work.</text>
+    <text class="stepBody" x="620" y="596">The last pass is still human: page aesthetics,</text>
+    <text class="stepBody" x="620" y="620">editorial cleanup, and final readability judgment.</text>
+
+    <rect class="boxAlt" x="1086" y="430" width="430" height="178" rx="20"/>
+    <text class="stepNum" x="1120" y="474">06</text>
+    <text class="stepTitle" x="1120" y="512">Update PCB + route intelligently</text>
+    <text class="stepBody" x="1120" y="546">Use <tspan fill="#7ef6c8">Update PCB from Schematic</tspan> in KiCad,</text>
+    <text class="stepBody" x="1120" y="570">place parts, route critical nets manually, and</text>
+    <text class="stepBody" x="1120" y="594">use autoroute / Freerouting for non-critical nets</text>
+    <text class="stepBody" x="1120" y="618">where it actually helps instead of hurts.</text>
+
+    <rect class="box" x="344" y="696" width="420" height="150" rx="20"/>
+    <text class="stepNum" x="378" y="740">07</text>
+    <text class="stepTitle" x="378" y="778">Test, audit, and package outputs</text>
+    <text class="stepBody" x="378" y="812">Run repo tests, review audits, KiCad checks, and</text>
+    <text class="stepBody" x="378" y="836">project validation before handoff or fabrication.</text>
+
+    <rect class="boxAlt" x="844" y="696" width="420" height="150" rx="20"/>
+    <text class="stepNum" x="878" y="740">08</text>
+    <text class="stepTitle" x="878" y="778">Quote-ready manufacturing package</text>
+    <text class="stepBody" x="878" y="812">BOMs, sourcing data, review artifacts, and KiCad</text>
+    <text class="stepBody" x="878" y="836">outputs are ready to hand to PCBWay / JLCPCB.</text>
+  </g>
+
+  <!-- arrows -->
+  <path class="arrow" d="M456 245H558"/>
+  <path class="arrow" d="M1026 245H1128"/>
+  <path class="arrow" d="M1300 320V390"/>
+  <path class="arrow" d="M800 324V390"/>
+  <path class="arrow" d="M300 320V390"/>
+  <path class="arrow" d="M516 520H568"/>
+  <path class="arrow" d="M1016 520H1068"/>
+  <path class="arrow" d="M1298 608V676H1074"/>
+  <path class="arrow" d="M802 608V676"/>
+  <path class="arrow" d="M302 608V676H534"/>
+
+  <!-- bottom payoff line -->
+  <g transform="translate(800 898)">
+    <text class="mini" text-anchor="middle" x="0" y="0">REQUIREMENTS -> SOURCING -> CIRCUIT SPEC -> SCHEMATICS -> KICAD POLISH -> PCB -> QUOTE-READY OUTPUTS</text>
+  </g>
+</svg>

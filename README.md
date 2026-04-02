@@ -14,7 +14,7 @@
 
 <p align="center">
   <strong>KiCad automation for people building real hardware.</strong><br>
-  Programmatic schematic generation, transactional design validation, BOM + sourcing workflows, PCB review helpers, and agent-friendly hardware automation.
+  From Codex/Claude requirements capture to quote-ready KiCad outputs: programmatic schematic generation, strict validation, BOM + sourcing workflows, PCB review helpers, and downstream fabrication prep.
 </p>
 
 ---
@@ -112,6 +112,49 @@ bundle = generate_artifacts(spec, output_dir="out/design")
 
 ---
 
+## How It Works
+
+<p align="center">
+  <img src="assets/circuit-weaver-pipeline.svg" alt="Circuit Weaver workflow from requirements through sourcing, schematic generation, KiCad review, PCB update, routing, and quote-ready outputs" width="100%">
+</p>
+
+### The practical flow
+
+1. **Codex/Claude + engineer define the design**
+   Start with block intent, interfaces, rails, buses, constraints, and high-level requirements rather than hand-drawing every sheet from scratch.
+
+2. **Source real parts with the distributor skills**
+   Use the `digikey`, `mouser`, and `lcsc` workflows to turn vague parts into actual MPNs, package choices, and purchasing options.
+
+3. **Build the canonical circuit spec and BOM**
+   `circuit_weaver` uses that information to maintain part bindings, circuit requirements, support-circuit expectations, and machine-readable design intent.
+
+4. **Generate schematics and validate them**
+   The engine emits KiCad schematics, review outputs, reports, and placement hints while also auto-generating common support passives and running grouped structural/electrical/implementation/presentation checks.
+
+5. **Do the last human polish in KiCad**
+   In practice, generated schematics are often roughly **90% of the way to a polished review set**. Final cosmetic/editorial cleanup is still expected for the last bit of page aesthetics and labeling judgment.
+
+6. **Update PCB from schematic and route intelligently**
+   Pull the generated schematic forward into KiCad PCB, place parts, route critical nets manually, and use the autoroute/Freerouting path for the non-critical routing workload where it makes sense.
+
+7. **Ship quote-ready manufacturing data**
+   The result is a cleaner path to BOMs and outputs that are ready for quoting or handoff to vendors like **PCBWay** and **JLCPCB**.
+
+### What the automation buys you
+
+| Stage | What Circuit Weaver / the workflow does for you |
+|---|---|
+| Requirements | Converts intent into typed blocks, interfaces, constraints, and canonical spec data |
+| Part sourcing | Turns fuzzy component choices into concrete MPNs and package decisions |
+| Schematic generation | Auto-adds common support passives, applies reusable topology templates, and emits KiCad sheets |
+| Validation | Checks structural, electrical, implementation, and presentation validity instead of only “did it export” |
+| Review | Produces review-friendly schematics, reports, and SVG artifacts before layout starts |
+| PCB handoff | Keeps KiCad as the native output surface for PCB update, placement, routing, and final manual judgment |
+| Manufacturing | Leaves you with BOMs and artifacts that are much closer to quote/fab readiness |
+
+---
+
 ## Product Surface
 
 ### Core transaction flow
@@ -140,6 +183,15 @@ spec -> normalize -> validate -> patch -> revalidate -> generate KiCad artifacts
 - `presentation`
 
 That means “the schematic generated” is not enough. The output also needs to be loadable, internally coherent, and reviewable.
+
+### Important boundary
+
+`circuit_weaver` is not pretending a machine can finish every last presentation choice perfectly.
+
+The intended split is:
+
+- **programmatic automation** for the heavy lifting: requirements, part binding, support circuitry, validation, sheet generation, report generation
+- **human judgment in KiCad** for the last cosmetic/editorial pass where readability is still inherently design-specific
 
 ---
 
