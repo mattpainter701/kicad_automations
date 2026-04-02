@@ -4,72 +4,86 @@
 
 <p align="center">
   <a href="https://github.com/mattpainter701/kicad_automations/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/mattpainter701/kicad_automations/ci.yml?branch=main&label=CI" alt="CI status">
+    <img src="https://img.shields.io/github/actions/workflow/status/mattpainter701/kicad_automations/ci.yml?branch=main&label=CI&style=flat-square" alt="CI">
   </a>
-  <img src="https://img.shields.io/badge/python-3.11%2B-0b1320?logo=python&logoColor=ffd43b" alt="Python 3.11+">
-  <img src="https://img.shields.io/badge/package-circuit__weaver-0f766e" alt="Package circuit_weaver">
-  <img src="https://img.shields.io/badge/target-KiCad%2010-0ea5e9" alt="Target KiCad 10">
-  <img src="https://img.shields.io/badge/license-MIT-1f2937" alt="MIT License">
+  <img src="https://img.shields.io/badge/python-3.10%2B-0b1320?logo=python&logoColor=ffd43b&style=flat-square" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/KiCad-10-0ea5e9?style=flat-square" alt="KiCad 10">
+  <img src="https://img.shields.io/badge/FastAPI-ready-0f766e?style=flat-square" alt="FastAPI">
+  <img src="https://img.shields.io/badge/license-MIT-1f2937?style=flat-square" alt="MIT">
 </p>
 
 <p align="center">
   <strong>KiCad automation for people building real hardware.</strong><br>
-  From Codex/Claude requirements capture to quote-ready KiCad outputs: programmatic schematic generation, strict validation, BOM + sourcing workflows, PCB review helpers, and downstream fabrication prep.
+  Programmatic schematic generation, strict validation, BOM + sourcing workflows, and a clean API surface<br>
+  that takes you from design intent all the way to quote-ready KiCad outputs.
 </p>
 
 ---
 
-## What This Is
+## What It Is
 
-`kicad_automations` has two product layers:
+Circuit Weaver has two layers that work together:
 
 | Layer | What it is | Use it for |
 |---|---|---|
-| `circuit_weaver` | Python package | Canonical design IR, transactional patching, strict validation, KiCad artifact generation |
-| `skills/`, `project-skills/`, `agents/`, `rules/` | Workflow layer | Review, BOM, sourcing, KiCad analysis, placement, manufacturing, AI/operator playbooks |
+| **`circuit_weaver`** package | Python library + FastAPI server | Canonical design IR, transactional patching, strict validation, KiCad artifact generation |
+| **`skills/`, `project-skills/`, `agents/`, `rules/`** | Workflow layer | BOM auditing, part sourcing, KiCad analysis, placement, manufacturing, AI/operator playbooks |
 
-This repo is designed for:
+It is designed for:
 
-- engineers who want KiCad-native automation without giving up real schematic outputs
+- Engineers who want KiCad-native automation without giving up real schematic outputs
 - AI/agent workflows that need a strict, machine-readable contract instead of ad hoc script chains
-- downstream hardware projects that want to consume a reusable engine instead of maintaining a custom generator forever
+- Downstream hardware projects that want a reusable engine instead of maintaining a custom generator forever
 
 ---
 
 ## Why Circuit Weaver
 
-Most hardware automation stops at one of two bad extremes:
+Most hardware automation lands at one of two bad extremes:
 
-- a pile of one-off scripts that only the original author can operate
-- a flashy design layer that is disconnected from the actual KiCad deliverables
+- A pile of one-off scripts only the original author can operate
+- A flashy design layer disconnected from actual KiCad deliverables
 
-`circuit_weaver` sits in the useful middle:
+Circuit Weaver sits in the useful middle:
 
-- **canonical spec first**: YAML/Design IR is the source of truth
-- **KiCad-native outputs**: generate real `.kicad_sch` artifacts, reports, and review SVGs
-- **strict validity gates**: no accepted design state should be structurally, electrically, or implementation-invalid
-- **agent-compatible**: patch, validate, diff, generate, and feed PCB constraints back in predictable machine-readable flows
-- **downstream-friendly**: VartaSDR is one consumer, not the identity of the engine
+| Property | What it means |
+|---|---|
+| **Canonical spec first** | YAML / Design IR is the single source of truth |
+| **KiCad-native outputs** | Generates real `.kicad_sch` files, reports, and review SVGs |
+| **Strict validity gates** | Structural, electrical, implementation, and presentation checks — not just "did it export" |
+| **Agent-compatible** | Patch, validate, diff, generate, and feed PCB constraints back in predictable, machine-readable flows |
+| **Downstream-friendly** | The engine is generic; each hardware project owns its own design assets |
 
 ---
 
-## What You Can Do
+## How It Works
 
-### `circuit_weaver` package
+<p align="center">
+  <img src="assets/circuit-weaver-pipeline.svg" alt="Circuit Weaver — full hardware workflow from requirements to quote-ready outputs" width="720">
+</p>
 
-- validate a canonical design with `mvp_strict`
-- apply transactional patches to a design spec
-- generate KiCad schematics, reports, placement hints, and review artifacts
-- diff two canonical designs semantically
-- ingest PCB feedback as constraints instead of silently mutating topology
+### The flow in plain English
 
-### workflow layer
+**1 — Requirements capture**
+Start with block intent, interfaces, power rails, buses, and constraints. Codex/Claude + the engineer define the system without hand-drawing every schematic page from scratch.
 
-- analyze KiCad schematics, PCBs, and Gerbers
-- audit BOMs and sync part metadata
-- source alternates from DigiKey, Mouser, LCSC, JLCPCB, or PCBWay workflows
-- run project-specific generation/validation/placement playbooks
-- attach repo-native agents/rules to hardware review pipelines
+**2 — Part sourcing**
+The `digikey`, `mouser`, and `lcsc` workflow skills turn vague component choices into concrete MPNs, package decisions, datasheets, and purchasing options.
+
+**3 — Build the canonical spec**
+`circuit_weaver` assembles part bindings, block topology, support-circuit requirements, and all overrides into a single machine-readable YAML design IR. This is the contract everything else reads from.
+
+**4 — Generate schematics and validate**
+The engine emits `.kicad_sch` files, placement hints, review SVGs, and a design report. It also auto-generates common support passives and runs four grouped validation checks: **structural**, **electrical**, **implementation**, and **presentation**.
+
+**5 — KiCad review + human polish**
+Generated schematics are typically around **~90% complete** for serious hardware work. The last pass is still human: page aesthetics, net label readability, and the editorial judgment that is still inherently design-specific.
+
+**6 — PCB update and route**
+Pull the schematic into KiCad PCB, place parts, route critical nets manually, and use autoroute / Freerouting for non-critical nets where it actually helps.
+
+**7 — Quote-ready package**
+The result is a clean path to BOMs and outputs ready to hand to PCBWay, JLCPCB, or your preferred fabrication vendor.
 
 ---
 
@@ -78,7 +92,7 @@ Most hardware automation stops at one of two bad extremes:
 ### Install
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[all]"
 circuit-weaver --version
 ```
 
@@ -98,159 +112,125 @@ circuit-weaver generate src/circuit_weaver/examples/iot_sensor.yaml --output out
 
 ```python
 from circuit_weaver.mvp import (
-    apply_design_patch,
-    diff_designs,
-    generate_artifacts,
-    ingest_pcb_feedback,
     validate_design,
+    apply_design_patch,
+    generate_artifacts,
+    diff_designs,
+    ingest_pcb_feedback,
 )
 
+# Validate a canonical design spec
 report = validate_design(spec)
+
+# Apply a transactional patch and re-validate
 result = apply_design_patch(spec, patch)
+
+# Generate the full KiCad artifact bundle
 bundle = generate_artifacts(spec, output_dir="out/design")
 ```
 
----
+### Run the HTTP API
 
-## How It Works
+```bash
+uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
+```
 
-<p align="center">
-  <img src="assets/circuit-weaver-pipeline.svg" alt="Circuit Weaver workflow from requirements through sourcing, schematic generation, KiCad review, PCB update, routing, and quote-ready outputs" width="100%">
-</p>
-
-### The practical flow
-
-1. **Codex/Claude + engineer define the design**
-   Start with block intent, interfaces, rails, buses, constraints, and high-level requirements rather than hand-drawing every sheet from scratch.
-
-2. **Source real parts with the distributor skills**
-   Use the `digikey`, `mouser`, and `lcsc` workflows to turn vague parts into actual MPNs, package choices, and purchasing options.
-
-3. **Build the canonical circuit spec and BOM**
-   `circuit_weaver` uses that information to maintain part bindings, circuit requirements, support-circuit expectations, and machine-readable design intent.
-
-4. **Generate schematics and validate them**
-   The engine emits KiCad schematics, review outputs, reports, and placement hints while also auto-generating common support passives and running grouped structural/electrical/implementation/presentation checks.
-
-5. **Do the last human polish in KiCad**
-   In practice, generated schematics are often roughly **90% of the way to a polished review set**. Final cosmetic/editorial cleanup is still expected for the last bit of page aesthetics and labeling judgment.
-
-6. **Update PCB from schematic and route intelligently**
-   Pull the generated schematic forward into KiCad PCB, place parts, route critical nets manually, and use the autoroute/Freerouting path for the non-critical routing workload where it makes sense.
-
-7. **Ship quote-ready manufacturing data**
-   The result is a cleaner path to BOMs and outputs that are ready for quoting or handoff to vendors like **PCBWay** and **JLCPCB**.
-
-### What the automation buys you
-
-| Stage | What Circuit Weaver / the workflow does for you |
+| Endpoint | Description |
 |---|---|
-| Requirements | Converts intent into typed blocks, interfaces, constraints, and canonical spec data |
-| Part sourcing | Turns fuzzy component choices into concrete MPNs and package decisions |
-| Schematic generation | Auto-adds common support passives, applies reusable topology templates, and emits KiCad sheets |
-| Validation | Checks structural, electrical, implementation, and presentation validity instead of only “did it export” |
-| Review | Produces review-friendly schematics, reports, and SVG artifacts before layout starts |
-| PCB handoff | Keeps KiCad as the native output surface for PCB update, placement, routing, and final manual judgment |
-| Manufacturing | Leaves you with BOMs and artifacts that are much closer to quote/fab readiness |
+| `GET /health` | Service health check |
+| `GET /templates` | Available subcircuit templates |
+| `POST /generate` | YAML spec → ZIP of `.kicad_sch` files + report |
+| `POST /generate/from-bom` | CSV BOM upload → ZIP of schematics |
+| `POST /validate` | YAML spec → validation results JSON |
+| `POST /mvp/validate` | Canonical spec → grouped `mvp_strict` validation |
+| `POST /mvp/generate` | Canonical spec → full KiCad artifact ZIP |
+| `POST /mvp/apply-patch` | Transactional patch + re-validation |
+| `POST /mvp/diff` | Semantic diff between two specs |
+| `POST /mvp/pcb-feedback` | Merge PCB feedback back into the design spec |
 
 ---
 
-## Product Surface
+## Python Package Surface
 
 ### Core transaction flow
 
-```text
-spec -> normalize -> validate -> patch -> revalidate -> generate KiCad artifacts
+```
+spec → normalize → validate → patch → revalidate → generate KiCad artifacts
 ```
 
-### Public workflows
+### Public API functions
 
-| Workflow | Purpose |
+| Function | What it does |
 |---|---|
-| `validate_design()` | strict grouped validation |
-| `apply_design_patch()` | transactional in-memory mutation with reject-on-failure |
-| `generate_artifacts()` | derived KiCad bundle generation |
-| `diff_designs()` | semantic design change reporting |
-| `ingest_pcb_feedback()` | constraint/override feedback loop from layout back to design spec |
+| `validate_design(spec)` | Strict grouped validation — returns a `ValidationReport` |
+| `apply_design_patch(spec, patch)` | In-memory mutation with reject-on-failure |
+| `generate_artifacts(spec, output_dir)` | Emits the full KiCad bundle + report |
+| `diff_designs(old_spec, new_spec)` | Semantic change report between two specs |
+| `ingest_pcb_feedback(spec, feedback)` | Feeds layout constraints back into the design spec |
 
 ### Validation model
 
-`mvp_strict` groups failures into:
+`mvp_strict` checks are grouped into four categories:
 
-- `structural`
-- `electrical`
-- `implementation`
-- `presentation`
+| Group | Checks |
+|---|---|
+| `structural` | Topology, connections, hierarchy |
+| `electrical` | Power, ground, net integrity |
+| `implementation` | Part bindings, footprint assignments |
+| `presentation` | Labels, pin numbers, sheet readability |
 
-That means “the schematic generated” is not enough. The output also needs to be loadable, internally coherent, and reviewable.
-
-### Important boundary
-
-`circuit_weaver` is not pretending a machine can finish every last presentation choice perfectly.
-
-The intended split is:
-
-- **programmatic automation** for the heavy lifting: requirements, part binding, support circuitry, validation, sheet generation, report generation
-- **human judgment in KiCad** for the last cosmetic/editorial pass where readability is still inherently design-specific
+"The schematic generated" is not enough — the output also needs to be loadable, internally coherent, and reviewable.
 
 ---
 
 ## Repo Layout
 
-```text
+```
 kicad_automations/
-├─ src/circuit_weaver/        # package: engine, IR, MVP, validators, exporters, helpers
-├─ tests/                     # package-level regression coverage
-├─ skills/                    # reusable KiCad/BOM/sourcing skills
-├─ project-skills/            # project workflow templates
-├─ agents/                    # hardware reviewer personas
-├─ rules/                     # repo-native KiCad workflow policy
+├─ src/circuit_weaver/        # Core engine: IR, MVP, validators, exporters, helpers
+│   ├─ api.py                 # FastAPI HTTP server
+│   ├─ mvp.py                 # Public-facing workflow functions
+│   ├─ design_ir.py           # Canonical design intermediate representation
+│   ├─ generator.py           # KiCad schematic generator
+│   ├─ validator.py           # Validation check runner
+│   ├─ subcircuits/           # Reusable circuit template library
+│   └─ helpers/               # Impedance, placement, silkscreen utilities
+├─ tests/                     # Package-level regression coverage
+├─ skills/                    # Global KiCad / BOM / sourcing / vendor skills
+├─ project-skills/            # Project workflow templates (kicad_gen, autoroute, sim…)
+├─ agents/                    # Hardware reviewer AI personas
+├─ rules/                     # Repo-native KiCad workflow policy
 └─ assets/                    # README visuals and branding
 ```
 
-### Helper modules
-
-The extracted helper layer lives under `src/circuit_weaver/helpers/`:
-
-- `placement.py` — footprint matching and passive-placement helpers
-- `silkscreen.py` — managed silkscreen ownership and collision-aware label updates
-- `impedance.py` — reusable controlled-impedance math helpers
-
 ---
 
-## Skills and Project Skills
+## Workflow Skills
 
-### Global skills
+### Global skills (install via `./install.sh`)
 
-- `kicad`
-- `bom`
-- `digikey`
-- `mouser`
-- `lcsc`
-- `jlcpcb`
-- `pcbway`
-- `ee`
-- `vivado`
+- `kicad` — schematic, PCB, and Gerber analysis
+- `bom` — BOM management, auditing, and export
+- `digikey`, `mouser`, `lcsc` — part sourcing and datasheet sync
+- `jlcpcb`, `pcbway` — manufacturing file prep and quoting
+- `ee` — general electrical engineering helpers
+- `vivado` — FPGA design integration
 
-### Project skill templates
+### Project skill templates (install into downstream repos)
 
-- `kicad_gen`
-- `kicad_hierarchy`
-- `kicad_validate`
-- `kicad_pinmap`
-- `kicad_pcb_place`
-- `autoroute`
-- `sim`
-
-Install global skills:
+- `kicad_gen` — project-local schematic generation playbook
+- `kicad_hierarchy` — hierarchical sheet management
+- `kicad_validate` — project validation runner
+- `kicad_pinmap` — pin mapping and netlist management
+- `kicad_pcb_place` — guided part placement
+- `autoroute` — Freerouting integration
+- `sim` — simulation setup helpers
 
 ```bash
+# Install global skills
 ./install.sh
-```
 
-Install project-skill templates into a downstream repo:
-
-```bash
+# Install project-skill templates into a downstream repo
 ./install.sh --project-skills-dir .claude/skills
 ```
 
@@ -258,56 +238,55 @@ Install project-skill templates into a downstream repo:
 
 ## Downstream Boundary
 
-Keep these **upstream** in `kicad_automations`:
+Keep **upstream** in `kicad_automations`:
 
-- `circuit_weaver` package code
-- generic helpers
-- generic skills and project-skill templates
-- repo-native agents and rules
+- `circuit_weaver` package code and helpers
+- Generic skills and project-skill templates
+- Repo-native agents and rules
 
-Keep these **downstream** in each hardware project:
+Keep **downstream** in each hardware project:
 
-- project wrappers such as `generate_via_engine.py`
-- project BOMs and pin maps
-- project-local symbol and footprint libraries
-- generated KiCad artifacts
-- project-specific integration tests
+- Project wrappers like `generate_via_engine.py`
+- Project-specific BOMs and pin maps
+- Local symbol and footprint libraries
+- Generated KiCad artifacts
+- Project-local integration tests
 
-That boundary is intentional. It keeps the engine generic while still letting each hardware program own its actual design assets.
+This boundary keeps the engine generic while each hardware program owns its actual design assets.
 
 ---
 
-## Example Output Story
+## Example: Buck Converter Workflow
 
 <details>
-<summary><strong>Worked example: buck converter flow</strong></summary>
+<summary><strong>End-to-end worked example</strong></summary>
 
-### 1. Analyze the schematic
+### Analyze the schematic
 
 ```bash
 python3 skills/kicad/scripts/analyze_schematic.py buck.kicad_sch --output buck_analysis.json
 ```
 
-### 2. Find missing sourcing data
+### Find missing sourcing data
 
 ```bash
 python3 skills/bom/scripts/bom_manager.py analyze buck.kicad_sch --json
 ```
 
-### 3. Pull datasheets and vendor metadata
+### Pull datasheets and vendor metadata
 
 ```bash
 python3 skills/digikey/scripts/sync_datasheets_digikey.py buck.kicad_sch
 ```
 
-### 4. Export manufacturing BOMs
+### Export manufacturing BOMs
 
 ```bash
 python3 skills/bom/scripts/bom_manager.py export buck.kicad_sch -o bom/bom.csv
 python3 skills/bom/scripts/bom_manager.py order bom/bom.csv --boards 3 --spares 2
 ```
 
-### 5. Review PCB quality
+### Review PCB quality
 
 ```bash
 python3 skills/kicad/scripts/analyze_pcb.py buck.kicad_pcb
@@ -317,38 +296,35 @@ python3 skills/kicad/scripts/analyze_pcb.py buck.kicad_pcb
 
 ---
 
-## Status
+## Development
 
-### Working now
+```bash
+# Run linting
+python -m ruff check src tests
 
-- standalone `circuit_weaver` package scaffold
-- extracted engine + MVP surface
-- package-level tests and CI
-- helper extraction
-- downstream cutover path for Varta-style projects
+# Run tests
+python -m pytest tests -q
 
-### Active next steps
-
-- continue polishing downstream package consumption
-- deepen workflow asset extraction and cleanup
-- expand acceptance fixtures beyond the current example designs
+# Install in editable mode from another repo
+pip install -e /path/to/kicad_automations
+```
 
 ---
 
-## Development
+## Status
 
-Run checks locally:
+**Working now**
+- Standalone `circuit_weaver` package
+- Full MVP API surface (`validate`, `patch`, `generate`, `diff`, `pcb-feedback`)
+- FastAPI HTTP server with all endpoints
+- Package-level tests and CI
+- Subcircuit template library (6 templates)
+- Helper extraction (placement, silkscreen, impedance)
 
-```bash
-python -m ruff check src tests
-python -m pytest tests -q
-```
-
-If you are consuming this from another repo in editable mode:
-
-```bash
-pip install -e /path/to/kicad_automations
-```
+**Active next steps**
+- Continue polishing downstream package consumption
+- Deepen workflow asset extraction and cleanup
+- Expand acceptance fixtures beyond current example designs
 
 ---
 
