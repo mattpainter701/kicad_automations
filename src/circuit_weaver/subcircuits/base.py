@@ -327,6 +327,30 @@ def buck_output_cap(delta_il: float, fsw: float, delta_vout: float = 0.020) -> f
     return delta_il / (8.0 * fsw * delta_vout)
 
 
+def boost_inductor(vin: float, vout: float, fsw: float, iout: float, ripple_ratio: float = 0.3) -> float:
+    """Calculate boost converter inductor value for target ripple ratio.
+
+    L = Vin * D / (fsw * delta_IL)
+    where D = 1 - Vin/Vout, delta_IL = ripple_ratio * Iout / (1 - D)
+    """
+    if vout <= 0 or fsw <= 0 or iout <= 0:
+        return 2.2e-6
+    d = 1.0 - vin / vout
+    iin = iout / (1.0 - d) if d < 1.0 else iout
+    delta_il = ripple_ratio * iin
+    if delta_il <= 0:
+        return 2.2e-6
+    return vin * d / (fsw * delta_il)
+
+
+def buck_boost_inductor(vin_min: float, vout: float, fsw: float, iout: float, ripple_ratio: float = 0.3) -> float:
+    """Calculate buck-boost inductor for worst-case boost mode at minimum Vin.
+
+    Uses the boost inductor formula at Vin_min since that's the hardest case.
+    """
+    return boost_inductor(vin_min, vout, fsw, iout, ripple_ratio)
+
+
 def crystal_load_caps(cl_spec: float, c_stray: float = 4e-12) -> float:
     """Calculate external load capacitors for a crystal.
 
@@ -488,25 +512,48 @@ def _build_default_registry() -> SubcircuitRegistry:
     """Build registry with all built-in subcircuit templates."""
     reg = SubcircuitRegistry()
     # Import here to avoid circular imports
+    from .adc import ADCTemplate
+    from .battery_charger import BatteryChargerTemplate
+    from .battery_monitor import BatteryMonitorTemplate
+    from .boost import BoostConverterTemplate
     from .buck import BuckConverterTemplate
+    from .buck_boost import BuckBoostConverterTemplate
+    from .can_transceiver import CANTransceiverTemplate
     from .clock import ClockSynthTemplate
+    from .display_driver import DisplayDriverTemplate
     from .driver import GateDriverTemplate, LevelShifterTemplate
     from .ethernet import EthernetPHYTemplate
     from .ldo import LDOTemplate
+    from .led_driver import LEDDriverTemplate
+    from .motor_driver import MotorDriverTemplate
     from .opamp import OpAmpTemplate
     from .protection import ProtectionTemplate
+    from .rs485_transceiver import RS485TransceiverTemplate
     from .usb import USBControllerTemplate, USBHubTemplate
 
-    reg.register(BuckConverterTemplate())
-    reg.register(ClockSynthTemplate())
-    reg.register(EthernetPHYTemplate())
-    reg.register(GateDriverTemplate())
-    reg.register(LDOTemplate())
-    reg.register(LevelShifterTemplate())
-    reg.register(OpAmpTemplate())
-    reg.register(ProtectionTemplate())
-    reg.register(USBControllerTemplate())
-    reg.register(USBHubTemplate())
+    for tmpl_cls in [
+        ADCTemplate,
+        BatteryChargerTemplate,
+        BatteryMonitorTemplate,
+        BoostConverterTemplate,
+        BuckConverterTemplate,
+        BuckBoostConverterTemplate,
+        CANTransceiverTemplate,
+        ClockSynthTemplate,
+        DisplayDriverTemplate,
+        EthernetPHYTemplate,
+        GateDriverTemplate,
+        LDOTemplate,
+        LEDDriverTemplate,
+        LevelShifterTemplate,
+        MotorDriverTemplate,
+        OpAmpTemplate,
+        ProtectionTemplate,
+        RS485TransceiverTemplate,
+        USBControllerTemplate,
+        USBHubTemplate,
+    ]:
+        reg.register(tmpl_cls())
     return reg
 
 

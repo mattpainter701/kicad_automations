@@ -1,0 +1,357 @@
+"""Battery fuel gauge subcircuit template.
+
+Generates a complete battery monitor/fuel gauge subcircuit from design
+parameters: battery net, cell capacity, IC selection.
+
+Supports MAX17048G+T (default, ModelGauge voltage-based, no Rsense) and
+BQ27441-G1A (Impedance Track coulomb counting, requires Rsense).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
+from .base import (
+    FP_0402R,
+    BoundaryPort,
+    SubcircuitResult,
+    SubcircuitTemplate,
+    cap_footprint,
+    format_capacitance,
+    format_resistance,
+    res_footprint,
+    snap_cap,
+    snap_to_e96,
+)
+
+# Known battery fuel gauge ICs and their parameters
+BATTERY_MONITOR_IC_DATABASE = {
+    "MAX17048G+T": {
+        "description": "ModelGauge Li-Ion Fuel Gauge DFN-8",
+        "footprint": "DFN-8-EP",
+        "vdd_range": (2.5, 4.5),
+        "i2c_addr": "0x36",
+        "method": "ModelGauge (voltage-based)",
+        "has_rsense": False,
+        "pins": [
+            PinDef("1", "CTG", "input", "B"),
+            PinDef("2", "CELL", "input", "L"),
+            PinDef("3", "VDD", "power_in", "T"),
+            PinDef("4", "GND", "power_in", "B"),
+            PinDef("5", "GND", "power_in", "B"),
+            PinDef("6", "QSTRT", "input", "L"),
+            PinDef("7", "SDA", "bidirectional", "R"),
+            PinDef("8", "SCL", "input", "R"),
+        ],
+        "pin_vdd": "3",
+        "pin_gnd": "4",
+        "pin_cell": "2",
+        "pin_ctg": "1",
+        "pin_qstrt": "6",
+        "pin_sda": "7",
+        "pin_scl": "8",
+        # Extra GND pins wired in power_pins
+        "extra_gnd_pins": ["5"],
+    },
+    "BQ27441-G1A": {
+        "description": "Impedance Track Li-Ion Fuel Gauge DSBGA-12",
+        "footprint": "DSBGA-12",
+        "vdd_range": (2.6, 4.5),
+        "i2c_addr": "0x55",
+        "method": "Impedance Track (coulomb counting)",
+        "has_rsense": True,
+        "rsense_default": 0.010,  # 10 milliohm
+        "pins": [
+            PinDef("1", "VDD", "power_in", "T"),
+            PinDef("2", "SDA", "bidirectional", "R"),
+            PinDef("3", "SCL", "input", "R"),
+            PinDef("4", "GPOUT", "output", "R"),
+            PinDef("5", "VSS", "power_in", "B"),
+            PinDef("6", "SRP", "input", "L"),
+            PinDef("7", "SRN", "input", "L"),
+            PinDef("8", "BAT", "power_in", "L"),
+            PinDef("9", "BIN", "input", "L"),
+        ],
+        "pin_vdd": "1",
+        "pin_gnd": "5",
+        "pin_sda": "2",
+        "pin_scl": "3",
+        "pin_gpout": "4",
+        "pin_srp": "6",
+        "pin_srn": "7",
+        "pin_bat": "8",
+        "pin_bin": "9",
+        "extra_gnd_pins": [],
+    },
+}
+
+
+class BatteryMonitorTemplate(SubcircuitTemplate):
+    """Battery fuel gauge with I2C interface."""
+
+    template_type = "battery_monitor"
+    description = "Battery fuel gauge / state-of-charge monitor with I2C"
+    param_schema = [
+        {
+            "name": "ic",
+            "type": "string",
+            "required": False,
+            "default": "MAX17048G+T",
+            "description": "Fuel gauge IC MPN",
+        },
+        {
+            "name": "ref",
+            "type": "string",
+            "required": False,
+            "default": "U",
+            "description": "Reference designator for the IC",
+        },
+        {
+            "name": "bat_net",
+            "type": "string",
+            "required": False,
+            "default": "VBAT",
+            "description": "Battery positive net name",
+        },
+        {
+            "name": "cell_capacity_mah",
+            "type": "number",
+            "required": False,
+            "default": 2000,
+            "description": "Cell capacity in milliamp-hours",
+        },
+        {
+            "name": "rsense",
+            "type": "number",
+            "required": False,
+            "description": "Sense resistor value in ohms (BQ27441 only)",
+        },
+        {
+            "name": "i2c_bus",
+            "type": "string",
+            "required": False,
+            "default": "I2C",
+            "description": "I2C bus name prefix for SDA/SCL nets",
+        },
+    ]
+
+    def validate_params(self, params: dict[str, Any]) -> list[str]:
+        errors = []
+        ic_name = params.get("ic", "MAX17048G+T")
+        if ic_name not in BATTERY_MONITOR_IC_DATABASE:
+            errors.append(
+                f"Unknown fuel gauge IC '{ic_name}'. Supported: {', '.join(BATTERY_MONITOR_IC_DATABASE.keys())}"
+            )
+        cell_cap = params.get("cell_capacity_mah", 2000)
+        if cell_cap is not None and cell_cap <= 0:
+            errors.append(f"cell_capacity_mah ({cell_cap}) must be positive")
+        rsense = params.get("rsense")
+        if rsense is not None and rsense <= 0:
+            errors.append(f"rsense ({rsense} ohm) must be positive")
+        return errors
+
+    def generate(self, params: dict[str, Any]) -> SubcircuitResult:
+        """Generate a battery fuel gauge subcircuit.
+
+        Optional params:
+            ic: str — IC MPN (default: "MAX17048G+T")
+            ref: str — reference designator for IC (default: "U")
+            bat_net: str — battery positive net name (default: "VBAT")
+            cell_capacity_mah: int — cell capacity in mAh (default: 2000)
+            rsense: float — sense resistor override in ohms (BQ27441 only)
+            i2c_bus: str — I2C bus name prefix (default: "I2C")
+        """
+        ic_name = params.get("ic", "MAX17048G+T")
+        ref = params.get("ref", "U")
+        bat_net = params.get("bat_net", "VBAT")
+        cell_capacity_mah = params.get("cell_capacity_mah", 2000)
+        i2c_bus = params.get("i2c_bus", "I2C")
+
+        # Look up IC parameters
+        ic_db = BATTERY_MONITOR_IC_DATABASE.get(ic_name, BATTERY_MONITOR_IC_DATABASE["MAX17048G+T"])
+
+        # ---- Net names (unique per instance) ----
+        sda_net = f"{i2c_bus}_SDA"
+        scl_net = f"{i2c_bus}_SCL"
+        cell_net = f"CELL_{ref}"
+
+        # ---- Build IC component ----
+        power_pins: dict[str, str] = {
+            ic_db["pin_vdd"]: bat_net,
+            ic_db["pin_gnd"]: "GND",
+        }
+        # Wire extra GND pins
+        for gnd_pin in ic_db.get("extra_gnd_pins", []):
+            power_pins[gnd_pin] = "GND"
+
+        pin_nets: dict[str, str] = {
+            ic_db["pin_sda"]: sda_net,
+            ic_db["pin_scl"]: scl_net,
+        }
+
+        bypass_caps: list[BypassCap] = []
+        straps: list[StrapConfig] = []
+        annotations: list[str] = []
+
+        # VDD decoupling: 1uF ceramic close to VDD/GND
+        cvdd_val = snap_cap(1e-6)
+        bypass_caps.append(
+            BypassCap(
+                "CVDD",
+                bat_net,
+                "GND",
+                format_capacitance(cvdd_val),
+                cap_footprint(cvdd_val),
+                role="decoupling",
+                presentation="topology_local",
+            ),
+        )
+
+        if ic_name == "MAX17048G+T" or not ic_db["has_rsense"]:
+            # --- MAX17048 specific ---
+            # CTG pin: wire to GND
+            power_pins[ic_db["pin_ctg"]] = "GND"
+
+            # CELL input filter: 100R series + 1uF cap
+            rcell_val = snap_to_e96(100.0)
+            ccell_val = snap_cap(1e-6)
+
+            straps.append(
+                StrapConfig(
+                    "RCELL",
+                    bat_net,
+                    cell_net,
+                    format_resistance(rcell_val),
+                    FP_0402R,
+                    role="cell_filter_series",
+                    presentation="topology_local",
+                ),
+            )
+            bypass_caps.append(
+                BypassCap(
+                    "CCELL",
+                    cell_net,
+                    "GND",
+                    format_capacitance(ccell_val),
+                    cap_footprint(ccell_val),
+                    role="cell_filter_cap",
+                    presentation="topology_local",
+                ),
+            )
+            pin_nets[ic_db["pin_cell"]] = cell_net
+
+            # QSTRT pull-down: 10k to GND (disable quick start)
+            qstrt_net = f"QSTRT_{ref}"
+            rqstrt_val = snap_to_e96(10e3)
+            pin_nets[ic_db["pin_qstrt"]] = qstrt_net
+            straps.append(
+                StrapConfig(
+                    "RQSTRT",
+                    qstrt_net,
+                    "GND",
+                    format_resistance(rqstrt_val),
+                    FP_0402R,
+                    role="qstrt_pulldown",
+                    presentation="topology_local",
+                ),
+            )
+
+            annotations.extend(
+                [
+                    f"Fuel gauge {ic_name}: {ic_db['method']}",
+                    f"Cell capacity: {cell_capacity_mah}mAh, I2C addr: {ic_db['i2c_addr']}",
+                    f"CELL filter: {format_resistance(rcell_val)} + {format_capacitance(ccell_val)}",
+                    "QSTRT pulled low (quick start disabled)",
+                ]
+            )
+
+        else:
+            # --- BQ27441 specific (coulomb counting with Rsense) ---
+            rsense_val = params.get("rsense", ic_db.get("rsense_default", 0.010))
+            rsense_snapped = snap_to_e96(rsense_val)
+
+            srp_net = f"SRP_{ref}"
+            srn_net = f"SRN_{ref}"
+
+            pin_nets[ic_db["pin_srp"]] = srp_net
+            pin_nets[ic_db["pin_srn"]] = srn_net
+
+            # BAT pin connects to bat_net
+            power_pins[ic_db["pin_bat"]] = bat_net
+
+            # BIN pin: battery insertion detection, tie to bat_net
+            if ic_db.get("pin_bin"):
+                pin_nets[ic_db["pin_bin"]] = bat_net
+
+            # Rsense between SRP and SRN
+            # SRP = battery positive side, SRN = load side
+            # Power rating: assume 2A max for safety
+            imax = 2.0
+            pdiss_rsense = imax * imax * rsense_snapped
+            rsense_fp = res_footprint(rsense_snapped, pdiss_rsense)
+
+            straps.append(
+                StrapConfig(
+                    "RSENSE",
+                    srp_net,
+                    srn_net,
+                    format_resistance(rsense_snapped),
+                    rsense_fp,
+                    role="current_sense",
+                    presentation="topology_local",
+                ),
+            )
+
+            # GPOUT: alert/interrupt output
+            gpout_net = f"GPOUT_{ref}"
+            if ic_db.get("pin_gpout"):
+                pin_nets[ic_db["pin_gpout"]] = gpout_net
+
+            annotations.extend(
+                [
+                    f"Fuel gauge {ic_name}: {ic_db['method']}",
+                    f"Cell capacity: {cell_capacity_mah}mAh, I2C addr: {ic_db['i2c_addr']}",
+                    f"Rsense: {format_resistance(rsense_snapped)} (Pdiss @ 2A = {pdiss_rsense:.3f}W)",
+                    "SRP = battery side, SRN = load side",
+                ]
+            )
+
+        ic_comp = ComponentDef(
+            mpn=ic_name,
+            ref_prefix="U",
+            value=ic_name,
+            footprint=ic_db["footprint"],
+            description=ic_db["description"],
+            category="power",
+            pins=list(ic_db["pins"]),
+            power_pins=power_pins,
+            pin_nets=pin_nets,
+            bypass_caps=bypass_caps,
+            straps=straps,
+            annotations=annotations,
+        )
+        ic_comp.source_ref = ref
+
+        # ---- Boundary ports ----
+        ports = [
+            BoundaryPort(bat_net, "input"),
+            BoundaryPort("GND", "passive"),
+            BoundaryPort(sda_net, "bidirectional"),
+            BoundaryPort(scl_net, "input"),
+        ]
+
+        # IC-specific output ports
+        if ic_db["has_rsense"] and ic_db.get("pin_gpout"):
+            gpout_net = f"GPOUT_{ref}"
+            ports.append(BoundaryPort(gpout_net, "output"))
+
+        return SubcircuitResult(
+            components=[ic_comp],
+            boundary_ports=ports,
+            annotations=[
+                f"Battery monitor {ic_name}: {ic_db['method']}, "
+                f"{cell_capacity_mah}mAh cell, I2C addr {ic_db['i2c_addr']}",
+            ],
+            primary_category="power",
+        )
