@@ -225,8 +225,7 @@ class USBControllerTemplate(SubcircuitTemplate):
         ic_name = params.get("ic")
         if ic_name and ic_name not in USB_CONTROLLER_IC_DATABASE:
             errors.append(
-                f"Unknown USB controller IC '{ic_name}'. "
-                f"Available: {', '.join(USB_CONTROLLER_IC_DATABASE.keys())}"
+                f"Unknown USB controller IC '{ic_name}'. Available: {', '.join(USB_CONTROLLER_IC_DATABASE.keys())}"
             )
         mode = params.get("mode", "device")
         if mode not in ("device", "host"):
@@ -291,6 +290,7 @@ class USBControllerTemplate(SubcircuitTemplate):
                     "GND",
                     format_capacitance(100e-9),
                     FP_0402C,
+                    presentation="topology_local",
                 )
             )
             # 10uF bulk decoupling
@@ -301,6 +301,7 @@ class USBControllerTemplate(SubcircuitTemplate):
                     "GND",
                     format_capacitance(10e-6),
                     FP_0805C,
+                    presentation="topology_local",
                 )
             )
 
@@ -329,6 +330,8 @@ class USBControllerTemplate(SubcircuitTemplate):
                         strap_rail,
                         format_resistance(10e3),
                         FP_0402R,
+                        role="boot_strap",
+                        presentation="topology_local",
                     )
                 )
 
@@ -414,18 +417,13 @@ class USBHubTemplate(SubcircuitTemplate):
         errors = []
         ic_name = params.get("ic")
         if ic_name and ic_name not in USB_HUB_IC_DATABASE:
-            errors.append(
-                f"Unknown USB hub IC '{ic_name}'. "
-                f"Available: {', '.join(USB_HUB_IC_DATABASE.keys())}"
-            )
+            errors.append(f"Unknown USB hub IC '{ic_name}'. Available: {', '.join(USB_HUB_IC_DATABASE.keys())}")
         ports = params.get("ports", 4)
         if not isinstance(ports, int) or ports < 1:
             errors.append(f"Invalid port count '{ports}'. Must be a positive integer.")
         ic_db = USB_HUB_IC_DATABASE.get(ic_name or "USB2514B")
         if ic_db and ports > ic_db.get("max_ports", 4):
-            errors.append(
-                f"Port count {ports} exceeds max {ic_db['max_ports']} for {ic_name or 'USB2514B'}"
-            )
+            errors.append(f"Port count {ports} exceeds max {ic_db['max_ports']} for {ic_name or 'USB2514B'}")
         return errors
 
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
@@ -468,6 +466,7 @@ class USBHubTemplate(SubcircuitTemplate):
                     "GND",
                     format_capacitance(100e-9),
                     FP_0402C,
+                    presentation="topology_local",
                 )
             )
             bypass_caps.append(
@@ -477,6 +476,7 @@ class USBHubTemplate(SubcircuitTemplate):
                     "GND",
                     format_capacitance(10e-6),
                     FP_0805C,
+                    presentation="topology_local",
                 )
             )
 
@@ -522,6 +522,8 @@ class USBHubTemplate(SubcircuitTemplate):
                 vdd_net,
                 format_resistance(10e3),
                 FP_0402R,
+                role="pull_up",
+                presentation="topology_local",
             )
         )
 

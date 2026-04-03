@@ -10,3 +10,5 @@ dist/
 *.egg-info/
 .coverage
 .venv/
+tasks.md
+changelog.md

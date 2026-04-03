@@ -23,16 +23,12 @@ _GENERIC_PURPOSE_BY_CATEGORY = {
 }
 
 
-def normalize_support_passive_presentation(
-    value: str | None, default: str = "literal_local"
-) -> str:
+def normalize_support_passive_presentation(value: str | None, default: str = "literal_local") -> str:
     """Return a validated support-passive presentation mode."""
     normalized = (value or default or "literal_local").strip().lower()
     if normalized not in SUPPORT_PASSIVE_PRESENTATIONS:
         valid = ", ".join(sorted(SUPPORT_PASSIVE_PRESENTATIONS))
-        raise ValueError(
-            f"Unknown support passive presentation '{value}'. Expected one of: {valid}"
-        )
+        raise ValueError(f"Unknown support passive presentation '{value}'. Expected one of: {valid}")
     if normalized == "inherit":
         return normalize_support_passive_presentation(default, default="literal_local")
     return normalized
@@ -45,9 +41,7 @@ class PresentationWiringPolicy:
     support_passives: str = "literal_local"
 
     def normalized(self) -> "PresentationWiringPolicy":
-        return PresentationWiringPolicy(
-            support_passives=normalize_support_passive_presentation(self.support_passives)
-        )
+        return PresentationWiringPolicy(support_passives=normalize_support_passive_presentation(self.support_passives))
 
 
 def normalize_presentation_wiring_policy(
@@ -88,7 +82,7 @@ class BypassCap:
     value: str  # "100nF", "10uF"
     footprint: str  # e.g. FP_0402C
     role: str = "decoupling"
-    presentation: str = "inherit"
+    presentation: str = "topology_local"
 
 
 @dataclass
@@ -101,7 +95,7 @@ class StrapConfig:
     value: str  # "10k", "4.7k"
     footprint: str
     role: str = "strap"
-    presentation: str = "inherit"
+    presentation: str = "topology_local"
 
 
 @dataclass
@@ -219,12 +213,7 @@ class ComponentDef:
         if columns > 1 and max_side >= 20:
             return 5.08
 
-        if (
-            columns == 1
-            and self.category in {"usb", "power", "fpga"}
-            and max_side >= 3
-            and max_name_len >= 10
-        ):
+        if columns == 1 and self.category in {"usb", "power", "fpga"} and max_side >= 3 and max_name_len >= 10:
             return 5.08
 
         return None
@@ -573,9 +562,7 @@ def parse_bom_csv(csv_path: str) -> list[BomRow]:
 
     has_ref_column = "ref" in col_map.values()
     if not has_ref_column:
-        print(
-            "WARNING: BOM has no reference/designator column; using quantity-only expansion mode."
-        )
+        print("WARNING: BOM has no reference/designator column; using quantity-only expansion mode.")
 
     # Parse data rows
     rows = []
@@ -605,9 +592,7 @@ def parse_bom_csv(csv_path: str) -> list[BomRow]:
         qty_raw = fields.get("quantity", "1")
         qty, qty_ok = _parse_quantity(qty_raw)
         if not qty_ok:
-            print(
-                f"WARNING: Could not parse quantity '{qty_raw}' for row ref='{ref}' mpn='{mpn}'; defaulting to 1."
-            )
+            print(f"WARNING: Could not parse quantity '{qty_raw}' for row ref='{ref}' mpn='{mpn}'; defaulting to 1.")
 
         refs = _split_refs(ref) if has_ref_column else []
 
@@ -636,10 +621,7 @@ def parse_bom_csv(csv_path: str) -> list[BomRow]:
         elif len(refs) == 1:
             ref = refs[0]
             if qty > 1 and ref:
-                print(
-                    f"WARNING: Row '{ref}' has quantity={qty} but only 1 ref. "
-                    f"Expanding to {qty} instances."
-                )
+                print(f"WARNING: Row '{ref}' has quantity={qty} but only 1 ref. Expanding to {qty} instances.")
 
         rows.append(
             BomRow(
@@ -822,9 +804,7 @@ def auto_generate_bypass_caps(components: list[ComponentDef]) -> int:
         # Add one 10uF bulk cap if many power domains
         if len(power_nets) >= 3:
             # Bulk cap on the highest-voltage rail (heuristic: longest net name with "3P3" or "5V")
-            main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[
-                0
-            ]
+            main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[0]
             comp.bypass_caps.append(
                 BypassCap(
                     pin="auto",
@@ -961,8 +941,24 @@ def _builtin_components():
             pin_nets={"A5": "USB_CC1", "B5": "USB_CC2"},
             power_pins={"A4": "VBUS_5V", "A1": "GND", "B4": "VBUS_5V", "B1": "GND"},
             straps=[
-                StrapConfig("A5", "USB_CC1", "GND", "5.1k", "Resistor_SMD:R_0402_1005Metric"),
-                StrapConfig("B5", "USB_CC2", "GND", "5.1k", "Resistor_SMD:R_0402_1005Metric"),
+                StrapConfig(
+                    "A5",
+                    "USB_CC1",
+                    "GND",
+                    "5.1k",
+                    "Resistor_SMD:R_0402_1005Metric",
+                    role="termination",
+                    presentation="topology_local",
+                ),
+                StrapConfig(
+                    "B5",
+                    "USB_CC2",
+                    "GND",
+                    "5.1k",
+                    "Resistor_SMD:R_0402_1005Metric",
+                    role="termination",
+                    presentation="topology_local",
+                ),
             ],
         )
     )
@@ -1044,9 +1040,7 @@ def _builtin_components():
             pin_nets={"29": "RESET_N", "30": "UART_RX", "31": "UART_TX"},
             power_pins={"4": "VDD_5V", "5": "GND"},
             power_reqs=[PowerReq("VDD_5V", 5.0, 30)],
-            bypass_caps=[
-                BypassCap("4", "VDD_5V", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")
-            ],
+            bypass_caps=[BypassCap("4", "VDD_5V", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
         )
     )
 
@@ -1072,9 +1066,7 @@ def _builtin_components():
             pin_nets={"7": "BOOT0", "44": "RESET_N", "37": "SWDIO", "34": "SWCLK"},
             power_pins={"23": "VDD_3P3", "24": "GND", "35": "GND", "36": "VDD_3P3"},
             power_reqs=[PowerReq("VDD_3P3", 3.3, 80)],
-            bypass_caps=[
-                BypassCap("36", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")
-            ],
+            bypass_caps=[BypassCap("36", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
         )
     )
 
@@ -1107,9 +1099,7 @@ def _builtin_components():
             },
             power_pins={"50": "VDD_3P3", "53": "VDD_3P3", "57": "VDD_1P1", "33": "GND"},
             power_reqs=[PowerReq("VDD_3P3", 3.3, 120), PowerReq("VDD_1P1", 1.1, 80)],
-            bypass_caps=[
-                BypassCap("53", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")
-            ],
+            bypass_caps=[BypassCap("53", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
         )
     )
 
@@ -1134,9 +1124,7 @@ def _builtin_components():
             pin_nets={"18": "SWCLK", "19": "SWDIO", "20": "RESET_N"},
             power_pins={"34": "VDD_3P3", "35": "GND"},
             power_reqs=[PowerReq("VDD_3P3", 3.3, 80)],
-            bypass_caps=[
-                BypassCap("34", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")
-            ],
+            bypass_caps=[BypassCap("34", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
         )
     )
 
@@ -1158,9 +1146,7 @@ def _builtin_components():
             pin_nets={"3": "REG_EN"},
             power_pins={"1": "VIN", "2": "GND", "5": "VDD_3P3"},
             power_reqs=[PowerReq("VIN", 5.0, 600)],
-            bypass_caps=[
-                BypassCap("5", "VDD_3P3", "GND", "10uF", "Capacitor_SMD:C_0805_2012Metric")
-            ],
+            bypass_caps=[BypassCap("5", "VDD_3P3", "GND", "10uF", "Capacitor_SMD:C_0805_2012Metric")],
         )
     )
 
@@ -1180,9 +1166,7 @@ def _builtin_components():
             ],
             power_pins={"1": "GND", "2": "VIN", "3": "VDD_3P3"},
             power_reqs=[PowerReq("VIN", 5.0, 250)],
-            bypass_caps=[
-                BypassCap("3", "VDD_3P3", "GND", "1uF", "Capacitor_SMD:C_0603_1608Metric")
-            ],
+            bypass_caps=[BypassCap("3", "VDD_3P3", "GND", "1uF", "Capacitor_SMD:C_0603_1608Metric")],
         )
     )
 
@@ -1333,10 +1317,7 @@ def _builtin_components():
             footprint="Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical",
             description="Generic 1x08 pin header",
             category="connector",
-            pins=[
-                PinDef(str(i), f"PIN{i}", "bidirectional", "L" if i <= 4 else "R")
-                for i in range(1, 9)
-            ],
+            pins=[PinDef(str(i), f"PIN{i}", "bidirectional", "L" if i <= 4 else "R") for i in range(1, 9)],
         )
     )
 
@@ -1399,9 +1380,7 @@ def _builtin_components():
             pin_nets={"23": "I2C_SCL", "24": "I2C_SDA", "12": "IMU_INT"},
             power_pins={"8": "VDD_3P3", "9": "GND"},
             power_reqs=[PowerReq("VDD_3P3", 3.3, 10)],
-            bypass_caps=[
-                BypassCap("8", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")
-            ],
+            bypass_caps=[BypassCap("8", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
         )
     )
 
@@ -1425,9 +1404,7 @@ def _builtin_components():
             pin_nets={"3": "I2C_SCL", "4": "I2C_SDA", "5": "FUEL_ALRT"},
             power_pins={"2": "GND", "8": "VDD_3P3"},
             power_reqs=[PowerReq("VDD_3P3", 3.3, 1)],
-            bypass_caps=[
-                BypassCap("8", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")
-            ],
+            bypass_caps=[BypassCap("8", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
         )
     )
 

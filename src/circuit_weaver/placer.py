@@ -89,9 +89,7 @@ class SheetLayout:
     boundary_ports: list[tuple[str, str]] = field(default_factory=list)
     local_net_anchors: list[LocalNetAnchor] = field(default_factory=list)
     local_wires: list[tuple[float, float, float, float]] = field(default_factory=list)
-    presentation_wiring_policy: PresentationWiringPolicy = field(
-        default_factory=PresentationWiringPolicy
-    )
+    presentation_wiring_policy: PresentationWiringPolicy = field(default_factory=PresentationWiringPolicy)
 
 
 # Reference designator counters
@@ -211,13 +209,9 @@ def _rowwise_gap_profile(
 ) -> tuple[float, float]:
     """Return review-oriented row/column gaps for a component group."""
     review_dense = [
-        comp
-        for comp in components
-        if (comp.preferred_symbol_pin_pitch_mm() or 0.0) >= 5.08 or len(comp.pins) >= 40
+        comp for comp in components if (comp.preferred_symbol_pin_pitch_mm() or 0.0) >= 5.08 or len(comp.pins) >= 40
     ]
-    very_dense = [
-        comp for comp in review_dense if (comp.preferred_symbol_column_segments() or 0) >= 4
-    ]
+    very_dense = [comp for comp in review_dense if (comp.preferred_symbol_column_segments() or 0) >= 4]
     if len(very_dense) >= 2:
         return snap(col_gap * 4.0), snap(row_gap * 2.5)
     if len(review_dense) >= 2:
@@ -327,9 +321,7 @@ def _component_net_lookup(pc: PlacedComponent) -> dict[str, list[tuple[float, fl
     return nets
 
 
-def _parent_pin_point(
-    pc: PlacedComponent, owner_pin: str, net_name: str
-) -> tuple[float, float, int] | None:
+def _parent_pin_point(pc: PlacedComponent, owner_pin: str, net_name: str) -> tuple[float, float, int] | None:
     """Return the preferred parent-pin connection point for a passive/net."""
     pin_lookup = _component_pin_lookup(pc)
     if owner_pin and owner_pin in pin_lookup:
@@ -477,9 +469,7 @@ def _component_block_padding(comp: ComponentDef) -> tuple[float, float, float, f
     bottom_stack += _annotation_bottom_extent(comp)
     left_pad = max(_BODY_LEFT_GUTTER, render_left)
     top_pad = max(_BODY_TOP_GUTTER, render_top)
-    right_pad = max(_BODY_RIGHT_GUTTER, render_right) + (
-        _STRAP_RIGHT_GUTTER if comp.straps else 0.0
-    )
+    right_pad = max(_BODY_RIGHT_GUTTER, render_right) + (_STRAP_RIGHT_GUTTER if comp.straps else 0.0)
     bottom_pad = max(_BODY_BOTTOM_GUTTER, render_bottom) + bottom_stack
     return snap(left_pad), snap(top_pad), snap(right_pad), snap(bottom_pad)
 
@@ -768,9 +758,7 @@ def _layout_score(layout: SheetLayout) -> tuple[float, float, int]:
     )
 
 
-def _passive_pin_side(
-    pc: PlacedComponent, pin_point: tuple[float, float, int] | None
-) -> str:
+def _passive_pin_side(pc: PlacedComponent, pin_point: tuple[float, float, int] | None) -> str:
     """Infer which body side a parent pin exits from."""
     if pin_point is None:
         return "right"
@@ -812,9 +800,7 @@ def _add_local_anchor(
     return anchor
 
 
-def _wire_points(
-    layout: SheetLayout, start: tuple[float, float], end: tuple[float, float]
-) -> None:
+def _wire_points(layout: SheetLayout, start: tuple[float, float], end: tuple[float, float]) -> None:
     layout.local_wires.append((snap(start[0]), snap(start[1]), snap(end[0]), snap(end[1])))
 
 
@@ -844,14 +830,8 @@ def _apply_topology_sidecar_cluster(
             row = idx % rows
             col = idx // rows
             primary = snap(_TOPOLOGY_BLOCK_PRIMARY_OFFSET + col * _TOPOLOGY_BLOCK_SECONDARY_OFFSET)
-            row_axis = snap(
-                pin_y - (rows - 1) * (_TOPOLOGY_BLOCK_ROW_PITCH / 2.0)
-                + row * _TOPOLOGY_BLOCK_ROW_PITCH
-            )
-            col_axis = snap(
-                pin_x - (rows - 1) * (_TOPOLOGY_BLOCK_ROW_PITCH / 2.0)
-                + row * _TOPOLOGY_BLOCK_ROW_PITCH
-            )
+            row_axis = snap(pin_y - (rows - 1) * (_TOPOLOGY_BLOCK_ROW_PITCH / 2.0) + row * _TOPOLOGY_BLOCK_ROW_PITCH)
+            col_axis = snap(pin_x - (rows - 1) * (_TOPOLOGY_BLOCK_ROW_PITCH / 2.0) + row * _TOPOLOGY_BLOCK_ROW_PITCH)
             if side == "left":
                 x = snap(pin_x - primary)
                 y = row_axis
@@ -874,9 +854,7 @@ def _apply_topology_sidecar_cluster(
     return processed
 
 
-def _apply_topology_buck_cluster(
-    layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]
-) -> set[str]:
+def _apply_topology_buck_cluster(layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]) -> set[str]:
     """Lay out a buck regulator using explicit local junctions and textbook placement."""
     processed: set[str] = set()
     if not passives:
@@ -923,9 +901,7 @@ def _apply_topology_buck_cluster(
     _set_passive_pose(ind, snap(sw_anchor.x + 12.70), snap(sw_anchor.y), 0)
 
     (_sw_pin_x, _sw_pin_y), (vout_pin_x, vout_pin_y) = passive_pin_xy(ind.x, ind.y, ind.angle)
-    vout_anchor = _add_local_anchor(
-        layout, ind.net2, snap(vout_pin_x + 8.89), snap(vout_pin_y), 0, "label", pc.ref
-    )
+    vout_anchor = _add_local_anchor(layout, ind.net2, snap(vout_pin_x + 8.89), snap(vout_pin_y), 0, "label", pc.ref)
 
     _set_passive_pose(cout, vout_anchor.x, snap(vout_anchor.y + 11.43), 90)
 
@@ -939,6 +915,104 @@ def _apply_topology_buck_cluster(
     _wire_points(layout, (fb_x, fb_y), (fb_anchor.x, fb_anchor.y))
 
     processed.update({cin.ref, cbst.ref, ind.ref, cout.ref, fbb.ref})
+    return processed
+
+
+_DECOUPLING_BANK_PITCH = snap(7.62)
+_STRAP_LADDER_PITCH = snap(7.62)
+
+
+def _apply_topology_decoupling_bank(
+    layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]
+) -> set[str]:
+    """Stack decoupling caps that share a rail into a compact vertical bank.
+
+    Groups caps by their rail net (net1).  Banks of 2+ caps get a shared
+    rail label at the top and shared ground anchor at the bottom, placed
+    below the IC body.
+    """
+    processed: set[str] = set()
+    caps = [pp for pp in passives if pp.sym_type == "C" and pp.role == "decoupling"]
+    if not caps:
+        return processed
+
+    by_rail: dict[str, list[PlacedPassive]] = {}
+    for cap in caps:
+        by_rail.setdefault(cap.net1, []).append(cap)
+
+    left, _top, right, bottom = component_body_bounds(pc)
+    center_x = snap((left + right) / 2.0)
+    bank_y = snap(bottom + 12.70)
+    bank_idx = 0
+
+    for rail_net, bank in by_rail.items():
+        if len(bank) < 2:
+            continue
+        ordered = sorted(bank, key=lambda c: c.ref)
+        bank_x = snap(center_x + bank_idx * _DECOUPLING_BANK_PITCH * 2)
+
+        _add_local_anchor(layout, rail_net, bank_x, snap(bank_y - 5.08), 270, "label", pc.ref)
+
+        for i, cap in enumerate(ordered):
+            cap_y = snap(bank_y + i * _DECOUPLING_BANK_PITCH)
+            _set_passive_pose(cap, bank_x, cap_y, 90)
+            processed.add(cap.ref)
+
+        gnd_net = ordered[0].net2
+        gnd_y = snap(bank_y + (len(ordered) - 1) * _DECOUPLING_BANK_PITCH + 5.08)
+        _add_local_anchor(layout, gnd_net, bank_x, gnd_y, 90, "power", pc.ref)
+        bank_idx += 1
+
+    return processed
+
+
+def _apply_topology_strap_ladder(layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]) -> set[str]:
+    """Align strap resistors that share a rail into a tidy vertical column.
+
+    Groups straps by their rail net (net2 for pull-ups/downs).  Ladders of
+    2+ straps get aligned placement with a shared rail anchor.
+    """
+    processed: set[str] = set()
+    straps = [
+        pp
+        for pp in passives
+        if pp.sym_type == "R"
+        and pp.role
+        in (
+            "strap",
+            "termination",
+            "boot_strap",
+            "pull_up",
+            "pull_down",
+        )
+    ]
+    if not straps:
+        return processed
+
+    by_rail: dict[str, list[PlacedPassive]] = {}
+    for strap in straps:
+        by_rail.setdefault(strap.net2, []).append(strap)
+
+    left, _top, right, bottom = component_body_bounds(pc)
+    center_x = snap((left + right) / 2.0)
+    ladder_y = snap(bottom + 12.70)
+    ladder_idx = 0
+
+    for rail_net, ladder in by_rail.items():
+        if len(ladder) < 2:
+            continue
+        ordered = sorted(ladder, key=lambda r: r.ref)
+        ladder_x = snap(center_x - 20.32 + ladder_idx * _STRAP_LADDER_PITCH * 2)
+
+        for i, strap in enumerate(ordered):
+            strap_y = snap(ladder_y + i * _STRAP_LADDER_PITCH)
+            _set_passive_pose(strap, ladder_x, strap_y, 90)
+            processed.add(strap.ref)
+
+        rail_y = snap(ladder_y + (len(ordered) - 1) * _STRAP_LADDER_PITCH + 5.08)
+        _add_local_anchor(layout, rail_net, ladder_x, rail_y, 90, "power", pc.ref)
+        ladder_idx += 1
+
     return processed
 
 
@@ -958,6 +1032,14 @@ def _apply_topology_local_circuits(layout: SheetLayout) -> None:
 
         processed = _apply_topology_buck_cluster(layout, pc, passives)
         remainder = [pp for pp in passives if pp.ref not in processed]
+        if remainder:
+            bank_done = _apply_topology_decoupling_bank(layout, pc, remainder)
+            processed.update(bank_done)
+            remainder = [pp for pp in remainder if pp.ref not in bank_done]
+        if remainder:
+            ladder_done = _apply_topology_strap_ladder(layout, pc, remainder)
+            processed.update(ladder_done)
+            remainder = [pp for pp in remainder if pp.ref not in ladder_done]
         if remainder:
             _apply_topology_sidecar_cluster(layout, pc, remainder)
 
@@ -988,25 +1070,15 @@ def layout_sheet(
         key=_component_sort_key,
     )
     regulators = sorted(
-        [
-            c
-            for c in sheet_alloc.components
-            if c.category == "power" and c.ref_prefix not in ("J", "P")
-        ],
+        [c for c in sheet_alloc.components if c.category == "power" and c.ref_prefix not in ("J", "P")],
         key=_power_component_priority,
     )
     other_ics = sorted(
-        [
-            c
-            for c in sheet_alloc.components
-            if c.ref_prefix not in ("J", "P") and c.category != "power"
-        ],
+        [c for c in sheet_alloc.components if c.ref_prefix not in ("J", "P") and c.category != "power"],
         key=lambda c: (-len(c.pins), _component_sort_key(c)),
     )
 
-    connector_heavy = (
-        len(connectors) >= 8 and not regulators and len(other_ics) <= max(6, len(connectors) // 3)
-    )
+    connector_heavy = len(connectors) >= 8 and not regulators and len(other_ics) <= max(6, len(connectors) // 3)
 
     def _port_name(port) -> str:
         if isinstance(port, dict):
@@ -1158,9 +1230,7 @@ def layout_sheet(
                         parent_ref=pc.ref,
                         owner_pin=bc.pin,
                         role=bc.role,
-                        presentation=_resolve_support_passive_presentation(
-                            bc.presentation, comp, sheet_policy
-                        ),
+                        presentation=_resolve_support_passive_presentation(bc.presentation, comp, sheet_policy),
                         symbol_variant=_support_passive_symbol_variant(sym_type, bc.role)[0],
                         pin_span=_support_passive_symbol_variant(sym_type, bc.role)[1],
                     )
@@ -1192,9 +1262,7 @@ def layout_sheet(
                         parent_ref=pc.ref,
                         owner_pin=strap.pin,
                         role=strap.role,
-                        presentation=_resolve_support_passive_presentation(
-                            strap.presentation, comp, sheet_policy
-                        ),
+                        presentation=_resolve_support_passive_presentation(strap.presentation, comp, sheet_policy),
                         symbol_variant=_support_passive_symbol_variant("R", strap.role)[0],
                         pin_span=_support_passive_symbol_variant("R", strap.role)[1],
                     )
@@ -1270,10 +1338,7 @@ def layout_sheet(
             layout, final_state = min(fitting_layouts, key=lambda item: _layout_score(item[0]))
             _restore_ref_state(final_state)
             if layout.paper != locked_paper:
-                print(
-                    f"  Promoted locked sheet '{sheet_alloc.name}' "
-                    f"from {locked_paper} to {layout.paper}"
-                )
+                print(f"  Promoted locked sheet '{sheet_alloc.name}' from {locked_paper} to {layout.paper}")
             return layout
 
         layout = last_layout
@@ -1320,8 +1385,7 @@ def layout_sheet(
     min_x, min_y, max_x, max_y = _layout_bounds(layout)
     if max_x > pw - 20:
         print(
-            f"WARNING: sheet '{layout.name}' exceeds right page edge "
-            f"({max_x:.1f} > {pw - 20:.1f}mm) [{layout.paper}]"
+            f"WARNING: sheet '{layout.name}' exceeds right page edge ({max_x:.1f} > {pw - 20:.1f}mm) [{layout.paper}]"
         )
     if max_y > usable_h - 20:
         print(
@@ -1330,8 +1394,7 @@ def layout_sheet(
         )
     if min_x < 20 or min_y < 20:
         print(
-            f"WARNING: sheet '{layout.name}' crowds the page margin "
-            f"(min=({min_x:.1f}, {min_y:.1f})) [{layout.paper}]"
+            f"WARNING: sheet '{layout.name}' crowds the page margin (min=({min_x:.1f}, {min_y:.1f})) [{layout.paper}]"
         )
 
     return layout

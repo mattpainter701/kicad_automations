@@ -62,9 +62,7 @@ class ValidationReport:
         return {
             "profile": self.profile,
             "valid": self.valid,
-            "categories": {
-                key: [asdict(item) for item in values] for key, values in self.categories.items()
-            },
+            "categories": {key: [asdict(item) for item in values] for key, values in self.categories.items()},
             "summary": dict(self.summary),
             "metadata": copy.deepcopy(self.metadata),
         }
@@ -158,9 +156,7 @@ def _apply_block_attributes(ir: DesignIR, components: list[ComponentDef]) -> Non
             continue
         primary = group[0]
         if block.interfaces:
-            primary.template_boundary_ports = [
-                BoundaryPort(iface.name, iface.direction) for iface in block.interfaces
-            ]
+            primary.template_boundary_ports = [BoundaryPort(iface.name, iface.direction) for iface in block.interfaces]
         if block.presentation_group:
             for comp in group:
                 comp.presentation_group = block.presentation_group
@@ -208,9 +204,7 @@ def _apply_approved_overrides(ir: DesignIR, components: list[ComponentDef]) -> N
                 primary.value = part_value
                 primary.source_value = part_value
         elif kind == "support_passives" and value:
-            primary.presentation_wiring_policy = PresentationWiringPolicy(
-                support_passives=str(value)
-            )
+            primary.presentation_wiring_policy = PresentationWiringPolicy(support_passives=str(value))
 
 
 def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) -> DesignIR:
@@ -512,8 +506,7 @@ def _validate_required_support(compiled: CompiledDesign) -> list[ValidationMessa
                         level="error",
                         subject=block.ref or block.id,
                         message=(
-                            f"Required support '{key}' expects >= {required}, "
-                            f"but only {actual.get(key, 0)} resolved"
+                            f"Required support '{key}' expects >= {required}, but only {actual.get(key, 0)} resolved"
                         ),
                     )
                 )
@@ -565,6 +558,8 @@ def _generate_compiled_artifacts(
     export_svg: bool,
 ) -> tuple[list[str], Path | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    profile = compiled.metadata.get("presentation_profile", "default")
+    pwp = PresentationWiringPolicy(support_passives="topology_local") if profile == "review" else None
     files = generate_from_components(
         compiled.components,
         str(output_dir),
@@ -575,6 +570,7 @@ def _generate_compiled_artifacts(
         pcb=True,
         hierarchical=True,
         interface_policy="explicit",
+        presentation_wiring_policy=pwp,
     )
     root = _find_root_schematic(files, compiled.metadata.get("project", "project"))
     if export_svg and root is not None:
@@ -608,10 +604,7 @@ def _svg_content_metrics(svg_path: Path) -> dict[str, float]:
     for element in root.iter():
         tag = element.tag.rsplit("}", 1)[-1]
         if tag == "path":
-            nums = [
-                float(n)
-                for n in __import__("re").findall(r"-?\d+(?:\.\d+)?", element.attrib.get("d", ""))
-            ]
+            nums = [float(n) for n in __import__("re").findall(r"-?\d+(?:\.\d+)?", element.attrib.get("d", ""))]
             if len(nums) < 4:
                 continue
             xs = nums[0::2]
@@ -748,14 +741,13 @@ def validate_design(
             )
 
     can_check_artifacts = (
-        not categories["structural"]
-        and not categories["electrical"]
-        and not categories["implementation"]
+        not categories["structural"] and not categories["electrical"] and not categories["implementation"]
     )
     if can_check_artifacts:
-        with tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_a_") as tmp_a, tempfile.TemporaryDirectory(
-            prefix="schematic_mvp_validate_b_"
-        ) as tmp_b:
+        with (
+            tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_a_") as tmp_a,
+            tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_b_") as tmp_b,
+        ):
             try:
                 files_a, root_a = _generate_compiled_artifacts(compiled, Path(tmp_a), export_svg=True)
                 _files_b, _root_b = _generate_compiled_artifacts(compiled, Path(tmp_b), export_svg=False)
@@ -837,9 +829,7 @@ def apply_design_patch(
             else:
                 working_ir.metadata[key] = value
 
-    remove_blocks = {
-        str(item).strip() for item in (patch.get("remove_blocks") or []) if str(item).strip()
-    }
+    remove_blocks = {str(item).strip() for item in (patch.get("remove_blocks") or []) if str(item).strip()}
     if remove_blocks:
         filtered = []
         for block in working_ir.blocks:
@@ -1005,9 +995,7 @@ def ingest_pcb_feedback(
 
     for item in feedback.get("constraints", []) or []:
         if not isinstance(item, dict) or not item.get("kind") or not item.get("target"):
-            rejected.append(
-                {"item": copy.deepcopy(item), "reason": "Constraint must declare kind and target"}
-            )
+            rejected.append({"item": copy.deepcopy(item), "reason": "Constraint must declare kind and target"})
             continue
         ir.pcb_constraints.append(copy.deepcopy(item))
         accepted_constraints += 1
@@ -1021,9 +1009,7 @@ def ingest_pcb_feedback(
     ):
         for item in feedback.get(section_name, []) or []:
             if not isinstance(item, dict) or not item.get("target"):
-                rejected.append(
-                    {"item": copy.deepcopy(item), "reason": f"{section_name} entries must declare target"}
-                )
+                rejected.append({"item": copy.deepcopy(item), "reason": f"{section_name} entries must declare target"})
                 continue
             constraint = {"kind": kind, **copy.deepcopy(item)}
             ir.pcb_constraints.append(constraint)
@@ -1031,9 +1017,7 @@ def ingest_pcb_feedback(
 
     for item in feedback.get("approved_substitutions", []) or []:
         if not isinstance(item, dict) or not item.get("target"):
-            rejected.append(
-                {"item": copy.deepcopy(item), "reason": "Approved substitutions must declare target"}
-            )
+            rejected.append({"item": copy.deepcopy(item), "reason": "Approved substitutions must declare target"})
             continue
         override = {
             "kind": "part_binding",
@@ -1184,6 +1168,12 @@ def main() -> None:
     gen_p.add_argument("--no-require-valid", dest="require_valid", action="store_false")
     gen_p.add_argument("--no-svg", dest="export_svg", action="store_false")
     gen_p.add_argument("--enrich-parts", action="store_true", default=False)
+    gen_p.add_argument(
+        "--presentation-profile",
+        choices=["default", "review"],
+        default=None,
+        help="Override the presentation profile (default | review)",
+    )
     gen_p.set_defaults(require_valid=True, export_svg=True)
 
     diff_p = subparsers.add_parser("diff", help="Semantic diff between two design specs")
@@ -1213,16 +1203,17 @@ def main() -> None:
             )
         )
         if result["accepted"] and args.output:
-            Path(args.output).write_text(
-                spec_to_yaml_text(result["updated_spec"]), encoding="utf-8", newline=""
-            )
+            Path(args.output).write_text(spec_to_yaml_text(result["updated_spec"]), encoding="utf-8", newline="")
         _print_json(result)
         raise SystemExit(0 if result["accepted"] else 2)
 
     if args.command == "generate":
+        spec = _load_spec_file(args.spec)
+        if args.presentation_profile:
+            spec["presentation_profile"] = args.presentation_profile
         result = _run_with_stderr_capture(
             lambda: generate_artifacts(
-                _load_spec_file(args.spec),
+                spec,
                 output_dir=args.output,
                 require_valid=args.require_valid,
                 enrich_parts=args.enrich_parts,
@@ -1241,9 +1232,7 @@ def main() -> None:
             lambda: ingest_pcb_feedback(_load_spec_file(args.spec), _load_patch_file(args.feedback))
         )
         if args.output and result.updated_spec is not None:
-            Path(args.output).write_text(
-                spec_to_yaml_text(result.updated_spec), encoding="utf-8", newline=""
-            )
+            Path(args.output).write_text(spec_to_yaml_text(result.updated_spec), encoding="utf-8", newline="")
         _print_json(result.to_dict())
         raise SystemExit(0 if not result.rejected else 2)
 

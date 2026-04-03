@@ -395,9 +395,7 @@ def _adjust_symbol_y_coordinates(sym_sexpr: str) -> str:
             y_values.append(float(match.group(1)))
 
     # Also check rectangle coordinates
-    rect_pattern = re.compile(
-        r"\(rectangle\s+\(start\s+[\d.-]+\s+([\d.-]+)\)\s+\(end\s+[\d.-]+\s+([\d.-]+)\)"
-    )
+    rect_pattern = re.compile(r"\(rectangle\s+\(start\s+[\d.-]+\s+([\d.-]+)\)\s+\(end\s+[\d.-]+\s+([\d.-]+)\)")
     for line in lines:
         for match in rect_pattern.finditer(line):
             y_values.append(float(match.group(1)))
@@ -635,29 +633,13 @@ def _safe_label_stub_length(
         return default_len
 
     if pin_angle == 0:
-        gaps = [
-            pin_x - right
-            for left, right, bottom, top in body_rects
-            if bottom <= pin_y <= top and right <= pin_x
-        ]
+        gaps = [pin_x - right for left, right, bottom, top in body_rects if bottom <= pin_y <= top and right <= pin_x]
     elif pin_angle == 180:
-        gaps = [
-            left - pin_x
-            for left, right, bottom, top in body_rects
-            if bottom <= pin_y <= top and left >= pin_x
-        ]
+        gaps = [left - pin_x for left, right, bottom, top in body_rects if bottom <= pin_y <= top and left >= pin_x]
     elif pin_angle == 270:
-        gaps = [
-            pin_y - top
-            for left, right, bottom, top in body_rects
-            if left <= pin_x <= right and top <= pin_y
-        ]
+        gaps = [pin_y - top for left, right, bottom, top in body_rects if left <= pin_x <= right and top <= pin_y]
     elif pin_angle == 90:
-        gaps = [
-            bottom - pin_y
-            for left, right, bottom, top in body_rects
-            if left <= pin_x <= right and bottom >= pin_y
-        ]
+        gaps = [bottom - pin_y for left, right, bottom, top in body_rects if left <= pin_x <= right and bottom >= pin_y]
     else:
         gaps = []
 
@@ -702,9 +684,7 @@ def _dense_pin_stub_lengths(
     return overrides
 
 
-def _segment_hits_box(
-    x1: float, y1: float, x2: float, y2: float, box: tuple[float, float, float, float]
-) -> bool:
+def _segment_hits_box(x1: float, y1: float, x2: float, y2: float, box: tuple[float, float, float, float]) -> bool:
     """Return True when an orthogonal segment runs through a box interior."""
     eps = 0.01
     left, top, right, bottom = box
@@ -721,9 +701,7 @@ def _segment_hits_box(
     return False
 
 
-def _polyline_is_clear(
-    points: list[tuple[float, float]], box: tuple[float, float, float, float] | None
-) -> bool:
+def _polyline_is_clear(points: list[tuple[float, float]], box: tuple[float, float, float, float] | None) -> bool:
     if box is None:
         return True
     for (x1, y1), (x2, y2) in zip(points, points[1:]):
@@ -740,11 +718,7 @@ def _normalize_polyline(points: list[tuple[float, float]]) -> list[tuple[float, 
     normalized = []
     for x, y in points:
         pt = (snap(x), snap(y))
-        if (
-            normalized
-            and abs(normalized[-1][0] - pt[0]) < 0.01
-            and abs(normalized[-1][1] - pt[1]) < 0.01
-        ):
+        if normalized and abs(normalized[-1][0] - pt[0]) < 0.01 and abs(normalized[-1][1] - pt[1]) < 0.01:
             continue
         normalized.append(pt)
     return normalized
@@ -757,9 +731,7 @@ def _emit_polyline(points: list[tuple[float, float]], wires: list[str]) -> None:
         wires.append(sexpr_wire(x1, y1, x2, y2))
 
 
-def _point_box_side(
-    point: tuple[float, float], box: tuple[float, float, float, float]
-) -> str:
+def _point_box_side(point: tuple[float, float], box: tuple[float, float, float, float]) -> str:
     """Return the nearest obstacle side for a point outside or on the obstacle bounds."""
     x, y = point
     left, top, right, bottom = box
@@ -786,9 +758,7 @@ def _lane_bucket_value(point: tuple[float, float], side: str) -> int:
     return int(round(axis_value / _LOCAL_ROUTE_LANE_PITCH))
 
 
-def _reserve_lane(
-    route_state: dict[str, dict], side: str, point: tuple[float, float]
-) -> int:
+def _reserve_lane(route_state: dict[str, dict], side: str, point: tuple[float, float]) -> int:
     """Reserve or reuse a routing lane index for a side/position bucket."""
     lane_cache = route_state.setdefault("lane_cache", {})
     lane_next = route_state.setdefault("lane_next", {"left": 0, "right": 0, "top": 0, "bottom": 0})
@@ -799,9 +769,7 @@ def _reserve_lane(
     return lane_cache[bucket_key]
 
 
-def _lane_axis_value(
-    box: tuple[float, float, float, float], side: str, lane_index: int
-) -> float:
+def _lane_axis_value(box: tuple[float, float, float, float], side: str, lane_index: int) -> float:
     left, top, right, bottom = box
     offset = _LOCAL_ROUTE_LANE_BASE + lane_index * _LOCAL_ROUTE_LANE_PITCH
     if side == "left":
@@ -813,9 +781,7 @@ def _lane_axis_value(
     return snap(bottom + offset)
 
 
-def _lane_escape_point(
-    point: tuple[float, float], side: str, lane_axis: float
-) -> tuple[float, float]:
+def _lane_escape_point(point: tuple[float, float], side: str, lane_axis: float) -> tuple[float, float]:
     x, y = point
     if side in ("left", "right"):
         return (snap(lane_axis), snap(y))
@@ -896,7 +862,6 @@ def _route_local_connection(
             return
 
     candidates = [
-        [start, end],
         [start, (end[0], start[1]), end],
         [start, (start[0], end[1]), end],
     ]
@@ -1074,12 +1039,7 @@ def _rendered_bounds_fit(content: str, paper: str, margin: float = _RENDER_FIT_M
     min_x, min_y, max_x, max_y = estimate_content_bounds(content)
     pw, ph = PAPER_SIZES.get(paper, PAPER_SIZES["A3"])
     usable_h = ph - TITLE_BLOCK_H
-    return (
-        min_x >= margin
-        and min_y >= margin
-        and max_x <= (pw - margin)
-        and max_y <= (usable_h - margin)
-    )
+    return min_x >= margin and min_y >= margin and max_x <= (pw - margin) and max_y <= (usable_h - margin)
 
 
 def _rendered_bounds_summary(content: str) -> tuple[float, float, float, float]:
@@ -1122,9 +1082,7 @@ def _explicit_boundary_nets(layouts: list[SheetLayout]) -> set[str]:
     return explicit_boundary_ports
 
 
-def _compute_boundary_nets(
-    layouts: list[SheetLayout], interface_policy: str = "inferred"
-) -> set[str]:
+def _compute_boundary_nets(layouts: list[SheetLayout], interface_policy: str = "inferred") -> set[str]:
     """Return non-power nets that should become sheet interfaces.
 
     ``explicit`` only exports nets declared via ``boundary_ports``.
@@ -1178,9 +1136,7 @@ def _report_validation_results(results) -> None:
             line += f" ({len(result.issues)} issue(s))"
         print(line)
         for issue in result.issues[:4]:
-            print(
-                f"    {issue.level.upper()} [{issue.code}] {issue.ref} {issue.mpn}: {issue.message}"
-            )
+            print(f"    {issue.level.upper()} [{issue.code}] {issue.ref} {issue.mpn}: {issue.message}")
         if len(result.issues) > 4:
             print(f"    ... and {len(result.issues) - 4} more")
 
@@ -1243,9 +1199,7 @@ def generate_from_components(
     stable_mode = _env_flag_enabled() if stable_uuids is None else stable_uuids
     seed = None
     if stable_mode:
-        identities = "|".join(
-            f"{idx}:{_component_identity(comp)}" for idx, comp in enumerate(components)
-        )
+        identities = "|".join(f"{idx}:{_component_identity(comp)}" for idx, comp in enumerate(components))
         seed = f"{project_name}|{identities}"
     configure_deterministic_uids(seed)
 
@@ -1266,9 +1220,7 @@ def generate_from_components(
         else:
             validation_results = None
 
-        resolved_presentation_wiring_policy = normalize_presentation_wiring_policy(
-            presentation_wiring_policy
-        )
+        resolved_presentation_wiring_policy = normalize_presentation_wiring_policy(presentation_wiring_policy)
 
         # 1. Allocate components to sheets
         sheets = allocate_sheets(components)
@@ -1282,9 +1234,7 @@ def generate_from_components(
         # 1b. Layout all sheets first (needed for boundary net computation)
         layouts = []
         for sheet_alloc in sheets:
-            layout = layout_sheet(
-                sheet_alloc, presentation_wiring_policy=resolved_presentation_wiring_policy
-            )
+            layout = layout_sheet(sheet_alloc, presentation_wiring_policy=resolved_presentation_wiring_policy)
             layouts.append(layout)
             print(
                 f"  {sheet_alloc.name}: {len(layout.placed_ics)} ICs, "
@@ -1298,10 +1248,7 @@ def generate_from_components(
         if use_hierarchy:
             boundary_nets = _compute_boundary_nets(layouts, resolved_interface_policy)
             if boundary_nets:
-                print(
-                    "  Hierarchical mode: "
-                    f"{len(boundary_nets)} boundary nets ({resolved_interface_policy})"
-                )
+                print(f"  Hierarchical mode: {len(boundary_nets)} boundary nets ({resolved_interface_policy})")
 
         # 2. Generate each sub-sheet, collecting label info
         sheet_infos = []  # (alloc, uuid, filepath, labels_set)
@@ -1427,10 +1374,7 @@ def _add_cross_sheet_stubs(sheet_infos: list[dict]):
         label
         for label, sheets in label_to_sheets.items()
         if len(sheets) == 1
-        and (
-            label == "GND"
-            or label.startswith(("VDD_", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO"))
-        )
+        and (label == "GND" or label.startswith(("VDD_", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")))
     ]
 
     # Count hierarchical labels (present when hierarchical=True)
@@ -1477,9 +1421,7 @@ def _generate_root_schematic(
     sheet_h = max(base_sheet_h, snap(needed_h))
 
     sheet_w = 50  # mm, symbol width
-    paper, x_start, y_start, cols, x_spacing, y_spacing = _pick_root_sheet_geometry(
-        len(sheet_infos), sheet_w, sheet_h
-    )
+    paper, x_start, y_start, cols, x_spacing, y_spacing = _pick_root_sheet_geometry(len(sheet_infos), sheet_w, sheet_h)
     header = sexpr_header(
         title=f"{project_name} — Top Level",
         subtitle=f"{len(sheet_infos)} sheets",
@@ -1517,10 +1459,7 @@ def _generate_root_schematic(
             for j, label_name in enumerate(sorted(hier_label_shapes)):
                 pin_y = snap(sy + pin_spacing + j * pin_spacing)
                 label_shape = hier_label_shapes.get(label_name, "bidirectional")
-                pin_lines += (
-                    sexpr_sheet_pin(label_name, shape=label_shape, side=pin_side, x=pin_x, y=pin_y)
-                    + "\n"
-                )
+                pin_lines += sexpr_sheet_pin(label_name, shape=label_shape, side=pin_side, x=pin_x, y=pin_y) + "\n"
                 connect_pin_to_label(
                     pin_x,
                     pin_y,
@@ -1556,11 +1495,7 @@ def _generate_root_schematic(
     parts.extend(root_preview_text)
 
     # Title text
-    parts.append(
-        sheet_title_text(
-            f"{project_name}", f"Top-level overview — {len(sheet_infos)} sub-sheets", x=20, y=15
-        )
-    )
+    parts.append(sheet_title_text(f"{project_name}", f"Top-level overview — {len(sheet_infos)} sub-sheets", x=20, y=15))
 
     # Sheet instances for root
     parts.append(f'  (sheet_instances\n    (path "/{root_uuid}/" (page "1"))\n  )\n')
@@ -1646,9 +1581,7 @@ def generate_from_bom(
 
     if unknown:
         unknown_qty = sum(qty for _, _, _, qty in unknown)
-        print(
-            f"  WARNING: {len(unknown)} unknown BOM line(s) ({unknown_qty} total component(s)) not in registry:"
-        )
+        print(f"  WARNING: {len(unknown)} unknown BOM line(s) ({unknown_qty} total component(s)) not in registry:")
         for ref, mpn, val, qty in unknown[:10]:
             print(f"    {ref}: {mpn} ({val}) x{qty}")
         if len(unknown) > 10:
@@ -2002,9 +1935,7 @@ def _render_sheet(
             if pin_num in pin_pos:
                 px, py, pangle, plen, pname, ptype = pin_pos[pin_num]
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
-                wlen = pin_stub_lengths.get(
-                    pin_num, _safe_label_stub_length(px, py, pangle, body_rects)
-                )
+                wlen = pin_stub_lengths.get(pin_num, _safe_label_stub_length(px, py, pangle, body_rects))
                 signal_pin_coords.setdefault(net_name, []).append((cx, cy, pangle, ptype, wlen))
                 ic_signal_pin_coords.setdefault(net_name, []).append((cx, cy, pangle, ptype))
                 ic_pin_points.setdefault(net_name, []).append((cx, cy))
@@ -2015,9 +1946,7 @@ def _render_sheet(
             if pin_num in pin_pos:
                 px, py, pangle, plen, pname, ptype = pin_pos[pin_num]
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
-                wire_len = pin_stub_lengths.get(
-                    pin_num, _safe_label_stub_length(px, py, pangle, body_rects)
-                )
+                wire_len = pin_stub_lengths.get(pin_num, _safe_label_stub_length(px, py, pangle, body_rects))
 
                 # Create wire stub (cx -> wx based on pin angle)
                 if pangle == 0:
@@ -2090,9 +2019,7 @@ def _render_sheet(
             if not _should_render_bus_group(group_name, unique_nets):
                 continue
             orientation = "vertical" if side in ("left", "right") else "horizontal"
-            bwires, bentries, blabels = _render_bus_group(
-                group_name, unique_nets, local_signal_coords, orientation
-            )
+            bwires, bentries, blabels = _render_bus_group(group_name, unique_nets, local_signal_coords, orientation)
             bus_wires_all.extend(bwires)
             bus_entries_all.extend(bentries)
             bus_labels_all.extend(blabels)
@@ -2106,8 +2033,7 @@ def _render_sheet(
             continue
 
         is_bus_member = any(
-            (net_name, cx, cy, pangle, ptype) in bus_member_points
-            for cx, cy, pangle, ptype, _wlen in coords
+            (net_name, cx, cy, pangle, ptype) in bus_member_points for cx, cy, pangle, ptype, _wlen in coords
         )
         if is_bus_member:
             # Bus graphics are decorative; keep explicit labels on every member
@@ -2115,9 +2041,7 @@ def _render_sheet(
             # Use fixed 5.08mm stubs to align with bus entry geometry.
             for cx, cy, pangle, ptype, _wlen in coords:
                 shape = _pin_type_to_label_shape(ptype)
-                _label_fn(net_name)(
-                    cx, cy, pangle, net_name, wires, labels, wire_len=5.08, shape=shape
-                )
+                _label_fn(net_name)(cx, cy, pangle, net_name, wires, labels, wire_len=5.08, shape=shape)
             continue
 
         for cx, cy, pangle, ptype, wlen in coords:
@@ -2170,20 +2094,14 @@ def _render_sheet(
             )
         else:
             topology_owner1 = (
-                _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net1)
-                if use_topology_local
-                else None
+                _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net1) if use_topology_local else None
             )
             if topology_owner1 is not None:
                 ic_x, ic_y = topology_owner1
-                _route_local_connection(
-                    p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state
-                )
+                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
             elif use_literal_local and pp.net1 in parent_pins and parent_pins[pp.net1]:
                 ic_x, ic_y = parent_pins[pp.net1][0]
-                _route_local_connection(
-                    p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state
-                )
+                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
             else:
                 _render_passive_net_endpoint(
                     pp.net1,
@@ -2209,20 +2127,14 @@ def _render_sheet(
             )
         else:
             topology_owner2 = (
-                _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net2)
-                if use_topology_local
-                else None
+                _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net2) if use_topology_local else None
             )
             if topology_owner2 is not None:
                 ic_x, ic_y = topology_owner2
-                _route_local_connection(
-                    p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state
-                )
+                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
             elif use_literal_local and pp.net2 in parent_pins and parent_pins[pp.net2]:
                 ic_x, ic_y = parent_pins[pp.net2][0]
-                _route_local_connection(
-                    p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state
-                )
+                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
             else:
                 _render_passive_net_endpoint(
                     pp.net2,
@@ -2295,9 +2207,7 @@ def _render_sheet(
             for i, line in enumerate(explanation_lines[:5]):
                 line_x = ann_x if i == 0 else snap(ann_x + 1.27)
                 line_size = 1.1 if i == 0 else 1.0
-                annotation_texts.append(
-                    text_annotation(line, line_x, ann_y + i * 3.0, size=line_size)
-                )
+                annotation_texts.append(text_annotation(line, line_x, ann_y + i * 3.0, size=line_size))
 
     # --- Sheet-level annotations (from allocator) ---
     if layout.sheet_annotations:
@@ -2375,9 +2285,7 @@ def _resolve_bom_components(
             continue
         if row.mpn:
             # Create a minimal stub ComponentDef for unknown parts
-            stub = ComponentDef(
-                mpn=row.mpn, value=row.value or row.mpn, footprint=row.footprint or ""
-            )
+            stub = ComponentDef(mpn=row.mpn, value=row.value or row.mpn, footprint=row.footprint or "")
             components.extend(_apply_bom_overlay(stub, row, idx) for idx in range(qty))
 
     return components

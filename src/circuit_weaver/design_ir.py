@@ -67,14 +67,24 @@ def _stable_token(*parts: Any) -> str:
     return f"{zlib.crc32(text.encode('utf-8')) & 0xFFFFFFFF:08x}"
 
 
+_PRESENTATION_PROFILES = {"default", "review"}
+
+
 def _normalize_metadata(spec: dict[str, Any]) -> dict[str, Any]:
-    return {
+    profile = str(spec.get("presentation_profile", "default")).strip().lower()
+    if profile not in _PRESENTATION_PROFILES:
+        valid = ", ".join(sorted(_PRESENTATION_PROFILES))
+        raise ValueError(f"Unknown presentation_profile '{profile}'. Expected one of: {valid}")
+    result = {
         "project": str(spec.get("project", "project")),
         "company": str(spec.get("company", "")),
         "version": str(spec.get("version", "")),
         "description": str(spec.get("description", "")),
         "spec_version": str(spec.get("spec_version", "mvp_ir_v1")),
     }
+    if profile != "default":
+        result["presentation_profile"] = profile
+    return result
 
 
 @dataclass
@@ -88,9 +98,7 @@ class DesignInterface:
         direction = (self.direction or "bidirectional").strip().lower()
         if direction not in _INTERFACE_DIRECTIONS:
             valid = ", ".join(sorted(_INTERFACE_DIRECTIONS))
-            raise ValueError(
-                f"Unknown interface direction '{self.direction}'. Expected one of: {valid}"
-            )
+            raise ValueError(f"Unknown interface direction '{self.direction}'. Expected one of: {valid}")
         return DesignInterface(
             block_id=str(self.block_id or "").strip(),
             name=str(self.name or "").strip(),
@@ -166,9 +174,7 @@ def _normalize_override(item: dict[str, Any]) -> dict[str, Any]:
     normalized["kind"] = str(normalized.get("kind", "")).strip().lower()
     if normalized["kind"] and normalized["kind"] not in _OVERRIDE_KINDS:
         valid = ", ".join(sorted(_OVERRIDE_KINDS))
-        raise ValueError(
-            f"Unknown approved override kind '{normalized['kind']}'. Expected one of: {valid}"
-        )
+        raise ValueError(f"Unknown approved override kind '{normalized['kind']}'. Expected one of: {valid}")
     normalized["target"] = str(normalized.get("target", "")).strip()
     return normalized
 
@@ -180,9 +186,7 @@ def _normalize_pcb_constraint(item: dict[str, Any]) -> dict[str, Any]:
     normalized["kind"] = str(normalized.get("kind", "")).strip().lower()
     if normalized["kind"] and normalized["kind"] not in _PCB_CONSTRAINT_KINDS:
         valid = ", ".join(sorted(_PCB_CONSTRAINT_KINDS))
-        raise ValueError(
-            f"Unknown PCB constraint kind '{normalized['kind']}'. Expected one of: {valid}"
-        )
+        raise ValueError(f"Unknown PCB constraint kind '{normalized['kind']}'. Expected one of: {valid}")
     normalized["target"] = str(normalized.get("target", "")).strip()
     return normalized
 
@@ -216,8 +220,7 @@ def _normalize_block(raw: dict[str, Any], *, default_section: str, index: int) -
             if key not in _BLOCK_RESERVED_KEYS:
                 params.setdefault(key, copy.deepcopy(value))
     interfaces = [
-        _normalize_interface_dict(iface, block_id=block_id or ref)
-        for iface in raw.get("interfaces", []) or []
+        _normalize_interface_dict(iface, block_id=block_id or ref) for iface in raw.get("interfaces", []) or []
     ]
     if not block_id:
         primary = ref or template_type or ic or f"block{index + 1}"

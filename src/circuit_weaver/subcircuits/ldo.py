@@ -228,9 +228,23 @@ class LDOTemplate(SubcircuitTemplate):
             pin_nets[ic_db["pin_en"]] = en_net
 
         bypass_caps = [
-            BypassCap("CIN", vin_net, "GND", format_capacitance(cin_val), cap_footprint(cin_val)),
             BypassCap(
-                "COUT", rail_name, "GND", format_capacitance(cout_val), cap_footprint(cout_val)
+                "CIN",
+                vin_net,
+                "GND",
+                format_capacitance(cin_val),
+                cap_footprint(cin_val),
+                role="decoupling",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "COUT",
+                rail_name,
+                "GND",
+                format_capacitance(cout_val),
+                cap_footprint(cout_val),
+                role="decoupling",
+                presentation="topology_local",
             ),
         ]
 
