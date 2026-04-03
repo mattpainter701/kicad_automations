@@ -129,6 +129,8 @@ class ComponentDef:
     source_value: str = ""  # original BOM value/comment field
     source_description: str = ""  # original BOM description
     source_manufacturer: str = ""  # original BOM manufacturer
+    lcsc_pn: str = ""  # LCSC part number (e.g. "C14663") for JLCPCB assembly
+    digikey_pn: str = ""  # DigiKey part number for prototype ordering
     features: list[str] = field(default_factory=list)  # optional feature summary tokens
     annotations: list[str] = field(default_factory=list)  # design rationale text near IC
     template_annotations: list[str] = field(default_factory=list)  # sheet-level notes from a template

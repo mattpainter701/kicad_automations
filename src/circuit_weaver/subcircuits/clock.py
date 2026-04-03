@@ -253,6 +253,7 @@ class ClockSynthTemplate(SubcircuitTemplate):
         vdd_net = params.get("vdd_net", "VDD_1P8")
         vddo_net = params.get("vddo_net", vdd_net)
         ref_net = params.get("ref_net", "REF_CLK")
+        ref_boundary_nets: list[str] = []
 
         # ---- Power pin mapping ----
         power_pins: dict[str, str] = {}
@@ -270,11 +271,16 @@ class ClockSynthTemplate(SubcircuitTemplate):
         if "pin_ref" in ic_db:
             pin_ref = ic_db["pin_ref"]
             if "refa_p" in pin_ref:
-                pin_nets[pin_ref["refa_p"]] = f"{ref_net}_P"
-                pin_nets[pin_ref["refa_n"]] = f"{ref_net}_N"
+                ref_boundary_nets = [f"{ref_net}_P", f"{ref_net}_N"]
+                pin_nets[pin_ref["refa_p"]] = ref_boundary_nets[0]
+                pin_nets[pin_ref["refa_n"]] = ref_boundary_nets[1]
         elif ic_name == "SI5351A":
             # SI5351A uses XA/XI pin for crystal/reference
             pin_nets["10"] = ref_net
+            ref_boundary_nets = [ref_net]
+
+        if not ref_boundary_nets:
+            ref_boundary_nets = [ref_net]
 
         # SPI interface (AD9528)
         if "pin_spi" in ic_db:
@@ -328,7 +334,7 @@ class ClockSynthTemplate(SubcircuitTemplate):
         bypass_caps.append(
             BypassCap(
                 "CREF",
-                ref_net if ic_name == "SI5351A" else f"{ref_net}_P",
+                ref_boundary_nets[0],
                 "GND",
                 "100nF",
                 FP_0402C,
@@ -438,7 +444,8 @@ class ClockSynthTemplate(SubcircuitTemplate):
         ]
         if vddo_net != vdd_net:
             ports.append(BoundaryPort(vddo_net, "input"))
-        ports.append(BoundaryPort(ref_net, "input"))
+        for ref_boundary_net in ref_boundary_nets:
+            ports.append(BoundaryPort(ref_boundary_net, "input"))
 
         return SubcircuitResult(
             components=[ic_comp],

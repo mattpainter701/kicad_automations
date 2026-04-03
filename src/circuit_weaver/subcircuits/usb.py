@@ -74,6 +74,12 @@ USB_CONTROLLER_IC_DATABASE = {
             PinDef("E2", "XTALOUT", "output", "L"),
         ],
         "pin_vdd": ["A1"],
+        "pin_power_rails": {
+            "VDD": ["A1"],
+            "DVDDIO": ["A2"],
+            "AVDD": ["B1"],
+            "VBUS": ["B11"],
+        },
         "pin_gnd": ["A11"],
         "boot_straps": {
             # SPI slave boot: PMODE[2:0] = 1,0,Z (VDD, GND, float)
@@ -262,10 +268,19 @@ class USBControllerTemplate(SubcircuitTemplate):
         # Use the first power rail as the primary VDD
         primary_rail = list(ic_db["power_rails"].keys())[0]
         vdd_net = params.get("vdd_net", primary_rail)
+        power_rail_nets = {
+            rail_name: params.get(
+                f"{rail_name.lower()}_net",
+                vdd_net if rail_name == primary_rail else rail_name,
+            )
+            for rail_name in ic_db["power_rails"]
+        }
 
         power_pins = {}
-        for pin_num in ic_db["pin_vdd"]:
-            power_pins[pin_num] = vdd_net
+        for rail_name, pin_numbers in ic_db.get("pin_power_rails", {primary_rail: ic_db["pin_vdd"]}).items():
+            rail_net = power_rail_nets.get(rail_name, vdd_net)
+            for pin_num in pin_numbers:
+                power_pins[pin_num] = rail_net
         for pin_num in ic_db["pin_gnd"]:
             power_pins[pin_num] = "GND"
 
@@ -281,7 +296,7 @@ class USBControllerTemplate(SubcircuitTemplate):
         # ---- Bypass caps: 100nF + 10uF per rail ----
         bypass_caps = []
         for rail_name, voltage in ic_db["power_rails"].items():
-            rail_net = vdd_net if rail_name == primary_rail else rail_name
+            rail_net = power_rail_nets[rail_name]
             # 100nF high-frequency decoupling
             bypass_caps.append(
                 BypassCap(
@@ -322,7 +337,7 @@ class USBControllerTemplate(SubcircuitTemplate):
                 if pin_number is None:
                     continue
 
-                strap_rail = vdd_net if rail == "VDD" else "GND"
+                strap_rail = "GND" if rail == "GND" else power_rail_nets.get(rail, rail)
                 straps.append(
                     StrapConfig(
                         pin_number,
@@ -362,11 +377,19 @@ class USBControllerTemplate(SubcircuitTemplate):
 
         # ---- Boundary ports ----
         ports = [
-            BoundaryPort(vdd_net, "input"),
+            BoundaryPort(power_rail_nets[primary_rail], "input"),
             BoundaryPort("GND", "passive"),
-            BoundaryPort(usb_dp_net, "bidirectional"),
-            BoundaryPort(usb_dm_net, "bidirectional"),
         ]
+        for rail_name, rail_net in power_rail_nets.items():
+            if rail_name == primary_rail or rail_net == "GND":
+                continue
+            ports.append(BoundaryPort(rail_net, "input"))
+        ports.extend(
+            [
+                BoundaryPort(usb_dp_net, "bidirectional"),
+                BoundaryPort(usb_dm_net, "bidirectional"),
+            ]
+        )
 
         return SubcircuitResult(
             components=[ic_comp],

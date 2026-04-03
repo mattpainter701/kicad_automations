@@ -338,6 +338,49 @@ def _apply_net_prefix(item: dict, comp: ComponentDef) -> None:
     comp.pin_nets = updated
 
 
+def _try_easyeda_resolve(item: dict, ic_name: str, parts_lookup=None) -> ComponentDef | None:
+    """Attempt to resolve a component via EasyEDA/LCSC (4th-tier fallback).
+
+    Tries two paths:
+    1. Explicit ``lcsc:`` key in the YAML item → fetch directly by LCSC ID
+    2. MPN lookup via parts_lookup → get LCSC code → fetch from EasyEDA
+    """
+    from .easyeda_api import fetch_easyeda_component
+    from .easyeda_parser import easyeda_to_component_def
+
+    # Path 1: Explicit LCSC part number in YAML
+    lcsc_id = str(item.get("lcsc", "")).strip()
+
+    # Path 2: Look up MPN → LCSC code via parts_lookup
+    if not lcsc_id and parts_lookup:
+        lookup_mpn = str(item.get("mpn") or ic_name).strip()
+        if lookup_mpn:
+            try:
+                data = parts_lookup.lookup(lookup_mpn)
+                if data:
+                    lcsc_id = data.get("lcsc", "")
+            except Exception:
+                pass
+
+    if not lcsc_id:
+        return None
+
+    try:
+        ee_data = fetch_easyeda_component(lcsc_id)
+    except Exception as exc:
+        print(f"  WARNING: EasyEDA fetch failed for {lcsc_id}: {exc}")
+        return None
+
+    if not ee_data:
+        return None
+
+    comp = easyeda_to_component_def(ee_data)
+    if comp:
+        comp.lcsc_pn = lcsc_id
+        print(f"  → Resolved '{ic_name}' from EasyEDA ({lcsc_id}): {len(comp.pins)} pins")
+    return comp
+
+
 def _resolve_component(
     item: dict,
     section_category: str,
@@ -414,8 +457,13 @@ def _resolve_component(
     if not comp and kicad_lib:
         comp = kicad_lib.get_component(ic, category=section_category)
     if not comp:
-        print(f"  WARNING: Unknown component '{ic}', not in registry or KiCad library, creating stub")
-        return [_make_stub_component(ic, section_category, ref, reason=f"'{ic}' not in registry or KiCad library")]
+        # Tier 4: EasyEDA/LCSC — try by explicit lcsc: key or by MPN lookup
+        comp = _try_easyeda_resolve(item, ic, parts_lookup)
+    if not comp:
+        print(f"  WARNING: Unknown component '{ic}', not in registry, KiCad library, or EasyEDA, creating stub")
+        return [
+            _make_stub_component(ic, section_category, ref, reason=f"'{ic}' not in registry, KiCad library, or EasyEDA")
+        ]
 
     instance = copy.deepcopy(comp)
     instance.category = section_category

@@ -76,6 +76,7 @@ BUCK_IC_DATABASE = {
         ],
         "pin_vin": "1",
         "pin_gnd": "2",
+        "pin_gnd_extra": ["8"],
         "pin_sw": "5",
         "pin_fb": "4",
         "pin_en": "3",
@@ -257,6 +258,8 @@ class BuckConverterTemplate(SubcircuitTemplate):
             ic_db["pin_vin"]: vin_net,
             ic_db["pin_gnd"]: "GND",
         }
+        for pin_num in ic_db.get("pin_gnd_extra", []):
+            power_pins[pin_num] = "GND"
         pin_nets = {
             ic_db["pin_sw"]: sw_net,
             ic_db["pin_fb"]: fb_net,

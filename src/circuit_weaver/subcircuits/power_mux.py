@@ -1,4 +1,4 @@
-"""Power mux / ideal diode subcircuit template.
+"""Power mux subcircuit template.
 
 Generates a complete power mux subcircuit from design parameters:
 two input rails, output rail, current limit.
@@ -6,8 +6,7 @@ two input rails, output rail, current limit.
 Auto-calculates: ILIM resistors, input/output decoupling.
 All values snapped to standard E96 series.
 
-Supports TPS2113ADRBR (auto-switching mux, default) and LTC4357CMS8
-(ideal diode OR controller).
+Supports TPS2113ADRBR (auto-switching mux, default).
 """
 
 from __future__ import annotations
@@ -55,37 +54,14 @@ POWER_MUX_IC_DATABASE = {
         "pin_d2": "3",
         "has_ilim": True,
     },
-    "LTC4357CMS8": {
-        "description": "Ideal Diode OR Controller MSOP-8",
-        "footprint": "MSOP-8",
-        "vin_min": 9.0,
-        "vin_max": 80.0,
-        "iout_max": 10.0,  # limited by external MOSFET
-        "pins": [
-            PinDef("1", "VIN", "power_in", "L"),
-            PinDef("2", "GATE", "output", "R"),
-            PinDef("3", "SOURCE", "input", "R"),
-            PinDef("4", "GND", "power_in", "B"),
-            PinDef("5", "SHDN_N", "input", "L"),
-            PinDef("6", "VIN", "power_in", "L"),
-            PinDef("7", "VIN", "power_in", "L"),
-            PinDef("8", "VIN", "power_in", "L"),
-        ],
-        "pin_vin": "1",
-        "pin_gnd": "4",
-        "pin_gate": "2",
-        "pin_source": "3",
-        "pin_shdn": "5",
-        "has_ilim": False,
-    },
 }
 
 
 class PowerMuxTemplate(SubcircuitTemplate):
-    """Power mux / ideal diode with auto-calculated ILIM resistors."""
+    """Power mux with auto-calculated ILIM resistors."""
 
     template_type = "power_mux"
-    description = "Auto-switching power mux or ideal diode OR controller"
+    description = "Auto-switching power mux"
     param_schema = [
         {
             "name": "ic",
@@ -276,69 +252,6 @@ class PowerMuxTemplate(SubcircuitTemplate):
             annotations.append(f"RILIM={format_resistance(rlim)} (target {ilim}A, actual {actual_ilim:.2f}A)")
             annotations.append("D1/D2=GND (dead-battery disconnect disabled)")
 
-        else:
-            # ---- LTC4357 ideal diode OR ----
-
-            # Power pins: pins 1, 6, 7, 8 are all VIN
-            power_pins = {
-                ic_db["pin_vin"]: vin1_net,
-                "6": vin1_net,
-                "7": vin1_net,
-                "8": vin1_net,
-                ic_db["pin_gnd"]: "GND",
-            }
-
-            # Signal pin nets
-            gate_net = f"GATE_{ref}"
-            source_net = f"SOURCE_{ref}"
-            shdn_net = f"SHDN_{ref}"
-
-            pin_nets = {
-                ic_db["pin_gate"]: gate_net,
-                ic_db["pin_source"]: source_net,
-                ic_db["pin_shdn"]: shdn_net,
-            }
-
-            # SHDN pull-up: 100k to VIN (default enabled)
-            straps.append(
-                StrapConfig(
-                    "R_SHDN",
-                    shdn_net,
-                    vin1_net,
-                    format_resistance(snap_to_e96(100e3)),
-                    FP_0402R,
-                    role="shutdown_pullup",
-                    presentation="topology_local",
-                )
-            )
-
-            # Input decoupling on VIN
-            bypass_caps.append(
-                BypassCap(
-                    "CIN_BULK",
-                    vin1_net,
-                    "GND",
-                    format_capacitance(10e-6),
-                    cap_footprint(10e-6),
-                    role="decoupling",
-                    presentation="topology_local",
-                )
-            )
-            bypass_caps.append(
-                BypassCap(
-                    "CIN_HF",
-                    vin1_net,
-                    "GND",
-                    format_capacitance(100e-9),
-                    cap_footprint(100e-9),
-                    role="decoupling",
-                    presentation="topology_local",
-                )
-            )
-
-            annotations.append(f"Ideal diode OR {ic_name}: {vin1_net} -> {vout_net}")
-            annotations.append("SHDN_N pulled high (enabled), requires external P-MOSFET")
-
         # ---- Build IC component ----
         ic_comp = ComponentDef(
             mpn=ic_name,
@@ -364,11 +277,7 @@ class PowerMuxTemplate(SubcircuitTemplate):
             BoundaryPort("GND", "passive"),
         ]
 
-        summary = (
-            f"Power mux {ic_name}: {vin1_net}+{vin2_net} -> {vout_net}, Ilim={ilim}A"
-            if ic_db.get("has_ilim")
-            else f"Ideal diode OR {ic_name}: {vin1_net} -> {vout_net}"
-        )
+        summary = f"Power mux {ic_name}: {vin1_net}+{vin2_net} -> {vout_net}, Ilim={ilim}A"
 
         return SubcircuitResult(
             components=[ic_comp],

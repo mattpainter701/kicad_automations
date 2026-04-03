@@ -304,9 +304,7 @@ def _search_digikey(mpn: str) -> dict | None:
         "source": "digikey",
         "mpn": best.get("ManufacturerProductNumber", ""),
         "manufacturer": mfr.get("Name", "") if isinstance(mfr, dict) else str(mfr),
-        "description": desc_obj.get("ProductDescription", "")
-        if isinstance(desc_obj, dict)
-        else str(desc_obj),
+        "description": desc_obj.get("ProductDescription", "") if isinstance(desc_obj, dict) else str(desc_obj),
         "package": attrs.get("Package / Case", ""),
         "datasheet_url": ds_url,
         "digikey_pn": (best.get("ProductVariations") or [{}])[0].get("DigiKeyProductNumber", ""),
@@ -398,8 +396,16 @@ def enrich_component(comp: ComponentDef, data: dict) -> None:
     if not comp.source_mpn:
         comp.source_mpn = data.get("mpn", "")
 
-    # Store LCSC code in features for production BOM use
+    # Populate first-class distributor PN fields
     lcsc = data.get("lcsc", "")
+    if lcsc and not comp.lcsc_pn:
+        comp.lcsc_pn = lcsc
+
+    dk_pn = data.get("digikey_pn", "")
+    if dk_pn and not comp.digikey_pn:
+        comp.digikey_pn = dk_pn
+
+    # Also store in features for backward compatibility
     if lcsc:
         lcsc_tag = f"LCSC:{lcsc}"
         if lcsc_tag not in comp.features:

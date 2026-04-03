@@ -5,26 +5,22 @@
 ### Sprint 5 — EasyEDA/LCSC Symbol Import Pipeline
 
 ### Added
-- Root `AGENTS.md`, `opencode.json`, `.opencode/agents/`, and `.agents/skills/` support files for Codex, OpenCode, and Kilo
-- `install.ps1` for Windows-friendly multi-platform skill installation
+- EasyEDA API client (`easyeda_api.py`): fetch symbol/footprint data from JLCPCB/LCSC by LCSC part number — zero auth, 300K+ parts, 7-day disk cache
+- EasyEDA symbol parser (`easyeda_parser.py`): parse tilde-delimited shapes into PinDefs with power/signal classification, footprint inference from 25+ package patterns, category inference from description keywords
+- 4th-tier component resolution fallback: built-in → KiCad official lib → JSON DB → **EasyEDA/LCSC**
+- YAML `lcsc:` key support — specify `lcsc: C14663` on any component to fetch from EasyEDA
+- MPN-to-LCSC auto-discovery: when `parts_lookup.py` finds an LCSC code for an MPN, the EasyEDA tier fires automatically
+- `lcsc_pn` and `digikey_pn` first-class fields on `ComponentDef` (replaces features-list workaround)
+- `search_easyeda()` function for keyword search across JLCPCB component library
+- 36 new tests in `test_easyeda_import.py` (pin parsing, symbol assembly, ComponentDef conversion, footprint/category inference, resolution chain with mocks)
 
 ### Changed
-- `install.sh` now supports Claude, Codex, OpenCode, Kilo, and shared `.agents/skills` project installs
-- Installer target lists now match the repo contents, including `vivado` and the `autoroute` project template
-- Installers now require explicit platform or path selection instead of silently defaulting to Claude
-- README and skill docs now use `AGENTS.md`-first guidance instead of Claude-only wording
-
-### Fixed
-- `install.sh` now falls back to `python`, then `py -3`, when `python3` is unavailable during frontmatter rewrites
+- `enrich_component()` now populates `lcsc_pn` and `digikey_pn` fields directly (backward-compatible: still writes features list too)
+- Resolution chain stub message updated to mention EasyEDA as a checked source
+- Version bump: 0.5.0 → 0.6.0
 
 ### Tests
-- Parsed `opencode.json` with `py -3`
-- Ran `pwsh -NoProfile -File .\install.ps1 -Help`
-- Verified `pwsh -NoProfile -File .\install.ps1` fails without explicit targets
-- Ran `pwsh -NoProfile -File .\install.ps1 -SkillsDir <temp> -ProjectSkillsDir <temp\.agents\skills>` and verified `kicad-gen` frontmatter rewrite
-- Ran Git Bash `bash -n ./install.sh`
-- Verified Git Bash `./install.sh` fails without explicit targets
-- Ran Git Bash `./install.sh --skills-dir <temp> --project-skills-dir <temp/.agents/skills>` and verified kebab-case project skill installation
+- 104 total tests passing (68 existing + 36 new EasyEDA import tests, zero regressions)
 
 ## [0.5.0] - 2026-04-03
 

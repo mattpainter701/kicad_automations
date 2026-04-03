@@ -344,7 +344,7 @@ pip install -e /path/to/kicad_automations
 - Full MVP API surface (`validate`, `patch`, `generate`, `diff`, `pcb-feedback`)
 - FastAPI HTTP server with all endpoints
 - Package-level tests and CI
-- Subcircuit template library (6 templates)
+- Subcircuit template library (30 templates)
 - Helper extraction (placement, silkscreen, impedance)
 
 **Active next steps**

@@ -350,8 +350,9 @@ class MOSFETSwitchTemplate(SubcircuitTemplate):
         ports = [
             BoundaryPort(gate_net, "input"),
             BoundaryPort(load_net, "output"),
-            BoundaryPort("GND", "passive"),
         ]
+        if polarity == "n":
+            ports.append(BoundaryPort("GND", "passive"))
         if polarity == "p":
             ports.append(BoundaryPort(vdd_net, "input"))
 

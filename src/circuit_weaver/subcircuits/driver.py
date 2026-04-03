@@ -60,7 +60,9 @@ GATE_DRIVER_DATABASE = {
             PinDef("8", "VDD2", "power_in", "T"),
         ],
         "pin_vdd": "7",
+        "pin_vdd_extra": ["8"],
         "pin_com": "3",
+        "pin_com_extra": ["4"],
         "pin_ho": "6",
         "pin_lo": "5",
         "pin_hin": "1",
@@ -153,6 +155,10 @@ class GateDriverTemplate(SubcircuitTemplate):
         lin_net = params.get("lin_net", f"LIN_{ref}")
 
         power_pins = {ic_db["pin_vdd"]: vdd_net, ic_db["pin_com"]: gnd_net}
+        for pin_num in ic_db.get("pin_vdd_extra", []):
+            power_pins[pin_num] = vdd_net
+        for pin_num in ic_db.get("pin_com_extra", []):
+            power_pins[pin_num] = gnd_net
         if "pin_vcc" in ic_db:
             power_pins[ic_db["pin_vcc"]] = vdd_net
 
@@ -253,6 +259,7 @@ class LevelShifterTemplate(SubcircuitTemplate):
         vcca_net = params.get("vcca_net", "VDD_1P8")
         vccb_net = params.get("vccb_net", "VDD_3P3")
         gnd_net = params.get("gnd_net", "GND")
+        oe_net = f"OE_{ref}"
 
         power_pins = {
             ic_db["pin_vcca"]: vcca_net,
@@ -260,7 +267,7 @@ class LevelShifterTemplate(SubcircuitTemplate):
             ic_db["pin_gnd"]: gnd_net,
         }
 
-        pin_nets = {ic_db["pin_oe"]: vcca_net}  # OE tied to VCCA = always enabled
+        pin_nets = {ic_db["pin_oe"]: oe_net}  # OE pulled high = always enabled
         # Map A/B channel pins
         for pin in ic_db["pins"]:
             if pin.name.startswith("A") and pin.name[1:].isdigit():
@@ -277,7 +284,7 @@ class LevelShifterTemplate(SubcircuitTemplate):
 
         straps = [
             StrapConfig(
-                ic_db["pin_oe"], f"OE_{ref}", vcca_net, "10k", FP_0402R, role="pull_up", presentation="topology_local"
+                ic_db["pin_oe"], oe_net, vcca_net, "10k", FP_0402R, role="pull_up", presentation="topology_local"
             ),
         ]
 
