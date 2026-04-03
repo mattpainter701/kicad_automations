@@ -37,7 +37,7 @@ except ImportError:
     _FASTAPI_AVAILABLE = False
 
 # Engine version — read from pyproject.toml at import time or fall back
-_VERSION = "3.69.2"
+_VERSION = "0.5.0"
 
 
 def _get_version() -> str:
@@ -92,20 +92,21 @@ def _parse_spec_body_bytes(body_text: str, content_type: str) -> dict:
         else:
             spec = payload
     else:
-        spec = _parse_yaml_text(body_text)
-        if not spec:
-            import json
+        # Try JSON first, then YAML as fallback for unspecified content types
+        import json
 
-            try:
-                payload = json.loads(body_text)
-                if isinstance(payload, dict) and "yaml" in payload:
-                    spec = _parse_yaml_text(payload["yaml"])
-                else:
-                    spec = payload
-            except json.JSONDecodeError:
+        try:
+            payload = json.loads(body_text)
+            if isinstance(payload, dict) and "yaml" in payload:
+                spec = _parse_yaml_text(payload["yaml"])
+            else:
+                spec = payload
+        except (json.JSONDecodeError, ValueError):
+            spec = _parse_yaml_text(body_text)
+            if not spec:
                 raise HTTPException(
                     status_code=400,
-                    detail="Could not parse body as YAML or JSON",
+                    detail="Could not parse body as YAML or JSON. Use Content-Type: application/json or text/yaml.",
                 )
 
     if not spec or not isinstance(spec, dict):
@@ -342,9 +343,7 @@ def create_app() -> Any:
         return StreamingResponse(
             buf,
             media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{project_name}_schematics.zip"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{project_name}_schematics.zip"'},
         )
 
     @app.post("/generate/from-bom")
@@ -560,9 +559,7 @@ def create_app() -> Any:
         return StreamingResponse(
             buf,
             media_type="application/zip",
-            headers={
-                "Content-Disposition": f'attachment; filename="{project_name}_mvp_artifacts.zip"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{project_name}_mvp_artifacts.zip"'},
         )
 
     return app
@@ -585,7 +582,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "circuit_weaver.api:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8000,
         reload=True,
     )

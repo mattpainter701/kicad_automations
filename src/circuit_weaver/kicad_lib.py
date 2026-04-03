@@ -569,6 +569,11 @@ class KiCadLibrary:
 
         return all_syms
 
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
+        """Sanitize a library/symbol name to prevent directory traversal."""
+        return re.sub(r"[^A-Za-z0-9_\-.]", "_", name).strip(".")
+
     def download_kicad_lib(self, lib_name: str, symbols: list[str] = None) -> bool:
         """Download KiCad symbol(s) from the official GitLab repository.
 
@@ -581,6 +586,7 @@ class KiCadLibrary:
         import json
         import subprocess
 
+        lib_name = self._sanitize_name(lib_name)
         self._cache.mkdir(parents=True, exist_ok=True)
         lib_cache = self._cache / lib_name
         lib_cache.mkdir(exist_ok=True)
@@ -603,7 +609,8 @@ class KiCadLibrary:
         if lib_name not in self._symbols:
             self._symbols[lib_name] = {}
 
-        for sym_name in symbols:
+        for raw_sym_name in symbols:
+            sym_name = self._sanitize_name(raw_sym_name)
             dest = lib_cache / f"{sym_name}.kicad_sym"
 
             if dest.exists() and dest.stat().st_size > 50:

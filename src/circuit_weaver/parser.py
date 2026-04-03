@@ -191,9 +191,7 @@ def _parse_component(block: str) -> ParsedComponent | None:
     lib_id = m_lib.group(1)
 
     # Position: (at x y angle)
-    m_at = re.search(
-        r'\(symbol\s+\(lib_id\s+"[^"]+"\)\s+\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)', block
-    )
+    m_at = re.search(r'\(symbol\s+\(lib_id\s+"[^"]+"\)\s+\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)', block)
     if m_at:
         x = float(m_at.group(1))
         y = float(m_at.group(2))
@@ -388,7 +386,10 @@ def parse_schematic(path: str | Path) -> ParsedSchematic:
         ValueError: If the file is not a valid KiCad schematic.
     """
     path = Path(path)
-    text = path.read_text(encoding="utf-8")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Cannot read {path} — file contains invalid UTF-8: {exc}") from exc
 
     if not text.strip().startswith("(kicad_sch"):
         raise ValueError(f"Not a valid KiCad schematic: {path}")
@@ -654,13 +655,10 @@ def _apply_position_override(content: str, ref: str, parsed_comp: ParsedComponen
         )
 
         # 2. Shift all property (at ...) coordinates by the same delta
-        prop_at_pattern = re.compile(
-            r'(\(property\s+"[^"]*"\s+"[^"]*"\s+\(at\s+)([-\d.]+)(\s+)([-\d.]+)(\s+[-\d.]+\))'
-        )
+        prop_at_pattern = re.compile(r'(\(property\s+"[^"]*"\s+"[^"]*"\s+\(at\s+)([-\d.]+)(\s+)([-\d.]+)(\s+[-\d.]+\))')
         new_block = prop_at_pattern.sub(
             lambda pm: (
-                f"{pm.group(1)}{float(pm.group(2)) + dx:.2f}"
-                f"{pm.group(3)}{float(pm.group(4)) + dy:.2f}{pm.group(5)}"
+                f"{pm.group(1)}{float(pm.group(2)) + dx:.2f}{pm.group(3)}{float(pm.group(4)) + dy:.2f}{pm.group(5)}"
             ),
             new_block,
         )
