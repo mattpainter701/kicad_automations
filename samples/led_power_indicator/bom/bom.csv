@@ -1,0 +1,6 @@
+Reference,Qty,Value,Footprint,MPN,Manufacturer,Description,Chosen_Distributor,Datasheet,Validated,DNP,Notes
+U1,1,TLV75518,SOT-23-5,TLV75518PDBVR,Texas Instruments,"500mA LDO 1.8V Fixed Low-Noise",DigiKey,,,,LDO regulator — 5V to 3.3V
+J1,1,USB-C,USB_C_Receptacle_GCT_USB4085,USB4085-GF-A,GCT,"USB Type-C Receptacle 6-Pin Power Only",DigiKey,,,,Power input connector
+C1,1,100nF,Capacitor_SMD:C_0402_1005Metric,GRM155R71C104KA88D,Murata Electronics,"100nF 16V X7R 0402",DigiKey,,,,U1 input decoupling
+"C2,C3",2,1uF,Capacitor_SMD:C_0805_2012Metric,GRM21BR71C105KA12L,Murata Electronics,"1uF 16V X7R 0805",DigiKey,,,,U1 input/output bulk caps
+"R1,R2",2,5.1k,Resistor_SMD:R_0402_1005Metric,RC0402FR-075K1L,Yageo,"5.1k 1% 0402 — USB-C CC pull-down",DigiKey,,,,USB-C CC1/CC2 pull-downs

@@ -1,0 +1,15 @@
+Reference,Qty,Value,Footprint,MPN,Manufacturer,Description,Chosen_Distributor,Datasheet,Validated,DNP,Notes
+U1,1,AP62300,SOT-23-6,AP62300WJ-7,Diodes Incorporated,"3A Sync Buck Regulator 600kHz",DigiKey,,,,5V to 3.3V buck converter
+U2,1,TLV75518,SOT-23-5,TLV75518PDBVR,Texas Instruments,"500mA LDO 1.8V Fixed Low-Noise",DigiKey,,,,3.3V to 1.8V clean LDO
+U3,1,ESP32-WROOM-32E,RF_Module:ESP32-WROOM-32E,ESP32-WROOM-32E-N16,Espressif Systems,"WiFi+BT 16MB Flash Module",DigiKey,,,,Main MCU — WiFi/BLE SoC
+U4,1,BME280,Package_LGA:Bosch_LGA-8_2.5x2.5mm,BME280,Bosch Sensortec,"Temp/Humidity/Pressure Sensor LGA-8",DigiKey,,,,Environmental sensor (I2C)
+J1,1,USB-C,USB_C_Receptacle_GCT_USB4085,USB4085-GF-A,GCT,"USB Type-C Receptacle 6-Pin Power Only",DigiKey,,,,Power input connector
+L1,1,3.3uH,Inductor_SMD:L_0805_2012Metric,LQM21FN3R3M70L,Murata Electronics,"3.3uH 1.4A 0805 Power Inductor",DigiKey,,,,Buck converter inductor
+"C1,C4,C8,C9",4,100nF,Capacitor_SMD:C_0402_1005Metric,GRM155R71C104KA88D,Murata Electronics,"100nF 16V X7R 0402",DigiKey,,,,Decoupling caps (buck/LDO/ESP32/BME280)
+"C2,C7",2,10uF,Capacitor_SMD:C_0805_2012Metric,GRM21BR61C106KE15L,Murata Electronics,"10uF 16V X5R 0805",DigiKey,,,,Buck input cap + ESP32 bulk cap
+C3,1,6.8uF,Capacitor_SMD:C_0805_2012Metric,GRM21BR61C685KA88L,Murata Electronics,"6.8uF 16V X5R 0805",DigiKey,,,,Buck output cap
+"C5,C6",2,1uF,Capacitor_SMD:C_0805_2012Metric,GRM21BR71C105KA12L,Murata Electronics,"1uF 16V X7R 0805",DigiKey,,,,LDO input/output caps
+"R1,R2",2,5.1k,Resistor_SMD:R_0402_1005Metric,RC0402FR-075K1L,Yageo,"5.1k 1% 0402 — USB-C CC pull-down",DigiKey,,,,USB-C CC1/CC2 pull-downs
+R3,1,316k,Resistor_SMD:R_0402_1005Metric,RC0402FR-07316KL,Yageo,"316k 1% 0402 — Buck FB top",DigiKey,,,,Feedback divider top (Vout=3.33V)
+R4,1,100k,Resistor_SMD:R_0402_1005Metric,RC0402FR-07100KL,Yageo,"100k 1% 0402 — Buck FB bottom",DigiKey,,,,Feedback divider bottom
+"R5,R6",2,10k,Resistor_SMD:R_0402_1005Metric,RC0402FR-0710KL,Yageo,"10k 1% 0402 — I2C pull-up",DigiKey,,,,I2C SDA/SCL pull-ups for BME280

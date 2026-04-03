@@ -12,3 +12,8 @@ dist/
 .venv/
 tasks.md
 changelog.md
+
+# KiCad session artifacts
+*.kicad_prl
+~*.lck
+*-backups/

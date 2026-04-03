@@ -1,0 +1,27 @@
+# Medium: Buck + LDO dual-rail power supply from USB
+# Demonstrates multi-stage power — buck for 3.3V main rail, LDO for 1.8V clean rail
+project: USB_Regulated_Supply
+company: Demo Corp
+description: Dual-rail power supply — buck 5V-to-3.3V, LDO 3.3V-to-1.8V
+
+power:
+  - type: buck
+    ic: AP62300
+    ref: U1
+    vin: 5
+    vout: 3.3
+    iout: 2
+    vin_net: VBUS_5V
+    rail_name: VDD_3P3
+    en_net: VBUS_5V
+  - type: ldo
+    ic: TLV75518
+    ref: U2
+    vin: 3.3
+    vout: 1.8
+    vin_net: VDD_3P3
+    rail_name: VDD_1P8
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1

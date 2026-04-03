@@ -211,9 +211,7 @@ def sexpr_junction(x, y):
 # ================================================================
 # Wiring
 # ================================================================
-def connect_pin_to_label(
-    cx, cy, pin_angle, net_name, wires, labels, shape="bidirectional", wire_len=7.62
-):
+def connect_pin_to_label(cx, cy, pin_angle, net_name, wires, labels, shape="bidirectional", wire_len=7.62):
     """Add a wire stub from a pin endpoint and a global label at the wire's end."""
     shape = shape or "bidirectional"
     if pin_angle == 0:
@@ -235,9 +233,7 @@ def connect_pin_to_label(
     labels.append(sexpr_global_label(wx, wy, net_name, label_angle, shape))
 
 
-def connect_pin_to_hierarchical_label(
-    cx, cy, pin_angle, net_name, wires, labels, shape="bidirectional", wire_len=7.62
-):
+def connect_pin_to_hierarchical_label(cx, cy, pin_angle, net_name, wires, labels, shape="bidirectional", wire_len=7.62):
     """Add a wire stub from a pin endpoint and a hierarchical label at the wire's end.
 
     Same geometry as ``connect_pin_to_label`` but emits a ``hierarchical_label``
@@ -295,8 +291,7 @@ def sexpr_power_lib_entry(net_name: str) -> str:
 '''
     else:
         # VCC/VDD/other power: upward chevron
-        return (
-            f'''  (symbol "{net_name}" (power) (pin_names (offset 0)) (exclude_from_sim no)
+        return f'''  (symbol "{net_name}" (power) (pin_names (offset 0)) (exclude_from_sim no)
     (in_bom yes) (on_board yes)
     (property "Reference" "#PWR" (at 0 3.81 0)
       (effects (font (size 1.27 1.27)) hide)
@@ -312,7 +307,6 @@ def sexpr_power_lib_entry(net_name: str) -> str:
       (pin power_in line (at 0 0 90) (length 0) hide) )
   )
 '''
-        )
 
 
 def sexpr_power_instance(
@@ -625,9 +619,7 @@ def create_generic_symbol(
         max((len(chunk) for chunk in right_chunks), default=0),
     )
     pin_pitch = (
-        float(pin_pitch_override)
-        if pin_pitch_override is not None
-        else _adaptive_pin_pitch(max_side, pin_columns)
+        float(pin_pitch_override) if pin_pitch_override is not None else _adaptive_pin_pitch(max_side, pin_columns)
     )
     box_h = _snap_box_dimension(max(max_side * pin_pitch + 7.62, 15.24))
     pin_len = 5.08
@@ -657,14 +649,10 @@ def create_generic_symbol(
     val_font = 1.0 if len(name) > 10 else 1.27
     if pin_columns > 1 and len(name) > 16:
         val_font = 0.9
-    lines.append(
-        f'      (property "Reference" "{ref_prefix}" (at {box_w / 2:.2f} {box_h / 2 + 2.54 + y_offset:.2f} 0)'
-    )
+    lines.append(f'      (property "Reference" "{ref_prefix}" (at {box_w / 2:.2f} {box_h / 2 + 2.54 + y_offset:.2f} 0)')
     lines.append("        (effects (font (size 1.27 1.27)))")
     lines.append("      )")
-    lines.append(
-        f'      (property "Value" "{name}" (at {box_w / 2:.2f} {-box_h / 2 - 2.54 + y_offset:.2f} 0)'
-    )
+    lines.append(f'      (property "Value" "{name}" (at {box_w / 2:.2f} {-box_h / 2 - 2.54 + y_offset:.2f} 0)')
     lines.append(f"        (effects (font (size {val_font:.2f} {val_font:.2f})))")
     lines.append("      )")
     lines.append('      (property "Footprint" "" (at 0 0 0)')
@@ -692,9 +680,7 @@ def create_generic_symbol(
         x0 = segment_origin + idx * (segment_w + column_gap)
         for i, (num, pname, ptype, _) in enumerate(chunk):
             y = box_h / 2 - pin_pitch - i * pin_pitch + y_offset
-            lines.append(
-                f"        (pin {ptype} line (at {x0 - pin_len:.2f} {y:.2f} 0) (length {pin_len:.2f})"
-            )
+            lines.append(f"        (pin {ptype} line (at {x0 - pin_len:.2f} {y:.2f} 0) (length {pin_len:.2f})")
             lines.append(f'          (name "{pname}" (effects (font (size 1.0 1.0))))')
             lines.append(f'          (number "{num}" (effects (font (size 1.0 1.0))))')
             lines.append("        )")
@@ -703,9 +689,7 @@ def create_generic_symbol(
         x1 = segment_origin + idx * (segment_w + column_gap) + segment_w
         for i, (num, pname, ptype, _) in enumerate(chunk):
             y = box_h / 2 - pin_pitch - i * pin_pitch + y_offset
-            lines.append(
-                f"        (pin {ptype} line (at {x1 + pin_len:.2f} {y:.2f} 180) (length {pin_len:.2f})"
-            )
+            lines.append(f"        (pin {ptype} line (at {x1 + pin_len:.2f} {y:.2f} 180) (length {pin_len:.2f})")
             lines.append(f'          (name "{pname}" (effects (font (size 1.0 1.0))))')
             lines.append(f'          (number "{num}" (effects (font (size 1.0 1.0))))')
             lines.append("        )")
@@ -796,6 +780,58 @@ def pin_connection_point(sym_x, sym_y, pin_x, pin_y, pin_angle, pin_length):
 
 
 # ================================================================
+# Footprint qualification — bare names → Library:Name
+# ================================================================
+_FOOTPRINT_LIBRARY_MAP = {
+    "SOT-23": "Package_TO_SOT_SMD",
+    "SOT-23-3": "Package_TO_SOT_SMD",
+    "SOT-23-5": "Package_TO_SOT_SMD",
+    "SOT-23-6": "Package_TO_SOT_SMD",
+    "SOT-223": "Package_TO_SOT_SMD",
+    "SOT-223-3": "Package_TO_SOT_SMD",
+    "SOT-89-3": "Package_TO_SOT_SMD",
+    "TSOT-23-5": "Package_TO_SOT_SMD",
+    "TSOT-23-6": "Package_TO_SOT_SMD",
+    "TSOT-23-8": "Package_TO_SOT_SMD",
+}
+
+# Pattern-based rules for footprints not in the explicit map
+_FOOTPRINT_LIBRARY_PATTERNS = [
+    (r"^SOT-\d", "Package_TO_SOT_SMD"),
+    (r"^TSOT-", "Package_TO_SOT_SMD"),
+    (r"^TO-\d", "Package_TO_SOT_SMD"),
+    (r"^SOIC-", "Package_SO"),
+    (r"^SOP-", "Package_SO"),
+    (r"^MSOP-", "Package_SO"),
+    (r"^TSSOP-", "Package_SO"),
+    (r"^SSOP-", "Package_SO"),
+    (r"^QFN-", "Package_DFN_QFN"),
+    (r"^DFN-", "Package_DFN_QFN"),
+    (r"^QFP-", "Package_QFP"),
+    (r"^LQFP-", "Package_QFP"),
+    (r"^TQFP-", "Package_QFP"),
+    (r"^BGA-", "Package_BGA"),
+    (r"^LFCSP-", "Package_CSP"),
+]
+
+
+def qualify_footprint(footprint: str) -> str:
+    """Ensure a footprint string has a library prefix (e.g., 'Package_TO_SOT_SMD:SOT-23-6').
+
+    Returns the input unchanged if it already contains ':' or is empty.
+    """
+    if not footprint or ":" in footprint:
+        return footprint
+    lib = _FOOTPRINT_LIBRARY_MAP.get(footprint)
+    if lib:
+        return f"{lib}:{footprint}"
+    for pattern, lib_name in _FOOTPRINT_LIBRARY_PATTERNS:
+        if re.match(pattern, footprint):
+            return f"{lib_name}:{footprint}"
+    return footprint
+
+
+# ================================================================
 # Component placement
 # ================================================================
 def place_component(
@@ -815,6 +851,7 @@ def place_component(
 ):
     """Generate S-expression for a placed component instance."""
     x, y = snap(x), snap(y)
+    footprint = qualify_footprint(footprint)
     property_center_x = snap(property_center_x) if property_center_x is not None else None
     value = sexpr_safe(value)
     ref = sexpr_safe(ref)
@@ -1114,9 +1151,7 @@ def _iter_blocks(text: str, token_pattern: str):
         yield _extract_sexpr_block(text, match.start())
 
 
-def _text_bbox_centered(
-    x: float, y: float, text: str, size_x: float, size_y: float, angle: int = 0
-):
+def _text_bbox_centered(x: float, y: float, text: str, size_x: float, size_y: float, angle: int = 0):
     """Estimate bbox for centered KiCad text/property rendering."""
     width = max(size_x, text_width_mm(text, size_x))
     height = max(size_y, size_y * 1.6)
@@ -1392,9 +1427,7 @@ def center_content(content, paper):
             float(match.group(3)),
             match.group(1),
             float(match.group(5)) if match.group(5) else 1.27,
-            float(match.group(6))
-            if match.group(6)
-            else (float(match.group(5)) if match.group(5) else 1.27),
+            float(match.group(6)) if match.group(6) else (float(match.group(5)) if match.group(5) else 1.27),
             int(match.group(4)),
         )
         text_xs.append(bbox[0])

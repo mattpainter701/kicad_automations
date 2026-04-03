@@ -1,0 +1,18 @@
+# Basic: Simple LDO-powered LED indicator
+# Demonstrates a minimal circuit — 3.3V LDO from 5V USB input with LED
+project: LED_Power_Indicator
+company: Demo Corp
+description: Simple 3.3V LDO regulator with power indicator LED
+
+power:
+  - type: ldo
+    ic: AMS1117-3.3
+    ref: U1
+    vin: 5
+    vout: 3.3
+    vin_net: VBUS_5V
+    rail_name: VDD_3P3
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1
