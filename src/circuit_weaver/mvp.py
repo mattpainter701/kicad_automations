@@ -570,6 +570,7 @@ def _generate_compiled_artifacts(
     output_dir: Path,
     *,
     export_svg: bool,
+    score: bool = False,
 ) -> tuple[list[str], Path | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
     profile = compiled.metadata.get("presentation_profile", "default")
@@ -585,6 +586,7 @@ def _generate_compiled_artifacts(
         hierarchical=True,
         interface_policy="explicit",
         presentation_wiring_policy=pwp,
+        score=score,
     )
     root = _find_root_schematic(files, compiled.metadata.get("project", "project"))
     if export_svg and root is not None:
@@ -967,6 +969,7 @@ def generate_artifacts(
     require_valid: bool = True,
     enrich_parts: bool = False,
     export_svg: bool = True,
+    score: bool = False,
 ) -> dict[str, Any]:
     """Generate derived artifacts from a validated design spec."""
     profile = _ensure_profile(profile)
@@ -976,7 +979,7 @@ def generate_artifacts(
 
     compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
     output_path = Path(output_dir)
-    files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg)
+    files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg, score=score)
 
     spec_path = output_path / "canonical_spec.yaml"
     spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")
@@ -1188,6 +1191,7 @@ def main() -> None:
         default=None,
         help="Override the presentation profile (default | review)",
     )
+    gen_p.add_argument("--score", action="store_true", default=False, help="Run aesthetics scorer on generated layouts")
     gen_p.set_defaults(require_valid=True, export_svg=True)
 
     diff_p = subparsers.add_parser("diff", help="Semantic diff between two design specs")
@@ -1232,6 +1236,7 @@ def main() -> None:
                 require_valid=args.require_valid,
                 enrich_parts=args.enrich_parts,
                 export_svg=args.export_svg,
+                score=args.score,
             )
         )
         _print_json(result)

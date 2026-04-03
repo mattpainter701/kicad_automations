@@ -824,8 +824,24 @@ def _apply_topology_sidecar_cluster(
         pin_x, pin_y, _pin_angle = parent_pin
         side = _passive_pin_side(pc, parent_pin)
         ordered = sorted(group, key=lambda item: (item.role, item.ref))
-        rows = max(1, math.ceil(len(ordered) / 2))
 
+        # Single passive: place inline with the pin (closer, same axis)
+        if len(ordered) == 1:
+            pp = ordered[0]
+            inline_offset = snap(8.89)  # tighter than grid offset
+            if side == "left":
+                _set_passive_pose(pp, snap(pin_x - inline_offset), pin_y, 180)
+            elif side == "right":
+                _set_passive_pose(pp, snap(pin_x + inline_offset), pin_y, 0)
+            elif side == "top":
+                _set_passive_pose(pp, pin_x, snap(pin_y - inline_offset), 270)
+            else:
+                _set_passive_pose(pp, pin_x, snap(pin_y + inline_offset), 90)
+            processed.add(pp.ref)
+            continue
+
+        # Multiple passives: use grid layout
+        rows = max(1, math.ceil(len(ordered) / 2))
         for idx, pp in enumerate(ordered):
             row = idx % rows
             col = idx // rows
@@ -1016,8 +1032,106 @@ def _apply_topology_strap_ladder(layout: SheetLayout, pc: PlacedComponent, passi
     return processed
 
 
+def _apply_topology_ldo_cluster(layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]) -> set[str]:
+    """Place LDO support passives (CIN + COUT + optional enable) as a compact unit.
+
+    Detects a power-category IC with one input cap and one output cap
+    and places them in a row below the IC: CIN left-of-center,
+    COUT right-of-center, with shared rail/ground labels.
+    """
+    processed: set[str] = set()
+    if pc.comp.category != "power":
+        return processed
+
+    caps = [pp for pp in passives if pp.sym_type == "C" and pp.role == "decoupling"]
+    if len(caps) != 2:
+        return processed
+
+    # Identify CIN (input) vs COUT (output) by owner_pin name
+    cin = cout = None
+    for cap in caps:
+        pin_hint = (cap.owner_pin or "").upper()
+        if "IN" in pin_hint or "CIN" in pin_hint:
+            cin = cap
+        elif "OUT" in pin_hint or "COUT" in pin_hint:
+            cout = cap
+    if cin is None or cout is None:
+        # Fallback: first cap = CIN, second = COUT
+        cin, cout = caps[0], caps[1]
+
+    left, _top, right, bottom = component_body_bounds(pc)
+    center_x = snap((left + right) / 2.0)
+    cluster_y = snap(bottom + 10.16)
+    spacing = snap(12.70)
+
+    _set_passive_pose(cin, snap(center_x - spacing / 2), cluster_y, 90)
+    _set_passive_pose(cout, snap(center_x + spacing / 2), cluster_y, 90)
+
+    # Shared rail labels
+    _add_local_anchor(layout, cin.net1, snap(center_x - spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
+    _add_local_anchor(layout, cout.net1, snap(center_x + spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
+    # Shared ground
+    gnd_net = cin.net2
+    gnd_y = snap(cluster_y + 5.08)
+    _add_local_anchor(layout, gnd_net, snap(center_x), gnd_y, 90, "power", pc.ref)
+
+    processed.update({cin.ref, cout.ref})
+
+    # Handle enable strap if present
+    straps = [pp for pp in passives if pp.sym_type == "R" and pp.role in ("pull_up", "strap")]
+    if len(straps) == 1:
+        en_strap = straps[0]
+        _set_passive_pose(en_strap, snap(center_x + spacing), cluster_y, 90)
+        processed.add(en_strap.ref)
+
+    return processed
+
+
+def _apply_topology_cc_network(layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]) -> set[str]:
+    """Place USB-C CC pull-down resistors as a tight pair beside the connector.
+
+    Detects a connector-category IC with 2 straps both pulling to GND
+    with the same value (5.1k CC pull-downs).
+    """
+    processed: set[str] = set()
+    if pc.comp.category != "connector":
+        return processed
+
+    straps = [pp for pp in passives if pp.sym_type == "R" and pp.role == "termination"]
+    if len(straps) != 2:
+        return processed
+
+    # Check both pull to same GND rail with same value
+    if straps[0].net2 != straps[1].net2 or straps[0].value != straps[1].value:
+        return processed
+
+    left, _top, right, bottom = component_body_bounds(pc)
+    cc_x = snap(right + 10.16)
+    cc_y = snap((bottom + _top) / 2.0)
+    pitch = snap(5.08)
+
+    _set_passive_pose(straps[0], cc_x, snap(cc_y - pitch / 2), 0)
+    _set_passive_pose(straps[1], cc_x, snap(cc_y + pitch / 2), 0)
+
+    # Shared ground label
+    gnd_net = straps[0].net2
+    _add_local_anchor(layout, gnd_net, snap(cc_x + 6.35), cc_y, 0, "power", pc.ref)
+
+    processed.update({straps[0].ref, straps[1].ref})
+    return processed
+
+
 def _apply_topology_local_circuits(layout: SheetLayout) -> None:
-    """Promote topology-aware passive groups onto deliberate local motifs."""
+    """Promote topology-aware passive groups onto deliberate local motifs.
+
+    Dispatch chain (most specific → most generic):
+    1. Buck cluster (full switcher topology)
+    2. LDO cluster (CIN + COUT as compact unit)
+    3. CC network (USB-C pull-down pair)
+    4. Decoupling bank (2+ caps sharing a rail)
+    5. Strap ladder (2+ straps sharing a rail)
+    6. Sidecar cluster (generic fallback)
+    """
     by_parent: dict[str, list[PlacedPassive]] = {}
     placed_ic_map = {pc.ref: pc for pc in layout.placed_ics}
     for pp in layout.placed_passives:
@@ -1032,6 +1146,14 @@ def _apply_topology_local_circuits(layout: SheetLayout) -> None:
 
         processed = _apply_topology_buck_cluster(layout, pc, passives)
         remainder = [pp for pp in passives if pp.ref not in processed]
+        if remainder:
+            ldo_done = _apply_topology_ldo_cluster(layout, pc, remainder)
+            processed.update(ldo_done)
+            remainder = [pp for pp in remainder if pp.ref not in ldo_done]
+        if remainder:
+            cc_done = _apply_topology_cc_network(layout, pc, remainder)
+            processed.update(cc_done)
+            remainder = [pp for pp in remainder if pp.ref not in cc_done]
         if remainder:
             bank_done = _apply_topology_decoupling_bank(layout, pc, remainder)
             processed.update(bank_done)

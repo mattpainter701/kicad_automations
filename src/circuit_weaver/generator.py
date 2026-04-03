@@ -1170,6 +1170,7 @@ def generate_from_components(
     hierarchical: bool = False,
     interface_policy: str | None = None,
     presentation_wiring_policy: PresentationWiringPolicy | dict | None = None,
+    score: bool = False,
 ) -> list[str]:
     """Generate KiCad schematics from a list of ComponentDefs.
 
@@ -1240,6 +1241,15 @@ def generate_from_components(
                 f"  {sheet_alloc.name}: {len(layout.placed_ics)} ICs, "
                 f"{len(layout.placed_passives)} passives on {layout.paper}"
             )
+
+        # 1b'. Optional aesthetics scoring
+        if score:
+            from .scorer import score_project as _score_project
+
+            project_score = _score_project(layouts)
+            print(f"  Aesthetics: {project_score['grade']} ({project_score['total']}/100)")
+            for _sh in project_score["sheets"]:
+                print(f"    {_sh['sheet']}: {_sh['grade']} ({_sh['total']})")
 
         # 1c. Compute boundary nets for hierarchical mode
         boundary_nets: set[str] = set()

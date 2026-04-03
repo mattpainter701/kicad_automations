@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0] - 2026-04-03
+
+### Sprint 3 — Placement, Routing & Presentation Readiness
+
+### Added
+- Schematic aesthetics scorer (`scorer.py`): 6-metric rule-based quality gate (spacing uniformity, whitespace ratio, label overlap, wire crossings, aspect ratio, density)
+- `score_layout()` returns 0-100 score with A-F grade; `score_project()` aggregates across sheets
+- `--score` CLI flag on `generate` subcommand; piped through `generate_artifacts()` API
+- LDO cluster motif renderer (`_apply_topology_ldo_cluster`): CIN + COUT as compact unit below IC
+- USB-C CC network motif renderer (`_apply_topology_cc_network`): CC1/CC2 pull-downs as tight pair beside connector
+- Single-passive inline placement in sidecar cluster: 8.89mm offset for solo passives (vs 12.70mm grid)
+- Dispatch chain: buck -> LDO cluster -> CC network -> decoupling bank -> strap ladder -> sidecar
+- 10 new tests in `test_sprint3.py`
+
+### Changed
+- Sidecar cluster distinguishes single-passive (inline) from multi-passive (grid) placement
+
+### Tests
+- 68 total tests passing
+
 ## [0.3.0] - 2026-04-02
 
 ### Sprint 2 — Template Expansion & DFM Quality

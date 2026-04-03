@@ -126,3 +126,51 @@ Deferred to Sprint 3. Existing sidecar/bank/ladder renderers handle most cases a
 ### 15. Add section-category extensibility (P2, SMALL) — DONE (Sprint 1)
 
 Completed during Sprint 1 Task 5. `_SECTION_CATEGORY_MAP` expanded with analog, discrete, motor, protection, audio, display, misc, rf_frontend, power_distribution.
+
+---
+
+## Sprint 3 — Placement, Routing & Presentation Readiness (v0.4.0)
+
+**Goal:** Close the gap between auto-generated and hand-drawn quality with aesthetics scoring, motif refinement, and routing improvements.
+
+### 16. Schematic aesthetics scorer (P0, LARGE) — DONE
+
+- [x] `scorer.py` module with `score_layout()` and `score_project()`
+- [x] 6 metrics: spacing uniformity (CV), whitespace ratio, label overlap potential, wire crossing estimate, aspect ratio, component density
+- [x] Weighted aggregate score 0-100 with A-F grade
+- [x] Wired into `generate_from_components()` via `score=True` parameter
+- [x] CLI flag: `--score` on the `generate` subcommand
+- [x] Piped through `generate_artifacts()` and `_generate_compiled_artifacts()`
+
+### 17. Compact LDO cluster motif (P1, MEDIUM) — DONE
+
+- [x] `_apply_topology_ldo_cluster()` in `placer.py`
+- [x] Detects power-category IC with exactly 2 decoupling caps (CIN + COUT)
+- [x] Places CIN left-of-center, COUT right-of-center in a row below IC
+- [x] Shared rail labels and ground anchor
+- [x] Optional enable strap placed inline
+
+### 18. USB-C CC network block (P1, SMALL) — DONE
+
+- [x] `_apply_topology_cc_network()` in `placer.py`
+- [x] Detects connector with 2 termination straps pulling to same GND with same value
+- [x] Places both resistors vertically beside connector with shared GND label
+- [x] Dispatch chain updated: buck -> LDO cluster -> CC network -> bank -> ladder -> sidecar
+
+### 19. Single-passive inline placement (P1, SMALL) — DONE
+
+- [x] Sidecar cluster now handles single-passive pin groups with inline placement (8.89mm offset)
+- [x] Multi-passive groups (2+) still use the full grid layout (12.70mm offset)
+- [x] Tighter inline placement reduces visual noise for solo bypass caps
+
+### 20. Wire crossing minimization (P2, MEDIUM) — DEFERRED
+
+Deferred to Sprint 4. Current crossing count is low with topology-local rendering.
+
+### 21. Bus routing for parallel signals (P2, MEDIUM) — DEFERRED
+
+Deferred to Sprint 4. Current label-based bus connections work adequately.
+
+### 22. Sample gallery refresh (P1, SMALL) — DEFERRED
+
+Deferred until KiCad CLI SVG export is integrated into CI.
