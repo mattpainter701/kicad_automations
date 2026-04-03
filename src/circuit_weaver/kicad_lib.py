@@ -216,10 +216,85 @@ def _extract_properties(symbol_text: str) -> dict[str, str]:
     return props
 
 
-def symbol_to_component_def(name: str, sym_data: dict, category: str = "digital") -> ComponentDef:
+# Library-name prefix → category mapping for KiCad symbol libraries
+_LIB_CATEGORY_MAP = {
+    "Regulator_Linear": "power",
+    "Regulator_Switching": "power",
+    "Regulator_Controller": "power",
+    "Power_Management": "power",
+    "Power_Protection": "protection",
+    "Power_Supervisor": "power",
+    "Sensor": "sensor",
+    "Amplifier": "analog",
+    "Comparator": "analog",
+    "Transistor": "discrete",
+    "Diode": "discrete",
+    "Driver": "power",
+    "Motor_Driver": "power",
+    "LED_Driver": "power",
+    "Timer": "analog",
+    "Converter": "analog",
+    "Interface": "communication",
+    "Interface_USB": "usb",
+    "Interface_Ethernet": "ethernet",
+    "Interface_CAN": "communication",
+    "MCU": "mcu",
+    "RF_Module": "rf",
+    "RF": "rf",
+    "Connector": "connector",
+    "Memory": "storage",
+    "Logic": "digital",
+    "Oscillator": "clock",
+    "Crystal": "clock",
+    "Display": "digital",
+    "Relay": "discrete",
+    "Switch": "connector",
+}
+
+
+def _infer_category_from_lib(lib_name: str | None) -> str | None:
+    """Infer component category from the KiCad library name."""
+    if not lib_name:
+        return None
+    for prefix, cat in _LIB_CATEGORY_MAP.items():
+        if lib_name == prefix or lib_name.startswith(prefix + "_"):
+            return cat
+    return None
+
+
+def _infer_footprint(name: str, pins: list[PinDef], properties: dict) -> str:
+    """Heuristic footprint inference when the symbol has none."""
+    fp = properties.get("Footprint", "").strip()
+    if fp:
+        return fp
+    ref = properties.get("Reference", "U")
+    n = len(pins)
+    name_up = name.upper()
+    if ref in ("R", "C", "L"):
+        pkg = "0402"
+        return {
+            "R": f"Resistor_SMD:R_{pkg}_1005Metric",
+            "C": f"Capacitor_SMD:C_{pkg}_1005Metric",
+            "L": f"Inductor_SMD:L_{pkg}_1005Metric",
+        }[ref]
+    if n == 3 and ("SOT" in name_up or ref == "Q"):
+        return "Package_TO_SOT_SMD:SOT-23"
+    if n == 5 and "SOT-23" in name_up:
+        return "Package_TO_SOT_SMD:SOT-23-5"
+    if n == 8 and any(kw in name_up for kw in ("SOIC", "SOP", "DIP")):
+        return "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+    if n == 2 and ref == "D":
+        return "Diode_SMD:D_SOD-123"
+    return ""
+
+
+def symbol_to_component_def(
+    name: str, sym_data: dict, category: str = "digital", lib_name: str | None = None
+) -> ComponentDef:
     """Convert a parsed symbol into a ComponentDef.
 
     Auto-classifies power pins and signal pins based on electrical type.
+    Uses the source library name for better category inference.
     """
     pins = sym_data["pins"]
     properties = sym_data["properties"]
@@ -229,7 +304,6 @@ def symbol_to_component_def(name: str, sym_data: dict, category: str = "digital"
     pin_nets = {}
     for pin in pins:
         if pin.electrical_type in ("power_in", "power_out"):
-            # Infer net name from pin name
             pname = pin.name.upper()
             if "GND" in pname or "VSS" in pname:
                 power_pins[pin.number] = "GND"
@@ -244,30 +318,53 @@ def symbol_to_component_def(name: str, sym_data: dict, category: str = "digital"
             else:
                 power_pins[pin.number] = pin.name
         elif pin.electrical_type != "passive" or pin.name not in ("~", "NC"):
-            # Signal pin — use pin name as net name
             if pin.name and pin.name not in ("~", "NC"):
                 pin_nets[pin.number] = pin.name
 
-    # Infer category from properties
-    ref_prefix = properties.get("Reference", "U")
-    if ref_prefix in ("J", "P"):
-        category = "connector"
-    elif ref_prefix in ("D",):
-        category = "protection"
-    elif ref_prefix in ("C", "R", "L"):
-        category = "passive"
+    # 1. Library-name-based classification (most reliable)
+    lib_cat = _infer_category_from_lib(lib_name)
+    if lib_cat:
+        category = lib_cat
 
-    # Infer category from description
-    desc = properties.get("Datasheet", "") + " " + name.lower()
-    if any(kw in desc.lower() for kw in ("regulator", "ldo", "buck", "boost")):
-        category = "power"
+    # 2. Ref-prefix-based classification
+    ref_prefix = properties.get("Reference", "U")
+    if not lib_cat:
+        if ref_prefix in ("J", "P"):
+            category = "connector"
+        elif ref_prefix == "D":
+            category = "discrete"
+        elif ref_prefix == "Q":
+            category = "discrete"
+        elif ref_prefix in ("C", "R", "L"):
+            category = "passive"
+
+    # 3. Description/name keyword classification (lowest priority)
+    desc = (properties.get("Description", "") + " " + properties.get("Datasheet", "") + " " + name).lower()
+    if not lib_cat:
+        if any(kw in desc for kw in ("regulator", "ldo", "buck", "boost", "pmic", "converter")):
+            category = "power"
+        elif any(kw in desc for kw in ("op amp", "opamp", "amplifier", "comparator")):
+            category = "analog"
+        elif any(kw in desc for kw in ("mcu", "microcontroller", "soc", "processor")):
+            category = "mcu"
+        elif any(kw in desc for kw in ("sensor", "imu", "accel", "gyro", "baro", "temp", "humid")):
+            category = "sensor"
+        elif any(kw in desc for kw in ("mosfet", "bjt", "transistor", "fet", "jfet", "igbt")):
+            category = "discrete"
+        elif any(kw in desc for kw in ("tvs", "esd", "protection", "fuse", "varistor")):
+            category = "protection"
+        elif any(kw in desc for kw in ("driver", "gate driver", "half-bridge", "h-bridge")):
+            category = "power"
+
+    footprint = _infer_footprint(name, pins, properties)
+    description = properties.get("Description", "") or "Imported from KiCad library"
 
     return ComponentDef(
         mpn=name,
         ref_prefix=ref_prefix,
         value=properties.get("Value", name),
-        footprint=properties.get("Footprint", ""),
-        description="Imported from KiCad library",
+        footprint=footprint,
+        description=description,
         category=category,
         pins=pins,
         pin_nets=pin_nets,
@@ -395,9 +492,7 @@ class KiCadLibrary:
                     # Cached downloads are stored as plain directories per library.
                     yield entry.name
 
-    def _find_symbol_in_symdir_root(
-        self, root: Path | None, symbol_name: str, plain_dirs: bool = False
-    ) -> str | None:
+    def _find_symbol_in_symdir_root(self, root: Path | None, symbol_name: str, plain_dirs: bool = False) -> str | None:
         """Quickly find which library directory contains a symbol file."""
         if not root or not root.is_dir():
             return None
@@ -493,19 +588,11 @@ class KiCadLibrary:
 
         # List available symbols via GitLab API
         if symbols is None:
-            api_url = (
-                f"{KICAD_GITLAB_API}/repository/tree?path={lib_name}.kicad_symdir&per_page=100"
-            )
+            api_url = f"{KICAD_GITLAB_API}/repository/tree?path={lib_name}.kicad_symdir&per_page=100"
             try:
-                result = subprocess.run(
-                    ["curl", "-sL", api_url], capture_output=True, text=True, timeout=30
-                )
+                result = subprocess.run(["curl", "-sL", api_url], capture_output=True, text=True, timeout=30)
                 entries = json.loads(result.stdout)
-                symbols = [
-                    e["name"].replace(".kicad_sym", "")
-                    for e in entries
-                    if e["name"].endswith(".kicad_sym")
-                ]
+                symbols = [e["name"].replace(".kicad_sym", "") for e in entries if e["name"].endswith(".kicad_sym")]
                 print(f"  {lib_name}: {len(symbols)} symbols available")
             except (json.JSONDecodeError, subprocess.TimeoutExpired, FileNotFoundError):
                 print(f"  Could not list symbols in {lib_name}")
@@ -528,9 +615,7 @@ class KiCadLibrary:
 
             url = f"{KICAD_GITLAB_RAW}/{lib_name}.kicad_symdir/{sym_name}.kicad_sym"
             try:
-                result = subprocess.run(
-                    ["curl", "-sL", url, "-o", str(dest)], capture_output=True, timeout=15
-                )
+                result = subprocess.run(["curl", "-sL", url, "-o", str(dest)], capture_output=True, timeout=15)
                 if dest.exists() and dest.stat().st_size > 50:
                     syms = parse_kicad_sym_file(str(dest))
                     if syms:
@@ -545,9 +630,7 @@ class KiCadLibrary:
                             # Download parent if needed
                             parent_dest = lib_cache / f"{parent}.kicad_sym"
                             if not parent_dest.exists():
-                                parent_url = (
-                                    f"{KICAD_GITLAB_RAW}/{lib_name}.kicad_symdir/{parent}.kicad_sym"
-                                )
+                                parent_url = f"{KICAD_GITLAB_RAW}/{lib_name}.kicad_symdir/{parent}.kicad_sym"
                                 subprocess.run(
                                     ["curl", "-sL", parent_url, "-o", str(parent_dest)],
                                     capture_output=True,
@@ -577,9 +660,7 @@ class KiCadLibrary:
                 # Parent not loaded — download it
                 parent_dest = lib_cache / f"{parent_name}.kicad_sym"
                 if not parent_dest.exists() or parent_dest.stat().st_size < 50:
-                    parent_url = (
-                        f"{KICAD_GITLAB_RAW}/{lib_name}.kicad_symdir/{parent_name}.kicad_sym"
-                    )
+                    parent_url = f"{KICAD_GITLAB_RAW}/{lib_name}.kicad_symdir/{parent_name}.kicad_sym"
                     try:
                         subprocess.run(
                             ["curl", "-sL", parent_url, "-o", str(parent_dest)],
@@ -673,18 +754,23 @@ class KiCadLibrary:
 
         return None
 
-    def get_component(
-        self, symbol_name: str, lib_name: str = None, category: str = "digital"
-    ) -> ComponentDef | None:
+    def get_component(self, symbol_name: str, lib_name: str = None, category: str = "digital") -> ComponentDef | None:
         """Get a ComponentDef for a symbol, auto-parsing from library.
 
         This is the main API — give it a KiCad symbol name and get back
         a ComponentDef ready for the schematic engine.
         """
+        # Resolve the source library name for category inference
+        resolved_lib = lib_name
+        if not resolved_lib:
+            resolved_lib = self._symbol_search_cache.get(symbol_name)
         sym_data = self.get_symbol_data(symbol_name, lib_name)
         if sym_data is None:
             return None
-        return symbol_to_component_def(symbol_name, sym_data, category)
+        # After search, the cache knows which library the symbol came from
+        if not resolved_lib:
+            resolved_lib = self._symbol_search_cache.get(symbol_name)
+        return symbol_to_component_def(symbol_name, sym_data, category, lib_name=resolved_lib)
 
     def available_libraries(self) -> list[str]:
         """List known library categories that can be downloaded."""

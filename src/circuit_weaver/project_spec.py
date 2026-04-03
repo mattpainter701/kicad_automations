@@ -472,6 +472,18 @@ def resolve_project_spec(
         subcircuit_reg = get_default_registry()
     if component_reg is None:
         component_reg = BUILTIN_REGISTRY
+    # Load project-local component database (JSON) if specified or auto-detected
+    components_db = spec.get("components_db", "")
+    if components_db:
+        from pathlib import Path as _P
+
+        p = _P(str(components_db))
+        if p.is_file():
+            n = component_reg.load_json(str(p))
+            print(f"  Loaded {n} components from {p}")
+        elif p.is_dir():
+            n = component_reg.load_json_dir(str(p))
+            print(f"  Loaded {n} components from {p}/")
     if kicad_lib is None:
         kicad_lib = KiCadLibrary()
     if enrich_parts and parts_lookup is None:
@@ -492,7 +504,15 @@ def resolve_project_spec(
     components: list[ComponentDef] = []
 
     for section_key, items in spec.items():
-        if section_key in ("project", "company", "version", "description"):
+        if section_key in (
+            "project",
+            "company",
+            "version",
+            "description",
+            "spec_version",
+            "presentation_profile",
+            "components_db",
+        ):
             continue
 
         if not isinstance(items, list):

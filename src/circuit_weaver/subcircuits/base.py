@@ -304,9 +304,7 @@ def feedback_divider_vout(r_top: float, r_bottom: float, vref: float) -> float:
     return vref * (1.0 + r_top / r_bottom)
 
 
-def buck_inductor(
-    vin: float, vout: float, fsw: float, iout: float, ripple_ratio: float = 0.3
-) -> float:
+def buck_inductor(vin: float, vout: float, fsw: float, iout: float, ripple_ratio: float = 0.3) -> float:
     """Calculate buck converter inductor value for target ripple ratio.
 
     L = (Vin - Vout) * D / (fsw * delta_IL)
@@ -492,14 +490,21 @@ def _build_default_registry() -> SubcircuitRegistry:
     # Import here to avoid circular imports
     from .buck import BuckConverterTemplate
     from .clock import ClockSynthTemplate
+    from .driver import GateDriverTemplate, LevelShifterTemplate
     from .ethernet import EthernetPHYTemplate
     from .ldo import LDOTemplate
+    from .opamp import OpAmpTemplate
+    from .protection import ProtectionTemplate
     from .usb import USBControllerTemplate, USBHubTemplate
 
     reg.register(BuckConverterTemplate())
     reg.register(ClockSynthTemplate())
     reg.register(EthernetPHYTemplate())
+    reg.register(GateDriverTemplate())
     reg.register(LDOTemplate())
+    reg.register(LevelShifterTemplate())
+    reg.register(OpAmpTemplate())
+    reg.register(ProtectionTemplate())
     reg.register(USBControllerTemplate())
     reg.register(USBHubTemplate())
     return reg

@@ -346,6 +346,107 @@ class ComponentRegistry:
     def __len__(self):
         return len(self._components)
 
+    def load_json(self, path: str) -> int:
+        """Load component definitions from a JSON file.
+
+        The file should contain a list of objects, each with at least ``mpn``
+        and ``pins`` fields matching the :class:`ComponentDef` schema.  Returns
+        the number of components loaded.
+
+        Example JSON::
+
+            [
+              {
+                "mpn": "MY_IC",
+                "ref_prefix": "U",
+                "value": "MY_IC",
+                "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+                "description": "Custom IC",
+                "category": "analog",
+                "pins": [
+                  {"number": "1", "name": "IN", "electrical_type": "input", "side": "L"},
+                  {"number": "2", "name": "GND", "electrical_type": "power_in", "side": "B"}
+                ],
+                "power_pins": {"2": "GND"},
+                "bypass_caps": [
+                  {"pin": "auto", "net": "VDD", "gnd_net": "GND", "value": "100nF",
+                   "footprint": "Capacitor_SMD:C_0402_1005Metric"}
+                ]
+              }
+            ]
+        """
+        import json
+        from pathlib import Path
+
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            data = [data]
+        count = 0
+        for entry in data:
+            if not isinstance(entry, dict) or "mpn" not in entry:
+                continue
+            pins = [
+                PinDef(
+                    number=str(p.get("number", "")),
+                    name=str(p.get("name", "~")),
+                    electrical_type=str(p.get("electrical_type", "passive")),
+                    side=str(p.get("side", "L")),
+                )
+                for p in entry.get("pins", [])
+            ]
+            caps = [
+                BypassCap(
+                    pin=str(c.get("pin", "auto")),
+                    net=str(c.get("net", "")),
+                    gnd_net=str(c.get("gnd_net", "GND")),
+                    value=str(c.get("value", "100nF")),
+                    footprint=str(c.get("footprint", "Capacitor_SMD:C_0402_1005Metric")),
+                    role=str(c.get("role", "decoupling")),
+                    presentation=str(c.get("presentation", "topology_local")),
+                )
+                for c in entry.get("bypass_caps", [])
+            ]
+            straps = [
+                StrapConfig(
+                    pin=str(s.get("pin", "")),
+                    net=str(s.get("net", "")),
+                    rail=str(s.get("rail", "GND")),
+                    value=str(s.get("value", "10k")),
+                    footprint=str(s.get("footprint", "Resistor_SMD:R_0402_1005Metric")),
+                    role=str(s.get("role", "strap")),
+                    presentation=str(s.get("presentation", "topology_local")),
+                )
+                for s in entry.get("straps", [])
+            ]
+            comp = ComponentDef(
+                mpn=str(entry["mpn"]),
+                ref_prefix=str(entry.get("ref_prefix", "U")),
+                value=str(entry.get("value", entry["mpn"])),
+                footprint=str(entry.get("footprint", "")),
+                description=str(entry.get("description", "")),
+                category=str(entry.get("category", "digital")),
+                pins=pins,
+                pin_nets={str(k): str(v) for k, v in entry.get("pin_nets", {}).items()},
+                power_pins={str(k): str(v) for k, v in entry.get("power_pins", {}).items()},
+                bypass_caps=caps,
+                straps=straps,
+            )
+            self.register(comp)
+            count += 1
+        return count
+
+    def load_json_dir(self, directory: str) -> int:
+        """Load all ``*.json`` component files from a directory."""
+        from pathlib import Path
+
+        total = 0
+        d = Path(directory)
+        if not d.is_dir():
+            return 0
+        for f in sorted(d.glob("*.json")):
+            total += self.load_json(str(f))
+        return total
+
 
 @dataclass
 class BomRow:

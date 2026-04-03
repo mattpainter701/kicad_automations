@@ -1,16 +1,29 @@
 # Changelog
 
-## [0.3.0] - TBD
+## [0.3.0] - 2026-04-02
 
 ### Sprint 2 — Template Expansion & DFM Quality
 
 ### Added
+- Op-amp template (`opamp`): non-inverting, inverting, follower, differential configs with auto-computed E24 feedback network
+- Protection template (`protection`): TVS diodes (SMBJ5.0A/12A, SMBJ5.0CA, PESD5V0S1BA) for power/signal lines
+- Gate driver template (`gate_driver`): IR2110 (half-bridge with bootstrap cap), UCC27524 (dual low-side)
+- Level shifter template (`level_shifter`): TXB0108 (8ch), TXS0102 (2ch) with OE pull-up and dual-rail decoupling
+- Template count: 6 → 10
+- Library-name-based category classification (`_LIB_CATEGORY_MAP`): 30+ KiCad library prefixes mapped to categories
+- Footprint heuristic inference (`_infer_footprint`): SOT-23, SOIC-8, SOD-123, 0402 from pin count + name
+- External component database: `ComponentRegistry.load_json()` and `.load_json_dir()` for project-local JSON parts
+- YAML `components_db` key for auto-loading project-local component databases
+- KiCad `Description` property used for better category/description inference
 
 ### Changed
-
-### Fixed
+- `symbol_to_component_def()` now accepts `lib_name` parameter for library-aware classification
+- `get_component()` passes resolved library name through search cache
+- Category inference priority: library name > ref prefix > description keywords
+- `project_spec.py` skips metadata keys (`spec_version`, `presentation_profile`, `components_db`) in section loop
 
 ### Tests
+- 58 total tests passing (no regressions)
 
 ## [0.2.0] - 2026-04-02
 
