@@ -769,13 +769,17 @@ def auto_generate_bypass_caps(components: list[ComponentDef]) -> int:
     This is a generic engine behavior, not project-specific.
     """
     count = 0
+    _power_categories = {"power", "regulator", "poe"}
     for comp in components:
         if comp.bypass_caps:
             continue  # already has explicit bypass caps
-        if len(comp.pins) < _AUTO_BYPASS_MIN_PINS:
-            continue  # too simple (connectors, passives)
         if not comp.power_pins:
             continue  # no power pins assigned
+        # Power ICs (regulators, etc.) always get decoupling regardless of pin count.
+        # Other ICs need at least _AUTO_BYPASS_MIN_PINS to avoid decoupling bare passives/connectors.
+        is_power_ic = comp.category in _power_categories or comp.ref_prefix == "U"
+        if not is_power_ic and len(comp.pins) < _AUTO_BYPASS_MIN_PINS:
+            continue
 
         # Collect unique non-ground power nets
         power_nets = set()

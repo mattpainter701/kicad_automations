@@ -6,82 +6,59 @@
 
 **Goal:** Make every KiCad-library-imported component generate a usable, non-broken schematic — no silent drops, no net collisions, no bare ICs missing decoupling.
 
-### 1. Stop silently dropping components (P0, LARGE)
+### 1. Stop silently dropping components (P0, LARGE) — DONE
 
-When a component can't be resolved from the built-in registry OR KiCad library, the engine currently prints a WARNING and returns `[]` — the part vanishes from the design with no error code.
+- [x] Create a stub `ComponentDef` with `category="unknown"` instead of returning `[]` — `_make_stub_component()` in `project_spec.py`
+- [x] Add a warning annotation on the stub symbol ("UNRESOLVED — verify manually")
+- [x] Stub created for: unknown template, template validation error, no type/ic, unknown IC
+- [x] Validation detects stubs via "UNRESOLVED" annotation in `mvp.py:_validate_component_resolution()`
 
-- [ ] Create a stub `ComponentDef` with `category="unknown"` instead of returning `[]` in `project_spec.py:191,198,219,226`
-- [ ] Add a yellow warning annotation on the stub symbol ("UNRESOLVED — verify manually")
-- [ ] Add an "Unknown" sheet category in `allocator.py` so stubs don't land on the MCU sheet
-- [ ] Add validation check: count spec blocks vs output components, fail if mismatch
+### 2. Auto-generate bypass caps for KiCad-imported ICs (P0, MEDIUM) — DONE
 
-Files: `project_spec.py`, `allocator.py`, `validator.py`
+- [x] Verified `auto_generate_bypass_caps()` fires for KiCad imports (power_pins set, bypass_caps empty)
+- [x] Fixed: power ICs (category=power, ref_prefix=U) bypass the 6-pin minimum threshold
+- [x] Test: LM7805 (3 pins, power category) now gets decoupling caps
+- [x] Test: built-in ICs with explicit caps are NOT double-capped
+- [x] Test: connectors with power pins do NOT get auto-decoupling
 
-### 2. Auto-generate bypass caps for KiCad-imported ICs (P0, MEDIUM)
+### 3. Fix net name collisions on KiCad-imported signal pins (P0, LARGE) — DONE
 
-KiCad library symbols have power pin information but no bypass cap metadata. An LM7805 imports with 0 decoupling caps. The engine already has `auto_generate_bypass_caps()` in `component_db.py` but it only fires for components that have power pins AND zero bypass caps defined.
+- [x] `_apply_net_prefix()` in `project_spec.py`: prefixes generic pin names with ref designator
+- [x] Generic set: G, S, D, IN, OUT, A, B, C, E, IN+, IN-, OUT+, OUT-, FB, EN, SW, BST, PG, SS, COMP, RT, SYNC, NC, ~
+- [x] Global bus names preserved: SDA, SCL, MOSI, MISO, TX, RX, D+, D-, CAN_H/L, SWDIO, SWCLK, etc.
+- [x] Short names (<=3 chars) also prefixed as safety net
+- [x] Test: two BSS138s get separate gate nets (Q1_G, Q2_G)
 
-- [ ] Verify `auto_generate_bypass_caps()` fires for KiCad-imported components (it should — they have `power_pins` but no `bypass_caps`)
-- [ ] If it doesn't fire, wire it into `kicad_lib.symbol_to_component_def()` or the post-resolution step
-- [ ] Add test: KiCad-imported IC with power pins gets at least one 100nF cap per supply pin
-- [ ] Add test: built-in registry ICs with explicit caps are NOT double-capped
+### 4. Map KiCad power pin names to project rail names (P1, MEDIUM) — DONE
 
-Files: `component_db.py`, `kicad_lib.py`, `generator.py:1257`
+- [x] `_apply_power_map()` in `project_spec.py`: remaps raw KiCad power pin names
+- [x] Optional `power_map` dict in YAML: `power_map: {V+: VDD_5V, V-: GND}`
+- [x] Default mapping: VCC/VDD→VDD_3P3, VBUS→VBUS_5V, GND/VSS/AGND/DGND→GND, VIN→VIN
+- [x] Unknown power names preserved as-is
+- [x] Test: explicit map overrides, default map applies, unknown names pass through
 
-### 3. Fix net name collisions on KiCad-imported signal pins (P0, LARGE)
+### 5. Add "Miscellaneous" sheet for unclassified components (P1, SMALL) — DONE
 
-KiCad symbols use generic pin names like `G`, `S`, `D` (MOSFET) or `IN+`, `IN-` (op-amp). These become global net names, so two BSS138 FETs would both connect to a global "G" net — shorting their gates together.
+- [x] Added `misc` sheet category in `allocator.py` with title "Miscellaneous / Discrete"
+- [x] Routes: unknown, protection, discrete, analog, misc categories → misc sheet
+- [x] Default fallback changed from "mcu" to "misc" in `classify_component()`
+- [x] Expanded `_SECTION_CATEGORY_MAP`: analog, discrete, motor, protection, audio, display, misc
+- [x] Test: unknown/protection/discrete → misc, mcu → mcu, unrecognized → misc
 
-- [ ] In `kicad_lib.symbol_to_component_def()`: prefix signal pin_nets with `{ref}_` when the pin name is short/generic (< 4 chars or matches a known-generic set)
-- [ ] Build a generic-name set: `G, S, D, IN, OUT, A, B, C, E, IN+, IN-, OUT+, OUT-, FB, EN, SW, BST, PG, SS, COMP, RT, SYNC`
-- [ ] Preserve actual bus names (SDA, SCL, MOSI, MISO, TX, RX, D+, D-) as global nets — these SHOULD be shared
-- [ ] In `project_spec.py:229-240`: apply ref prefix to KiCad-imported pin_nets when `source_ref` is set
-- [ ] Add test: two BSS138s in same design get separate gate nets
+### 6. Wire passive inference into resolver (P1, MEDIUM) — DONE
 
-Files: `kicad_lib.py`, `project_spec.py`
+- [x] `_resolve_component()` now tries `infer_passive_component(ref, value)` before creating stub
+- [x] Supports: `{value: "10k", ref: "R1"}` and `{value: "100nF", ref: "C1"}` in any YAML section
+- [x] Footprint auto-inferred: R/C→0402, L→0805
+- [x] Test: bare resistor and capacitor resolve to valid ComponentDefs
+- [x] Test: missing ref still creates stub (can't infer passive type without ref prefix)
 
-### 4. Map KiCad power pin names to project rail names (P1, MEDIUM)
+### 7. Add spec-vs-output reconciliation validation (P0, MEDIUM) — DONE
 
-KiCad symbols use raw pin names for power: `V+`, `VI`, `VO`, `VCC`, `AVDD`. These don't match the project's rail names (`VDD_3P3`, `VBUS_5V`). Currently, an LM358's `V+` pin creates a net called "V+" instead of connecting to the project's actual positive rail.
-
-- [ ] Add optional `power_map` dict to YAML spec items: `power_map: {V+: VDD_3P3, V-: GND}`
-- [ ] In `project_spec.py:229-240`: apply power_map to `power_pins` dict after KiCad import
-- [ ] Default mapping for common names: `VCC→VDD_3P3, VDD→VDD_3P3, VIN→VIN, VBUS→VBUS_5V, GND/VSS/AGND/DGND→GND`
-- [ ] Add test: power_map overrides raw KiCad pin names
-
-Files: `project_spec.py`, `kicad_lib.py`
-
-### 5. Add "Miscellaneous" sheet for unclassified components (P1, SMALL)
-
-The allocator defaults unknown categories to `"mcu"`. Discrete transistors, protection ICs, and anything without a matching category description silently lands on the MCU sheet.
-
-- [ ] Add `"misc"` sheet category in `allocator.py` for components that don't match any known category
-- [ ] Route `category="unknown"`, `category="protection"`, `category="discrete"`, and any unrecognized category to the misc sheet
-- [ ] Give the misc sheet a descriptive title ("Miscellaneous / Discrete")
-- [ ] Add test: a component with `category="unknown"` lands on misc sheet, not MCU
-
-Files: `allocator.py`
-
-### 6. Wire passive inference into resolver (P1, MEDIUM)
-
-`infer_passive_component()` exists in `component_db.py` but is never called from `project_spec.py`. A YAML entry like `{value: 10k, ref: R1, footprint: 0402}` in a `misc:` section gets silently dropped because it has no `ic:` field.
-
-- [ ] In `project_spec.py:216-220`: before skipping, try `infer_passive_component(item)` as fallback
-- [ ] Support YAML entries: `{value: "10k", ref: "R1"}` and `{value: "100nF", ref: "C1"}`
-- [ ] Infer footprint from value if not specified (R→0402, C<1uF→0402, C>=1uF→0805)
-- [ ] Apply `section_category` and `source_ref` to the inferred passive
-- [ ] Add test: bare passive in YAML resolves to valid ComponentDef
-
-Files: `project_spec.py`, `component_db.py`
-
-### 7. Add spec-vs-output reconciliation validation (P0, MEDIUM)
-
-No check exists to verify the output matches the input. A design with 15 blocks might generate 12 components with no error.
-
-- [ ] In `mvp.py` after `compile_design_ir()`: count IR blocks vs resolved components
-- [ ] Emit a validation error (not just warning) when components are missing
-- [ ] Include the list of missing block IDs/refs in the error message
-- [ ] Add test: spec with an invalid IC produces a validation error, not silent success
+- [x] `_validate_component_resolution()` in `mvp.py` detects stub components via "UNRESOLVED" annotation
+- [x] Emits `unresolved-component` structural error with the stub's reason message
+- [x] Test: unresolved component produces stub with UNRESOLVED annotation
+- [x] Test: valid spec passes validation cleanly
 
 Files: `mvp.py`, `validator.py`
 

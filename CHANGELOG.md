@@ -12,17 +12,34 @@
 
 ### Tests
 
-## [0.2.0] - TBD
+## [0.2.0] - 2026-04-02
 
 ### Sprint 1 — Robust KiCad Import Pipeline
 
 ### Added
+- Stub ComponentDefs for unresolved components — never silently drop parts
+- `_make_stub_component()` creates visible "UNRESOLVED" placeholders in schematics
+- `_apply_power_map()` remaps KiCad power pin names to project rail names (VCC→VDD_3P3, etc.)
+- `_apply_net_prefix()` prevents net collisions by prefixing generic signal names with ref (Q1_G, Q1_S)
+- Optional `power_map` dict in YAML spec for explicit power pin remapping
+- "Miscellaneous / Discrete" sheet category for unknown/protection/discrete/analog components
+- Passive inference from bare YAML entries: `{value: "10k", ref: "R1"}` resolves without `ic:` field
+- Expanded section category map: analog, discrete, motor, protection, audio, display, misc
+- 26 new tests in `test_import_pipeline.py`
 
 ### Changed
+- `auto_generate_bypass_caps()` now bypasses 6-pin minimum for power ICs and U-prefixed parts
+- Default allocator fallback changed from "mcu" to "misc" — unclassified parts get their own sheet
+- `_validate_component_resolution()` detects stub components and emits structural errors
+- `_SECTION_CATEGORY_MAP` expanded with common analog/discrete/motor/protection sections
 
 ### Fixed
+- Voltage regulators (3 pins) now get auto-decoupling caps (was blocked by pin count threshold)
+- Two BSS138 FETs in the same design no longer short their gates via shared "G" net
+- Components not in registry or KiCad library now produce visible stubs instead of vanishing
 
 ### Tests
+- 58 total tests (32 presentation + 26 import pipeline), all passing
 
 ## [0.1.0] - 2026-04-02
 

@@ -405,6 +405,20 @@ def _validate_component_resolution(
             )
             continue
         primary = group[0]
+        if any("UNRESOLVED" in a for a in primary.annotations):
+            structural.append(
+                ValidationMessage(
+                    category="structural",
+                    code="unresolved-component",
+                    level="error",
+                    subject=block.ref or block.id,
+                    message=next(
+                        (a for a in primary.annotations if "UNRESOLVED" in a),
+                        "Component could not be resolved",
+                    ),
+                )
+            )
+            continue
         if not primary.pins and not primary.lib_symbol_sexpr:
             implementation.append(
                 ValidationMessage(

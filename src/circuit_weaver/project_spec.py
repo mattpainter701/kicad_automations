@@ -40,9 +40,37 @@ import copy
 from pathlib import Path
 from typing import Any
 
-from .component_db import BUILTIN_REGISTRY, ComponentDef, ComponentRegistry
+from .component_db import (
+    BUILTIN_REGISTRY,
+    ComponentDef,
+    ComponentRegistry,
+    PinDef,
+)
 from .kicad_lib import KiCadLibrary
 from .subcircuits.base import SubcircuitRegistry, get_default_registry
+
+
+def _make_stub_component(name: str, category: str, ref: str = "", reason: str = "") -> ComponentDef:
+    """Create a minimal stub ComponentDef for an unresolved component.
+
+    The stub renders as a visible placeholder in the schematic with a
+    warning annotation so the issue is never silently hidden.
+    """
+    annotation = f"UNRESOLVED: {reason}" if reason else f"UNRESOLVED: '{name}' not found"
+    return ComponentDef(
+        mpn=name or "UNKNOWN",
+        ref_prefix=ref[:1].upper() if ref else "U",
+        value=name or "UNKNOWN",
+        footprint="",
+        description="Unresolved component — verify manually",
+        category=category,
+        source_ref=ref,
+        annotations=[annotation],
+        pins=[
+            PinDef("1", "~", "passive", "L"),
+            PinDef("2", "~", "passive", "R"),
+        ],
+    )
 
 
 def _parse_yaml(path: str | Path) -> dict:
@@ -154,10 +182,12 @@ def _coerce_value(val: str) -> Any:
 
 _SECTION_CATEGORY_MAP = {
     "power": "power",
+    "power_distribution": "power",
     "digital": "mcu",
     "mcu": "mcu",
     "fpga": "fpga",
     "rf": "rf",
+    "rf_frontend": "rf",
     "transceiver": "transceiver",
     "clock": "clock",
     "usb": "usb",
@@ -167,7 +197,145 @@ _SECTION_CATEGORY_MAP = {
     "storage": "storage",
     "debug": "debug",
     "communication": "communication",
+    "analog": "analog",
+    "discrete": "misc",
+    "motor": "power",
+    "motor_control": "power",
+    "protection": "misc",
+    "audio": "analog",
+    "display": "mcu",
+    "misc": "misc",
 }
+
+
+# ================================================================
+# Net name handling for KiCad-imported components
+# ================================================================
+
+# Default power pin name → project rail name mapping
+_DEFAULT_POWER_MAP = {
+    "VCC": "VDD_3P3",
+    "VDD": "VDD_3P3",
+    "VIN": "VIN",
+    "VBUS": "VBUS_5V",
+    "V+": "VDD_3P3",
+    "V-": "GND",
+    "GND": "GND",
+    "VSS": "GND",
+    "AGND": "GND",
+    "DGND": "GND",
+    "GNDA": "GND",
+    "GNDD": "GND",
+    "VSSA": "GND",
+}
+
+# Signal pin names that should remain global (shared across instances)
+_GLOBAL_SIGNAL_NAMES = frozenset(
+    {
+        "SDA",
+        "SCL",
+        "MOSI",
+        "MISO",
+        "SCLK",
+        "SCK",
+        "COPI",
+        "CIPO",
+        "TX",
+        "RX",
+        "TXD",
+        "RXD",
+        "CTS",
+        "RTS",
+        "D+",
+        "D-",
+        "USB_DP",
+        "USB_DM",
+        "CAN_H",
+        "CAN_L",
+        "CANH",
+        "CANL",
+        "SWDIO",
+        "SWCLK",
+        "SWO",
+        "NRST",
+        "RESET",
+        "RESET_N",
+    }
+)
+
+# Short/generic pin names that must be prefixed with ref to avoid collisions
+_GENERIC_PIN_NAMES = frozenset(
+    {
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "G",
+        "S",
+        "IN",
+        "OUT",
+        "IN+",
+        "IN-",
+        "OUT+",
+        "OUT-",
+        "FB",
+        "EN",
+        "SW",
+        "BST",
+        "PG",
+        "SS",
+        "COMP",
+        "RT",
+        "SYNC",
+        "NC",
+        "~",
+    }
+)
+
+
+def _apply_power_map(item: dict, comp: ComponentDef) -> None:
+    """Remap KiCad-imported power pin net names to project rail names.
+
+    Uses an explicit ``power_map`` from the YAML item first, then falls
+    back to ``_DEFAULT_POWER_MAP`` for common power pin name conventions.
+    """
+    if not comp.power_pins:
+        return
+    explicit_map = item.get("power_map") or {}
+    if not isinstance(explicit_map, dict):
+        explicit_map = {}
+    updated = {}
+    for pin_num, net in comp.power_pins.items():
+        if net in explicit_map:
+            updated[pin_num] = explicit_map[net]
+        elif net.upper() in _DEFAULT_POWER_MAP:
+            updated[pin_num] = _DEFAULT_POWER_MAP[net.upper()]
+        else:
+            updated[pin_num] = net
+    comp.power_pins = updated
+
+
+def _apply_net_prefix(item: dict, comp: ComponentDef) -> None:
+    """Prefix generic signal pin names with the instance ref to avoid collisions.
+
+    KiCad symbols use short names like ``G``, ``S``, ``D`` that would
+    create global nets shared between all instances of the same symbol.
+    This prefixes those names with the component's ref designator while
+    leaving actual bus signals (SDA, SCL, TX, RX, ...) as global nets.
+    """
+    ref = comp.source_ref or ""
+    if not ref or not comp.pin_nets:
+        return
+    updated = {}
+    for pin_num, net in comp.pin_nets.items():
+        if net in _GLOBAL_SIGNAL_NAMES:
+            updated[pin_num] = net
+        elif net.upper() in _GENERIC_PIN_NAMES or len(net) <= 3:
+            updated[pin_num] = f"{ref}_{net}"
+        else:
+            updated[pin_num] = net
+    comp.pin_nets = updated
 
 
 def _resolve_component(
@@ -185,18 +353,33 @@ def _resolve_component(
     """
     template_type = item.get("type")
 
+    ref = item.get("ref", "")
+
     if template_type:
         template = subcircuit_reg.get(template_type)
         if template is None:
-            print(f"  WARNING: Unknown subcircuit type '{template_type}', skipping")
-            return []
+            print(f"  WARNING: Unknown subcircuit type '{template_type}', creating stub")
+            return [
+                _make_stub_component(
+                    template_type,
+                    section_category,
+                    ref,
+                    reason=f"Unknown subcircuit type '{template_type}'",
+                )
+            ]
 
         errors = template.validate_params(item)
         if errors:
-            ref = item.get("ref", "?")
             for err in errors:
-                print(f"  ERROR [{ref}]: {err}")
-            return []
+                print(f"  ERROR [{ref or '?'}]: {err}")
+            return [
+                _make_stub_component(
+                    item.get("ic", template_type),
+                    section_category,
+                    ref,
+                    reason=f"Template validation failed: {'; '.join(errors)}",
+                )
+            ]
 
         result = template.generate(item)
         if result.components:
@@ -204,8 +387,6 @@ def _resolve_component(
             primary.template_annotations.extend(result.annotations)
             primary.template_boundary_ports.extend(copy.deepcopy(result.boundary_ports))
             primary.template_local_wires.extend(copy.deepcopy(result.local_wires))
-        # Apply ref and category from spec
-        ref = item.get("ref", "")
         for comp in result.components:
             if ref:
                 comp.source_ref = ref
@@ -216,26 +397,38 @@ def _resolve_component(
     # Standalone component — resolve from registries
     ic = item.get("ic", "")
     if not ic:
-        print(f"  WARNING: Item in '{section_category}' has no 'type' or 'ic', skipping")
-        return []
+        # Try passive inference: {value: "10k", ref: "R1"}
+        value = str(item.get("value", "")).strip()
+        if value and ref:
+            from .component_db import infer_passive_component
+
+            passive = infer_passive_component(ref, value, str(item.get("footprint", "")))
+            if passive:
+                passive.source_ref = ref
+                passive.category = section_category
+                return [passive]
+        print(f"  WARNING: Item in '{section_category}' has no 'type' or 'ic', creating stub")
+        return [_make_stub_component("", section_category, ref, reason="No 'type' or 'ic' specified")]
 
     comp = component_reg.get(ic)
     if not comp and kicad_lib:
         comp = kicad_lib.get_component(ic, category=section_category)
     if not comp:
-        print(f"  WARNING: Unknown component '{ic}', not in registry or KiCad library")
-        return []
+        print(f"  WARNING: Unknown component '{ic}', not in registry or KiCad library, creating stub")
+        return [_make_stub_component(ic, section_category, ref, reason=f"'{ic}' not in registry or KiCad library")]
 
     instance = copy.deepcopy(comp)
     instance.category = section_category
-    if item.get("ref"):
-        instance.source_ref = item["ref"]
+    if ref:
+        instance.source_ref = ref
     if item.get("value"):
         instance.value = item["value"]
     if item.get("description"):
         instance.description = item["description"]
     if item.get("mpn"):
         instance.source_mpn = str(item["mpn"])
+    _apply_power_map(item, instance)
+    _apply_net_prefix(item, instance)
     _maybe_enrich_component(item, instance, parts_lookup)
     return [instance]
 

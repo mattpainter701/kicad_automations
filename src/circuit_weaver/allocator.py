@@ -30,7 +30,11 @@ CATEGORY_SHEET_MAP = {
     "communication": "comm",
     "ethernet": "ethernet",
     "usb": "usb",
-    "protection": "rf",
+    "protection": "misc",
+    "discrete": "misc",
+    "analog": "misc",
+    "unknown": "misc",
+    "misc": "misc",
     "passive": None,  # passives go with their parent IC
 }
 
@@ -49,6 +53,7 @@ SHEET_TITLES = {
     "comm": "Communication",
     "ethernet": "Ethernet",
     "usb": "USB",
+    "misc": "Miscellaneous / Discrete",
 }
 
 
@@ -99,7 +104,7 @@ def classify_component(comp: ComponentDef) -> str:
     if any(kw in desc for kw in ("uart", "usb", "ethernet", "can")):
         return "comm"
 
-    return "mcu"  # default: put with the main digital section
+    return "misc"  # default: unclassified components go to miscellaneous sheet
 
 
 def pick_paper_size(num_components: int, total_pins: int) -> str:
@@ -180,9 +185,7 @@ def _sheet_template_annotations(components: list[ComponentDef]) -> list[str]:
     return annotations
 
 
-def _find_merge_target(
-    candidate: SheetAllocation, sheets: list[SheetAllocation]
-) -> SheetAllocation | None:
+def _find_merge_target(candidate: SheetAllocation, sheets: list[SheetAllocation]) -> SheetAllocation | None:
     """Find the best sheet to absorb a tiny candidate.
 
     Strategy:
@@ -329,9 +332,7 @@ def partition_review_sheets(sheets: list[SheetAllocation]) -> list[SheetAllocati
     return result
 
 
-def allocate_sheets(
-    components: list[ComponentDef], single_sheet_threshold: int = 8
-) -> list[SheetAllocation]:
+def allocate_sheets(components: list[ComponentDef], single_sheet_threshold: int = 8) -> list[SheetAllocation]:
     """Allocate components to schematic sheets.
 
     If total component count is small enough, put everything on one sheet.
