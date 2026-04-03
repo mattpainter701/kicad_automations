@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.6.0] - 2026-04-03
+
+### Sprint 5 — EasyEDA/LCSC Symbol Import Pipeline
+
+### Added
+- Root `AGENTS.md`, `opencode.json`, `.opencode/agents/`, and `.agents/skills/` support files for Codex, OpenCode, and Kilo
+- `install.ps1` for Windows-friendly multi-platform skill installation
+
+### Changed
+- `install.sh` now supports Claude, Codex, OpenCode, Kilo, and shared `.agents/skills` project installs
+- Installer target lists now match the repo contents, including `vivado` and the `autoroute` project template
+- Installers now require explicit platform or path selection instead of silently defaulting to Claude
+- README and skill docs now use `AGENTS.md`-first guidance instead of Claude-only wording
+
+### Fixed
+- `install.sh` now falls back to `python`, then `py -3`, when `python3` is unavailable during frontmatter rewrites
+
+### Tests
+- Parsed `opencode.json` with `py -3`
+- Ran `pwsh -NoProfile -File .\install.ps1 -Help`
+- Verified `pwsh -NoProfile -File .\install.ps1` fails without explicit targets
+- Ran `pwsh -NoProfile -File .\install.ps1 -SkillsDir <temp> -ProjectSkillsDir <temp\.agents\skills>` and verified `kicad-gen` frontmatter rewrite
+- Ran Git Bash `bash -n ./install.sh`
+- Verified Git Bash `./install.sh` fails without explicit targets
+- Ran Git Bash `./install.sh --skills-dir <temp> --project-skills-dir <temp/.agents/skills>` and verified kebab-case project skill installation
+
+## [0.5.0] - 2026-04-03
+
+### Sprint 4 — Template Expansion: Analog, Sensing & Control
+
+### Added
+- Crystal oscillator template (`crystal_oscillator`): HC-49S, ABM8G — auto-calc load caps, feedback R
+- I2C bus conditioning template (`i2c_bus`): pull-ups or PCA9306 — auto-calc pull-up R from speed/capacitance
+- Current sense amplifier template (`current_sense`): INA219, INA180A1 — Rsense from Imax, footprint by power
+- MOSFET switch template (`mosfet_switch`): BSS138, AO3400A, AO3401A — gate R, default-off pull, snubber RC
+- DAC output template (`dac`): MCP4725, DAC8552 — output RC filter from update rate
+- Sensor front-end template (`sensor_frontend`): INA128, AD8421 — gain R (G=1+50k/Rg)
+- Relay driver template (`relay_driver`): ULN2003A, discrete NPN — base R with overdrive
+- Audio amplifier template (`audio_amplifier`): PAM8302A, MAX98357A — input coupling cap
+- Power mux template (`power_mux`): TPS2113, LTC4357 — ILIM resistor auto-calc
+- Charge pump template (`charge_pump`): LM2776, ICL7660 — flying/output cap from Iout/fsw/ripple
+- `boost_inductor()` and `buck_boost_inductor()` helpers in base.py
+- `qualify_footprint()` auto-resolves bare footprint names to Library:Name
+- Template count: 20 → 30
+
+### Tests
+- 68 tests passing
+
 ## [0.4.0] - 2026-04-03
 
 ### Sprint 3 — Placement, Routing & Presentation Readiness

@@ -513,43 +513,63 @@ def _build_default_registry() -> SubcircuitRegistry:
     reg = SubcircuitRegistry()
     # Import here to avoid circular imports
     from .adc import ADCTemplate
+    from .audio_amplifier import AudioAmplifierTemplate
     from .battery_charger import BatteryChargerTemplate
     from .battery_monitor import BatteryMonitorTemplate
     from .boost import BoostConverterTemplate
     from .buck import BuckConverterTemplate
     from .buck_boost import BuckBoostConverterTemplate
     from .can_transceiver import CANTransceiverTemplate
+    from .charge_pump import ChargePumpTemplate
     from .clock import ClockSynthTemplate
+    from .crystal_oscillator import CrystalOscillatorTemplate
+    from .current_sense import CurrentSenseTemplate
+    from .dac import DACTemplate
     from .display_driver import DisplayDriverTemplate
     from .driver import GateDriverTemplate, LevelShifterTemplate
     from .ethernet import EthernetPHYTemplate
+    from .i2c_bus import I2CBusTemplate
     from .ldo import LDOTemplate
     from .led_driver import LEDDriverTemplate
+    from .mosfet_switch import MOSFETSwitchTemplate
     from .motor_driver import MotorDriverTemplate
     from .opamp import OpAmpTemplate
+    from .power_mux import PowerMuxTemplate
     from .protection import ProtectionTemplate
+    from .relay_driver import RelayDriverTemplate
     from .rs485_transceiver import RS485TransceiverTemplate
+    from .sensor_frontend import SensorFrontendTemplate
     from .usb import USBControllerTemplate, USBHubTemplate
 
     for tmpl_cls in [
         ADCTemplate,
+        AudioAmplifierTemplate,
         BatteryChargerTemplate,
         BatteryMonitorTemplate,
         BoostConverterTemplate,
         BuckConverterTemplate,
         BuckBoostConverterTemplate,
         CANTransceiverTemplate,
+        ChargePumpTemplate,
         ClockSynthTemplate,
+        CrystalOscillatorTemplate,
+        CurrentSenseTemplate,
+        DACTemplate,
         DisplayDriverTemplate,
         EthernetPHYTemplate,
         GateDriverTemplate,
+        I2CBusTemplate,
         LDOTemplate,
         LEDDriverTemplate,
         LevelShifterTemplate,
+        MOSFETSwitchTemplate,
         MotorDriverTemplate,
         OpAmpTemplate,
+        PowerMuxTemplate,
         ProtectionTemplate,
+        RelayDriverTemplate,
         RS485TransceiverTemplate,
+        SensorFrontendTemplate,
         USBControllerTemplate,
         USBHubTemplate,
     ]:

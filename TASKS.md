@@ -2,6 +2,142 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 5 — EasyEDA/LCSC Symbol Import Pipeline (v0.6.0)
+
+**Goal:** When a component isn't in our built-in registry or KiCad's official library, automatically fetch its symbol from EasyEDA's public API using its LCSC part number. This gives us access to 300K+ component symbols with zero auth required — critical for JLCPCB production workflows and any part not in KiCad's official library.
+
+### 33. EasyEDA API client (P0, MEDIUM)
+
+- [ ] `easyeda_api.py` — stdlib-only HTTP client (urllib)
+- [ ] `fetch_component(lcsc_id)` — two-step fetch: UUIDs from `/api/products/{id}/svgs`, then shape data from `/api/components/{uuid}`
+- [ ] `search_easyeda(query)` — keyword search via JLCPCB component API
+- [ ] Caching: 7-day disk cache (same pattern as `parts_lookup.py`)
+- [ ] Error handling: timeout, 404, malformed response → None
+
+Files: `src/circuit_weaver/easyeda_api.py`
+
+### 34. EasyEDA symbol parser (P0, LARGE)
+
+- [ ] `easyeda_parser.py` — parse tilde-delimited shape strings
+- [ ] Pin extraction: name, number, electrical type (0→unspecified, 1→input, 2→output, 3→bidirectional, 4→power_in), position → side mapping
+- [ ] Metadata extraction: prefix (U/R/C/L/J/D), MPN, manufacturer, description, package
+- [ ] Coordinate conversion: EasyEDA 10-mil units → mm (÷3.937)
+- [ ] `easyeda_to_component_def()` — convert parsed data to ComponentDef with PinDefs, power_pins, pin_nets, footprint, category
+
+Files: `src/circuit_weaver/easyeda_parser.py`
+
+### 35. Add lcsc_pn / digikey_pn fields to ComponentDef (P1, SMALL)
+
+- [ ] Add `lcsc_pn: str = ""` and `digikey_pn: str = ""` to `ComponentDef` dataclass
+- [ ] Wire `parts_lookup.py` enrichment to populate these fields
+- [ ] Include in BOM export data (features list → first-class fields)
+
+Files: `src/circuit_weaver/component_db.py`, `src/circuit_weaver/parts_lookup.py`
+
+### 36. Integrate EasyEDA as 4th-tier resolution fallback (P0, MEDIUM)
+
+- [ ] Resolution chain: built-in registry → KiCad official lib → JSON DB → **EasyEDA/LCSC**
+- [ ] Support `lcsc:` key in YAML component entries (e.g., `lcsc: C14663`)
+- [ ] When MPN lookup finds LCSC code via `parts_lookup.py`, use it as EasyEDA fetch key
+- [ ] Apply existing power pin mapping and net prefix logic to EasyEDA-sourced components
+
+Files: `src/circuit_weaver/project_spec.py`, `src/circuit_weaver/kicad_lib.py`
+
+### 37. Tests for EasyEDA import pipeline (P0, MEDIUM)
+
+- [ ] Mock EasyEDA API responses (no live API calls in tests)
+- [ ] Test pin parsing from tilde-delimited shape strings
+- [ ] Test ComponentDef generation: power pins, signal pins, footprint, category
+- [ ] Test resolution chain: EasyEDA fallback fires when KiCad lib misses
+- [ ] Test YAML `lcsc:` key triggers EasyEDA fetch
+
+Files: `tests/test_easyeda_import.py`
+
+### 38. Multi-agent workflow compatibility (P1, SMALL) — DONE
+
+- [x] Added root `AGENTS.md` and `opencode.json` support for Codex, OpenCode, and Kilo
+- [x] Added OpenCode/Kilo reviewer agents and `.agents/skills` compatibility shims
+- [x] Reworked installers for Claude/Codex/OpenCode/Kilo and shared `.agents/skills` downstream installs
+- [x] Updated README and skill docs for `AGENTS.md`-first guidance and platform-specific install paths
+
+Files: `AGENTS.md`, `opencode.json`, `install.sh`, `install.ps1`, `README.md`, `docs/agent-platforms.md`
+
+---
+
+## Sprint 4 — Template Expansion: Analog, Sensing & Control (v0.5.0) — DONE
+
+**Goal:** Add 10 subcircuit templates covering the most-requested circuit blocks not yet in the library — crystal oscillators, bus conditioning, current sensing, switching, analog output, sensor front-ends, relay drivers, audio, power muxing, and charge pumps. Brings template count from 20 to 30.
+
+### 23. Crystal oscillator template (P0, MEDIUM) — DONE
+
+- [x] IC database: HC-49S crystal, ABM8G SMD crystal
+- [x] Auto-calc load caps via existing `crystal_load_caps()` helper
+- [x] Feedback resistor (1M), drive-level series resistor annotated
+- [x] Boundary ports: XTAL_IN, XTAL_OUT, GND
+
+### 24. I2C bus conditioning template (P0, MEDIUM) — DONE
+
+- [x] IC database: PULLUPS_ONLY (virtual), PCA9306 level shifter
+- [x] Auto-calc pull-up R from bus voltage, speed mode (100/400/1000 kHz), bus capacitance
+- [x] Formula: R = t_rise / (0.8473 * C_bus)
+- [x] Boundary ports: SDA, SCL, VDD, GND
+
+### 25. Current sense amplifier template (P0, MEDIUM) — DONE
+
+- [x] IC database: INA219 (I2C, 26V), INA180A1 (analog, 26V)
+- [x] Auto-calc Rsense from Imax and Vsense target, footprint by power
+- [x] Input filter RC, VDD decoupling, A0/A1 address straps
+- [x] Boundary ports: SENSE_P, SENSE_N, SDA/SCL or VOUT, GND
+
+### 26. MOSFET switch template (P0, MEDIUM) — DONE
+
+- [x] IC database: BSS138 (N-ch), AO3400A (N-ch), AO3401A (P-ch)
+- [x] Auto-calc gate resistor, pull-down (N-ch) / pull-up (P-ch) for default-off
+- [x] Optional snubber RC for inductive loads
+- [x] Boundary ports: GATE, LOAD, GND, VDD (P-ch)
+
+### 27. DAC output template (P1, MEDIUM) — DONE
+
+- [x] IC database: MCP4725 (I2C, 12-bit), DAC8552 (SPI, 16-bit dual)
+- [x] Auto-calc output RC filter from DAC update rate (fc = rate/10)
+- [x] VREF decoupling for external-ref ICs
+- [x] Boundary ports: VOUT, SDA/SCL or SPI, VDD, GND
+
+### 28. Sensor front-end template (P1, LARGE) — DONE
+
+- [x] IC database: INA128PA (instrumentation amp), AD8421BRZ
+- [x] Auto-calc INA gain R: G = 1 + 50k/Rg (INA128) or G = 1 + 9.9k/Rg (AD8421)
+- [x] Optional anti-alias output filter
+- [x] Boundary ports: SENSOR_P, SENSOR_N, VOUT, VDD, GND
+
+### 29. Relay/solenoid driver template (P1, SMALL) — DONE
+
+- [x] IC database: ULN2003A (7-ch Darlington), DISCRETE_NPN (standalone BJT)
+- [x] Auto-calc base resistor for discrete: R = (Vdrive - Vbe) / (Icoil / beta * overdrive)
+- [x] ULN2003 has internal base R + flyback diodes
+- [x] Boundary ports: VCOIL, DRIVE, LOAD, GND
+
+### 30. Audio amplifier template (P1, MEDIUM) — DONE
+
+- [x] IC database: PAM8302A (analog Class-D), MAX98357A (I2S Class-D)
+- [x] Auto-calc input coupling cap: C = 1/(2*pi*f_low*R_in)
+- [x] VDD bulk decoupling, shutdown pull-up
+- [x] Boundary ports: AUDIO_IN/I2S, SPEAKER_P, SPEAKER_N, VDD, GND
+
+### 31. Power mux / ideal diode template (P1, MEDIUM) — DONE
+
+- [x] IC database: TPS2113 (auto-switching mux), LTC4357 (ideal diode OR)
+- [x] Auto-calc ILIM resistors: R = 375k / Ilim
+- [x] Input/output decoupling, D1/D2 dead-battery disconnect
+- [x] Boundary ports: VIN1, VIN2, VOUT, GND
+
+### 32. Charge pump template (P2, SMALL) — DONE
+
+- [x] IC database: LM2776 (SOT-23-5, 1MHz), ICL7660 (SOIC-8, 10kHz)
+- [x] Auto-calc flying cap and output cap: C = Iout / (fsw * V_ripple)
+- [x] Input decoupling
+- [x] Boundary ports: VIN, VOUT_NEG, GND
+
 ## Sprint 1 — Robust KiCad Import Pipeline (v0.2.0)
 
 **Goal:** Make every KiCad-library-imported component generate a usable, non-broken schematic — no silent drops, no net collisions, no bare ICs missing decoupling.
