@@ -65,7 +65,7 @@ Circuit Weaver sits in the useful middle:
 ### The flow in plain English
 
 **1 — Requirements capture**
-Start with block intent, interfaces, power rails, buses, and constraints. Codex/Claude + the engineer define the system without hand-drawing every schematic page from scratch.
+Start with block intent, interfaces, power rails, buses, and constraints. Codex, OpenCode, Kilo, or Claude + the engineer define the system without hand-drawing every schematic page from scratch.
 
 **2 — Part sourcing**
 The `digikey`, `mouser`, and `lcsc` workflow skills turn vague component choices into concrete MPNs, package decisions, datasheets, and purchasing options.
@@ -187,6 +187,10 @@ spec → normalize → validate → patch → revalidate → generate KiCad arti
 
 ```
 kicad_automations/
+├─ AGENTS.md                  # Cross-agent repo instructions
+├─ opencode.json              # OpenCode/Kilo project config
+├─ .agents/skills/            # Repo-local skill entrypoints for OpenCode/Kilo
+├─ .opencode/agents/          # OpenCode/Kilo subagent definitions
 ├─ src/circuit_weaver/        # Core engine: IR, MVP, validators, exporters, helpers
 │   ├─ api.py                 # FastAPI HTTP server
 │   ├─ mvp.py                 # Public-facing workflow functions
@@ -205,9 +209,25 @@ kicad_automations/
 
 ---
 
+## Agent Platforms
+
+Circuit Weaver now ships repo-native support for Claude Code, Codex, OpenCode, and Kilo.
+
+| Platform | What this repo provides |
+|---|---|
+| Claude Code | Global/project installs via `.claude/skills` |
+| Codex | Root `AGENTS.md` guidance plus global skill installs to `~/.codex/skills` |
+| OpenCode | `AGENTS.md`, `opencode.json`, `.opencode/agents`, and `.agents/skills` compatibility shims |
+| Kilo | Same repo assets as OpenCode; Kilo consumes the shared `opencode.json` / `.opencode` config surface |
+
+Platform-specific install paths, naming rules, and downstream examples live in [docs/agent-platforms.md](docs/agent-platforms.md).
+Installers require an explicit target selection. There is no implicit Claude-only default anymore.
+
+---
+
 ## Workflow Skills
 
-### Global skills (install via `./install.sh`)
+### Global skills (install via `./install.sh` or `./install.ps1`)
 
 - `kicad` — schematic, PCB, and Gerber analysis
 - `bom` — BOM management, auditing, and export
@@ -227,12 +247,18 @@ kicad_automations/
 - `sim` — simulation setup helpers
 
 ```bash
-# Install global skills
-./install.sh
+# Bash: install global skills for Claude, Codex, OpenCode, and Kilo
+./install.sh --platform all
 
-# Install project-skill templates into a downstream repo
-./install.sh --project-skills-dir .claude/skills
+# PowerShell: same install on Windows
+./install.ps1 -Platform all
+
+# Install downstream project templates into the shared open-agent directory
+./install.sh --project-platform agents
+./install.ps1 -ProjectPlatform agents
 ```
+
+OpenCode, Kilo, and `.agents/skills` targets require kebab-case skill IDs. The installers convert source template names like `kicad_gen` into installed IDs like `kicad-gen` automatically.
 
 ---
 

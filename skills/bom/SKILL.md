@@ -270,7 +270,7 @@ rm -rf bom/orders/
 # Remove schematic backups
 rm -f *.bak
 
-# Remove KiCad analyzer/report files (filenames vary — check project CLAUDE.md)
+# Remove KiCad analyzer/report files (filenames vary — check project AGENTS.md or equivalent agent-rules file)
 ```
 
 ### Suggested .gitignore additions

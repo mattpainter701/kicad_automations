@@ -123,8 +123,8 @@ All scripts output JSON to stdout by default. Use `--output file.json` to write 
 The analysis workflow creates files in the project tree. Analyzer JSON and design review reports use user-chosen filenames, so track what you create:
 
 1. **Tell the user** what files were created and where
-2. **Record them** in the project's `CLAUDE.md` under a "Generated files" section (create one if needed) so future sessions can find or clean them up
-3. **When the user asks to clean up**, remove generated reports and analyzer JSON. Check `CLAUDE.md` for the file list — filenames vary per session.
+2. **Record them** in the project's `AGENTS.md` or equivalent agent-rules file under a "Generated files" section (create one if needed) so future sessions can find or clean them up
+3. **When the user asks to clean up**, remove generated reports and analyzer JSON. Check `AGENTS.md` or the equivalent agent-rules file for the file list — filenames vary per session.
 
 | File Type | Example | Regenerable? | Commit to git? |
 |-----------|---------|-------------|----------------|
