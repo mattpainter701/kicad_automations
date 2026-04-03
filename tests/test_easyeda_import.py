@@ -12,7 +12,8 @@ from __future__ import annotations
 import copy
 from unittest.mock import patch
 
-from circuit_weaver.component_db import ComponentDef
+from circuit_weaver.component_db import ComponentDef, ComponentRegistry, PinDef
+from circuit_weaver.easyeda_api import fetch_easyeda_component
 from circuit_weaver.easyeda_parser import (
     _infer_category,
     _infer_footprint_from_package,
@@ -203,6 +204,7 @@ class TestComponentDefConversion:
         assert comp is not None
         assert comp.mpn == "ME6217C33M5G"
         assert comp.ref_prefix == "U"
+        assert comp.lcsc_pn == "C427602"
         assert "SOT-23-5" in comp.footprint
         assert len(comp.pins) == 5
         # VIN and VSS should be power pins
@@ -356,6 +358,33 @@ class TestResolutionChain:
         assert comp.lcsc_pn == "C427602"
         mock_fetch.assert_called_once_with("C427602")
 
+    def test_explicit_lcsc_overrides_registry_resolution(self):
+        """An explicit lcsc: key should prefer EasyEDA even if the registry hits."""
+        from circuit_weaver.project_spec import _resolve_component
+        from circuit_weaver.subcircuits.base import get_default_registry
+
+        registry = ComponentRegistry()
+        registry.register(
+            ComponentDef(
+                mpn="REG_PART",
+                ref_prefix="U",
+                value="REG_PART",
+                description="Registry component",
+                pins=[PinDef("1", "IN", "input", "L")],
+                pin_nets={"1": "IN"},
+            )
+        )
+
+        item = {"ic": "REG_PART", "ref": "U5", "lcsc": "C427602"}
+        with patch("circuit_weaver.easyeda_api.fetch_easyeda_component") as mock_fetch:
+            mock_fetch.return_value = MOCK_LDO_API_DATA
+            result = _resolve_component(item, "power", get_default_registry(), registry, None)
+
+        assert len(result) == 1
+        assert result[0].mpn == "ME6217C33M5G"
+        assert result[0].lcsc_pn == "C427602"
+        mock_fetch.assert_called_once_with("C427602")
+
     def test_easyeda_fallback_no_lcsc_returns_none(self):
         """When no LCSC code is available, returns None gracefully."""
         from circuit_weaver.project_spec import _try_easyeda_resolve
@@ -410,3 +439,20 @@ class TestComponentDefFields:
     def test_easyeda_conversion_sets_lcsc_feature(self):
         comp = easyeda_to_component_def(MOCK_LDO_API_DATA)
         assert any("LCSC:" in f for f in comp.features)
+        assert comp.lcsc_pn == "C427602"
+
+
+class TestEasyEDAApiClient:
+    def test_partial_uuid_fetch_returns_none(self):
+        """Missing any UUID payload should fail closed instead of returning a partial symbol."""
+        symbol_payload = {
+            "title": "ME6217C33M5G",
+            "dataStr": '{"head": {"c_para": {"pre": "U?", "Manufacturer Part": "ME6217C33M5G"}}}',
+        }
+
+        with patch("circuit_weaver.easyeda_api._fetch_component_uuids", return_value=["sym-1", "fp-1"]):
+            with patch(
+                "circuit_weaver.easyeda_api._fetch_component_data",
+                side_effect=[symbol_payload, None],
+            ):
+                assert fetch_easyeda_component("C427602", use_cache=False) is None

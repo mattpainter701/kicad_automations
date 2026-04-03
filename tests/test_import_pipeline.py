@@ -26,6 +26,7 @@ from circuit_weaver.project_spec import (
     resolve_project_spec,
 )
 from circuit_weaver.subcircuits.base import get_default_registry
+from circuit_weaver.subcircuits.power_mux import PowerMuxTemplate
 
 # ================================================================
 # Task 1: Stop silently dropping components
@@ -368,3 +369,27 @@ class TestReconciliation:
         # The component should be a stub
         assert len(compiled.components) == 1
         assert any("UNRESOLVED" in a for a in compiled.components[0].annotations)
+
+
+class TestPowerMuxRegression:
+    def test_ltc4357_variant_still_generates(self):
+        template = PowerMuxTemplate()
+        result = template.generate(
+            {
+                "ic": "LTC4357CMS8",
+                "ref": "U4",
+                "vin1_net": "VIN_A",
+                "vin2_net": "VIN_B",
+                "vout_net": "VSYS",
+            }
+        )
+        comp = result.components[0]
+        assert comp.mpn == "LTC4357CMS8"
+        assert comp.power_pins["1"] == "VIN_A"
+        assert comp.power_pins["6"] == "VIN_A"
+        assert comp.power_pins["7"] == "VIN_A"
+        assert comp.power_pins["8"] == "VIN_A"
+        assert comp.pin_nets["2"] == "GATE_U4"
+        assert comp.pin_nets["3"] == "SOURCE_U4"
+        assert any(strap.net == "SHDN_U4" and strap.rail == "VIN_A" for strap in comp.straps)
+        assert any("Ideal diode OR" in note for note in comp.annotations)

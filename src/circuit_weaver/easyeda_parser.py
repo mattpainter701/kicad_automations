@@ -468,6 +468,7 @@ def easyeda_to_component_def(data: dict) -> ComponentDef | None:
         category=category,
         source_mpn=symbol.mpn,
         source_manufacturer=symbol.manufacturer,
+        lcsc_pn=symbol.lcsc_id,
         pins=pin_defs,
         pin_nets=pin_nets,
         power_pins=power_pins,

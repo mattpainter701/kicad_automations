@@ -52,7 +52,7 @@ Files: `src/circuit_weaver/project_spec.py`
 - [x] Test footprint inference and category inference (13 tests)
 - [x] Test ComponentDef field additions (3 tests)
 
-Files: `tests/test_easyeda_import.py` — 36 tests, all passing
+Files: `tests/test_easyeda_import.py`
 
 ### 38. Multi-agent workflow compatibility (P1, SMALL) — DONE
 
@@ -62,6 +62,30 @@ Files: `tests/test_easyeda_import.py` — 36 tests, all passing
 - [x] Updated README and skill docs for `AGENTS.md`-first guidance and platform-specific install paths
 
 Files: `AGENTS.md`, `opencode.json`, `install.sh`, `install.ps1`, `README.md`, `docs/agent-platforms.md`
+
+### 39. Sprint 5 code review fix — fail closed on incomplete EasyEDA fetches (P0, SMALL) — DONE
+
+- [x] Return `None` instead of building a partial EasyEDA import when any UUID payload is missing
+- [x] Carry `lcsc_pn` through the direct `easyeda_to_component_def()` conversion path
+- [x] Add regression coverage for incomplete per-UUID EasyEDA responses
+
+Files: `src/circuit_weaver/easyeda_api.py`, `src/circuit_weaver/easyeda_parser.py`, `tests/test_easyeda_import.py`
+
+### 40. Sprint 5 code review fix — make explicit `lcsc:` override earlier tiers (P0, SMALL) — DONE
+
+- [x] Try EasyEDA first when a YAML component entry includes an explicit `lcsc:` key
+- [x] Keep EasyEDA as the late fallback for plain `ic:`/MPN resolution when no explicit LCSC part is provided
+- [x] Add regression coverage showing explicit `lcsc:` beats registry resolution
+
+Files: `src/circuit_weaver/project_spec.py`, `tests/test_easyeda_import.py`
+
+### 41. Sprint 5 code review fix — restore `LTC4357CMS8` power mux support (P1, SMALL) — DONE
+
+- [x] Re-add the ideal-diode OR controller definition and generate path in `power_mux.py`
+- [x] Preserve existing TPS2113 current-limit behavior and summary text
+- [x] Add regression coverage for the restored `LTC4357CMS8` template path
+
+Files: `src/circuit_weaver/subcircuits/power_mux.py`, `tests/test_import_pipeline.py`
 
 ---
 

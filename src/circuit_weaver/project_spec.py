@@ -377,7 +377,7 @@ def _try_easyeda_resolve(item: dict, ic_name: str, parts_lookup=None) -> Compone
     comp = easyeda_to_component_def(ee_data)
     if comp:
         comp.lcsc_pn = lcsc_id
-        print(f"  → Resolved '{ic_name}' from EasyEDA ({lcsc_id}): {len(comp.pins)} pins")
+        print(f"  -> Resolved '{ic_name}' from EasyEDA ({lcsc_id}): {len(comp.pins)} pins")
     return comp
 
 
@@ -453,10 +453,16 @@ def _resolve_component(
         print(f"  WARNING: Item in '{section_category}' has no 'type' or 'ic', creating stub")
         return [_make_stub_component("", section_category, ref, reason="No 'type' or 'ic' specified")]
 
-    comp = component_reg.get(ic)
+    explicit_lcsc = bool(str(item.get("lcsc", "")).strip())
+
+    # An explicit lcsc: key is an intentional override: prefer the EasyEDA
+    # symbol even if earlier tiers could resolve the MPN by name.
+    comp = _try_easyeda_resolve(item, ic, parts_lookup) if explicit_lcsc else None
+    if not comp:
+        comp = component_reg.get(ic)
     if not comp and kicad_lib:
         comp = kicad_lib.get_component(ic, category=section_category)
-    if not comp:
+    if not comp and not explicit_lcsc:
         # Tier 4: EasyEDA/LCSC — try by explicit lcsc: key or by MPN lookup
         comp = _try_easyeda_resolve(item, ic, parts_lookup)
     if not comp:

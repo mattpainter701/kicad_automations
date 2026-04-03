@@ -207,14 +207,17 @@ def fetch_easyeda_component(lcsc_id: str, use_cache: bool = True) -> dict | None
         return None
 
     # Step 2: Fetch each UUID's data
-    # Convention: last UUID = footprint, others = symbol units
+    # Convention: last UUID = footprint, others = symbol units.
+    # Fail closed if any UUID fetch is missing so callers never get a
+    # silently truncated multi-unit symbol.
     symbol_data_list = []
     footprint_data = None
 
     for i, uuid in enumerate(uuids):
         comp_data = _fetch_component_data(uuid)
         if not comp_data:
-            continue
+            log.warning("Incomplete EasyEDA response for %s: missing UUID %s", lcsc_id, uuid)
+            return None
 
         if i == len(uuids) - 1:
             footprint_data = comp_data
@@ -247,8 +250,10 @@ def fetch_easyeda_component(lcsc_id: str, use_cache: bool = True) -> dict | None
             except json.JSONDecodeError:
                 ds = {}
         shapes = ds.get("shape") or []
-        if isinstance(shapes, list):
-            symbol_shapes.append(shapes)
+        if not isinstance(shapes, list) or not shapes:
+            log.warning("Incomplete EasyEDA symbol data for %s: missing shape list", lcsc_id)
+            return None
+        symbol_shapes.append(shapes)
 
     # Build footprint shapes
     fp_shapes = []

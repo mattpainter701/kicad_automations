@@ -12,15 +12,21 @@
 - MPN-to-LCSC auto-discovery: when `parts_lookup.py` finds an LCSC code for an MPN, the EasyEDA tier fires automatically
 - `lcsc_pn` and `digikey_pn` first-class fields on `ComponentDef` (replaces features-list workaround)
 - `search_easyeda()` function for keyword search across JLCPCB component library
-- 36 new tests in `test_easyeda_import.py` (pin parsing, symbol assembly, ComponentDef conversion, footprint/category inference, resolution chain with mocks)
+- EasyEDA regression coverage in `test_easyeda_import.py` for pin parsing, symbol assembly, ComponentDef conversion, footprint/category inference, and mocked resolution paths
 
 ### Changed
 - `enrich_component()` now populates `lcsc_pn` and `digikey_pn` fields directly (backward-compatible: still writes features list too)
 - Resolution chain stub message updated to mention EasyEDA as a checked source
 - Version bump: 0.5.0 → 0.6.0
 
+### Fixed
+- EasyEDA imports now fail closed when any UUID payload is missing, instead of silently returning a truncated symbol
+- Explicit YAML `lcsc:` keys now prefer EasyEDA import even when earlier registry/KiCad tiers would otherwise resolve the part by name
+- `easyeda_to_component_def()` now carries `lcsc_pn` directly from EasyEDA metadata
+- Restored `LTC4357CMS8` support in the `power_mux` template after the sprint 5 regression review
+
 ### Tests
-- 104 total tests passing (68 existing + 36 new EasyEDA import tests, zero regressions)
+- Added regression coverage for incomplete EasyEDA UUID fetches, explicit `lcsc:` override precedence, and restored `LTC4357CMS8` generation
 
 ## [0.5.0] - 2026-04-03
 
