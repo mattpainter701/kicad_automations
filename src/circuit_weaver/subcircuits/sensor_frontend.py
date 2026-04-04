@@ -305,8 +305,6 @@ class SensorFrontendTemplate(SubcircuitTemplate):
             c_filter = snap_cap(c_filter_raw)
             actual_fc = 1.0 / (2.0 * math.pi * r_filter * c_filter) if c_filter > 0 else 0
 
-            filt_mid_net = f"FILT_{ref}"
-
             # Filter resistor: VOUT_RAW -> FILT -> output
             straps.append(
                 StrapConfig(

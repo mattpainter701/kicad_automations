@@ -183,7 +183,6 @@ class TestSampleValidation:
 )
 def test_sample_generates_artifacts(sample_name, tmp_path):
     """End-to-end: sample spec generates KiCad schematics without errors."""
-    spec = _load_sample_spec(sample_name)
     result = subprocess.run(
         [
             sys.executable,

@@ -137,5 +137,4 @@ def test_p_channel_switch_drops_unused_ground_boundary():
 
 
 def test_power_mux_only_advertises_supported_variant():
-    assert list(POWER_MUX_IC_DATABASE) == ["TPS2113ADRBR"]
-
+    assert list(POWER_MUX_IC_DATABASE) == ["TPS2113ADRBR", "LTC4357CMS8"]

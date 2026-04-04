@@ -142,7 +142,6 @@ def _parse_pin(shape_str: str) -> EEPin | None:
         if fields[0] in ("0", "1") and len(fields) >= 6:
             visible = fields[0] == "1"
             text = fields[4]
-            align = fields[5] if len(fields) > 5 else ""
 
             if not text:
                 continue

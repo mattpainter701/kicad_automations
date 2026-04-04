@@ -225,7 +225,6 @@ class ChargePumpTemplate(SubcircuitTemplate):
         )
 
         # ---- Annotations ----
-        actual_ripple_fly = iout / (fsw * c_fly) * 1e3 if fsw > 0 and c_fly > 0 else 0
         actual_ripple_out = iout / (fsw * c_out) * 1e3 if fsw > 0 and c_out > 0 else 0
 
         annotations = [

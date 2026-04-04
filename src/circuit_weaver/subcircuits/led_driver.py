@@ -388,7 +388,6 @@ class LEDDriverTemplate(SubcircuitTemplate):
 
         # Map output pins to local nets
         for i in range(16):
-            pin_num = str(i + 1) if i < 14 else str(i + 1)
             # OUT0-OUT12 are pins 1-13, OUT13-OUT15 are pins 15-17
             if i <= 12:
                 out_pin = str(i + 1)

@@ -121,6 +121,7 @@ class ProtectionTemplate(SubcircuitTemplate):
             pin_nets=pin_nets,
             annotations=annotations,
         )
+        comp.source_ref = ref
 
         ports = [
             BoundaryPort(protect_net, "bidirectional"),
