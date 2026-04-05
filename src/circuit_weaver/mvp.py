@@ -361,16 +361,23 @@ def _validate_block_definitions(ir: DesignIR) -> tuple[list[ValidationMessage], 
             params = copy.deepcopy(block.params)
             if block.ref:
                 params.setdefault("ref", block.ref)
-            for error in template.validate_params(params):
-                electrical.append(
-                    ValidationMessage(
-                        category="electrical",
-                        code="template-param",
-                        level="error",
-                        subject=block.ref or block.id,
-                        message=error,
+            # Run template-specific validation + schema-driven validation
+            custom_errors = template.validate_params(params)
+            schema_errors = template._validate_params_from_schema(params)
+            # Deduplicate (custom validators may overlap with schema checks)
+            seen: set[str] = set()
+            for error in custom_errors + schema_errors:
+                if error not in seen:
+                    seen.add(error)
+                    electrical.append(
+                        ValidationMessage(
+                            category="electrical",
+                            code="template-param",
+                            level="error",
+                            subject=block.ref or block.id,
+                            message=error,
+                        )
                     )
-                )
         else:
             if not block.ic:
                 structural.append(

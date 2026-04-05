@@ -2071,6 +2071,7 @@ def _render_sheet(
                 handled.add(pin_num)
 
         # Classify and handle remaining (unconnected) pins
+        nc_intent_notes: list[str] = []
         for pin_num in pin_pos:
             if pin_num not in handled:
                 px, py, pangle, plen, pname, ptype = pin_pos[pin_num]
@@ -2081,6 +2082,10 @@ def _render_sheet(
                     _logger.error("%s (%s): %s", placed.ref, comp.mpn, reason)
                 elif level == "warning":
                     _logger.warning("%s (%s): %s", placed.ref, comp.mpn, reason)
+                    nc_intent_notes.append(f"{pname}({pin_num}): NC")
+        # Annotate the schematic with NC intent summary for non-trivial cases
+        if nc_intent_notes and len(nc_intent_notes) <= 8:
+            comp.annotations.append("Unused: " + ", ".join(nc_intent_notes))
 
         # Store pin points for local wiring by parent ref
         pin_point_map[placed.ref] = ic_pin_points

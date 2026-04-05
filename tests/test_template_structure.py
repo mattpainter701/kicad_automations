@@ -211,3 +211,98 @@ def test_p_channel_switch_drops_unused_ground_boundary():
 
 def test_power_mux_only_advertises_supported_variant():
     assert list(POWER_MUX_IC_DATABASE) == ["TPS2113ADRBR", "LTC4357CMS8"]
+
+
+# ================================================================
+# Sprint 3: Connectivity & bus validation
+# ================================================================
+
+
+def test_validator_catches_enable_pins():
+    """Validator should detect floating EN pins on regulators."""
+    from circuit_weaver.validator import run_validation_checks
+    from circuit_weaver.component_db import ComponentDef, PinDef
+
+    # Simulate a regulator with floating EN pin
+    comp = ComponentDef(
+        mpn="TEST_LDO",
+        ref_prefix="U",
+        category="power",
+        pins=[
+            PinDef("1", "VIN", "power_in", "L"),
+            PinDef("2", "GND", "power_in", "B"),
+            PinDef("3", "EN", "input", "L"),
+            PinDef("4", "OUT", "power_out", "R"),
+        ],
+        power_pins={"1": "VDD_3P3", "2": "GND"},
+        pin_nets={"4": "VOUT"},
+        # EN pin 3 is NOT in pin_nets or power_pins — floating!
+    )
+    results = run_validation_checks([comp])
+    en_result = next((r for r in results if r.code == "enable-pins"), None)
+    assert en_result is not None, "enable-pins check should exist"
+    assert en_result.status == "WARN", f"Expected WARN for floating EN, got {en_result.status}"
+    assert any("EN" in i.message for i in en_result.issues)
+
+
+def test_validator_bus_completeness_detects_missing_pullup():
+    """I2C bus without pull-ups should be flagged."""
+    from circuit_weaver.validator import run_validation_checks
+    from circuit_weaver.component_db import ComponentDef, PinDef
+
+    comp = ComponentDef(
+        mpn="TEST_I2C",
+        ref_prefix="U",
+        pins=[
+            PinDef("1", "SCL", "input", "L"),
+            PinDef("2", "SDA", "bidirectional", "L"),
+            PinDef("3", "VCC", "power_in", "T"),
+            PinDef("4", "GND", "power_in", "B"),
+        ],
+        power_pins={"3": "VDD_3P3", "4": "GND"},
+        pin_nets={"1": "I2C_SCL", "2": "I2C_SDA"},
+        # No straps — missing pull-ups
+    )
+    results = run_validation_checks([comp])
+    bus_result = next((r for r in results if r.code == "bus-completeness"), None)
+    assert bus_result is not None
+    assert bus_result.status == "WARN"
+    assert any("pull-up" in i.message for i in bus_result.issues)
+
+
+# ================================================================
+# Sprint 4: Template quality & contract validation
+# ================================================================
+
+
+def test_all_templates_pass_contract_validation():
+    """Every template's generate() output must satisfy the component contract."""
+    reg = get_default_registry()
+    for template_name in sorted(reg.available_types()):
+        template = reg.get(template_name)
+        result = template.generate(_build_params(template))
+        errors = result.validate_contract()
+        assert not errors, f"{template_name} contract errors: {errors}"
+
+
+def test_schema_validation_catches_invalid_type():
+    """Schema validation should catch wrong parameter types."""
+    template = BuckConverterTemplate()
+    errors = template._validate_params_from_schema({"vin": "not_a_number", "vout": 3.3, "iout": 1.0})
+    assert any("number" in e for e in errors), f"Expected type error, got: {errors}"
+
+
+def test_schema_validation_catches_invalid_option():
+    """Schema validation should catch invalid option values."""
+    from circuit_weaver.subcircuits.opamp import OpAmpTemplate
+
+    template = OpAmpTemplate()
+    errors = template._validate_params_from_schema({"config": "invalid_config"})
+    assert any("must be one of" in e for e in errors), f"Expected option error, got: {errors}"
+
+
+def test_schema_validation_passes_for_valid_params():
+    """Schema validation should pass for valid parameters."""
+    template = BuckConverterTemplate()
+    errors = template._validate_params_from_schema({"vin": 12.0, "vout": 3.3, "iout": 1.0})
+    assert not errors, f"Unexpected errors: {errors}"
