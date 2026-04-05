@@ -2,6 +2,83 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 6–8 — Circuit Quality Overhaul (v0.7.0) — DONE
+
+**Goal:** Reduce the ~50% error rate in generated circuits (floating pins, power domain issues) to near zero. Comprehensive validation pipeline, template fixes, and UX improvements.
+
+### 42. Pin-type-aware no-connect classification (P0, LARGE) — DONE
+
+- [x] Replace blanket no-connect in `generator.py` with `_classify_unhandled_pin()` — errors on floating `power_in`, warns on floating `input`/`bidirectional`, silently NC's outputs and NC-named pins
+- [x] Add `explicit_no_connects: set` field to `ComponentDef`
+- [x] Migrate 7 templates: USB (PMODE0), charge_pump (ICL7660), clock (AD9528), ethernet (KSZ9031), opamp (channel B), relay_driver (unused channels), sensor_frontend (RG pins)
+- [x] Add `_validate_pin_coverage()` gate in `mvp.py`
+
+Files: `component_db.py`, `generator.py`, `mvp.py`, 7 subcircuit templates
+
+### 43. Power domain integrity (P0, LARGE) — DONE
+
+- [x] Fix opamp.py hardcoded pin numbers → database lookups (`pin_out_a`, `pin_inm_a`, `pin_inp_a`)
+- [x] Fix power_mux.py hardcoded LTC4357 VIN pins → `pin_vin_extra` field
+- [x] Fix can_transceiver.py RS pin semantic (`power_pins` → `pin_nets`)
+- [x] Expand power pin inference in `kicad_lib.py` (8 → 20+ patterns)
+- [x] Expand power pin inference in `easyeda_parser.py` (VDDCORE, VDD_*, VCC_*)
+- [x] Add `_validate_power_domain_consistency()` (voltage conflicts, rail mismatch, missing bypass)
+- [x] Auto-generate `PWR_FLAG` on every unique power net per sheet
+
+Files: `kicad_lib.py`, `easyeda_parser.py`, `mvp.py`, `primitives.py`, `generator.py`, 3 subcircuit templates
+
+### 44. Signal connectivity validation (P1, MEDIUM) — DONE
+
+- [x] Net connectivity graph: single-pin-net (dangling) and undriven-net (input-only) detection
+- [x] Enable/shutdown pin validation: floating EN/SHDN/CE on regulators
+- [x] Bus completeness: I2C pull-ups, SPI CS, UART TX/RX pairing
+- [x] Intent annotations: "Unused: PIN(num): NC" on schematics
+
+Files: `validator.py`, `generator.py`
+
+### 45. Template quality & contracts (P1, MEDIUM) — DONE
+
+- [x] Auto schema-driven `validate_params()` in `SubcircuitTemplate` base class
+- [x] `SubcircuitResult.validate_contract()` — components, power pins, boundary ports
+- [x] MVP pipeline runs both custom + schema validation with deduplication
+- [x] Parameter boundary tests (type, options, valid params)
+
+Files: `subcircuits/base.py`, `mvp.py`
+
+### 46. Passive component correctness (P1, MEDIUM) — DONE
+
+- [x] Expand `_FEEDBACK_VREF` from 1 IC to 7 switching converters
+- [x] Inductor selection validator (0.1µH–100µH sanity bounds)
+- [x] Capacitor voltage rating validator (80% derating check)
+
+Files: `validator.py`
+
+### 47. DRC pipeline & quality scoring (P1, LARGE) — DONE
+
+- [x] In-process ERC: pin-type conflict detection (output-to-output = bus contention)
+- [x] Electrical quality scorer (`score_electrical_quality`): pin/decoupling/power/validation metrics
+- [x] `--strict` mode: warnings → errors for production designs
+- [x] Design checklist generator (`generate_design_checklist`): Markdown pre-fab review
+
+Files: `validator.py`, `scorer.py`, `mvp.py`
+
+### 48. Import pipeline hardening (P2, MEDIUM) — DONE
+
+- [x] EasyEDA pin type enrichment from name patterns (EN, RESET, GPIO, SDA, SCL, _IN, _OUT)
+- [x] Pin count sanity check (IC < 3 pins flagged)
+- [x] Footprint-to-pin consistency (QFN-48, SOIC-8, BGA-121 pad count vs symbol pins)
+
+Files: `easyeda_parser.py`, `mvp.py`
+
+### 49. UX & guardrails (P2, SMALL) — DONE
+
+- [x] `suggestion` field on `ValidationIssue` with actionable remediation text
+- [x] Fix suggestions on decoupling and enable pin warnings
+
+Files: `validator.py`
+
+---
+
 ## Sprint 5 — EasyEDA/LCSC Symbol Import Pipeline (v0.6.0)
 
 **Goal:** When a component isn't in our built-in registry or KiCad's official library, automatically fetch its symbol from EasyEDA's public API using its LCSC part number. This gives us access to 300K+ component symbols with zero auth required — critical for JLCPCB production workflows and any part not in KiCad's official library.

@@ -340,12 +340,17 @@ pip install -e /path/to/kicad_automations
 ## Status
 
 **Working now**
-- Standalone `circuit_weaver` package
+- Standalone `circuit_weaver` package (v0.7.0)
 - Full MVP API surface (`validate`, `patch`, `generate`, `diff`, `pcb-feedback`)
 - FastAPI HTTP server with all endpoints
-- Package-level tests and CI
-- Subcircuit template library (30 templates)
+- Package-level tests and CI (123 tests passing)
+- Subcircuit template library (30 templates, all with contract validation)
 - Helper extraction (placement, silkscreen, impedance)
+- **10-check validation pipeline**: feedback dividers, RC/LC filters, crystal load caps, decoupling coverage, inductor selection, capacitor voltage ratings, net connectivity, enable pin detection, bus completeness (I2C/SPI/UART), pin-type conflict ERC
+- **Pin-type-aware circuit generation**: floating power pins → errors, floating inputs → warnings, explicit no-connects for intentional NC pins, PWR_FLAG auto-generation
+- **Electrical quality scorer**: 0–100 score with A–F grade for generated designs
+- **`--strict` mode** for production designs (warnings = errors)
+- **Design checklist generator** for pre-fabrication review
 
 **Active next steps**
 - Continue polishing downstream package consumption
