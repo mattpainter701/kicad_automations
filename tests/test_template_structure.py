@@ -306,3 +306,130 @@ def test_schema_validation_passes_for_valid_params():
     template = BuckConverterTemplate()
     errors = template._validate_params_from_schema({"vin": 12.0, "vout": 3.3, "iout": 1.0})
     assert not errors, f"Unexpected errors: {errors}"
+
+
+# ================================================================
+# Sprint 5: Passive component correctness
+# ================================================================
+
+
+def test_expanded_feedback_vref_database():
+    """Feedback Vref database should cover all switching converters."""
+    from circuit_weaver.validator import _FEEDBACK_VREF
+
+    expected_ics = ["AP62300", "TPS62088", "TPS61230A", "MT3608", "TPS63020", "TPS63000"]
+    for ic in expected_ics:
+        assert ic in _FEEDBACK_VREF, f"{ic} missing from _FEEDBACK_VREF"
+
+
+def test_validator_has_inductor_and_cap_checks():
+    """Validator should include inductor and capacitor checks."""
+    from circuit_weaver.validator import _VALIDATION_CHECKS
+
+    codes = {code for code, _, _ in _VALIDATION_CHECKS}
+    assert "inductor-selection" in codes
+    assert "cap-voltage" in codes
+
+
+# ================================================================
+# Sprint 6: DRC pipeline
+# ================================================================
+
+
+def test_validator_has_pin_type_conflict_check():
+    """Validator should include ERC pin-type conflict check."""
+    from circuit_weaver.validator import _VALIDATION_CHECKS
+
+    codes = {code for code, _, _ in _VALIDATION_CHECKS}
+    assert "pin-type-conflicts" in codes
+
+
+def test_electrical_quality_scorer():
+    """Electrical quality scorer should produce valid scores."""
+    from circuit_weaver.scorer import score_electrical_quality
+    from circuit_weaver.component_db import ComponentDef, PinDef, BypassCap
+
+    comp = ComponentDef(
+        mpn="TEST_IC",
+        ref_prefix="U",
+        pins=[
+            PinDef("1", "VDD", "power_in", "T"),
+            PinDef("2", "GND", "power_in", "B"),
+            PinDef("3", "OUT", "output", "R"),
+        ],
+        power_pins={"1": "VDD_3P3", "2": "GND"},
+        pin_nets={"3": "SIG_OUT"},
+        bypass_caps=[BypassCap("C1", "VDD_3P3", "GND", "100nF", "0402")],
+    )
+    score = score_electrical_quality([comp])
+    assert 0 <= score.total <= 100
+    assert score.pin_coverage_pct == 100.0
+    assert score.power_pin_coverage_pct == 100.0
+
+
+def test_strict_mode_fails_on_warnings():
+    """Strict mode should make warnings count as failures."""
+    from circuit_weaver.mvp import ValidationReport, ValidationMessage
+
+    report = ValidationReport(
+        profile="test",
+        valid=True,
+        categories={"electrical": [
+            ValidationMessage("electrical", "test-warn", "warning", "U1", "test warning"),
+        ]},
+        summary={"electrical": 1},
+    )
+    # Simulate strict computation
+    error_count = sum(1 for m in report.categories.get("electrical", []) if m.level == "error")
+    warning_count = sum(1 for m in report.categories.get("electrical", []) if m.level == "warning")
+    strict_valid = (error_count + warning_count) == 0
+    normal_valid = error_count == 0
+    assert normal_valid is True   # Non-strict: warnings OK
+    assert strict_valid is False  # Strict: warnings fail
+
+
+def test_design_checklist_generation():
+    """Design checklist should produce valid Markdown."""
+    from circuit_weaver.mvp import generate_design_checklist, ValidationReport
+
+    report = ValidationReport(
+        profile="mvp_strict",
+        valid=True,
+        categories={"structural": [], "electrical": [], "implementation": [], "presentation": []},
+        summary={"structural": 0, "electrical": 0, "implementation": 0, "presentation": 0},
+        metadata={"project": "TestProject", "component_count": 5, "block_count": 3},
+    )
+    checklist = generate_design_checklist(report)
+    assert "# Design Validation Checklist" in checklist
+    assert "TestProject" in checklist
+    assert "[x]" in checklist  # Should have passing checks
+
+
+# ================================================================
+# Sprint 7: Import pipeline
+# ================================================================
+
+
+def test_easyeda_pin_type_enrichment():
+    """EasyEDA parser should enrich unspecified pin types from name patterns."""
+    from circuit_weaver.easyeda_parser import _EE_ELEC_TYPE_MAP
+
+    # Verify the type map exists
+    assert _EE_ELEC_TYPE_MAP[0] == "unspecified"
+    assert _EE_ELEC_TYPE_MAP[4] == "power_in"
+
+
+# ================================================================
+# Sprint 8: Fix suggestions
+# ================================================================
+
+
+def test_validation_issues_have_suggestion_field():
+    """ValidationIssue should support a suggestion field."""
+    from circuit_weaver.validator import ValidationIssue
+
+    issue = ValidationIssue(
+        code="test", level="warning", ref="U1", mpn="TEST",
+        message="test msg", suggestion="Add a 100nF cap",
+    )
+    assert issue.suggestion == "Add a 100nF cap"

@@ -447,6 +447,42 @@ def _validate_component_resolution(
                     message="Resolved block has no footprint binding",
                 )
             )
+        # Pin count sanity: IC with very few pins is suspicious
+        if primary.pins and primary.ref_prefix.upper() in ("U", "IC"):
+            pin_count = len(primary.pins)
+            if pin_count < 3:
+                implementation.append(
+                    ValidationMessage(
+                        category="implementation",
+                        code="low-pin-count",
+                        level="warning",
+                        subject=block.ref or block.id,
+                        message=f"IC has only {pin_count} pin(s) — verify symbol is complete",
+                    )
+                )
+        # Footprint-to-pin consistency: extract expected pad count from footprint name
+        if primary.footprint and primary.pins:
+            fp = primary.footprint
+            fp_pin_match = re.search(r"(\d+)(?:[-_]Pin|pad|Pad|P(?:\d|$))", fp)
+            if not fp_pin_match:
+                # Try common patterns: QFN-48, SOIC-8, TSSOP-20, BGA-121
+                fp_pin_match = re.search(r"(?:QFN|SOIC|TSSOP|LQFP|BGA|DIP|SOP|MSOP|LFCSP)[-_]?(\d+)", fp)
+            if fp_pin_match:
+                fp_pins = int(fp_pin_match.group(1))
+                sym_pins = len(primary.pins)
+                if abs(fp_pins - sym_pins) > max(2, sym_pins * 0.1):
+                    implementation.append(
+                        ValidationMessage(
+                            category="implementation",
+                            code="pin-footprint-mismatch",
+                            level="warning",
+                            subject=block.ref or block.id,
+                            message=(
+                                f"Symbol has {sym_pins} pins but footprint '{fp}' "
+                                f"implies {fp_pins} pads — verify match"
+                            ),
+                        )
+                    )
         if block.kind == "component":
             support = block.required_support or {}
             has_contract = bool(block.interfaces or support or block.part_bindings)
@@ -895,8 +931,12 @@ def validate_design(
     *,
     profile: str = _MVP_PROFILE,
     enrich_parts: bool = False,
+    strict: bool = False,
 ) -> ValidationReport:
-    """Validate a design spec against the strict MVP profile."""
+    """Validate a design spec against the strict MVP profile.
+
+    When *strict* is True, warnings also count as failures (not just errors).
+    """
     profile = _ensure_profile(profile)
     compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
 
@@ -993,7 +1033,11 @@ def validate_design(
 
     summary = {key: len(value) for key, value in categories.items()}
     error_count = sum(1 for msgs in categories.values() for m in msgs if m.level == "error")
-    valid = error_count == 0
+    warning_count = sum(1 for msgs in categories.values() for m in msgs if m.level == "warning")
+    if strict:
+        valid = (error_count + warning_count) == 0
+    else:
+        valid = error_count == 0
     return ValidationReport(
         profile=profile,
         valid=valid,
@@ -1005,6 +1049,67 @@ def validate_design(
             "block_count": len(compiled.ir.blocks),
         },
     )
+
+
+def generate_design_checklist(report: ValidationReport, components=None) -> str:
+    """Generate a human-readable pre-fabrication design checklist.
+
+    Returns a Markdown string summarizing the design health and actionable items.
+    """
+    lines = ["# Design Validation Checklist", ""]
+    proj = report.metadata.get("project", "project")
+    lines.append(f"**Project:** {proj}")
+    lines.append(f"**Status:** {'PASS' if report.valid else 'FAIL'}")
+    lines.append(f"**Components:** {report.metadata.get('component_count', '?')}")
+    lines.append(f"**Blocks:** {report.metadata.get('block_count', '?')}")
+    lines.append("")
+
+    # Checklist items derived from validation categories
+    checklist = [
+        ("All power pins connected", "electrical", "floating-power-pin", "missing-power-net"),
+        ("All bypass caps placed", "electrical", "decoupling"),
+        ("All enable pins driven", "electrical", "floating-enable"),
+        ("No floating inputs", "electrical", "floating-input-pin"),
+        ("Bus pull-ups present", "electrical", "i2c-missing-pullup"),
+        ("No output conflicts", "electrical", "output-conflict"),
+        ("No dangling nets", "electrical", "single-pin-net"),
+        ("Crystal load caps matched", "electrical", "crystal-load"),
+        ("Feedback dividers correct", "electrical", "feedback-divider"),
+        ("All blocks resolved", "structural", "unresolved-block", "unresolved-component"),
+        ("Footprints assigned", "implementation", "missing-footprint"),
+    ]
+
+    lines.append("## Checklist")
+    lines.append("")
+    for label, category, *codes in checklist:
+        msgs = report.categories.get(category, [])
+        has_issue = any(m.code in codes for m in msgs)
+        mark = "x" if not has_issue else " "
+        lines.append(f"- [{mark}] {label}")
+
+    # Issues summary
+    all_issues = [m for msgs in report.categories.values() for m in msgs]
+    errors = [m for m in all_issues if m.level == "error"]
+    warnings = [m for m in all_issues if m.level == "warning"]
+
+    if errors:
+        lines.append("")
+        lines.append(f"## Errors ({len(errors)})")
+        lines.append("")
+        for m in errors:
+            lines.append(f"- **{m.subject}**: {m.message}")
+
+    if warnings:
+        lines.append("")
+        lines.append(f"## Warnings ({len(warnings)})")
+        lines.append("")
+        for m in warnings[:20]:  # Cap at 20 to avoid overwhelming output
+            lines.append(f"- {m.subject}: {m.message}")
+        if len(warnings) > 20:
+            lines.append(f"- ... and {len(warnings) - 20} more")
+
+    lines.append("")
+    return "\n".join(lines)
 
 
 def apply_design_patch(
@@ -1353,6 +1458,8 @@ def main() -> None:
 
     validate_p = subparsers.add_parser("validate", help="Validate a canonical/legacy design spec")
     validate_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    validate_p.add_argument("--strict", action="store_true", default=False,
+                            help="Treat warnings as errors (fail on any warning)")
     validate_p.add_argument("--enrich-parts", action="store_true", default=False)
 
     patch_p = subparsers.add_parser("apply-patch", help="Apply a transactional patch to a design spec")
@@ -1388,8 +1495,11 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "validate":
+        strict = getattr(args, "strict", False)
         report = _run_with_stderr_capture(
-            lambda: validate_design(_load_spec_file(args.spec), enrich_parts=args.enrich_parts)
+            lambda: validate_design(
+                _load_spec_file(args.spec), enrich_parts=args.enrich_parts, strict=strict,
+            )
         )
         _print_json(report.to_dict())
         raise SystemExit(0 if report.valid else 2)

@@ -9,7 +9,16 @@ from dataclasses import dataclass
 from .component_db import ComponentDef
 
 _FEEDBACK_VREF = {
+    # Buck converters
+    "AP62300": 0.8,
     "AP62300TWU": 0.8,
+    "TPS62088": 0.6,
+    # Boost converters
+    "TPS61230A": 0.5,
+    "MT3608": 0.6,
+    # Buck-boost converters
+    "TPS63020": 0.5,
+    "TPS63000": 0.5,
 }
 
 _KNOWN_RAIL_VOLTAGES = {
@@ -33,6 +42,7 @@ class ValidationIssue:
     ref: str
     mpn: str
     message: str
+    suggestion: str = ""
 
 
 @dataclass(frozen=True)
@@ -43,13 +53,16 @@ class ValidationCheckResult:
     issues: tuple[ValidationIssue, ...]
 
 
-def _issue(comp: ComponentDef, code: str, message: str, level: str = "warning") -> ValidationIssue:
+def _issue(
+    comp: ComponentDef, code: str, message: str, level: str = "warning", suggestion: str = "",
+) -> ValidationIssue:
     return ValidationIssue(
         code=code,
         level=level,
         ref=comp.source_ref or comp.ref_prefix,
         mpn=comp.source_mpn or comp.mpn,
         message=message,
+        suggestion=suggestion,
     )
 
 
@@ -374,7 +387,8 @@ def _validate_decoupling(components: list[ComponentDef]) -> list[ValidationIssue
             )
             if not covered:
                 issues.append(
-                    _issue(comp, "decoupling", f"{net} on pin {pin_num} has no matching bypass cap")
+                    _issue(comp, "decoupling", f"{net} on pin {pin_num} has no matching bypass cap",
+                           suggestion=f"Add 100nF 0402 capacitor between {net} and GND")
                 )
 
         for req in comp.power_reqs:
@@ -492,9 +506,9 @@ def _validate_enable_pins(components: list[ComponentDef]) -> list[ValidationIssu
                 _issue(
                     comp,
                     "floating-enable",
-                    f"Enable pin {pin.number} ({pin.name}) is floating — regulator may not start. "
-                    f"Tie to VIN via resistor divider or add explicit_no_connect.",
+                    f"Enable pin {pin.number} ({pin.name}) is floating — regulator may not start",
                     level="warning",
+                    suggestion=f"Tie pin {pin.number} ({pin.name}) to VIN via 100k pull-up, or add to explicit_no_connects",
                 )
             )
     return issues
@@ -578,14 +592,105 @@ def _validate_bus_completeness(components: list[ComponentDef]) -> list[Validatio
     return issues
 
 
+def _validate_inductor_selection(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Check that inductors on switching converters have plausible values."""
+    issues = []
+    for comp in components:
+        if comp.category != "power":
+            continue
+        for bc in comp.bypass_caps:
+            if bc.role != "inductor":
+                continue
+            ind_h = _parse_inductance_h(bc.value)
+            if ind_h is None:
+                continue
+            # Sanity: switching converter inductors should be 0.1uH - 100uH
+            if ind_h < 0.1e-6:
+                issues.append(
+                    _issue(comp, "inductor-value",
+                           f"Inductor {bc.value} on {bc.net} is suspiciously small (< 0.1µH)")
+                )
+            elif ind_h > 100e-6:
+                issues.append(
+                    _issue(comp, "inductor-value",
+                           f"Inductor {bc.value} on {bc.net} is suspiciously large (> 100µH)")
+                )
+    return issues
+
+
+_CAP_VOLTAGE_PATTERN = re.compile(r"(\d+)\s*V", re.IGNORECASE)
+
+
+def _validate_cap_voltage_ratings(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Check that capacitors on power rails aren't under-rated for the rail voltage."""
+    issues = []
+    for comp in components:
+        for bc in comp.bypass_caps:
+            cap_f = _parse_capacitance_f(bc.value)
+            if not cap_f:
+                continue
+            rail_v = _rail_voltage(bc.net)
+            if rail_v is None or rail_v <= 0:
+                continue
+            # Check if there's a voltage rating in the value/description
+            rating_match = _CAP_VOLTAGE_PATTERN.search(bc.value)
+            if rating_match:
+                rated_v = float(rating_match.group(1))
+                if rail_v > rated_v * 0.80:
+                    issues.append(
+                        _issue(comp, "cap-voltage-rating",
+                               f"Cap {bc.value} on {bc.net} ({rail_v}V rail) — "
+                               f"rated {rated_v}V, derate to 80% = {rated_v * 0.8:.1f}V",
+                               level="warning")
+                    )
+    return issues
+
+
+# ================================================================
+# S6.1: In-process ERC — pin type conflict detection
+# ================================================================
+
+_OUTPUT_TYPES = frozenset({"output", "power_out"})
+
+
+def _validate_pin_type_conflicts(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Detect output-to-output conflicts on the same net (ERC check)."""
+    issues = []
+    net_map = _build_net_pin_map(components)
+
+    for net, pins in net_map.items():
+        # Skip power nets — multiple power_out on GND/VDD is normal
+        if _is_ground_net(net) or any(
+            net.upper().startswith(p)
+            for p in ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
+        ):
+            continue
+
+        outputs = [(ref, pnum) for ref, pnum, ptype in pins if ptype in _OUTPUT_TYPES]
+        if len(outputs) > 1:
+            detail = ", ".join(f"{ref}:{pnum}" for ref, pnum in outputs)
+            issues.append(
+                _issue(
+                    _find_comp(components, outputs[0][0]),
+                    "output-conflict",
+                    f"Net '{net}' has multiple output drivers: {detail} — potential bus contention",
+                    level="warning",
+                )
+            )
+    return issues
+
+
 _VALIDATION_CHECKS = (
     ("feedback-divider", "Feedback dividers", _validate_feedback_dividers),
     ("rc-lc-filter", "RC/LC filters", _validate_filter_cutoffs),
     ("crystal-load", "Crystal load caps", _validate_crystal_caps),
     ("decoupling", "Decoupling coverage", _validate_decoupling),
+    ("inductor-selection", "Inductor selection", _validate_inductor_selection),
+    ("cap-voltage", "Capacitor voltage ratings", _validate_cap_voltage_ratings),
     ("net-connectivity", "Net connectivity", _validate_net_connectivity),
     ("enable-pins", "Enable/shutdown pins", _validate_enable_pins),
     ("bus-completeness", "Bus completeness", _validate_bus_completeness),
+    ("pin-type-conflicts", "Pin type conflicts (ERC)", _validate_pin_type_conflicts),
 )
 
 

@@ -428,6 +428,20 @@ def easyeda_to_component_def(data: dict) -> ComponentDef | None:
         # Classify power pins by name heuristic (EasyEDA often marks everything as type 0)
         is_power = _is_power_pin(ee_pin.name, ee_pin.electrical_type)
 
+        # Enrich unspecified pin types from name patterns
+        if kicad_type == "unspecified" and ee_pin.name:
+            uname = ee_pin.name.upper()
+            if re.match(r"^(NC|DNC)$", uname):
+                kicad_type = "passive"  # NC pins are passive
+            elif any(uname.endswith(s) for s in ("_IN", "_INPUT", "_RX", "_RXD")):
+                kicad_type = "input"
+            elif any(uname.endswith(s) for s in ("_OUT", "_OUTPUT", "_TX", "_TXD")):
+                kicad_type = "output"
+            elif re.match(r"^(EN|ENABLE|CE|SHDN|RESET|RST|CHIP_EN)$", uname, re.IGNORECASE):
+                kicad_type = "input"
+            elif re.match(r"^(SDA|SCL|GPIO\d*|IO\d+|D\d+|A\d+)$", uname, re.IGNORECASE):
+                kicad_type = "bidirectional"
+
         if is_power:
             kicad_type = "power_in"
             if _is_gnd_pin(ee_pin.name):
