@@ -37,7 +37,8 @@ I'll walk you through building a new circuit design from scratch:
   Step 2  IC selection & research
   Step 3  BOM assembly & sourcing preferences
   Step 4  Schematic generation
-  Step 5  PCB layout guidance & next steps
+  Step 5  Design review checkpoint
+  Step 6  PCB layout guidance & next steps
 
 You can pause, go back, or skip any step. Let's start.
 ```
@@ -45,7 +46,32 @@ You can pause, go back, or skip any step. Let's start.
 Ask: **Do you have an existing YAML spec or are we starting fresh?**
 
 - If they have a spec, load it and skip to the step that makes sense.
-- If starting fresh, proceed to Step 1.
+- If starting fresh, proceed to the experience check below.
+
+### 0a. Experience Level Calibration
+
+Before diving in, gauge the user's background so you can adjust depth and
+pacing throughout the wizard. Ask:
+
+- **How would you describe your electronics experience?**
+  1. **Beginner** — I've used dev boards (Arduino, Raspberry Pi) but never
+     designed a custom PCB
+  2. **Intermediate** — I've designed 1-3 boards, comfortable reading
+     schematics, done basic soldering
+  3. **Advanced** — I regularly design boards, familiar with KiCad, understand
+     signal integrity and DFM
+  4. **Professional EE** — Just get me to a YAML spec fast, I know what I'm doing
+
+Adapt behavior based on their answer:
+
+| Level | Wizard behavior |
+|-------|----------------|
+| Beginner | Explain every concept briefly as it comes up. Suggest safe defaults aggressively. Flag anything that needs manual EE judgment. Link to the `ee` skill reference for learning. |
+| Intermediate | Explain non-obvious trade-offs. Suggest defaults but invite overrides. Skip basic definitions. |
+| Advanced | Lead with options, not explanations. Compact summaries. Skip obvious defaults. |
+| Professional | Minimize chatter. Present choices as tables. Allow batch answers. Offer to jump directly to YAML spec editing. |
+
+Store the experience level and reference it throughout — don't re-ask.
 
 ---
 
@@ -64,6 +90,22 @@ Ask:
 - What is the end-use environment? (consumer, industrial, automotive, hobby)
 - Any size or form-factor constraints? (e.g., "fits in a 50x30mm enclosure")
 
+### 1a-mech. Mechanical & Enclosure Integration
+
+If the user mentioned an enclosure or physical constraints, dig deeper:
+- Is there an existing enclosure this board must fit inside? (dimensions, mounting pattern)
+- Any fixed connector positions? (e.g., "USB port must be on the left edge")
+- Height restrictions? (component height limit from enclosure lid)
+- Mounting method? (screw holes, snap-fit tabs, standoffs, adhesive)
+- Board-to-board stacking? (if part of a multi-board system)
+- Cable routing constraints? (which edges have cable egress)
+
+For beginners: explain that connector placement and mounting holes are best
+decided now — moving them after PCB layout is expensive rework.
+
+Record all mechanical constraints — they feed directly into Step 6 (PCB layout)
+for board outline and keep-out zone generation.
+
 ### 1b. Features & Interfaces
 
 Ask:
@@ -80,6 +122,41 @@ Ask:
 - What voltage rails do you need? (3.3V, 1.8V, 5V, 12V, etc.)
 - Estimated current budget per rail? (rough is fine — "under 500mA" works)
 - Any battery charging requirements?
+
+### 1c-validate. Power Budget Sanity Check
+
+**Do this immediately after collecting power requirements.** Don't wait until
+IC selection — catch impossible power trees now.
+
+Using the `ee` skill reference formulas, run a quick power budget:
+
+```
+=== Power Budget Estimate ===
+
+Source: USB 5V (500mA USB 2.0 or 3A USB-C PD)
+
+Rail         Voltage   Est. Current   Power
+─────────────────────────────────────────────
+VDD_3P3      3.3V      350 mA         1.16 W
+VDD_1P8      1.8V       50 mA         0.09 W
+VMOT        12.0V      800 mA         9.60 W
+─────────────────────────────────────────────
+Total load                            10.85 W
+Source capacity (USB 5V @ 3A)         15.00 W
+Headroom                               4.15 W (27%)  OK
+
+Conversion losses (~85% buck efficiency):
+  Total input draw ≈ 12.76 W → 2.55 A @ 5V   OK (under 3A)
+```
+
+**Flag problems early:**
+- Total load exceeds source capacity → stop and renegotiate requirements
+- Headroom < 15% → warn about thermal margins
+- Battery runtime math: capacity_mAh / avg_draw_mA = runtime_hours
+- If battery-powered, estimate runtime and ask if it's acceptable
+
+For beginners: explain why we check this now ("if the power math doesn't add
+up, no amount of clever IC selection will fix it").
 
 ### 1d. Goals & Constraints
 
@@ -129,6 +206,70 @@ Ask: **Does this look right? Anything to add or change?**
 
 Iterate until the user confirms.
 
+### Summary-risk. Complexity & Risk Flags
+
+After the user confirms the requirements summary, automatically scan for
+design areas that are harder than average. Present any flags found:
+
+```
+=== Complexity Flags ===
+
+  ⚠ HIGH-SPEED DIFFERENTIAL: USB 3.x or Ethernet requires controlled-
+    impedance routing and a 4-layer stackup. This adds PCB cost and
+    requires careful layout — it can't be fully autorouted.
+
+  ⚠ RF / ANTENNA: WiFi/BLE with a PCB antenna or external antenna
+    needs RF matching and ground plane management. Expect manual
+    tuning and possibly a VNA for validation.
+
+  ⚠ MIXED-SIGNAL: Combining analog sensors with digital/switching
+    circuits requires careful ground partitioning and power filtering.
+    Layout matters more than schematic here.
+
+  ⚠ HIGH CURRENT (>2A per rail): Power traces need width calculations,
+    thermal relief, and possibly copper pours. May need thermal vias
+    under regulator pads.
+
+  ⚠ BATTERY + CHARGING: Adds a charging IC, protection circuit, and
+    fuel gauge considerations. Safety implications for Li-ion/LiPo.
+
+  ✓ No certification flags for hobby/prototype use.
+```
+
+Only show flags that apply. For each flag:
+- Explain what it means in plain language (especially for beginners)
+- State whether Circuit Weaver can handle it automatically or if it needs
+  manual EE work
+- Ask if the user wants to proceed, simplify, or get more details
+
+If no flags apply, say so: "This design is straightforward — no special
+complexity concerns."
+
+### Summary-test. Test & Debug Strategy
+
+Before moving to IC selection, ask about testability. Many users forget this
+and regret it when the board arrives and they can't debug it.
+
+Ask:
+- **Debug interface:** Do you need SWD/JTAG header for MCU debugging?
+  (Suggest: yes, even for prototypes — it's a $0.20 header that saves hours)
+- **Serial console:** UART header for debug logging?
+  (Suggest: yes, expose TX/RX/GND on a 3-pin header)
+- **Power LEDs:** LED on each voltage rail to confirm power is up?
+  (Suggest: yes for prototypes, DNP for production)
+- **Test points:** Exposed pads on critical nets for oscilloscope probing?
+  (Suggest: at minimum on power rails and clock signals)
+- **Spare GPIO:** Break out 2-4 unused MCU pins to a header for rev2 features?
+  (Suggest: yes — costs nothing and enables future flexibility)
+
+For beginners: explain why each matters. "An LED on your 3.3V rail costs
+$0.02 and immediately tells you if power is working when you first plug in."
+
+For professionals: present as a compact checklist, defaults all yes, let them
+trim.
+
+Add confirmed debug/test features to the requirements summary.
+
 ---
 
 ## Step 2 — IC Selection & Research
@@ -147,6 +288,19 @@ primary ICs for each functional block:
 - **Sensor ICs** — Match specifications to requirements
 - **Driver ICs** — Motor drivers, LED drivers, display drivers
 - **Protection** — ESD, overcurrent, reverse polarity
+
+For MCUs specifically, also consider the **firmware & software ecosystem**:
+- **Toolchain:** Arduino, ESP-IDF, STM32CubeIDE, Zephyr RTOS, PlatformIO, etc.
+- **SDK maturity:** Is the SDK well-documented? Active community? Stable releases?
+- **Debugger support:** SWD/JTAG support, compatible probes (J-Link, ST-Link, etc.)
+- **RTOS compatibility:** FreeRTOS, Zephyr, NuttX — if real-time is needed
+- **Language support:** C/C++, MicroPython, Rust, CircuitPython
+- **OTA update capability:** If the device needs field updates
+
+Ask the user: **What's your firmware development preference?** (Arduino IDE,
+PlatformIO, vendor SDK, or "whatever is easiest"). Factor this into MCU choice —
+a technically superior MCU with a bad SDK is worse than a modest one with
+great tooling.
 
 For each proposed IC, explain **why** it was chosen:
 
@@ -190,9 +344,10 @@ Present research results per IC:
 ```
 === Research: ESP32-S3-WROOM-1 ===
 
-DigiKey:  In stock (2,400+ units), $3.15 @ qty 1
-Mouser:   In stock (800+ units), $3.22 @ qty 1
-LCSC:     In stock (JLCPCB basic), $2.85 @ qty 1
+Sourcing:
+  DigiKey:  In stock (2,400+ units), $3.15 @ qty 1
+  Mouser:   In stock (800+ units), $3.22 @ qty 1
+  LCSC:     In stock (JLCPCB basic), $2.85 @ qty 1
 
 Reference circuit: See datasheet Section 4.2
   - Requires 3.3V rail, 500mA peak during TX
@@ -208,6 +363,68 @@ Known issues:
   - GPIO 12 must be LOW at boot (strapping pin)
   - ADC2 unavailable when WiFi active
 ```
+
+### 2b-thermal. Thermal Checks on Power Components
+
+For every power IC (buck, boost, LDO, charger, motor driver), run a thermal
+sanity check using the `ee` skill formulas:
+
+```
+=== Thermal Check: TPS563200 (3.3V buck) ===
+
+Input:  5V @ ~380mA (estimated input draw)
+Output: 3.3V @ 350mA
+Efficiency: ~88% (from datasheet at this load point)
+Power dissipated: Pin - Pout = 1.90W - 1.16W = 0.74W
+
+Package: SOT-23-6 (θJA ≈ 150°C/W without copper pour)
+Junction temp: 25°C + 0.74W × 150°C/W = 136°C  ← OVER LIMIT (125°C max)
+
+With recommended copper pour (θJA ≈ 55°C/W):
+Junction temp: 25°C + 0.74W × 55°C/W = 65.7°C  ← OK (59°C margin)
+
+→ Copper pour under this IC is MANDATORY. Flag for PCB layout.
+```
+
+**Flag thermal problems immediately:**
+- Tj > 100°C → warn, suggest copper pour or heatsink requirement
+- Tj > Tj_max → stop, suggest a different package or IC
+- LDO with large Vin-Vout drop at high current → calculate Pdiss and flag
+- Motor drivers → check Rds(on) × I² heat at operating current
+
+For beginners: explain that "the chip has to get rid of the power it wastes as
+heat, and small packages can only dump so much heat into the board."
+
+### 2b-leadtime. Lead Time & Availability Reality Check
+
+After gathering stock data for all ICs, present a consolidated availability
+summary:
+
+```
+=== Supply Chain Summary ===
+
+Part                    DigiKey    Mouser     LCSC       Lead Time
+────────────────────────────────────────────────────────────────────
+ESP32-S3-WROOM-1        2,400+     800+      In stock    Immediate
+TPS563200               5,200+     3,100+    In stock    Immediate
+BME280                  150        0          In stock    ⚠ Low stock
+DRV8833                 0          0          42 units    ⚠ 16 weeks
+
+⚠ DRV8833: Out of stock at major distributors. Lead time 16+ weeks.
+  Options:
+  1. Use alternative: TB6612FNG (pin-compatible, in stock)
+  2. Order from LCSC now (42 remaining)
+  3. Wait for restock (check distributor ETAs)
+
+⚠ BME280: Low stock at DigiKey (150 units). Order soon or identify
+  alternative (BMP280 if humidity not needed, SHT40 for better accuracy).
+```
+
+**Flag any part with:**
+- Zero stock at all checked distributors → blocker, must find alternative
+- Stock < 2× order quantity → warn about ordering soon
+- Lead time > 4 weeks → warn, ask if timeline allows it
+- NRND (Not Recommended for New Design) or EOL status → blocker
 
 Ask after presenting all research: **Any ICs you want to swap or dig deeper on?**
 
@@ -399,12 +616,94 @@ Open the schematic:
 
 ---
 
-## Step 5 — PCB Layout Guidance & Next Steps
+## Step 5 — Design Review Checkpoint
+
+**Goal:** Catch expensive mistakes before committing to PCB layout. This is
+the cheapest place to find problems — a schematic fix costs minutes, a PCB
+respin costs weeks and dollars.
+
+### 5a. Automated Review
+
+Run the generated schematic through the analysis tools:
+
+```bash
+# Full schematic analysis
+python3 <kicad-skill-path>/scripts/analyze_schematic.py [output_dir]/[project].kicad_sch \
+  --output [output_dir]/schematic_analysis.json
+
+# KiCad ERC (if kicad-cli available)
+kicad-cli sch erc [output_dir]/[project].kicad_sch --output [output_dir]/erc.txt
+```
+
+Present a structured review summary:
+
+```
+=== Design Review ===
+
+Power Tree:
+  [x] All rails have valid sources
+  [x] Decoupling caps on every IC power pin
+  [x] Enable pins properly connected
+  [ ] ⚠ No bulk capacitor on 3.3V rail — recommend 10-47µF near source
+
+Connectivity:
+  [x] All MCU peripheral pins connected to intended targets
+  [x] I2C bus has pull-ups (4.7kΩ to 3.3V)
+  [x] SPI bus CS lines properly assigned
+  [ ] ⚠ UART TX/RX — verify TX→RX crossover (pin names can be ambiguous)
+
+Protection:
+  [x] USB VBUS has overcurrent protection
+  [ ] ⚠ No ESD protection on USB data lines — recommend TVS diode
+  [ ] ⚠ No reverse polarity protection on power input
+
+Debug & Test:
+  [x] SWD header connected
+  [x] UART debug header connected
+  [x] Power LEDs on all rails
+```
+
+### 5b. Human Review Guidance
+
+Tell the user what to check manually in KiCad:
+
+```
+=== Manual Review Checklist ===
+
+Open the schematic in KiCad and verify:
+
+  [ ] Pin assignments match your physical layout intent
+      (e.g., I2C on pins closest to the sensor)
+  [ ] Net names are meaningful (not just NET_001)
+  [ ] No unintended connections (zoom in on dense areas)
+  [ ] All ICs have correct pin-1 orientation markers
+  [ ] Power flags on all power nets (avoids ERC warnings)
+  [ ] Footprint assignments are correct for your sourced parts
+      (SOT-23-3 vs SOT-23-5 is a common mistake)
+
+If this is for a real product, consider having another engineer
+review the schematic before proceeding to layout.
+```
+
+### 5c. Review Gate
+
+Ask: **Have you reviewed the schematic and are you satisfied with it?**
+
+- If issues found → help fix them, re-generate if needed, re-validate
+- If satisfied → proceed to PCB layout (Step 6)
+- If they want peer review → suggest they share the .kicad_sch and come back
+
+Do not let beginners skip this step. For advanced users, a quick "looks good,
+moving on" is fine.
+
+---
+
+## Step 6 — PCB Layout Guidance & Next Steps
 
 **Goal:** Guide the user into the PCB phase with clear expectations about
 what can be scripted vs. what requires manual KiCad work.
 
-### 5a. PCB Kickoff
+### 6a. PCB Kickoff
 
 Explain the PCB workflow:
 
@@ -432,7 +731,13 @@ I can generate Python placement scripts that automate the tedious
 parts. Want me to create those?
 ```
 
-### 5b. Placement Script Generation
+If mechanical constraints were captured in Step 1a-mech, incorporate them now:
+- Board outline matches enclosure dimensions
+- Mounting holes at specified positions
+- Connectors placed on specified edges
+- Height-restricted zones marked as keep-outs
+
+### 6b. Placement Script Generation
 
 If the user wants placement scripts, generate them using the `kicad_pcb_place`
 project skill patterns:
@@ -442,7 +747,7 @@ project skill patterns:
 - Design rule settings (per the manufacturer's capabilities)
 - Zone definitions for power/ground pours
 
-### 5c. Routing Guidance
+### 6c. Routing Guidance
 
 Based on the design:
 
@@ -453,7 +758,7 @@ Based on the design:
 
 Reference the `autoroute` project skill for Freerouting integration.
 
-### 5d. Manufacturing Checklist
+### 6d. Manufacturing Checklist
 
 Based on Step 3 manufacturer choice, present the final checklist:
 
@@ -472,6 +777,40 @@ Based on Step 3 manufacturer choice, present the final checklist:
 ```
 
 Reference the `jlcpcb` or `pcbway` skill for manufacturer-specific DFM rules.
+
+### 6e. Revision Planning & Future-Proofing
+
+Before the user commits to fabrication, help them think about the next revision.
+This is especially valuable for beginners who don't realize rev1 is almost never
+the final board.
+
+```
+=== Revision Planning ===
+
+This is Rev 1 of your design. Here's how to set yourself up for Rev 2:
+
+Version tracking:
+  - Add "Rev 1.0" and the date to the silkscreen
+  - Tag this point in git: git tag -a v1.0 -m "Rev 1.0 sent to fab"
+  - Keep your YAML spec, generated files, and BOM CSV committed
+
+Built-in flexibility (already in your design):
+  [x] Spare GPIO broken out to header (Step 1 test strategy)
+  [x] Debug UART accessible
+  [x] SWD header for firmware development
+
+For Rev 2, common changes to plan for:
+  - Component swaps based on testing results
+  - Layout tweaks for signal integrity or thermal issues
+  - Additional features from your "nice to have" list
+  - Cost optimization (swap extended JLCPCB parts for basic ones)
+
+Circuit Weaver tracks design changes through semantic diffing:
+  circuit-weaver diff old_spec.yaml new_spec.yaml
+```
+
+Ask: **Ready to order, or do you want to add any future-proofing features
+before we finalize?**
 
 ---
 
@@ -510,13 +849,13 @@ Throughout the wizard, follow these principles:
 | `mouser` | 2, 3 | Alternative sourcing |
 | `lcsc` | 2, 3 | Production sourcing, JLCPCB parts |
 | `bom` | 3 | BOM export and order file generation |
-| `kicad` | 4 | Schematic analysis and validation |
-| `jlcpcb` | 3, 5 | DFM rules, assembly ordering |
-| `pcbway` | 3, 5 | Alternative fab DFM rules |
+| `kicad` | 4, 5 | Schematic analysis, validation, and design review |
+| `jlcpcb` | 3, 6 | DFM rules, assembly ordering |
+| `pcbway` | 3, 6 | Alternative fab DFM rules |
 | `kicad_gen` | 4 | Programmatic schematic generation |
-| `kicad_pcb_place` | 5 | Placement scripting |
-| `kicad_validate` | 4 | Validation runner |
-| `autoroute` | 5 | Freerouting integration |
+| `kicad_pcb_place` | 6 | Placement scripting |
+| `kicad_validate` | 4, 5 | Validation runner |
+| `autoroute` | 6 | Freerouting integration |
 
 ---
 
@@ -529,5 +868,6 @@ If the user returns and says "continue my design" or "where were we":
    - Has requirements but no ICs → resume at Step 2
    - Has ICs but no sourcing data → resume at Step 3
    - Has full spec but no generated files → resume at Step 4
-   - Has generated schematics → resume at Step 5
+   - Has generated schematics but no review → resume at Step 5
+   - Has reviewed schematics → resume at Step 6
 3. Summarize the current state and confirm with the user before proceeding
