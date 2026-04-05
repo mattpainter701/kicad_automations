@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from circuit_weaver.subcircuits.base import get_default_registry
 from circuit_weaver.subcircuits.buck import BUCK_IC_DATABASE, BuckConverterTemplate
 from circuit_weaver.subcircuits.clock import ClockSynthTemplate
@@ -9,6 +11,8 @@ from circuit_weaver.subcircuits.driver import GateDriverTemplate, LevelShifterTe
 from circuit_weaver.subcircuits.mosfet_switch import MOSFETSwitchTemplate
 from circuit_weaver.subcircuits.power_mux import POWER_MUX_IC_DATABASE
 from circuit_weaver.subcircuits.usb import USBControllerTemplate
+
+_NC_PIN_NAME_RE = re.compile(r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE)
 
 SAMPLE_VALUES = {
     "protect_net": "SIG_IN",
@@ -64,6 +68,44 @@ def _assert_no_unpowered_power_in_pins(result) -> None:
         assert not floating, f"{comp.mpn} leaves power pins unconnected: {floating}"
 
 
+def _assert_no_unhandled_critical_pins(result) -> None:
+    """Assert that no power_in or input pins are silently left floating.
+
+    Every pin must be in pin_nets, power_pins, straps, explicit_no_connects,
+    or have an NC-like name.  power_in pins trigger hard failures; input pins
+    trigger soft failures with an explanatory message.
+    """
+    for comp in result.components:
+        # Only check ICs
+        if comp.ref_prefix.upper() not in ("U", "IC"):
+            continue
+
+        handled = set(comp.pin_nets) | set(comp.power_pins) | comp.explicit_no_connects
+        for strap in comp.straps:
+            handled.add(strap.pin)
+
+        floating_power = []
+        floating_input = []
+        for pin in comp.pins:
+            if pin.number in handled:
+                continue
+            if _NC_PIN_NAME_RE.match(pin.name):
+                continue
+            label = f"{comp.ref_prefix}:{pin.number}:{pin.name}({pin.electrical_type})"
+            if pin.electrical_type == "power_in":
+                floating_power.append(label)
+            elif pin.electrical_type in ("input", "bidirectional", "tri_state"):
+                floating_input.append(label)
+
+        assert not floating_power, (
+            f"{comp.mpn} has floating power pins: {floating_power}"
+        )
+        assert not floating_input, (
+            f"{comp.mpn} has floating input/bidirectional pins (need connection, "
+            f"pull-up/down, or explicit_no_connects): {floating_input}"
+        )
+
+
 def test_default_registry_contains_all_templates():
     reg = get_default_registry()
     assert len(reg._templates) >= 30
@@ -76,6 +118,15 @@ def test_all_default_templates_generate_and_power_pins_are_connected():
         result = template.generate(_build_params(template))
         assert result.components, f"{template_name} should generate at least one component"
         _assert_no_unpowered_power_in_pins(result)
+
+
+def test_all_default_templates_have_no_unhandled_critical_pins():
+    """Every power_in and input pin must be handled or explicitly marked NC."""
+    reg = get_default_registry()
+    for template_name in sorted(reg.available_types()):
+        template = reg.get(template_name)
+        result = template.generate(_build_params(template))
+        _assert_no_unhandled_critical_pins(result)
 
 
 def test_tps62088_grounds_its_exposed_pad():
@@ -126,6 +177,28 @@ def test_fx3_assigns_and_exports_all_power_rails():
     port_names = {port.name for port in result.boundary_ports}
     assert {"VDD", "DVDDIO", "AVDD", "VBUS", "GND"}.issubset(port_names)
     _assert_no_unpowered_power_in_pins(result)
+
+
+def test_fx3_pmode0_is_explicit_no_connect():
+    """CYUSB3014 PMODE0 (H1) is intentionally floating for SPI slave boot."""
+    template = USBControllerTemplate()
+    result = template.generate({"ic": "CYUSB3014"})
+    comp = result.components[0]
+    assert "H1" in comp.explicit_no_connects, "PMODE0 (H1) should be in explicit_no_connects"
+    _assert_no_unhandled_critical_pins(result)
+
+
+def test_icl7660_nc_pins_are_explicit_no_connects():
+    """ICL7660 pins 1 (NC), 6 (LV), 7 (OSC) are intentionally unconnected."""
+    from circuit_weaver.subcircuits.charge_pump import ChargePumpTemplate
+
+    template = ChargePumpTemplate()
+    result = template.generate({"ic": "ICL7660"})
+    comp = result.components[0]
+    assert {"1", "6", "7"}.issubset(comp.explicit_no_connects), (
+        f"ICL7660 explicit_no_connects should include pins 1, 6, 7 but got {comp.explicit_no_connects}"
+    )
+    _assert_no_unhandled_critical_pins(result)
 
 
 def test_p_channel_switch_drops_unused_ground_boundary():

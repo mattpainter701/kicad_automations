@@ -147,6 +147,12 @@ class ComponentDef:
     bypass_caps: list[BypassCap] = field(default_factory=list)
     straps: list[StrapConfig] = field(default_factory=list)
 
+    # Pin numbers intentionally left unconnected (no-connect by design).
+    # The generator will place NC markers on these pins without warnings.
+    # Pins NOT in this set and not in pin_nets/power_pins are flagged
+    # according to their electrical type (error for power_in, warning for input).
+    explicit_no_connects: set = field(default_factory=set)
+
     # For BGA ICs: callable that returns {ball: net} mapping
     pin_map_builder: object = None
 

@@ -422,6 +422,20 @@ class ClockSynthTemplate(SubcircuitTemplate):
         ]
         annotations.extend(loop_filter_annotations)
 
+        # ---- Identify unused optional input pins as explicit no-connects ----
+        # Pins that are defined but intentionally unused in this configuration
+        # (e.g., REFB when only REFA is used, crystal osc pins, PD, SYSREF_REQ).
+        explicit_nc: set[str] = set()
+        handled_pins = set(pin_nets) | set(power_pins) | {s.pin for s in straps}
+        for pin in ic_db["pins"]:
+            if pin.number in handled_pins:
+                continue
+            if pin.electrical_type in ("output", "power_out", "power_in"):
+                continue
+            if pin.name in ("NC", "~"):
+                continue
+            explicit_nc.add(pin.number)
+
         ic_comp = ComponentDef(
             mpn=ic_name,
             ref_prefix="U",
@@ -435,6 +449,7 @@ class ClockSynthTemplate(SubcircuitTemplate):
             bypass_caps=bypass_caps,
             straps=straps,
             annotations=annotations,
+            explicit_no_connects=explicit_nc,
         )
 
         # ---- Boundary ports ----

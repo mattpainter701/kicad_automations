@@ -177,10 +177,12 @@ class ChargePumpTemplate(SubcircuitTemplate):
             ic_db["pin_cfn"]: cfn_net,
         }
 
-        # ICL7660: LV and OSC pins — leave NC/unconnected for default operation
+        # ICL7660: LV and OSC pins — leave NC/unconnected for default operation.
         # Pin 1 (NC) and pins 6 (LV), 7 (OSC) are not connected for standard
-        # inverting operation. Only pin_vin, pin_gnd, pin_vout, pin_cfp, pin_cfn
-        # are wired.
+        # inverting operation. Mark them as intentional no-connects.
+        explicit_nc: set[str] = set()
+        if ic_name == "ICL7660":
+            explicit_nc = {"1", "6", "7"}
 
         # ---- Bypass capacitors ----
         bypass_caps: list[BypassCap] = []
@@ -246,6 +248,7 @@ class ChargePumpTemplate(SubcircuitTemplate):
             pin_nets=pin_nets,
             bypass_caps=bypass_caps,
             annotations=annotations,
+            explicit_no_connects=explicit_nc,
         )
         ic_comp.source_ref = ref
 

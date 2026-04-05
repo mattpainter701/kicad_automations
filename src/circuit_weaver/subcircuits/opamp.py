@@ -288,6 +288,18 @@ class OpAmpTemplate(SubcircuitTemplate):
             )
             annotations.append(f"Differential: Rf={format_resistance(rf_val)}, Rin={format_resistance(rin_val)}")
 
+        # Mark unused channel pins as explicit no-connects (e.g., channel B on dual op-amps)
+        explicit_nc: set[str] = set()
+        handled_pins = set(pin_nets) | set(power_pins) | {s.pin for s in straps}
+        for pin in ic_db["pins"]:
+            if pin.number in handled_pins:
+                continue
+            if pin.electrical_type in ("output", "power_out", "power_in"):
+                continue
+            if pin.name in ("NC", "~"):
+                continue
+            explicit_nc.add(pin.number)
+
         ic_comp = ComponentDef(
             mpn=ic_name,
             ref_prefix="U",
@@ -301,6 +313,7 @@ class OpAmpTemplate(SubcircuitTemplate):
             bypass_caps=bypass_caps,
             straps=straps,
             annotations=annotations,
+            explicit_no_connects=explicit_nc,
         )
 
         ports = [

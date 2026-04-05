@@ -12,6 +12,7 @@ import contextlib
 import copy
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -546,6 +547,68 @@ def _validate_power_domains(compiled: CompiledDesign) -> list[ValidationMessage]
     return issues
 
 
+_NC_PIN_NAME_RE = re.compile(r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE)
+
+
+def _validate_pin_coverage(compiled: CompiledDesign) -> list[ValidationMessage]:
+    """Check that every pin on every IC is explicitly handled.
+
+    Pins must be in pin_nets, power_pins, explicit_no_connects, or have
+    an NC-like name.  Unhandled pins are flagged by electrical type:
+      - power_in  → error  (must be connected to a rail)
+      - input / bidirectional → warning (likely needs a driver or pull)
+      - output / passive / other → info-level (usually safe to NC)
+    """
+    issues: list[ValidationMessage] = []
+    for comp in compiled.components:
+        # Only check ICs — passives, connectors, etc. are wired differently
+        if comp.ref_prefix.upper() not in ("U", "IC"):
+            continue
+
+        handled = set(comp.pin_nets) | set(comp.power_pins) | comp.explicit_no_connects
+        # Also count pins that have straps (the strap wires them)
+        for strap in comp.straps:
+            handled.add(strap.pin)
+
+        subject = comp.source_ref or comp.mpn
+
+        for pin in comp.pins:
+            if pin.number in handled:
+                continue
+            # NC-named pins are fine
+            if _NC_PIN_NAME_RE.match(pin.name):
+                continue
+
+            etype = pin.electrical_type or "unspecified"
+
+            if etype == "power_in":
+                issues.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="floating-power-pin",
+                        level="error",
+                        subject=subject,
+                        message=(
+                            f"Power pin {pin.number} ({pin.name}) is not connected to any rail"
+                        ),
+                    )
+                )
+            elif etype in ("input", "bidirectional", "tri_state"):
+                issues.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="floating-input-pin",
+                        level="warning",
+                        subject=subject,
+                        message=(
+                            f"{etype.capitalize()} pin {pin.number} ({pin.name}) is unconnected "
+                            f"— may need a pull-up/down, driver, or explicit no-connect"
+                        ),
+                    )
+                )
+    return issues
+
+
 def _kicad_cli_path() -> Path | None:
     from_path = shutil.which("kicad-cli")
     if from_path:
@@ -750,6 +813,7 @@ def validate_design(
     categories["structural"].extend(_validate_shared_net_interfaces(compiled))
     categories["electrical"].extend(_validate_required_support(compiled))
     categories["electrical"].extend(_validate_power_domains(compiled))
+    categories["electrical"].extend(_validate_pin_coverage(compiled))
 
     for result in run_validation_checks(compiled.components):
         for issue in result.issues:
@@ -763,8 +827,13 @@ def validate_design(
                 )
             )
 
+    def _has_errors(msgs: list[ValidationMessage]) -> bool:
+        return any(m.level == "error" for m in msgs)
+
     can_check_artifacts = (
-        not categories["structural"] and not categories["electrical"] and not categories["implementation"]
+        not _has_errors(categories["structural"])
+        and not _has_errors(categories["electrical"])
+        and not _has_errors(categories["implementation"])
     )
     if can_check_artifacts:
         with (
@@ -818,7 +887,8 @@ def validate_design(
                 )
 
     summary = {key: len(value) for key, value in categories.items()}
-    valid = all(count == 0 for count in summary.values())
+    error_count = sum(1 for msgs in categories.values() for m in msgs if m.level == "error")
+    valid = error_count == 0
     return ValidationReport(
         profile=profile,
         valid=valid,

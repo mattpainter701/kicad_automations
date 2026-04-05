@@ -339,6 +339,18 @@ class SensorFrontendTemplate(SubcircuitTemplate):
         annotations.insert(0, f"Sensor frontend {ic_name}: gain={actual_gain:.3f}")
         annotations.append(f"REF pin bypassed to {gnd_net} (single-supply midpoint ref)")
 
+        # Mark unused input pins (e.g., RG gain-set pins at unity gain) as explicit NC
+        explicit_nc: set[str] = set()
+        handled_pins = set(pin_nets) | set(power_pins) | {s.pin for s in straps}
+        for pin in ic_db["pins"]:
+            if pin.number in handled_pins:
+                continue
+            if pin.electrical_type in ("output", "power_out", "power_in"):
+                continue
+            if pin.name in ("NC", "~"):
+                continue
+            explicit_nc.add(pin.number)
+
         # ---- Build IC component ----
         ic_comp = ComponentDef(
             mpn=ic_name,
@@ -353,6 +365,7 @@ class SensorFrontendTemplate(SubcircuitTemplate):
             bypass_caps=bypass_caps,
             straps=straps,
             annotations=annotations,
+            explicit_no_connects=explicit_nc,
         )
         ic_comp.source_ref = ref
 

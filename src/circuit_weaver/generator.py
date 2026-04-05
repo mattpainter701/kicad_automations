@@ -11,12 +11,15 @@ Or from CLI:
 """
 
 import copy
+import logging
 import math
 import os
 import re
 import sys
 import zlib
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 from .allocator import allocate_sheets
 from .component_db import (
@@ -78,6 +81,80 @@ _POWER_NET_PREFIXES = ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
 _LOCAL_ROUTE_CLEARANCE = snap(2.54)
 _LOCAL_ROUTE_LANE_PITCH = snap(3.81)
 _LOCAL_ROUTE_LANE_BASE = snap(3.81)
+
+# Pin names that are safe to no-connect without warning.
+_NC_PIN_NAME_PATTERNS = re.compile(
+    r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE
+)
+
+# Pin electrical types that are safe to no-connect (output-like: unused outputs are fine).
+_SAFE_NC_PIN_TYPES = frozenset({
+    "output", "power_out", "open_collector", "open_emitter", "no_connect", "free",
+})
+
+# Pin types that MUST be connected — floating these is an error.
+_CRITICAL_PIN_TYPES = frozenset({"power_in"})
+
+
+def _classify_unhandled_pin(comp, pin_num, pname, ptype):
+    """Classify an unhandled pin and return (action, level, reason).
+
+    action: "no_connect" | "no_connect"  (always NC in schematic, but level differs)
+    level:  "silent" | "warning" | "error"
+    reason: human-readable explanation
+    """
+    # 1. Explicitly marked as intentional NC by the template/component author
+    if pin_num in comp.explicit_no_connects:
+        return "no_connect", "silent", "explicit no-connect (by design)"
+
+    # 2. Pin name indicates NC
+    if _NC_PIN_NAME_PATTERNS.match(pname):
+        return "no_connect", "silent", f"pin name '{pname}' indicates no-connect"
+
+    # 3. Build a pin type lookup from ComponentDef.pins for richer type info
+    comp_pin_type = None
+    for pin in comp.pins:
+        if pin.number == pin_num:
+            comp_pin_type = pin.electrical_type
+            break
+
+    # Use ComponentDef pin type if available, fall back to symbol ptype
+    etype = comp_pin_type or ptype or "unspecified"
+
+    # 4. Critical pins — should never be left floating
+    if etype in _CRITICAL_PIN_TYPES:
+        return (
+            "no_connect",
+            "error",
+            f"FLOATING {etype} pin '{pname}' (pin {pin_num}) — must be connected to a rail",
+        )
+
+    # 5. Safe output-like pins
+    if etype in _SAFE_NC_PIN_TYPES:
+        return "no_connect", "silent", f"unused {etype} pin"
+
+    # 6. Input / bidirectional / passive — likely needs a connection
+    if etype in ("input", "bidirectional", "tri_state"):
+        return (
+            "no_connect",
+            "warning",
+            f"unconnected {etype} pin '{pname}' (pin {pin_num}) — may need pull-up/down or driver",
+        )
+
+    # 7. Passive pins — context-dependent, warn mildly
+    if etype == "passive":
+        return (
+            "no_connect",
+            "warning",
+            f"unconnected passive pin '{pname}' (pin {pin_num}) — verify intent",
+        )
+
+    # 8. Unspecified / unknown — warn
+    return (
+        "no_connect",
+        "warning",
+        f"unconnected pin '{pname}' (pin {pin_num}, type={etype}) — verify intent",
+    )
 _DENSE_FACE_KEEP_OUT = snap(2.54)
 _DENSE_FACE_STAGGER_STEP = snap(2.54)
 _STRAP_ENDPOINT_STUB_LEN = snap(3.81)
@@ -1991,12 +2068,17 @@ def _render_sheet(
                 ic_pin_points.setdefault(net_name, []).append((cx, cy))
                 handled.add(pin_num)
 
-        # No-connect on remaining pins
+        # Classify and handle remaining (unconnected) pins
         for pin_num in pin_pos:
             if pin_num not in handled:
                 px, py, pangle, plen, pname, ptype = pin_pos[pin_num]
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
+                _action, level, reason = _classify_unhandled_pin(comp, pin_num, pname, ptype)
                 no_connects.append(sexpr_no_connect(cx, cy))
+                if level == "error":
+                    _logger.error("%s (%s): %s", placed.ref, comp.mpn, reason)
+                elif level == "warning":
+                    _logger.warning("%s (%s): %s", placed.ref, comp.mpn, reason)
 
         # Store pin points for local wiring by parent ref
         pin_point_map[placed.ref] = ic_pin_points
