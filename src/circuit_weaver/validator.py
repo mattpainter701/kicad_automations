@@ -54,7 +54,11 @@ class ValidationCheckResult:
 
 
 def _issue(
-    comp: ComponentDef, code: str, message: str, level: str = "warning", suggestion: str = "",
+    comp: ComponentDef,
+    code: str,
+    message: str,
+    level: str = "warning",
+    suggestion: str = "",
 ) -> ValidationIssue:
     return ValidationIssue(
         code=code,
@@ -144,11 +148,7 @@ def _supply_names_match(target: str, *candidates: str) -> bool:
         cand_norm = _normalize_supply_name(candidate)
         if not cand_norm:
             continue
-        if (
-            target_norm == cand_norm
-            or target_norm in cand_norm
-            or cand_norm in target_norm
-        ):
+        if target_norm == cand_norm or target_norm in cand_norm or cand_norm in target_norm:
             return True
         cand_v = _rail_voltage(candidate)
         if target_v is not None and cand_v is not None and abs(target_v - cand_v) <= 0.05:
@@ -313,9 +313,7 @@ def _validate_crystal_caps(components: list[ComponentDef]) -> list[ValidationIss
         caps_xi = caps_by_net.get(xi, [])
         caps_xo = caps_by_net.get(xo, [])
         if not caps_xi or not caps_xo:
-            issues.append(
-                _issue(comp, "crystal-load", f"missing load capacitor coverage on {xi}/{xo}")
-            )
+            issues.append(_issue(comp, "crystal-load", f"missing load capacitor coverage on {xi}/{xo}"))
             continue
 
         target_cl = _crystal_load_spec_f(comp)
@@ -379,16 +377,17 @@ def _validate_decoupling(components: list[ComponentDef]) -> list[ValidationIssue
                 for bc in capacitor_caps
             ) or any(
                 cap_f > 0
-                and (
-                    _supply_names_match(net, cap_net, pin_name)
-                    or _supply_names_match(pin_name, cap_net, net)
-                )
+                and (_supply_names_match(net, cap_net, pin_name) or _supply_names_match(pin_name, cap_net, net))
                 for cap_net, cap_f in standalone_caps
             )
             if not covered:
                 issues.append(
-                    _issue(comp, "decoupling", f"{net} on pin {pin_num} has no matching bypass cap",
-                           suggestion=f"Add 100nF 0402 capacitor between {net} and GND")
+                    _issue(
+                        comp,
+                        "decoupling",
+                        f"{net} on pin {pin_num} has no matching bypass cap",
+                        suggestion=f"Add 100nF 0402 capacitor between {net} and GND",
+                    )
                 )
 
         for req in comp.power_reqs:
@@ -397,9 +396,7 @@ def _validate_decoupling(components: list[ComponentDef]) -> list[ValidationIssue
             if not any(bc.net == req.net for bc in capacitor_caps) and not any(
                 _supply_names_match(req.net, cap_net) for cap_net, _cap_f in standalone_caps
             ):
-                issues.append(
-                    _issue(comp, "decoupling", f"{req.net} has no matching bypass cap")
-                )
+                issues.append(_issue(comp, "decoupling", f"{req.net} has no matching bypass cap"))
 
     return issues
 
@@ -457,8 +454,7 @@ def _validate_net_connectivity(components: list[ComponentDef]) -> list[Validatio
     for net, pins in net_map.items():
         # Skip power nets — they're driven by power sources external to the schematic
         if _is_ground_net(net) or any(
-            net.upper().startswith(p)
-            for p in ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
+            net.upper().startswith(p) for p in ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
         ):
             continue
 
@@ -473,10 +469,11 @@ def _validate_net_connectivity(components: list[ComponentDef]) -> list[Validatio
             )
             continue
 
-        # Check for input-only nets (no driver)
+        # Check for input-only nets (no driver).
+        # Passive connections count as drivers — feedback dividers, pull-ups,
+        # and bootstrap caps are passive-driven networks by design.
         has_driver = any(
-            ptype in ("output", "bidirectional", "tri_state", "power_out")
-            for _, _, ptype in pins
+            ptype in ("output", "bidirectional", "tri_state", "power_out", "passive") for _, _, ptype in pins
         )
         if not has_driver:
             refs = ", ".join(f"{ref}:{pnum}" for ref, pnum, _ in pins)
@@ -623,13 +620,11 @@ def _validate_inductor_selection(components: list[ComponentDef]) -> list[Validat
             # Sanity: switching converter inductors should be 0.1uH - 100uH
             if ind_h < 0.1e-6:
                 issues.append(
-                    _issue(comp, "inductor-value",
-                           f"Inductor {bc.value} on {bc.net} is suspiciously small (< 0.1µH)")
+                    _issue(comp, "inductor-value", f"Inductor {bc.value} on {bc.net} is suspiciously small (< 0.1µH)")
                 )
             elif ind_h > 100e-6:
                 issues.append(
-                    _issue(comp, "inductor-value",
-                           f"Inductor {bc.value} on {bc.net} is suspiciously large (> 100µH)")
+                    _issue(comp, "inductor-value", f"Inductor {bc.value} on {bc.net} is suspiciously large (> 100µH)")
                 )
     return issues
 
@@ -654,10 +649,13 @@ def _validate_cap_voltage_ratings(components: list[ComponentDef]) -> list[Valida
                 rated_v = float(rating_match.group(1))
                 if rail_v > rated_v * 0.80:
                     issues.append(
-                        _issue(comp, "cap-voltage-rating",
-                               f"Cap {bc.value} on {bc.net} ({rail_v}V rail) — "
-                               f"rated {rated_v}V, derate to 80% = {rated_v * 0.8:.1f}V",
-                               level="warning")
+                        _issue(
+                            comp,
+                            "cap-voltage-rating",
+                            f"Cap {bc.value} on {bc.net} ({rail_v}V rail) — "
+                            f"rated {rated_v}V, derate to 80% = {rated_v * 0.8:.1f}V",
+                            level="warning",
+                        )
                     )
     return issues
 
@@ -677,8 +675,7 @@ def _validate_pin_type_conflicts(components: list[ComponentDef]) -> list[Validat
     for net, pins in net_map.items():
         # Skip power nets — multiple power_out on GND/VDD is normal
         if _is_ground_net(net) or any(
-            net.upper().startswith(p)
-            for p in ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
+            net.upper().startswith(p) for p in ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
         ):
             continue
 

@@ -51,6 +51,64 @@ Files: `mvp.py`
 
 ---
 
+## Sprint 9b — Audit Fixes (v0.8.0)
+
+**Goal:** Fix the 4 test failures and address critical findings from the post-merge code audit. Harden validation pipeline, bump version, clean dead code.
+
+### 64. Fix net connectivity false positives on internal subcircuit nets (P0, MEDIUM) — DONE
+
+- [x] Root cause: `_validate_net_connectivity()` flagged FB_U1, BST_U1 as "undriven" — all connections were input/passive types
+- [x] Fix: added `passive` to valid driver pin types — feedback dividers, pull-ups, bootstrap caps are passive-driven by design
+- [x] All 4 test_presentation.py failures resolved
+- [x] 133/133 tests passing, 0 regressions
+
+Files: `validator.py`
+
+### 65. Fix passive pull-ups not recognized as net drivers (P0, SMALL) — DONE
+
+- [x] Same root cause and fix as Task 64 — passive pin type now recognized as valid driver
+- [x] I2C pull-up straps, feedback dividers, bootstrap caps all covered
+
+Files: `validator.py`
+
+### 66. Bump version to 0.8.0 (P0, XS) — DONE
+
+- [x] Update `__init__.py` to 0.8.0
+- [x] Update `pyproject.toml` to 0.8.0
+- [x] Update `test_bootstrap.py` version assertions
+- [x] Add Sprint 9 + 9b sections to CHANGELOG.md under [0.8.0]
+
+Files: `__init__.py`, `pyproject.toml`, `test_bootstrap.py`, `CHANGELOG.md`
+
+### 67. Add role enum validation for BypassCap/StrapConfig (P1, SMALL) — DONE
+
+- [x] Added `_ROLE_RE` regex validation in `component_db.py` `__post_init__` — catches typos, spaces, non-identifier chars
+- [x] Normalized bootstrap role inconsistency: `bootstrap` → `bootstrap_cap` (driver.py), `boot_strap` → `bootstrap_strap` (usb.py)
+- [x] Updated test assertion in `test_presentation.py` for renamed role
+- [x] Chose regex validation over closed frozenset — 56 domain-specific roles across 30 templates, enum too brittle
+
+Files: `component_db.py`, `subcircuits/driver.py`, `subcircuits/usb.py`, `tests/test_presentation.py`
+
+### 68. Remove dead `presentation_wiring_policy` field (P2, SMALL)
+
+- [ ] Confirm field is never read by generator, placer, or exporters
+- [ ] Remove `PresentationWiringPolicy` type and `presentation_wiring_policy` field from `ComponentDef`
+- [ ] Remove any references in type hints or docstrings
+- [ ] Verify no test regressions
+
+Files: `component_db.py`
+
+### 69. Remove forward references to unimplemented features in design wizard (P2, SMALL) — DONE
+
+- [x] Removed `circuit-weaver diff` reference — replaced with git diff guidance
+- [x] Marked `kicad_gen`, `autoroute`, `kicad_pcb_place`, `kicad_validate` as "(planned)" in Related Skills table
+- [x] Replaced "Review SVGs" claim with "Placer hints" (actually generated)
+- [x] Replaced box-drawing chars with ASCII dashes in both SKILL.md and user_workflow.md
+
+Files: `skills/design_wizard/SKILL.md`, `docs/user_workflow.md`
+
+---
+
 ## Sprint 10 — Close the Fab Gap (v0.9.0)
 
 **Goal:** A user can go from YAML spec to files ready to upload to JLCPCB/PCBWay. No manual CSV editing.

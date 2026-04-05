@@ -135,7 +135,7 @@ worse than a modest chip with great tooling.
 === Supply Chain Summary ===
 
 Part                    DigiKey    Mouser     LCSC       Lead Time
-────────────────────────────────────────────────────────────────────
+--------------------------------------------------------------------
 ESP32-S3-WROOM-1        2,400+     800+      In stock    Immediate
 AP2112K-3.3             5,200+     3,100+    In stock    Immediate
 BME280                  150        0          In stock    ⚠ Low stock
@@ -210,7 +210,7 @@ Buses:      I2C (BME280), UART (debug), SPI (none)
 - `.kicad_sch` schematic files (top-level + sub-sheets)
 - A design report (markdown)
 - Placer hints for PCB layout (JSON)
-- Review SVGs for quick visual inspection
+- Placer hints for PCB layout (JSON)
 
 ### What's automated vs. what you finish
 

@@ -136,11 +136,11 @@ Using the `ee` skill reference formulas, run a quick power budget:
 Source: USB 5V (500mA USB 2.0 or 3A USB-C PD)
 
 Rail         Voltage   Est. Current   Power
-─────────────────────────────────────────────
+---------------------------------------------
 VDD_3P3      3.3V      350 mA         1.16 W
 VDD_1P8      1.8V       50 mA         0.09 W
 VMOT        12.0V      800 mA         9.60 W
-─────────────────────────────────────────────
+---------------------------------------------
 Total load                            10.85 W
 Source capacity (USB 5V @ 3A)         15.00 W
 Headroom                               4.15 W (27%)  OK
@@ -404,7 +404,7 @@ summary:
 === Supply Chain Summary ===
 
 Part                    DigiKey    Mouser     LCSC       Lead Time
-────────────────────────────────────────────────────────────────────
+--------------------------------------------------------------------
 ESP32-S3-WROOM-1        2,400+     800+      In stock    Immediate
 TPS563200               5,200+     3,100+    In stock    Immediate
 BME280                  150        0          In stock    ⚠ Low stock
@@ -805,8 +805,7 @@ For Rev 2, common changes to plan for:
   - Additional features from your "nice to have" list
   - Cost optimization (swap extended JLCPCB parts for basic ones)
 
-Circuit Weaver tracks design changes through semantic diffing:
-  circuit-weaver diff old_spec.yaml new_spec.yaml
+For future revisions, keep your YAML specs in git so you can diff changes.
 ```
 
 Ask: **Ready to order, or do you want to add any future-proofing features
@@ -852,10 +851,10 @@ Throughout the wizard, follow these principles:
 | `kicad` | 4, 5 | Schematic analysis, validation, and design review |
 | `jlcpcb` | 3, 6 | DFM rules, assembly ordering |
 | `pcbway` | 3, 6 | Alternative fab DFM rules |
-| `kicad_gen` | 4 | Programmatic schematic generation |
-| `kicad_pcb_place` | 6 | Placement scripting |
-| `kicad_validate` | 4, 5 | Validation runner |
-| `autoroute` | 6 | Freerouting integration |
+| `kicad_gen` | 4 | Programmatic schematic generation (planned) |
+| `kicad_pcb_place` | 6 | Placement scripting (planned) |
+| `kicad_validate` | 4, 5 | Validation runner (planned) |
+| `autoroute` | 6 | Freerouting integration (planned) |
 
 ---
 

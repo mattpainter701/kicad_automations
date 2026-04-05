@@ -359,7 +359,7 @@ class USBControllerTemplate(SubcircuitTemplate):
                         strap_rail,
                         format_resistance(10e3),
                         FP_0402R,
-                        role="boot_strap",
+                        role="bootstrap_strap",
                         presentation="topology_local",
                     )
                 )

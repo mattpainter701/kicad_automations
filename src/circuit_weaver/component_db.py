@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass, field
 
 SUPPORT_PASSIVE_PRESENTATIONS = {"inherit", "literal_local", "symbolic", "topology_local"}
+_ROLE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _GENERIC_PURPOSE_BY_CATEGORY = {
     "power": "Power conversion and rail conditioning",
     "transceiver": "RF conversion and high-speed signal processing",
@@ -84,6 +85,10 @@ class BypassCap:
     role: str = "decoupling"
     presentation: str = "topology_local"
 
+    def __post_init__(self) -> None:
+        if self.role and not _ROLE_RE.match(self.role):
+            raise ValueError(f"Invalid BypassCap role: {self.role!r} (must be lowercase identifier)")
+
 
 @dataclass
 class StrapConfig:
@@ -96,6 +101,10 @@ class StrapConfig:
     footprint: str
     role: str = "strap"
     presentation: str = "topology_local"
+
+    def __post_init__(self) -> None:
+        if self.role and not _ROLE_RE.match(self.role):
+            raise ValueError(f"Invalid StrapConfig role: {self.role!r} (must be lowercase identifier)")
 
 
 @dataclass

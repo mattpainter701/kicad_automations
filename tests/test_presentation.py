@@ -63,7 +63,7 @@ class TestUSBPresentation:
         straps = r.components[0].straps
         for strap in straps:
             assert strap.presentation == "topology_local", f"Boot strap pin {strap.pin} should be topology_local"
-            assert strap.role == "boot_strap"
+            assert strap.role == "bootstrap_strap"
 
     def test_usb_hub_decoupling_uses_topology_local(self):
         t = USBHubTemplate()

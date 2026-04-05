@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.8.0] - 2026-04-05
+
+### Sprint 9 — Unblock Day-1 Onboarding
+
+### Added
+- `list-templates` CLI subcommand with `--json` and `--verbose` flags
+- `scaffold` CLI subcommand — emits valid YAML spec stubs from param_schema
+- Auto-generated `docs/templates.md` reference (30 templates) via `scripts/gen_template_docs.py`
+- `python-multipart` dependency for API extras
+- Design wizard skill (`skills/design_wizard/SKILL.md`) — interactive 6-step circuit design workflow
+- User workflow guide (`docs/user_workflow.md`)
+
+### Changed
+- Example `iot_sensor.yaml` cleaned up to pass validation
+- Net connectivity check counts bypass_caps and straps as connections (FB/BST nets no longer flagged)
+- MCU floating GPIO warnings summarized (28 warnings → 1 summary)
+- Bootstrap tests tolerate KiCad CLI unavailability
+
+### Fixed
+- Net connectivity validator treated passive components (feedback dividers, pull-ups, bootstrap caps) as undriven — now recognizes passive pin type as valid driver
+- 4 test_presentation.py failures caused by false-positive undriven-net warnings on internal subcircuit nets
+
+### Tests
+- 133 total tests passing (was 113 + 4 failures)
+- Version bump: 0.7.0 → 0.8.0
+
 ## [0.7.0] - 2026-04-05
 
 ### Sprint 6–8 — Circuit Quality Overhaul

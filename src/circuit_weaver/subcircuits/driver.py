@@ -190,7 +190,7 @@ class GateDriverTemplate(SubcircuitTemplate):
                     vs_net,
                     format_capacitance(cbst_val),
                     FP_0402C,
-                    role="bootstrap",
+                    role="bootstrap_cap",
                     presentation="topology_local",
                 ),
             )
