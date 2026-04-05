@@ -185,10 +185,6 @@ class CANTransceiverTemplate(SubcircuitTemplate):
             ic_db["pin_gnd"]: "GND",
         }
 
-        # RS pin: high-speed mode ties to GND via power_pins
-        if not slope_control and ic_db["rs_highspeed_to_gnd"]:
-            power_pins[ic_db["pin_rs"]] = "GND"
-
         # ---- Signal pin nets ----
         pin_nets = {
             ic_db["pin_txd"]: txd_net,
@@ -198,10 +194,12 @@ class CANTransceiverTemplate(SubcircuitTemplate):
             ic_db["pin_vref"]: vref_net,
         }
 
-        # If slope control, RS goes to a strap resistor net instead of GND
+        # RS pin: high-speed mode ties to GND; slope control uses strap resistor
         if slope_control:
             rs_net = f"CAN_RS_{ref}"
             pin_nets[ic_db["pin_rs"]] = rs_net
+        elif ic_db["rs_highspeed_to_gnd"]:
+            pin_nets[ic_db["pin_rs"]] = "GND"
 
         # ---- Bypass capacitors ----
         bypass_caps = [

@@ -73,7 +73,8 @@ _EE_ELEC_TYPE_MAP = {
 # ---------------------------------------------------------------------------
 
 _POWER_PIN_PATTERNS = re.compile(
-    r"^(VCC|VDD|VDDIO|AVDD|DVDD|VCCA|VDDA|V_IN|VIN|VBAT|VSYS|VBUS|VCC_IO|AVCC|DVCC)$",
+    r"^(VCC|VDD|VDDIO|AVDD|DVDD|VCCA|VDDA|V_?IN|VBAT|VSYS|VBUS|VCC_IO|AVCC|DVCC|"
+    r"VDDCORE|VDDA_\w+|VDD_\w+|VCC_\w+)$",
     re.IGNORECASE,
 )
 
@@ -433,12 +434,16 @@ def easyeda_to_component_def(data: dict) -> ComponentDef | None:
                 power_pins[ee_pin.number] = "GND"
             else:
                 pname = ee_pin.name.upper()
-                if "3V3" in pname or "3.3" in pname:
+                if "3V3" in pname or "3.3" in pname or "3P3" in pname:
                     power_pins[ee_pin.number] = "VDD_3P3"
-                elif "5V" in pname or "VBUS" in pname:
+                elif "5V" in pname or pname == "VBUS":
                     power_pins[ee_pin.number] = "VBUS_5V"
-                elif "1V8" in pname or "1.8" in pname:
+                elif "1V8" in pname or "1.8" in pname or "1P8" in pname:
                     power_pins[ee_pin.number] = "VDD_1P8"
+                elif "1V2" in pname or "1.2" in pname or "1P2" in pname:
+                    power_pins[ee_pin.number] = "VDD_1P2"
+                elif "2V5" in pname or "2.5" in pname or "2P5" in pname:
+                    power_pins[ee_pin.number] = "VDD_2P5"
                 else:
                     power_pins[ee_pin.number] = ee_pin.name
         elif ee_pin.name and ee_pin.name not in ("~", "NC"):

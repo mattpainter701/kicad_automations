@@ -72,6 +72,7 @@ POWER_MUX_IC_DATABASE = {
             PinDef("8", "VIN", "power_in", "L"),
         ],
         "pin_vin": "1",
+        "pin_vin_extra": ["6", "7", "8"],
         "pin_gnd": "4",
         "pin_gate": "2",
         "pin_source": "3",
@@ -279,14 +280,13 @@ class PowerMuxTemplate(SubcircuitTemplate):
         else:
             # ---- LTC4357 ideal diode OR ----
 
-            # Power pins: pins 1, 6, 7, 8 are all VIN
+            # Power pins: primary VIN + extra VIN pins (all tied to same rail)
             power_pins = {
                 ic_db["pin_vin"]: vin1_net,
-                "6": vin1_net,
-                "7": vin1_net,
-                "8": vin1_net,
                 ic_db["pin_gnd"]: "GND",
             }
+            for pin_num in ic_db.get("pin_vin_extra", []):
+                power_pins[pin_num] = vin1_net
 
             # Signal pin nets
             gate_net = f"GATE_{ref}"

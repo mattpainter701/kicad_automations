@@ -38,6 +38,9 @@ OPAMP_IC_DATABASE = {
         ],
         "pin_vplus": "8",
         "pin_vminus": "4",
+        "pin_out_a": "1",
+        "pin_inm_a": "2",
+        "pin_inp_a": "3",
     },
     "MCP6002": {
         "description": "Dual Op-Amp Rail-to-Rail 1MHz",
@@ -57,6 +60,9 @@ OPAMP_IC_DATABASE = {
         ],
         "pin_vplus": "8",
         "pin_vminus": "4",
+        "pin_out_a": "1",
+        "pin_inm_a": "2",
+        "pin_inp_a": "3",
     },
     "OPA2340": {
         "description": "Dual Op-Amp Rail-to-Rail CMOS 5.5MHz",
@@ -76,6 +82,9 @@ OPAMP_IC_DATABASE = {
         ],
         "pin_vplus": "8",
         "pin_vminus": "4",
+        "pin_out_a": "1",
+        "pin_inm_a": "2",
+        "pin_inp_a": "3",
     },
 }
 
@@ -156,10 +165,15 @@ class OpAmpTemplate(SubcircuitTemplate):
         straps = []
         annotations = [f"Op-amp {ic_name}: {config}, gain={gain}"]
 
+        # Signal pin lookups from database
+        p_out = ic_db["pin_out_a"]
+        p_inm = ic_db["pin_inm_a"]
+        p_inp = ic_db["pin_inp_a"]
+
         # Compute feedback network
         if config == "follower":
             # Unity gain: output tied to inverting input, no resistors needed
-            pin_nets = {"3": in_net, "1": out_net, "2": out_net}
+            pin_nets = {p_inp: in_net, p_out: out_net, p_inm: out_net}
             annotations.append("Voltage follower (unity gain)")
         elif config == "non_inverting":
             # Gain = 1 + Rf/Rin
@@ -181,11 +195,11 @@ class OpAmpTemplate(SubcircuitTemplate):
             rin_val = snap_to_e24(rin_val)
             fb_net = f"FB_{ref}"
 
-            pin_nets = {"3": in_net, "1": out_net, "2": fb_net}
+            pin_nets = {p_inp: in_net, p_out: out_net, p_inm: fb_net}
             straps.extend(
                 [
                     StrapConfig(
-                        "2",
+                        p_inm,
                         fb_net,
                         out_net,
                         format_resistance(rf_val),
@@ -194,7 +208,7 @@ class OpAmpTemplate(SubcircuitTemplate):
                         presentation="topology_local",
                     ),
                     StrapConfig(
-                        "2",
+                        p_inm,
                         fb_net,
                         gnd_net,
                         format_resistance(rin_val),
@@ -221,11 +235,11 @@ class OpAmpTemplate(SubcircuitTemplate):
             rin_val = snap_to_e24(rin_val)
             fb_net = f"FB_{ref}"
 
-            pin_nets = {"2": fb_net, "3": gnd_net, "1": out_net}
+            pin_nets = {p_inm: fb_net, p_inp: gnd_net, p_out: out_net}
             straps.extend(
                 [
                     StrapConfig(
-                        "2",
+                        p_inm,
                         fb_net,
                         out_net,
                         format_resistance(rf_val),
@@ -234,7 +248,7 @@ class OpAmpTemplate(SubcircuitTemplate):
                         presentation="topology_local",
                     ),
                     StrapConfig(
-                        "2",
+                        p_inm,
                         fb_net,
                         in_net,
                         format_resistance(rin_val),
@@ -254,11 +268,11 @@ class OpAmpTemplate(SubcircuitTemplate):
             in_p_net = params.get("in_net", f"DIFF_P_{ref}")
             in_n_net = f"DIFF_N_{ref}"
             fb_net = f"FB_{ref}"
-            pin_nets = {"2": fb_net, "3": in_p_net, "1": out_net}
+            pin_nets = {p_inm: fb_net, p_inp: in_p_net, p_out: out_net}
             straps.extend(
                 [
                     StrapConfig(
-                        "2",
+                        p_inm,
                         fb_net,
                         out_net,
                         format_resistance(rf_val),
@@ -267,7 +281,7 @@ class OpAmpTemplate(SubcircuitTemplate):
                         presentation="topology_local",
                     ),
                     StrapConfig(
-                        "2",
+                        p_inm,
                         fb_net,
                         in_n_net,
                         format_resistance(rin_val),
@@ -276,7 +290,7 @@ class OpAmpTemplate(SubcircuitTemplate):
                         presentation="topology_local",
                     ),
                     StrapConfig(
-                        "3",
+                        p_inp,
                         in_p_net,
                         gnd_net,
                         format_resistance(rf_val),

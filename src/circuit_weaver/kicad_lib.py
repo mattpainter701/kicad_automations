@@ -303,18 +303,33 @@ def symbol_to_component_def(
     power_pins = {}
     pin_nets = {}
     for pin in pins:
-        if pin.electrical_type in ("power_in", "power_out"):
-            pname = pin.name.upper()
-            if "GND" in pname or "VSS" in pname:
+        pname = pin.name.upper()
+
+        # Detect power pins by electrical type OR by name pattern
+        is_power_type = pin.electrical_type in ("power_in", "power_out")
+        is_gnd_name = bool(re.match(
+            r"^(GND|VSS|AVSS|DVSS|AGND|DGND|PGND|EPAD|EP|EXPOSED)$",
+            pname,
+        ))
+        is_vdd_name = bool(re.match(
+            r"^(VCC|VDD|VDDIO|AVDD|DVDD|VCCA|VDDA|V_?IN|VBAT|VSYS|VBUS|"
+            r"VCC_IO|AVCC|DVCC|VDDCORE|VDDA_\w+|VDD_\w+|VCC_\w+)$",
+            pname,
+        ))
+
+        if is_power_type or is_gnd_name or is_vdd_name:
+            if is_gnd_name:
                 power_pins[pin.number] = "GND"
-            elif "VCC" in pname or "VDD" in pname or "VIN" in pname:
-                power_pins[pin.number] = pin.name
-            elif "3V3" in pname or "3.3" in pname:
+            elif "3V3" in pname or "3.3" in pname or "3P3" in pname:
                 power_pins[pin.number] = "VDD_3P3"
-            elif "5V" in pname or "VBUS" in pname:
+            elif "5V" in pname or pname == "VBUS":
                 power_pins[pin.number] = "VBUS_5V"
-            elif "1V8" in pname or "1.8" in pname:
+            elif "1V8" in pname or "1.8" in pname or "1P8" in pname:
                 power_pins[pin.number] = "VDD_1P8"
+            elif "1V2" in pname or "1.2" in pname or "1P2" in pname:
+                power_pins[pin.number] = "VDD_1P2"
+            elif "2V5" in pname or "2.5" in pname or "2P5" in pname:
+                power_pins[pin.number] = "VDD_2P5"
             else:
                 power_pins[pin.number] = pin.name
         elif pin.electrical_type != "passive" or pin.name not in ("~", "NC"):

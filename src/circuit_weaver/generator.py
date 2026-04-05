@@ -59,6 +59,8 @@ from .primitives import (
     place_component,
     sexpr_header,
     sexpr_no_connect,
+    sexpr_pwr_flag_instance,
+    sexpr_pwr_flag_lib_entry,
     sexpr_sheet_pin,
     sexpr_wire,
     sheet_title_text,
@@ -2314,6 +2316,32 @@ def _render_sheet(
 
         for power_net in sorted(power_lib_names):
             lib_symbols.insert(0, sexpr_power_lib_entry(power_net))
+
+    # --- Add PWR_FLAG on each unique power net for KiCad ERC compliance ---
+    pwr_flag_nets_placed: set[str] = set()
+    pwr_flag_instances: list[str] = []
+    for placed in layout.placed_ics:
+        for pin_num, net_name in placed.comp.power_pins.items():
+            if net_name in pwr_flag_nets_placed:
+                continue
+            # Find the connection point for this pin to place PWR_FLAG nearby
+            sym_name, sym_sexpr = _render_symbol_name_and_sexpr(placed.comp)
+            pin_pos = get_pin_positions(sym_sexpr, sym_name)
+            if pin_num in pin_pos:
+                px, py, pangle, plen, _pname, _ptype = pin_pos[pin_num]
+                cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
+                pwr_flag_instances.append(
+                    sexpr_pwr_flag_instance(
+                        cx, cy,
+                        project_name=project_name,
+                        root_uuid=root_uuid,
+                        sheet_uuid=sheet_uuid,
+                    )
+                )
+                pwr_flag_nets_placed.add(net_name)
+    if pwr_flag_instances:
+        lib_symbols.insert(0, sexpr_pwr_flag_lib_entry())
+        power_instances.extend(pwr_flag_instances)
 
     # --- Title text ---
     title_text = sheet_title_text(layout.title, f"{project_name} — {layout.name}")

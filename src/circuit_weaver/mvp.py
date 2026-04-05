@@ -609,6 +609,103 @@ def _validate_pin_coverage(compiled: CompiledDesign) -> list[ValidationMessage]:
     return issues
 
 
+_VOLTAGE_PATTERN = re.compile(r"(\d+)[PV](\d+)|(\d+)V")
+
+
+def _infer_rail_voltage(net: str) -> float | None:
+    """Attempt to extract a voltage from a power net name (e.g., VDD_3P3 → 3.3)."""
+    known = {
+        "VDD_3P3": 3.3, "VDD_1P8": 1.8, "VDD_1P2": 1.2, "VDD_2P5": 2.5,
+        "VBUS_5V": 5.0, "VCCAUX": 1.8, "VCCINT": 1.0, "VDD_DDR": 1.35,
+    }
+    upper = (net or "").upper()
+    if upper in known:
+        return known[upper]
+    m = _VOLTAGE_PATTERN.search(upper)
+    if m:
+        if m.group(1) and m.group(2):
+            return float(f"{m.group(1)}.{m.group(2)}")
+        if m.group(3):
+            return float(m.group(3))
+    return None
+
+
+def _validate_power_domain_consistency(compiled: CompiledDesign) -> list[ValidationMessage]:
+    """Cross-check power domain assignments for consistency.
+
+    1. Collect all (net_name → voltage) assignments across all components.
+    2. Flag if the same net has conflicting voltage expectations.
+    3. Flag power_in pins where the assigned rail voltage doesn't match the
+       component's declared power_reqs voltage.
+    """
+    issues: list[ValidationMessage] = []
+
+    # Collect voltage expectations per net across all components
+    net_voltages: dict[str, list[tuple[str, float]]] = {}
+    for comp in compiled.components:
+        subject = comp.source_ref or comp.mpn
+        for req in comp.power_reqs:
+            if req.net and req.voltage > 0:
+                net_voltages.setdefault(req.net, []).append((subject, req.voltage))
+
+    # Check for conflicting voltage expectations on the same net
+    for net, sources in net_voltages.items():
+        voltages = {v for _, v in sources}
+        if len(voltages) > 1:
+            details = ", ".join(f"{src}={v}V" for src, v in sources)
+            issues.append(
+                ValidationMessage(
+                    category="electrical",
+                    code="power-domain-voltage-conflict",
+                    level="error",
+                    subject=net,
+                    message=f"Power net '{net}' has conflicting voltage requirements: {details}",
+                )
+            )
+
+    # Check that each component's power_reqs voltage matches what the rail name implies
+    for comp in compiled.components:
+        subject = comp.source_ref or comp.mpn
+        for req in comp.power_reqs:
+            if not req.net or req.voltage <= 0:
+                continue
+            implied_v = _infer_rail_voltage(req.net)
+            if implied_v is not None and abs(implied_v - req.voltage) / max(req.voltage, 0.1) > 0.10:
+                issues.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="power-domain-voltage-mismatch",
+                        level="warning",
+                        subject=subject,
+                        message=(
+                            f"Component requires {req.voltage}V on '{req.net}', "
+                            f"but rail name implies {implied_v}V"
+                        ),
+                    )
+                )
+
+    # Check that every non-GND power pin has a bypass cap somewhere
+    for comp in compiled.components:
+        if comp.ref_prefix.upper() != "U":
+            continue
+        subject = comp.source_ref or comp.mpn
+        cap_nets = {bc.net for bc in comp.bypass_caps}
+        for req in comp.power_reqs:
+            if req.net and not any(n.upper().startswith("GND") for n in [req.net]):
+                if req.net not in cap_nets:
+                    issues.append(
+                        ValidationMessage(
+                            category="electrical",
+                            code="missing-bypass-cap-for-rail",
+                            level="warning",
+                            subject=subject,
+                            message=f"Power rail '{req.net}' ({req.voltage}V) has no bypass cap declared",
+                        )
+                    )
+
+    return issues
+
+
 def _kicad_cli_path() -> Path | None:
     from_path = shutil.which("kicad-cli")
     if from_path:
@@ -814,6 +911,7 @@ def validate_design(
     categories["electrical"].extend(_validate_required_support(compiled))
     categories["electrical"].extend(_validate_power_domains(compiled))
     categories["electrical"].extend(_validate_pin_coverage(compiled))
+    categories["electrical"].extend(_validate_power_domain_consistency(compiled))
 
     for result in run_validation_checks(compiled.components):
         for issue in result.issues:
