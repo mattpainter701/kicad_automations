@@ -1,5 +1,11 @@
 # Example: IoT sensor board with buck + LDO power, ESP32, BME280
-# Generate: py -m circuit_weaver.generator examples/iot_sensor.yaml -o output/
+# Generate: circuit-weaver generate examples/iot_sensor.yaml -o output/
+#
+# This design demonstrates:
+#   - Dual power rail (5V→3.3V buck, 3.3V→1.8V LDO)
+#   - MCU with I2C sensor interface
+#   - USB-C power input with CC resistors
+#   - I2C bus with pull-ups
 
 project: IoT_Sensor
 company: Demo Corp
@@ -14,6 +20,7 @@ power:
     vin_net: VBUS_5V
     rail_name: VDD_3P3
     en_net: VBUS_5V
+
   - type: ldo
     ic: TLV75518
     ref: U2

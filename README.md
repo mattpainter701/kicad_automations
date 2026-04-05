@@ -322,6 +322,25 @@ python3 skills/kicad/scripts/analyze_pcb.py buck.kicad_pcb
 
 ---
 
+## Template Reference
+
+See **[docs/templates.md](docs/templates.md)** for the full parameter reference of all 30 subcircuit templates (auto-generated from `param_schema`).
+
+Quick discovery from CLI:
+
+```bash
+# List all templates
+circuit-weaver list-templates
+
+# Detailed params for each template
+circuit-weaver list-templates --verbose
+
+# Generate a scaffold YAML for a buck converter
+circuit-weaver scaffold --template buck --ref U1
+```
+
+---
+
 ## Development
 
 ```bash

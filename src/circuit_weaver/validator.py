@@ -417,7 +417,11 @@ _UART_RX_PATTERN = re.compile(r"(RXD?|UART.*RX)", re.IGNORECASE)
 
 
 def _build_net_pin_map(components: list[ComponentDef]) -> dict[str, list[tuple[str, str, str]]]:
-    """Build net_name → [(component_ref, pin_num, pin_type)] mapping."""
+    """Build net_name → [(component_ref, pin_num, pin_type)] mapping.
+
+    Also counts bypass_caps and straps as connections (they wire to nets
+    even though they don't appear in pin_nets/power_pins of the parent IC).
+    """
     net_map: dict[str, list[tuple[str, str, str]]] = {}
     for comp in components:
         ref = comp.source_ref or comp.ref_prefix
@@ -430,6 +434,18 @@ def _build_net_pin_map(components: list[ComponentDef]) -> dict[str, list[tuple[s
             if net:
                 ptype = pin_types.get(pin_num, "power_in")
                 net_map.setdefault(net, []).append((ref, pin_num, ptype))
+        # Bypass caps connect two nets (net ↔ gnd_net)
+        for bc in comp.bypass_caps:
+            if bc.net:
+                net_map.setdefault(bc.net, []).append((ref, bc.pin, "passive"))
+            if bc.gnd_net:
+                net_map.setdefault(bc.gnd_net, []).append((ref, bc.pin, "passive"))
+        # Straps connect pin to rail
+        for strap in comp.straps:
+            if strap.net:
+                net_map.setdefault(strap.net, []).append((ref, strap.pin, "passive"))
+            if strap.rail:
+                net_map.setdefault(strap.rail, []).append((ref, strap.pin, "passive"))
     return net_map
 
 

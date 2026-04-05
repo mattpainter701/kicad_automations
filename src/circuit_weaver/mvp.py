@@ -615,28 +615,51 @@ def _validate_pin_coverage(compiled: CompiledDesign) -> list[ValidationMessage]:
 
         subject = comp.source_ref or comp.mpn
 
+        floating_power: list[str] = []
+        floating_input: list[str] = []
+
         for pin in comp.pins:
             if pin.number in handled:
                 continue
-            # NC-named pins are fine
             if _NC_PIN_NAME_RE.match(pin.name):
                 continue
 
             etype = pin.electrical_type or "unspecified"
 
             if etype == "power_in":
-                issues.append(
-                    ValidationMessage(
-                        category="electrical",
-                        code="floating-power-pin",
-                        level="error",
-                        subject=subject,
-                        message=(
-                            f"Power pin {pin.number} ({pin.name}) is not connected to any rail"
-                        ),
-                    )
-                )
+                floating_power.append(f"{pin.number} ({pin.name})")
             elif etype in ("input", "bidirectional", "tri_state"):
+                floating_input.append(f"{pin.number} ({pin.name})")
+
+        # Power pins floating is always an error (per pin)
+        for desc in floating_power:
+            issues.append(
+                ValidationMessage(
+                    category="electrical",
+                    code="floating-power-pin",
+                    level="error",
+                    subject=subject,
+                    message=f"Power pin {desc} is not connected to any rail",
+                )
+            )
+
+        # For input/bidirectional: summarize if many (MCUs with 20+ unused GPIOs)
+        if len(floating_input) > 8:
+            issues.append(
+                ValidationMessage(
+                    category="electrical",
+                    code="floating-input-pin",
+                    level="warning",
+                    subject=subject,
+                    message=(
+                        f"{len(floating_input)} input/bidirectional pins unconnected "
+                        f"(e.g., {', '.join(floating_input[:3])}, ...) — "
+                        f"add to explicit_no_connects or wire as needed"
+                    ),
+                )
+            )
+        else:
+            for desc in floating_input:
                 issues.append(
                     ValidationMessage(
                         category="electrical",
@@ -644,7 +667,7 @@ def _validate_pin_coverage(compiled: CompiledDesign) -> list[ValidationMessage]:
                         level="warning",
                         subject=subject,
                         message=(
-                            f"{etype.capitalize()} pin {pin.number} ({pin.name}) is unconnected "
+                            f"Pin {desc} is unconnected "
                             f"— may need a pull-up/down, driver, or explicit no-connect"
                         ),
                     )
@@ -1492,6 +1515,17 @@ def main() -> None:
     pcb_p.add_argument("feedback", help="Path to PCB feedback JSON/YAML")
     pcb_p.add_argument("--output", help="Write updated spec to this YAML path")
 
+    list_p = subparsers.add_parser("list-templates", help="List all available subcircuit templates")
+    list_p.add_argument("--json", dest="json_output", action="store_true", default=False,
+                        help="Machine-readable JSON output")
+    list_p.add_argument("--verbose", action="store_true", default=False,
+                        help="Show full parameter schema")
+
+    scaffold_p = subparsers.add_parser("scaffold", help="Generate a YAML design spec stub from a template")
+    scaffold_p.add_argument("--template", "-t", help="Template type (e.g., buck, ldo, opamp)")
+    scaffold_p.add_argument("--ref", default="U1", help="Reference designator (default: U1)")
+    scaffold_p.add_argument("--output", "-o", help="Write to file instead of stdout")
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -1546,6 +1580,92 @@ def main() -> None:
             Path(args.output).write_text(spec_to_yaml_text(result.updated_spec), encoding="utf-8", newline="")
         _print_json(result.to_dict())
         raise SystemExit(0 if not result.rejected else 2)
+
+    if args.command == "list-templates":
+        registry = get_default_registry()
+        templates_info = []
+        for ttype in sorted(registry.available_types()):
+            tmpl = registry.get(ttype)
+            info = {
+                "type": ttype,
+                "description": tmpl.description,
+                "params": [
+                    {k: v for k, v in spec.items() if k in ("name", "type", "required", "default", "options")}
+                    for spec in tmpl.param_schema
+                ] if args.verbose or args.json_output else [
+                    {"name": s["name"], "required": s.get("required", False)} for s in tmpl.param_schema
+                ],
+            }
+            templates_info.append(info)
+
+        if args.json_output:
+            _print_json(templates_info)
+        else:
+            for info in templates_info:
+                params = ", ".join(
+                    p["name"] + ("*" if p.get("required") else "")
+                    for p in info["params"]
+                )
+                print(f"  {info['type']:25s} {info['description']}")
+                if args.verbose:
+                    for p in info["params"]:
+                        default = f" (default: {p['default']})" if "default" in p else ""
+                        options = f" [{', '.join(str(o) for o in p['options'])}]" if "options" in p else ""
+                        req = " REQUIRED" if p.get("required") else ""
+                        print(f"    {p['name']:20s} {p.get('type', ''):10s}{req}{default}{options}")
+                else:
+                    print(f"    params: {params}")
+        raise SystemExit(0)
+
+    if args.command == "scaffold":
+        registry = get_default_registry()
+        if not args.template:
+            # No template specified — list available templates
+            print("Available templates (use --template <name>):\n")
+            for ttype in sorted(registry.available_types()):
+                tmpl = registry.get(ttype)
+                print(f"  {ttype:25s} {tmpl.description}")
+            raise SystemExit(0)
+
+        tmpl = registry.get(args.template)
+        if tmpl is None:
+            print(f"Unknown template '{args.template}'. Use 'list-templates' to see available types.", file=sys.stderr)
+            raise SystemExit(1)
+
+        # Build a scaffold YAML spec with the template's params
+        block = {"type": args.template, "ref": args.ref}
+        for spec in tmpl.param_schema:
+            name = spec["name"]
+            if name in ("ref",):
+                continue
+            if "default" in spec:
+                block[name] = spec["default"]
+            elif spec.get("required"):
+                if spec.get("type") == "number":
+                    block[name] = 0.0
+                elif spec.get("type") == "integer":
+                    block[name] = 0
+                elif spec.get("type") == "boolean":
+                    block[name] = False
+                elif "options" in spec:
+                    block[name] = spec["options"][0]
+                else:
+                    block[name] = f"<{name}>"
+
+        section = tmpl.generate.__doc__ or ""
+        category = "power" if "power" in (tmpl.description + section).lower() else "digital"
+        scaffold_spec = {
+            "project": f"my_{args.template}_design",
+            category: [block],
+        }
+        yaml_text = spec_to_yaml_text(scaffold_spec)
+
+        if args.output:
+            Path(args.output).write_text(yaml_text, encoding="utf-8")
+            print(f"Wrote scaffold to {args.output}")
+        else:
+            print(yaml_text)
+        raise SystemExit(0)
 
 
 if __name__ == "__main__":
