@@ -1,0 +1,43 @@
+# USB-to-UART bridge with integrated ESD protection
+# Demonstrates serial communication over USB-C:
+#   - USB-C 5V input with AP2112K LDO for 3.3V rail
+#   - CH340G USB-to-UART controller
+#   - Dual PESD5V0S1BA ESD protection diodes on VBUS and USB DP line
+#   - All decoupling auto-generated
+# Design notes: CH340G provides full USB device enumeration and UART bridge; ESD diodes protect against static discharge
+
+project: USB_UART_Bridge
+company: Demo Corp
+description: USB-to-UART serial bridge with integrated ESD protection
+
+power:
+  - type: ldo
+    ic: AP2112K-3.3
+    ref: U1
+    vin: 5
+    vout: 3.3
+    vin_net: VBUS_5V
+    rail_name: VDD_3P3
+
+usb:
+  - type: usb_controller
+    ic: CH340G
+    ref: U2
+    mode: device
+    data_bus: UART
+
+protection:
+  - type: protection
+    ic: PESD5V0S1BA
+    ref: D1
+    protect_net: VBUS_5V
+    protection_type: esd
+  - type: protection
+    ic: PESD5V0S1BA
+    ref: D2
+    protect_net: USB_DP
+    protection_type: esd
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1

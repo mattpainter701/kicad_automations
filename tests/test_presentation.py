@@ -135,7 +135,16 @@ def _load_sample_spec(name: str) -> dict:
 
 @pytest.mark.parametrize(
     "sample_name",
-    ["usb_regulated_supply", "led_power_indicator", "iot_sensor_node"],
+    [
+        "usb_regulated_supply",
+        "led_power_indicator",
+        "iot_sensor_node",
+        "battery_iot_sensor",
+        "motor_controller",
+        "oled_display_module",
+        "usb_uart_bridge",
+        "fpga_power_carrier",
+    ],
 )
 class TestSampleValidation:
     def test_sample_validates_cleanly(self, sample_name):
@@ -179,7 +188,16 @@ class TestSampleValidation:
 
 @pytest.mark.parametrize(
     "sample_name",
-    ["usb_regulated_supply", "led_power_indicator", "iot_sensor_node"],
+    [
+        "usb_regulated_supply",
+        "led_power_indicator",
+        "iot_sensor_node",
+        "battery_iot_sensor",
+        "motor_controller",
+        "oled_display_module",
+        "usb_uart_bridge",
+        "fpga_power_carrier",
+    ],
 )
 def test_sample_generates_artifacts(sample_name, tmp_path):
     """End-to-end: sample spec generates KiCad schematics without errors."""

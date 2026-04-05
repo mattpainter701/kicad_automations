@@ -85,14 +85,19 @@ _LOCAL_ROUTE_LANE_PITCH = snap(3.81)
 _LOCAL_ROUTE_LANE_BASE = snap(3.81)
 
 # Pin names that are safe to no-connect without warning.
-_NC_PIN_NAME_PATTERNS = re.compile(
-    r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE
-)
+_NC_PIN_NAME_PATTERNS = re.compile(r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE)
 
 # Pin electrical types that are safe to no-connect (output-like: unused outputs are fine).
-_SAFE_NC_PIN_TYPES = frozenset({
-    "output", "power_out", "open_collector", "open_emitter", "no_connect", "free",
-})
+_SAFE_NC_PIN_TYPES = frozenset(
+    {
+        "output",
+        "power_out",
+        "open_collector",
+        "open_emitter",
+        "no_connect",
+        "free",
+    }
+)
 
 # Pin types that MUST be connected — floating these is an error.
 _CRITICAL_PIN_TYPES = frozenset({"power_in"})
@@ -157,6 +162,8 @@ def _classify_unhandled_pin(comp, pin_num, pname, ptype):
         "warning",
         f"unconnected pin '{pname}' (pin {pin_num}, type={etype}) — verify intent",
     )
+
+
 _DENSE_FACE_KEEP_OUT = snap(2.54)
 _DENSE_FACE_STAGGER_STEP = snap(2.54)
 _STRAP_ENDPOINT_STUB_LEN = snap(3.81)
@@ -1436,7 +1443,7 @@ def generate_from_components(
         if pcb:
             from .pcb_export import generate_pcb_placement
 
-            pcb_file = generate_pcb_placement(components, output_path, project_name)
+            pcb_file, _placements = generate_pcb_placement(components, output_path, project_name)
             generated_files.append(pcb_file)
 
         return generated_files
@@ -2337,7 +2344,8 @@ def _render_sheet(
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
                 pwr_flag_instances.append(
                     sexpr_pwr_flag_instance(
-                        cx, cy,
+                        cx,
+                        cy,
                         project_name=project_name,
                         root_uuid=root_uuid,
                         sheet_uuid=sheet_uuid,

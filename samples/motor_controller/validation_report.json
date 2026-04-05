@@ -1,0 +1,58 @@
+{
+  "profile": "mvp_strict",
+  "valid": true,
+  "categories": {
+    "structural": [],
+    "electrical": [
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Net 'BOOT0' has only one connection (pin 7 on U2) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Net 'RESET_N' has only one connection (pin 44 on U2) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Net 'SWDIO' has only one connection (pin 37 on U2) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Net 'SWCLK' has only one connection (pin 34 on U2) \u2014 likely dangling"
+      }
+    ],
+    "implementation": [
+      {
+        "category": "implementation",
+        "code": "pin-footprint-mismatch",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Symbol has 8 pins but footprint 'Package_QFP:LQFP-48_7x7mm_P0.5mm' implies 48 pads \u2014 verify match"
+      }
+    ],
+    "presentation": []
+  },
+  "summary": {
+    "structural": 0,
+    "electrical": 4,
+    "implementation": 1,
+    "presentation": 0
+  },
+  "metadata": {
+    "project": "Motor_Controller",
+    "component_count": 2,
+    "block_count": 2
+  }
+}

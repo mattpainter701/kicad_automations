@@ -1,0 +1,110 @@
+{
+  "project": "Motor_Controller",
+  "company": "Demo Corp",
+  "version": "",
+  "description": "STM32-based motor controller with 12V-to-3.3V power delivery",
+  "spec_version": "mvp_ir_v1",
+  "blocks": [
+    {
+      "id": "power:U1:0e9c7d3c",
+      "section": "power",
+      "kind": "template",
+      "ref": "U1",
+      "required_support": {
+        "bypass_caps": 4,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 4,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "AP62300",
+        "value": "AP62300",
+        "footprint": "SOT-23-6",
+        "manufacturer": ""
+      },
+      "type": "buck",
+      "params": {
+        "vin": 12,
+        "vout": 3.3,
+        "iout": 1,
+        "vin_net": "VIN_12V",
+        "rail_name": "VDD_3P3"
+      },
+      "interfaces": [
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VIN_12V",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VDD_3P3",
+          "direction": "output",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VIN_12V",
+          "direction": "input",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "digital:U2:3c486ed9",
+      "section": "digital",
+      "kind": "component",
+      "ref": "U2",
+      "required_support": {
+        "bypass_caps": 1,
+        "straps": 0,
+        "power_reqs": 1,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "STM32F103C8T6",
+        "value": "STM32F103C8T6",
+        "footprint": "Package_QFP:LQFP-48_7x7mm_P0.5mm",
+        "manufacturer": ""
+      },
+      "ic": "STM32F103C8T6"
+    }
+  ],
+  "interfaces": [
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VIN_12V",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VDD_3P3",
+      "direction": "output",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VIN_12V",
+      "direction": "input",
+      "description": ""
+    }
+  ],
+  "approved_overrides": [],
+  "pcb_constraints": []
+}

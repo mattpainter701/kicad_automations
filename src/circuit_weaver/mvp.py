@@ -478,8 +478,7 @@ def _validate_component_resolution(
                             level="warning",
                             subject=block.ref or block.id,
                             message=(
-                                f"Symbol has {sym_pins} pins but footprint '{fp}' "
-                                f"implies {fp_pins} pads — verify match"
+                                f"Symbol has {sym_pins} pins but footprint '{fp}' implies {fp_pins} pads — verify match"
                             ),
                         )
                     )
@@ -667,8 +666,7 @@ def _validate_pin_coverage(compiled: CompiledDesign) -> list[ValidationMessage]:
                         level="warning",
                         subject=subject,
                         message=(
-                            f"Pin {desc} is unconnected "
-                            f"— may need a pull-up/down, driver, or explicit no-connect"
+                            f"Pin {desc} is unconnected — may need a pull-up/down, driver, or explicit no-connect"
                         ),
                     )
                 )
@@ -681,8 +679,14 @@ _VOLTAGE_PATTERN = re.compile(r"(\d+)[PV](\d+)|(\d+)V")
 def _infer_rail_voltage(net: str) -> float | None:
     """Attempt to extract a voltage from a power net name (e.g., VDD_3P3 → 3.3)."""
     known = {
-        "VDD_3P3": 3.3, "VDD_1P8": 1.8, "VDD_1P2": 1.2, "VDD_2P5": 2.5,
-        "VBUS_5V": 5.0, "VCCAUX": 1.8, "VCCINT": 1.0, "VDD_DDR": 1.35,
+        "VDD_3P3": 3.3,
+        "VDD_1P8": 1.8,
+        "VDD_1P2": 1.2,
+        "VDD_2P5": 2.5,
+        "VBUS_5V": 5.0,
+        "VCCAUX": 1.8,
+        "VCCINT": 1.0,
+        "VDD_DDR": 1.35,
     }
     upper = (net or "").upper()
     if upper in known:
@@ -744,8 +748,7 @@ def _validate_power_domain_consistency(compiled: CompiledDesign) -> list[Validat
                         level="warning",
                         subject=subject,
                         message=(
-                            f"Component requires {req.voltage}V on '{req.net}', "
-                            f"but rail name implies {implied_v}V"
+                            f"Component requires {req.voltage}V on '{req.net}', but rail name implies {implied_v}V"
                         ),
                     )
                 )
@@ -1481,8 +1484,9 @@ def main() -> None:
 
     validate_p = subparsers.add_parser("validate", help="Validate a canonical/legacy design spec")
     validate_p.add_argument("spec", help="Path to YAML/JSON design spec")
-    validate_p.add_argument("--strict", action="store_true", default=False,
-                            help="Treat warnings as errors (fail on any warning)")
+    validate_p.add_argument(
+        "--strict", action="store_true", default=False, help="Treat warnings as errors (fail on any warning)"
+    )
     validate_p.add_argument("--enrich-parts", action="store_true", default=False)
 
     patch_p = subparsers.add_parser("apply-patch", help="Apply a transactional patch to a design spec")
@@ -1516,15 +1520,23 @@ def main() -> None:
     pcb_p.add_argument("--output", help="Write updated spec to this YAML path")
 
     list_p = subparsers.add_parser("list-templates", help="List all available subcircuit templates")
-    list_p.add_argument("--json", dest="json_output", action="store_true", default=False,
-                        help="Machine-readable JSON output")
-    list_p.add_argument("--verbose", action="store_true", default=False,
-                        help="Show full parameter schema")
+    list_p.add_argument(
+        "--json", dest="json_output", action="store_true", default=False, help="Machine-readable JSON output"
+    )
+    list_p.add_argument("--verbose", action="store_true", default=False, help="Show full parameter schema")
 
     scaffold_p = subparsers.add_parser("scaffold", help="Generate a YAML design spec stub from a template")
     scaffold_p.add_argument("--template", "-t", help="Template type (e.g., buck, ldo, opamp)")
     scaffold_p.add_argument("--ref", default="U1", help="Reference designator (default: U1)")
     scaffold_p.add_argument("--output", "-o", help="Write to file instead of stdout")
+
+    jlcpcb_p = subparsers.add_parser("export-jlcpcb", help="Export JLCPCB BOM and CPL files for assembly ordering")
+    jlcpcb_p.add_argument("spec", help="Design spec YAML file")
+    jlcpcb_p.add_argument("--output", "-o", required=True, help="Output directory for BOM/CPL files")
+
+    gerber_p = subparsers.add_parser("export-gerbers", help="Export Gerber and drill files from KiCad PCB")
+    gerber_p.add_argument("kicad_pcb", help="KiCad PCB file (.kicad_pcb)")
+    gerber_p.add_argument("--output", "-o", required=True, help="Output directory for Gerber/drill files")
 
     args = parser.parse_args()
 
@@ -1532,7 +1544,9 @@ def main() -> None:
         strict = getattr(args, "strict", False)
         report = _run_with_stderr_capture(
             lambda: validate_design(
-                _load_spec_file(args.spec), enrich_parts=args.enrich_parts, strict=strict,
+                _load_spec_file(args.spec),
+                enrich_parts=args.enrich_parts,
+                strict=strict,
             )
         )
         _print_json(report.to_dict())
@@ -1592,9 +1606,9 @@ def main() -> None:
                 "params": [
                     {k: v for k, v in spec.items() if k in ("name", "type", "required", "default", "options")}
                     for spec in tmpl.param_schema
-                ] if args.verbose or args.json_output else [
-                    {"name": s["name"], "required": s.get("required", False)} for s in tmpl.param_schema
-                ],
+                ]
+                if args.verbose or args.json_output
+                else [{"name": s["name"], "required": s.get("required", False)} for s in tmpl.param_schema],
             }
             templates_info.append(info)
 
@@ -1602,10 +1616,7 @@ def main() -> None:
             _print_json(templates_info)
         else:
             for info in templates_info:
-                params = ", ".join(
-                    p["name"] + ("*" if p.get("required") else "")
-                    for p in info["params"]
-                )
+                params = ", ".join(p["name"] + ("*" if p.get("required") else "") for p in info["params"])
                 print(f"  {info['type']:25s} {info['description']}")
                 if args.verbose:
                     for p in info["params"]:
@@ -1665,6 +1676,82 @@ def main() -> None:
             print(f"Wrote scaffold to {args.output}")
         else:
             print(yaml_text)
+        raise SystemExit(0)
+
+    if args.command == "export-jlcpcb":
+        from .jlcpcb_export import export_jlcpcb
+
+        result = _run_with_stderr_capture(
+            lambda: export_jlcpcb(
+                _load_spec_file(args.spec),
+                args.output,
+            )
+        )
+        _print_json(result)
+        raise SystemExit(0 if result["status"] == "ok" else 1)
+
+    if args.command == "export-gerbers":
+        import zipfile
+
+        cli = _kicad_cli_path()
+        if not cli:
+            _print_json(
+                {
+                    "status": "error",
+                    "message": "KiCad CLI not found. Install KiCad 8+ and ensure kicad-cli is on PATH.",
+                }
+            )
+            raise SystemExit(1)
+
+        out = Path(args.output)
+        out.mkdir(parents=True, exist_ok=True)
+
+        # Export gerbers
+        result = subprocess.run(
+            [str(cli), "pcb", "export", "gerbers", "-o", str(out), args.kicad_pcb],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            _print_json(
+                {
+                    "status": "error",
+                    "message": f"kicad-cli gerber export failed: {result.stderr}",
+                }
+            )
+            raise SystemExit(1)
+
+        # Export drill files
+        result = subprocess.run(
+            [str(cli), "pcb", "export", "drill", "-o", str(out), args.kicad_pcb],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            _print_json(
+                {
+                    "status": "error",
+                    "message": f"kicad-cli drill export failed: {result.stderr}",
+                }
+            )
+            raise SystemExit(1)
+
+        # ZIP the output files (gerbers + drills)
+        gerber_files = list(out.glob("*.gbr")) + list(out.glob("*.drl"))
+        zip_path = out / f"{Path(args.kicad_pcb).stem}_gerbers.zip"
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in gerber_files:
+                zf.write(f, arcname=f.name)
+
+        _print_json(
+            {
+                "status": "ok",
+                "message": f"Exported Gerbers and drills to {zip_path}",
+                "zip": str(zip_path),
+                "file_count": len(gerber_files),
+            }
+        )
         raise SystemExit(0)
 
 

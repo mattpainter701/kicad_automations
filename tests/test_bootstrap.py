@@ -65,3 +65,45 @@ def test_generate_command_writes_example_artifacts(tmp_path: Path):
     assert (output_dir / "main.kicad_sch").exists(), f"No schematic generated. stderr: {result.stderr[:500]}"
     assert (output_dir / "canonical_spec.yaml").exists()
     assert (output_dir / "design_ir.json").exists()
+
+
+def test_export_jlcpcb_command_writes_csv_files(tmp_path: Path):
+    sample = Path(__file__).resolve().parent.parent / "samples" / "iot_sensor_node" / "iot_sensor_node.yaml"
+    output_dir = tmp_path / "jlcpcb_export"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "circuit_weaver",
+            "export-jlcpcb",
+            str(sample),
+            "--output",
+            str(output_dir),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    # Should create BOM, CPL, and README files
+    assert (output_dir / "bom_jlcpcb.csv").exists(), f"BOM file not created. stderr: {result.stderr[:500]}"
+    assert (output_dir / "cpl_jlcpcb.csv").exists(), f"CPL file not created. stderr: {result.stderr[:500]}"
+    assert (output_dir / "README.txt").exists(), f"README not created. stderr: {result.stderr[:500]}"
+
+    # BOM should have correct column headers
+    bom_content = (output_dir / "bom_jlcpcb.csv").read_text()
+    assert "Comment,Designator,Footprint,LCSC Part#" in bom_content
+
+    # At least one row should exist (header + 1 data row minimum)
+    bom_lines = bom_content.strip().split("\n")
+    assert len(bom_lines) >= 2, f"BOM should have header + data rows. Got: {bom_lines}"
+
+    # CPL should have correct column headers
+    cpl_content = (output_dir / "cpl_jlcpcb.csv").read_text()
+    assert "Designator,Mid X,Mid Y,Rotation,Layer" in cpl_content
+
+    # Verify command status
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "ok"
+    assert payload["component_count"] > 0
+    assert payload["bom_rows"] > 0

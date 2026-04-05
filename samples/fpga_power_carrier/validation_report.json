@@ -1,0 +1,21 @@
+{
+  "profile": "mvp_strict",
+  "valid": true,
+  "categories": {
+    "structural": [],
+    "electrical": [],
+    "implementation": [],
+    "presentation": []
+  },
+  "summary": {
+    "structural": 0,
+    "electrical": 0,
+    "implementation": 0,
+    "presentation": 0
+  },
+  "metadata": {
+    "project": "FPGA_Power_Carrier",
+    "component_count": 4,
+    "block_count": 4
+  }
+}

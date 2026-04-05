@@ -1,0 +1,277 @@
+{
+  "project": "Battery_IoT_Sensor",
+  "company": "Demo Corp",
+  "version": "",
+  "description": "Battery-powered WiFi sensor with charging and fuel gauge",
+  "spec_version": "mvp_ir_v1",
+  "blocks": [
+    {
+      "id": "power:U1:0e9c7d3c",
+      "section": "power",
+      "kind": "template",
+      "ref": "U1",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 1,
+        "power_reqs": 0,
+        "boundary_ports": 4,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "MCP73831T-2ACI/OT",
+        "value": "MCP73831T-2ACI/OT",
+        "footprint": "SOT-23-5",
+        "manufacturer": ""
+      },
+      "type": "battery_charger",
+      "params": {
+        "ichg": 0.5,
+        "vin_net": "VUSB_5V",
+        "bat_net": "VBAT"
+      },
+      "interfaces": [
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VUSB_5V",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VBAT",
+          "direction": "output",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "STAT_U1",
+          "direction": "output",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "power:U2:37f2e0ae",
+      "section": "power",
+      "kind": "template",
+      "ref": "U2",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 4,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "MAX17048G+T",
+        "value": "MAX17048G+T",
+        "footprint": "DFN-8-EP",
+        "manufacturer": ""
+      },
+      "type": "battery_monitor",
+      "params": {
+        "bat_net": "VBAT"
+      },
+      "interfaces": [
+        {
+          "block_id": "power:U2:37f2e0ae",
+          "name": "VBAT",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "power:U2:37f2e0ae",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "power:U2:37f2e0ae",
+          "name": "I2C_SDA",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "power:U2:37f2e0ae",
+          "name": "I2C_SCL",
+          "direction": "input",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "power:U3:df532fac",
+      "section": "power",
+      "kind": "template",
+      "ref": "U3",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 4,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "TLV75518",
+        "value": "TLV75518",
+        "footprint": "SOT-23-5",
+        "manufacturer": ""
+      },
+      "type": "ldo",
+      "params": {
+        "vin": 3.7,
+        "vout": 3.3,
+        "vin_net": "VBAT",
+        "rail_name": "VDD_3P3"
+      },
+      "interfaces": [
+        {
+          "block_id": "power:U3:df532fac",
+          "name": "VBAT",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "power:U3:df532fac",
+          "name": "VDD_3P3",
+          "direction": "output",
+          "description": ""
+        },
+        {
+          "block_id": "power:U3:df532fac",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "power:U3:df532fac",
+          "name": "VBAT",
+          "direction": "input",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "digital:U4:d6cb7347",
+      "section": "digital",
+      "kind": "component",
+      "ref": "U4",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 2,
+        "power_reqs": 1,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "ESP32-WROOM-32E",
+        "value": "ESP32-WROOM-32E",
+        "footprint": "RF_Module:ESP32-WROOM-32E",
+        "manufacturer": ""
+      },
+      "ic": "ESP32-WROOM-32E"
+    },
+    {
+      "id": "connectors:J1:ddbb8227",
+      "section": "connectors",
+      "kind": "component",
+      "ref": "J1",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "USB-C-PWR",
+        "value": "USB-C",
+        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4085",
+        "manufacturer": ""
+      },
+      "ic": "USB-C-PWR"
+    }
+  ],
+  "interfaces": [
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VUSB_5V",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VBAT",
+      "direction": "output",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "STAT_U1",
+      "direction": "output",
+      "description": ""
+    },
+    {
+      "block_id": "power:U2:37f2e0ae",
+      "name": "VBAT",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U2:37f2e0ae",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "power:U2:37f2e0ae",
+      "name": "I2C_SDA",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "power:U2:37f2e0ae",
+      "name": "I2C_SCL",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U3:df532fac",
+      "name": "VBAT",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U3:df532fac",
+      "name": "VDD_3P3",
+      "direction": "output",
+      "description": ""
+    },
+    {
+      "block_id": "power:U3:df532fac",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "power:U3:df532fac",
+      "name": "VBAT",
+      "direction": "input",
+      "description": ""
+    }
+  ],
+  "approved_overrides": [],
+  "pcb_constraints": []
+}

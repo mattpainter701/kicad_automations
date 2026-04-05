@@ -1,0 +1,228 @@
+project: FPGA_Power_Carrier
+company: Demo Corp
+version: ''
+description: Multi-rail power carrier for FPGA applications
+spec_version: mvp_ir_v1
+blocks:
+- id: power:U1:0e9c7d3c
+  section: power
+  kind: template
+  ref: U1
+  required_support:
+    bypass_caps: 4
+    straps: 2
+    power_reqs: 0
+    boundary_ports: 4
+    local_wires: 0
+  part_bindings:
+    mpn: AP62300
+    value: AP62300
+    footprint: SOT-23-6
+    manufacturer: ''
+  type: buck
+  params:
+    vin: 12
+    vout: 3.3
+    iout: 3
+    vin_net: VIN_12V
+    rail_name: VDD_3P3
+  interfaces:
+  - block_id: power:U1:0e9c7d3c
+    name: VIN_12V
+    direction: input
+    description: ''
+  - block_id: power:U1:0e9c7d3c
+    name: VDD_3P3
+    direction: output
+    description: ''
+  - block_id: power:U1:0e9c7d3c
+    name: GND
+    direction: passive
+    description: ''
+  - block_id: power:U1:0e9c7d3c
+    name: VIN_12V
+    direction: input
+    description: ''
+- id: power:U2:37f2e0ae
+  section: power
+  kind: template
+  ref: U2
+  required_support:
+    bypass_caps: 4
+    straps: 2
+    power_reqs: 0
+    boundary_ports: 4
+    local_wires: 0
+  part_bindings:
+    mpn: AP62300
+    value: AP62300
+    footprint: SOT-23-6
+    manufacturer: ''
+  type: buck
+  params:
+    vin: 12
+    vout: 1.8
+    iout: 2
+    vin_net: VIN_12V
+    rail_name: VDD_1P8
+  interfaces:
+  - block_id: power:U2:37f2e0ae
+    name: VIN_12V
+    direction: input
+    description: ''
+  - block_id: power:U2:37f2e0ae
+    name: VDD_1P8
+    direction: output
+    description: ''
+  - block_id: power:U2:37f2e0ae
+    name: GND
+    direction: passive
+    description: ''
+  - block_id: power:U2:37f2e0ae
+    name: VIN_12V
+    direction: input
+    description: ''
+- id: power:U3:df532fac
+  section: power
+  kind: template
+  ref: U3
+  required_support:
+    bypass_caps: 4
+    straps: 2
+    power_reqs: 0
+    boundary_ports: 4
+    local_wires: 0
+  part_bindings:
+    mpn: AP62300
+    value: AP62300
+    footprint: SOT-23-6
+    manufacturer: ''
+  type: buck
+  params:
+    vin: 12
+    vout: 1.2
+    iout: 1
+    vin_net: VIN_12V
+    rail_name: VDD_1P2
+  interfaces:
+  - block_id: power:U3:df532fac
+    name: VIN_12V
+    direction: input
+    description: ''
+  - block_id: power:U3:df532fac
+    name: VDD_1P2
+    direction: output
+    description: ''
+  - block_id: power:U3:df532fac
+    name: GND
+    direction: passive
+    description: ''
+  - block_id: power:U3:df532fac
+    name: VIN_12V
+    direction: input
+    description: ''
+- id: power:U4:34125805
+  section: power
+  kind: template
+  ref: U4
+  required_support:
+    bypass_caps: 2
+    straps: 0
+    power_reqs: 0
+    boundary_ports: 4
+    local_wires: 0
+  part_bindings:
+    mpn: TLV75518
+    value: TLV75518
+    footprint: SOT-23-5
+    manufacturer: ''
+  type: ldo
+  params:
+    vin: 3.3
+    vout: 1.8
+    vin_net: VDD_3P3
+    rail_name: VDD_1P8_ANALOG
+  interfaces:
+  - block_id: power:U4:34125805
+    name: VDD_3P3
+    direction: input
+    description: ''
+  - block_id: power:U4:34125805
+    name: VDD_1P8_ANALOG
+    direction: output
+    description: ''
+  - block_id: power:U4:34125805
+    name: GND
+    direction: passive
+    description: ''
+  - block_id: power:U4:34125805
+    name: VDD_3P3
+    direction: input
+    description: ''
+interfaces:
+- block_id: power:U1:0e9c7d3c
+  name: VIN_12V
+  direction: input
+  description: ''
+- block_id: power:U1:0e9c7d3c
+  name: VDD_3P3
+  direction: output
+  description: ''
+- block_id: power:U1:0e9c7d3c
+  name: GND
+  direction: passive
+  description: ''
+- block_id: power:U1:0e9c7d3c
+  name: VIN_12V
+  direction: input
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: VIN_12V
+  direction: input
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: VDD_1P8
+  direction: output
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: GND
+  direction: passive
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: VIN_12V
+  direction: input
+  description: ''
+- block_id: power:U3:df532fac
+  name: VIN_12V
+  direction: input
+  description: ''
+- block_id: power:U3:df532fac
+  name: VDD_1P2
+  direction: output
+  description: ''
+- block_id: power:U3:df532fac
+  name: GND
+  direction: passive
+  description: ''
+- block_id: power:U3:df532fac
+  name: VIN_12V
+  direction: input
+  description: ''
+- block_id: power:U4:34125805
+  name: VDD_3P3
+  direction: input
+  description: ''
+- block_id: power:U4:34125805
+  name: VDD_1P8_ANALOG
+  direction: output
+  description: ''
+- block_id: power:U4:34125805
+  name: GND
+  direction: passive
+  description: ''
+- block_id: power:U4:34125805
+  name: VDD_3P3
+  direction: input
+  description: ''
+approved_overrides: []
+pcb_constraints: []

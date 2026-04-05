@@ -138,6 +138,59 @@ def _design_rationale_section(components: list[ComponentDef]) -> str:
     return "\n".join(lines)
 
 
+def _fab_notes_section(components: list[ComponentDef]) -> str:
+    """Generate fabrication recommendations based on component packages."""
+    lines = ["## Fabrication Notes\n"]
+
+    if not components:
+        lines.append("No components — no fabrication recommendations.\n")
+        return "\n".join(lines)
+
+    # Analyze footprints
+    footprints = [c.footprint.upper() if c.footprint else "" for c in components]
+    has_bga = any("BGA" in fp for fp in footprints)
+    has_qfn = any("QFN" in fp or "LGA" in fp for fp in footprints)
+    has_qfp = any("QFP" in fp or "TQFP" in fp for fp in footprints)
+
+    # Layer recommendations
+    layer_rec = "4-layer minimum (recommended 6-layer for thermal)" if has_bga else "2-layer sufficient"
+
+    # Surface finish recommendations
+    finish_rec = "ENIG or HASL lead-free (ENIG preferred for reliability)"
+    if has_bga:
+        finish_rec = "ENIG (mandatory for BGA)"
+
+    lines.append("**PCB Specification:**")
+    lines.append(f"- Layer count: {layer_rec}")
+    lines.append(f"- Surface finish: {finish_rec}")
+    lines.append("- Solder type: Lead-free (RoHS)")
+    lines.append("")
+
+    # Assembly recommendations
+    asm_notes = []
+    if has_bga:
+        asm_notes.append("**BGA Assembly** — Requires X-ray inspection and controlled reflow profile")
+    if has_qfn or has_qfp:
+        asm_notes.append("**Fine-Pitch Components** — Paste stencil required; thermal pad via array recommended")
+    asm_notes.append("**SMT Assembly** — Stencil, pick-and-place, and reflow furnace required")
+
+    if asm_notes:
+        lines.append("**Assembly Notes:**")
+        for note in asm_notes:
+            lines.append(f"- {note}")
+        lines.append("")
+
+    lines.append("**Design Checklist:**")
+    lines.append("- [ ] Gerbers exported and verified with Gerber viewer")
+    lines.append("- [ ] Component footprints match datasheets (especially fine-pitch packages)")
+    lines.append("- [ ] Thermal vias present under power dissipation components")
+    lines.append("- [ ] Solder mask clearance verified (0.1mm min from pad)")
+    lines.append("- [ ] Silkscreen text readable (>0.8mm height, >0.15mm width)")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 def _validation_section(validation_results) -> str:
     """Format validation results into report section."""
     lines = ["## Circuit Validation\n"]
@@ -193,6 +246,7 @@ def generate_report(
     sections.append(_power_tree_section(components))
     sections.append(_bom_summary_section(components))
     sections.append(_design_rationale_section(components))
+    sections.append(_fab_notes_section(components))
     if validation_results is not None:
         sections.append(_validation_section(validation_results))
 

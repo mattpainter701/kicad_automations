@@ -1,0 +1,38 @@
+# Battery-backed IoT sensor node with on-board charger
+# Demonstrates a complete battery-powered IoT system:
+#   - USB-C charging with MCP73831 Li-Po charger (0.5A)
+#   - Battery voltage monitoring via MAX17048 fuel gauge IC
+#   - LDO for stable 3.3V logic rail from 3.7V battery
+#   - ESP32-WROOM-32E WiFi/BLE module
+# Design notes: USB-C VBUS power enables charging via dedicated charger IC; internal battery supplies system when unplugged; fuel gauge provides real-time charge/energy estimates via I2C (external pull-ups in final design)
+
+project: Battery_IoT_Sensor
+company: Demo Corp
+description: Battery-powered WiFi sensor with charging and fuel gauge
+
+power:
+  - type: battery_charger
+    ic: MCP73831T-2ACI/OT
+    ref: U1
+    ichg: 0.5
+    vin_net: VUSB_5V
+    bat_net: VBAT
+  - type: battery_monitor
+    ic: MAX17048G+T
+    ref: U2
+    bat_net: VBAT
+  - type: ldo
+    ic: MCP1700-3302E
+    ref: U3
+    vin: 3.7
+    vout: 3.3
+    vin_net: VBAT
+    rail_name: VDD_3P3
+
+digital:
+  - ic: ESP32-WROOM-32E
+    ref: U4
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1

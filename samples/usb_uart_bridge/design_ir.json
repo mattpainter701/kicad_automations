@@ -1,0 +1,319 @@
+{
+  "project": "USB_UART_Bridge",
+  "company": "Demo Corp",
+  "version": "",
+  "description": "USB-to-UART serial bridge with integrated ESD protection",
+  "spec_version": "mvp_ir_v1",
+  "blocks": [
+    {
+      "id": "power:U1:0e9c7d3c",
+      "section": "power",
+      "kind": "template",
+      "ref": "U1",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 4,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "TLV75518",
+        "value": "TLV75518",
+        "footprint": "SOT-23-5",
+        "manufacturer": ""
+      },
+      "type": "ldo",
+      "params": {
+        "vin": 5,
+        "vout": 3.3,
+        "vin_net": "VBUS_5V",
+        "rail_name": "VDD_3P3"
+      },
+      "interfaces": [
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VBUS_5V",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VDD_3P3",
+          "direction": "output",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VBUS_5V",
+          "direction": "input",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "usb:U2:f18e1c3a",
+      "section": "usb",
+      "kind": "template",
+      "ref": "U2",
+      "required_support": {
+        "bypass_caps": 8,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 7,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "CYUSB3014",
+        "value": "CYUSB3014",
+        "footprint": "BGA-121",
+        "manufacturer": ""
+      },
+      "type": "usb_controller",
+      "params": {
+        "mode": "device",
+        "data_bus": "UART"
+      },
+      "interfaces": [
+        {
+          "block_id": "usb:U2:f18e1c3a",
+          "name": "VDD",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "usb:U2:f18e1c3a",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "usb:U2:f18e1c3a",
+          "name": "VBUS",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "usb:U2:f18e1c3a",
+          "name": "DVDDIO",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "usb:U2:f18e1c3a",
+          "name": "AVDD",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "usb:U2:f18e1c3a",
+          "name": "USB_DP_U2",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "usb:U2:f18e1c3a",
+          "name": "USB_DM_U2",
+          "direction": "bidirectional",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "protection:D1:88b2de3c",
+      "section": "protection",
+      "kind": "template",
+      "ref": "D1",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 2,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "SMBJ5.0A",
+        "value": "SMBJ5.0A",
+        "footprint": "Diode_SMD:D_SMB",
+        "manufacturer": ""
+      },
+      "type": "protection",
+      "params": {
+        "protect_net": "VBUS_5V",
+        "protection_type": "esd"
+      },
+      "interfaces": [
+        {
+          "block_id": "protection:D1:88b2de3c",
+          "name": "VBUS_5V",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "protection:D1:88b2de3c",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "protection:D2:6397c550",
+      "section": "protection",
+      "kind": "template",
+      "ref": "D2",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 2,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "SMBJ5.0A",
+        "value": "SMBJ5.0A",
+        "footprint": "Diode_SMD:D_SMB",
+        "manufacturer": ""
+      },
+      "type": "protection",
+      "params": {
+        "protect_net": "USB_DP",
+        "protection_type": "esd"
+      },
+      "interfaces": [
+        {
+          "block_id": "protection:D2:6397c550",
+          "name": "USB_DP",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "protection:D2:6397c550",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "connectors:J1:ddbb8227",
+      "section": "connectors",
+      "kind": "component",
+      "ref": "J1",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "USB-C-PWR",
+        "value": "USB-C",
+        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4085",
+        "manufacturer": ""
+      },
+      "ic": "USB-C-PWR"
+    }
+  ],
+  "interfaces": [
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VBUS_5V",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VDD_3P3",
+      "direction": "output",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VBUS_5V",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "usb:U2:f18e1c3a",
+      "name": "VDD",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "usb:U2:f18e1c3a",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "usb:U2:f18e1c3a",
+      "name": "VBUS",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "usb:U2:f18e1c3a",
+      "name": "DVDDIO",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "usb:U2:f18e1c3a",
+      "name": "AVDD",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "usb:U2:f18e1c3a",
+      "name": "USB_DP_U2",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "usb:U2:f18e1c3a",
+      "name": "USB_DM_U2",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "protection:D1:88b2de3c",
+      "name": "VBUS_5V",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "protection:D1:88b2de3c",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "protection:D2:6397c550",
+      "name": "USB_DP",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "protection:D2:6397c550",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    }
+  ],
+  "approved_overrides": [],
+  "pcb_constraints": []
+}

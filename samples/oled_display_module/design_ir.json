@@ -1,0 +1,305 @@
+{
+  "project": "OLED_Display_Module",
+  "company": "Demo Corp",
+  "version": "",
+  "description": "5V-powered OLED display module with I2C interface",
+  "spec_version": "mvp_ir_v1",
+  "blocks": [
+    {
+      "id": "power:U1:0e9c7d3c",
+      "section": "power",
+      "kind": "template",
+      "ref": "U1",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 4,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "TLV75518",
+        "value": "TLV75518",
+        "footprint": "SOT-23-5",
+        "manufacturer": ""
+      },
+      "type": "ldo",
+      "params": {
+        "vin": 5,
+        "vout": 3.3,
+        "vin_net": "VBUS_5V",
+        "rail_name": "VDD_3P3"
+      },
+      "interfaces": [
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VBUS_5V",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VDD_3P3",
+          "direction": "output",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VBUS_5V",
+          "direction": "input",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "display:U2:400bd54c",
+      "section": "display",
+      "kind": "template",
+      "ref": "U2",
+      "required_support": {
+        "bypass_caps": 5,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 5,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "SSD1306",
+        "value": "SSD1306",
+        "footprint": "SSD1306_Module",
+        "manufacturer": ""
+      },
+      "type": "display_driver",
+      "params": {
+        "interface": "i2c",
+        "vdd_net": "VDD_3P3"
+      },
+      "interfaces": [
+        {
+          "block_id": "display:U2:400bd54c",
+          "name": "VDD_3P3",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "display:U2:400bd54c",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "display:U2:400bd54c",
+          "name": "RES_N_U2",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "display:U2:400bd54c",
+          "name": "I2C_SDA",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "display:U2:400bd54c",
+          "name": "I2C_SCL",
+          "direction": "input",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "digital:U3:72ee6bfb",
+      "section": "digital",
+      "kind": "template",
+      "ref": "U3",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 1,
+        "power_reqs": 0,
+        "boundary_ports": 7,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "TXS0102",
+        "value": "TXS0102",
+        "footprint": "Package_TO_SOT_SMD:SOT-23-8",
+        "manufacturer": ""
+      },
+      "type": "level_shifter",
+      "params": {
+        "vcca_net": "VDD_1P8",
+        "vccb_net": "VDD_3P3"
+      },
+      "interfaces": [
+        {
+          "block_id": "digital:U3:72ee6bfb",
+          "name": "VDD_1P8",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "digital:U3:72ee6bfb",
+          "name": "VDD_3P3",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "digital:U3:72ee6bfb",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "digital:U3:72ee6bfb",
+          "name": "LS_A1_U3",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "digital:U3:72ee6bfb",
+          "name": "LS_B1_U3",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "digital:U3:72ee6bfb",
+          "name": "LS_A2_U3",
+          "direction": "bidirectional",
+          "description": ""
+        },
+        {
+          "block_id": "digital:U3:72ee6bfb",
+          "name": "LS_B2_U3",
+          "direction": "bidirectional",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "connectors:J1:43df1784",
+      "section": "connectors",
+      "kind": "component",
+      "ref": "J1",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "USB-C-PWR",
+        "value": "USB-C",
+        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4085",
+        "manufacturer": ""
+      },
+      "ic": "USB-C-PWR"
+    }
+  ],
+  "interfaces": [
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VBUS_5V",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VDD_3P3",
+      "direction": "output",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VBUS_5V",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "display:U2:400bd54c",
+      "name": "VDD_3P3",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "display:U2:400bd54c",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "display:U2:400bd54c",
+      "name": "RES_N_U2",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "display:U2:400bd54c",
+      "name": "I2C_SDA",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "display:U2:400bd54c",
+      "name": "I2C_SCL",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "digital:U3:72ee6bfb",
+      "name": "VDD_1P8",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "digital:U3:72ee6bfb",
+      "name": "VDD_3P3",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "digital:U3:72ee6bfb",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "digital:U3:72ee6bfb",
+      "name": "LS_A1_U3",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "digital:U3:72ee6bfb",
+      "name": "LS_B1_U3",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "digital:U3:72ee6bfb",
+      "name": "LS_A2_U3",
+      "direction": "bidirectional",
+      "description": ""
+    },
+    {
+      "block_id": "digital:U3:72ee6bfb",
+      "name": "LS_B2_U3",
+      "direction": "bidirectional",
+      "description": ""
+    }
+  ],
+  "approved_overrides": [],
+  "pcb_constraints": []
+}

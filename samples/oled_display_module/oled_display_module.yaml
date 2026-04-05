@@ -1,0 +1,38 @@
+# OLED display module with voltage level shifting
+# Demonstrates mixed-voltage I2C communication:
+#   - USB-C 5V input with AP2112K LDO for 3.3V main rail
+#   - SSD1306 OLED display (I2C interface)
+#   - TXS0102 bidirectional level shifter for 1.8V analog rail signals
+#   - All decoupling and pull-ups auto-generated
+# Design notes: I2C operates at 3.3V with standard 4.7k pull-ups; OLED power and signal at 3.3V
+
+project: OLED_Display_Module
+company: Demo Corp
+description: 5V-powered OLED display module with I2C interface
+
+power:
+  - type: ldo
+    ic: AP2112K-3.3
+    ref: U1
+    vin: 5
+    vout: 3.3
+    vin_net: VBUS_5V
+    rail_name: VDD_3P3
+
+display:
+  - type: display_driver
+    ic: SSD1306
+    ref: U2
+    interface: i2c
+    vdd_net: VDD_3P3
+
+digital:
+  - type: level_shifter
+    ic: TXS0102
+    ref: U3
+    vcca_net: VDD_1P8
+    vccb_net: VDD_3P3
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1

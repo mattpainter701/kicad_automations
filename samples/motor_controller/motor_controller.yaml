@@ -1,0 +1,25 @@
+# Motor control board with MCU and power delivery
+# Demonstrates 12V power management for motor control applications:
+#   - 12V input (external power connector)
+#   - AP62300 buck converter for clean 3.3V MCU rail (1A)
+#   - STM32F103C8T6 ARM Cortex-M3 microcontroller with GPIO for motor control
+#   - Support for external H-bridge (DRV8833 or similar) on 3.3V logic, 12V motor power
+# Design notes: Microcontroller runs on clean 3.3V; external motor driver can be added via GPIO breakout for bidirectional motor control
+
+project: Motor_Controller
+company: Demo Corp
+description: STM32-based motor controller with 12V-to-3.3V power delivery
+
+power:
+  - type: buck
+    ic: AP62300
+    ref: U1
+    vin: 12
+    vout: 3.3
+    iout: 1
+    vin_net: VIN_12V
+    rail_name: VDD_3P3
+
+digital:
+  - ic: STM32F103C8T6
+    ref: U2

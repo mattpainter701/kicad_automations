@@ -237,7 +237,7 @@ def generate_pcb_placement(
     components: list[ComponentDef],
     output_path: str | Path,
     project_name: str = "project",
-) -> str:
+) -> tuple[str, dict[str, tuple[float, float, float, str]]]:
     """Generate a .kicad_pcb placement hint file.
 
     Args:
@@ -246,7 +246,9 @@ def generate_pcb_placement(
         project_name: used for the filename ({project_name}_placement.kicad_pcb)
 
     Returns:
-        Path to the generated PCB file.
+        Tuple of (path_to_pcb_file, placements_dict) where:
+        - path_to_pcb_file: str, path to the generated PCB file
+        - placements_dict: {ref: (x_mm, y_mm, rotation_deg, layer_str)} for CPL/BOM export
     """
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -312,6 +314,7 @@ def generate_pcb_placement(
 
     # Place footprints within each zone
     footprints = []
+    placements: dict[str, tuple[float, float, float, str]] = {}  # ref -> (x, y, rotation, layer)
     max_x = 0.0
     max_y = 0.0
 
@@ -348,6 +351,7 @@ def generate_pcb_placement(
                     net_pads.append((net_name, net_map[net_name]))
 
             footprints.append(_footprint_sexpr(ref, comp.value, comp.footprint, cx, cy, net_pads))
+            placements[ref] = (cx, cy, 0.0, "top")  # x, y in mm, rotation 0°, layer F.Cu
 
             max_x = max(max_x, cx + fw)
             max_y = max(max_y, cy + fh)
@@ -416,4 +420,4 @@ def generate_pcb_placement(
         f"{sum(len(v) for v in net_classes.values())} net-class assignments"
     )
 
-    return str(pcb_file)
+    return str(pcb_file), placements

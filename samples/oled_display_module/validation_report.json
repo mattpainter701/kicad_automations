@@ -1,0 +1,85 @@
+{
+  "profile": "mvp_strict",
+  "valid": true,
+  "categories": {
+    "structural": [],
+    "electrical": [
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Net 'I2C_SDA' has only one connection (pin 4 on U2) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Net 'I2C_SCL' has only one connection (pin 3 on U2) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U2",
+        "message": "Net 'VCOMH_U2' has only one connection (pin 9 on U2) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Net 'LS_B1_U3' has only one connection (pin 1 on U3) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Net 'LS_A1_U3' has only one connection (pin 4 on U3) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Net 'LS_A2_U3' has only one connection (pin 5 on U3) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Net 'LS_B2_U3' has only one connection (pin 8 on U3) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "bus-completeness",
+        "level": "warning",
+        "subject": "U2",
+        "message": "I2C signal 'I2C_SCL' has no pull-up resistor"
+      },
+      {
+        "category": "electrical",
+        "code": "bus-completeness",
+        "level": "warning",
+        "subject": "U2",
+        "message": "I2C signal 'I2C_SDA' has no pull-up resistor"
+      }
+    ],
+    "implementation": [],
+    "presentation": []
+  },
+  "summary": {
+    "structural": 0,
+    "electrical": 9,
+    "implementation": 0,
+    "presentation": 0
+  },
+  "metadata": {
+    "project": "OLED_Display_Module",
+    "component_count": 4,
+    "block_count": 4
+  }
+}

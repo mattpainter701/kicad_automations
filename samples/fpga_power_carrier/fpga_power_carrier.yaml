@@ -1,0 +1,45 @@
+# FPGA power delivery carrier
+# Demonstrates multi-rail FPGA power architecture:
+#   - 12V input (external connector)
+#   - AP62300 buck for 3.3V I/O rail (high current, 3A)
+#   - AP62300 buck for 1.8V core rail (medium current, 2A)
+#   - TPS62088 buck for 1.2V auxiliary rail (low current, 1A)
+#   - TLV75518 LDO for 1.8V analog rail with low noise, supplied from 3.3V buck
+# Design notes: Three independent buck converters provide separate rail control for power sequencing; analog LDO filters 3.3V for noise-sensitive circuits; all decoupling auto-generated
+
+project: FPGA_Power_Carrier
+company: Demo Corp
+description: Multi-rail power carrier for FPGA applications
+
+power:
+  - type: buck
+    ic: AP62300
+    ref: U1
+    vin: 12
+    vout: 3.3
+    iout: 3
+    vin_net: VIN_12V
+    rail_name: VDD_3P3
+  - type: buck
+    ic: AP62300
+    ref: U2
+    vin: 12
+    vout: 1.8
+    iout: 2
+    vin_net: VIN_12V
+    rail_name: VDD_1P8
+  - type: buck
+    ic: TPS62088
+    ref: U3
+    vin: 12
+    vout: 1.2
+    iout: 1
+    vin_net: VIN_12V
+    rail_name: VDD_1P2
+  - type: ldo
+    ic: TLV75518
+    ref: U4
+    vin: 3.3
+    vout: 1.8
+    vin_net: VDD_3P3
+    rail_name: VDD_1P8_ANALOG
