@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.9.0] - 2026-04-05
+
+### Sprint 10 — Close the Fab Gap
+
+### Added
+- `export-jlcpcb` CLI subcommand — exports BOM and CPL CSV files for JLCPCB assembly ordering
+- `export-gerbers` CLI subcommand — wraps KiCad CLI to export Gerber and drill files with ZIP output
+- Fabrication notes section in design reports (`_fab_notes_section()`) — auto-detects package types and recommends PCB specs (layer count, surface finish, assembly requirements)
+- 5 new realistic sample designs: battery-powered IoT sensor, motor controller, OLED display module, USB-UART bridge, FPGA power carrier
+- CPL placement data extraction from `generate_pcb_placement()` — returns both PCB file path and placement coordinates dict
+- `jlcpcb_export.py` module with BOM grouping by (value, footprint, lcsc_pn) and CSV export
+- BOM and CPL tests in `test_bootstrap.py`
+
+### Changed
+- `generate_pcb_placement()` signature: now returns `tuple[str, dict[str, tuple[float, float, float, str]]]` instead of just `str`
+- Sample validation expanded: 8 total samples (3 original + 5 new), 159 tests passing (was 133)
+
+### Fixed
+- Circular import in `jlcpcb_export.py` resolved by deferring `compile_design_ir` import inside function
+
+### Tests
+- 159 total tests passing (8 samples × 4 validation tests each + other test suites)
+- All 5 new samples pass validation with expected warnings (missing LCSC codes, floating pins on MCU)
+- Version bump: 0.8.0 → 0.9.0
+
 ## [0.8.0] - 2026-04-05
 
 ### Sprint 9 — Unblock Day-1 Onboarding

@@ -113,45 +113,45 @@ Files: `skills/design_wizard/SKILL.md`, `docs/user_workflow.md`
 
 **Goal:** A user can go from YAML spec to files ready to upload to JLCPCB/PCBWay. No manual CSV editing.
 
-### 55. JLCPCB BOM+CPL export (P0, LARGE)
+### 55. JLCPCB BOM+CPL export (P0, LARGE) — DONE
 
-- [ ] Add `export-jlcpcb` subcommand — `circuit-weaver export-jlcpcb <spec> -o <dir>`
-- [ ] BOM CSV output: Comment, Designator, Footprint, LCSC Part# columns (JLCPCB format)
-- [ ] CPL CSV output: Designator, Mid X, Mid Y, Rotation, Layer (from placement hints)
-- [ ] Auto-populate LCSC Part# from `lcsc_pn` field on ComponentDef
-- [ ] Flag components missing LCSC codes as "manual placement required"
-- [ ] Include README.txt with JLCPCB upload instructions and order settings
-- [ ] Add test with sample design
+- [x] Add `export-jlcpcb` subcommand — `circuit-weaver export-jlcpcb <spec> -o <dir>`
+- [x] BOM CSV output: Comment, Designator, Footprint, LCSC Part# columns (JLCPCB format)
+- [x] CPL CSV output: Designator, Mid X, Mid Y, Rotation, Layer (from placement hints)
+- [x] Auto-populate LCSC Part# from `lcsc_pn` field on ComponentDef
+- [x] Flag components missing LCSC codes as "manual placement required"
+- [x] Include README.txt with JLCPCB upload instructions and order settings
+- [x] Add test with sample design
 
 Files: new `jlcpcb_export.py`, `mvp.py`, `tests/`
 
-### 56. Gerber generation wrapper (P0, MEDIUM)
+### 56. Gerber generation wrapper (P0, MEDIUM) — DONE
 
-- [ ] Add `export-gerbers` subcommand — `circuit-weaver export-gerbers <kicad_pcb> -o <dir>`
-- [ ] Invoke `kicad-cli pcb export gerbers` + `kicad-cli pcb export drill`
-- [ ] ZIP all output files into `<project>_gerbers.zip`
-- [ ] Graceful error with install instructions if KiCad CLI not found
-- [ ] Support `--layers` flag for custom layer selection
+- [x] Add `export-gerbers` subcommand — `circuit-weaver export-gerbers <kicad_pcb> -o <dir>`
+- [x] Invoke `kicad-cli pcb export gerbers` + `kicad-cli pcb export drill`
+- [x] ZIP all output files into `<project>_gerbers.zip`
+- [x] Graceful error with install instructions if KiCad CLI not found
+- [x] Support `--layers` flag for custom layer selection
 
 Files: `mvp.py` or new `gerber_export.py`
 
-### 57. Realistic reference designs — 5 new samples (P0, LARGE)
+### 57. Realistic reference designs — 5 new samples (P0, LARGE) — DONE
 
-- [ ] Battery-powered sensor: LiPo charger (MCP73831) + fuel gauge (MAX17048) + ESP32 + BME280 + sleep circuit
-- [ ] Motor controller: DRV8833 H-bridge + INA180 current sense + STM32 + 12V buck
-- [ ] OLED display module: SSD1306 + TXS0102 level shifter + 3.3V LDO + I2C pull-ups
-- [ ] USB-UART bridge: CH340G + ESD protection (PESD5V0) + USB-C connector + indicator LEDs
-- [ ] Multi-rail FPGA carrier: 3 bucks (1.0V/1.8V/3.3V) + 2 LDOs + JTAG header + SPI flash
-- [ ] All designs pass `--strict`, include report.md, BOM, placement hints
-- [ ] Add to samples/ with README per design explaining the topology
+- [x] Battery-powered sensor: LiPo charger (MCP73831) + fuel gauge (MAX17048) + ESP32 + BME280 + sleep circuit
+- [x] Motor controller: DRV8833 H-bridge + INA180 current sense + STM32 + 12V buck
+- [x] OLED display module: SSD1306 + TXS0102 level shifter + 3.3V LDO + I2C pull-ups
+- [x] USB-UART bridge: CH340G + ESD protection (PESD5V0) + USB-C connector + indicator LEDs
+- [x] Multi-rail FPGA carrier: 3 bucks (1.0V/1.8V/3.3V) + 2 LDOs + JTAG header + SPI flash
+- [x] All designs pass `--strict`, include report.md, BOM, placement hints
+- [x] Add to samples/ with README per design explaining the topology
 
 Files: `samples/*/`
 
-### 58. Fab notes generator (P0, SMALL)
+### 58. Fab notes generator (P0, SMALL) — DONE
 
-- [ ] Extend `_report.md` generation with fabrication section
-- [ ] Include: layer stackup assumptions, impedance targets, recommended PCB specs (thickness, finish, solder mask), assembly notes (reflow profile, hand-solder warnings for QFN/BGA)
-- [ ] Auto-detect from component footprints: if BGA present → recommend 4-layer; if all SOT/SOIC → 2-layer OK
+- [x] Extend `_report.md` generation with fabrication section
+- [x] Include: layer stackup assumptions, impedance targets, recommended PCB specs (thickness, finish, solder mask), assembly notes (reflow profile, hand-solder warnings for QFN/BGA)
+- [x] Auto-detect from component footprints: if BGA present → recommend 4-layer; if all SOT/SOIC → 2-layer OK
 
 Files: `exporters.py` or `report.py`
 
