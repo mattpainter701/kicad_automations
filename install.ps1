@@ -47,7 +47,7 @@ if ($Help) {
 }
 
 $repoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$globalSkills = @("kicad", "bom", "digikey", "lcsc", "mouser", "jlcpcb", "pcbway", "ee", "vivado")
+$globalSkills = @("kicad", "bom", "digikey", "lcsc", "mouser", "jlcpcb", "pcbway", "ee", "vivado", "design_wizard")
 $projectSkills = @("autoroute", "kicad_gen", "kicad_hierarchy", "kicad_validate", "kicad_pinmap", "kicad_pcb_place", "sim")
 $globalTargets = New-Object System.Collections.Generic.List[string]
 $projectTargets = New-Object System.Collections.Generic.List[string]

@@ -7,7 +7,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GLOBAL_SKILLS=(kicad bom digikey lcsc mouser jlcpcb pcbway ee vivado)
+GLOBAL_SKILLS=(kicad bom digikey lcsc mouser jlcpcb pcbway ee vivado design_wizard)
 PROJECT_SKILLS=(autoroute kicad_gen kicad_hierarchy kicad_validate kicad_pinmap kicad_pcb_place sim)
 GLOBAL_TARGETS=()
 PROJECT_TARGETS=()

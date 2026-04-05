@@ -235,6 +235,7 @@ Installers require an explicit target selection. There is no implicit Claude-onl
 - `jlcpcb`, `pcbway` — manufacturing file prep and quoting
 - `ee` — general electrical engineering helpers
 - `vivado` — FPGA design integration
+- `design_wizard` — interactive circuit design wizard (requirements through quote-ready outputs)
 
 ### Project skill templates (install into downstream repos)
 
