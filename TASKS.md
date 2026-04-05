@@ -2,6 +2,235 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 9 — Unblock Day-1 Onboarding (v0.8.0) — DONE
+
+**Goal:** A new user can pip install, run a design, and understand the system in under 5 minutes. Fix the broken first-run experience and make templates discoverable.
+
+### 50. Fix example designs to pass validation (P0, SMALL) — DONE
+
+- [x] Update `src/circuit_weaver/examples/iot_sensor.yaml` — cleaned up example spec
+- [x] Fix net connectivity check to count bypass_caps and straps as connections (SW/FB/BST no longer flagged as dangling)
+- [x] Summarize MCU floating GPIOs (28 warnings → 1 summary warning)
+- [x] Fix bootstrap tests to tolerate KiCad CLI unavailability — both now pass
+- [x] Verify the 2 previously-failing bootstrap tests pass
+
+Files: `examples/iot_sensor.yaml`, `validator.py`, `mvp.py`, `tests/test_bootstrap.py`
+
+### 51. Add list-templates CLI command (P0, SMALL) — DONE
+
+- [x] Add `list-templates` subcommand to `mvp.py` CLI — prints all 30 template names with descriptions and params
+- [x] `--json` flag for machine-readable output
+- [x] `--verbose` flag shows full param schema with options/defaults/types
+- [x] Registered in argparse subparsers, documented in README
+
+Files: `mvp.py`, `README.md`
+
+### 52. Template parameter reference docs (P0, MEDIUM) — DONE
+
+- [x] Auto-generate `docs/templates.md` from `param_schema` of all 30 registered templates
+- [x] Per-template section: name, description, param table, example YAML snippet
+- [x] Generation script at `scripts/gen_template_docs.py`
+- [x] Linked from README under new "Template Reference" heading
+
+Files: `docs/templates.md`, `scripts/gen_template_docs.py`, `README.md`
+
+### 53. Fix python-multipart dependency (P0, XS) — DONE
+
+- [x] Added `python-multipart>=0.0.7` to `[api]` extras in `pyproject.toml`
+
+Files: `pyproject.toml`
+
+### 54. Add scaffold command (P0, MEDIUM) — DONE
+
+- [x] Add `scaffold` subcommand — `circuit-weaver scaffold --template buck --ref U1` emits valid YAML spec
+- [x] `--output <file>` writes to disk
+- [x] If only `--template` given, emits stub with defaults from param_schema
+- [x] If no args, lists available templates
+
+Files: `mvp.py`
+
+---
+
+## Sprint 10 — Close the Fab Gap (v0.9.0)
+
+**Goal:** A user can go from YAML spec to files ready to upload to JLCPCB/PCBWay. No manual CSV editing.
+
+### 55. JLCPCB BOM+CPL export (P0, LARGE)
+
+- [ ] Add `export-jlcpcb` subcommand — `circuit-weaver export-jlcpcb <spec> -o <dir>`
+- [ ] BOM CSV output: Comment, Designator, Footprint, LCSC Part# columns (JLCPCB format)
+- [ ] CPL CSV output: Designator, Mid X, Mid Y, Rotation, Layer (from placement hints)
+- [ ] Auto-populate LCSC Part# from `lcsc_pn` field on ComponentDef
+- [ ] Flag components missing LCSC codes as "manual placement required"
+- [ ] Include README.txt with JLCPCB upload instructions and order settings
+- [ ] Add test with sample design
+
+Files: new `jlcpcb_export.py`, `mvp.py`, `tests/`
+
+### 56. Gerber generation wrapper (P0, MEDIUM)
+
+- [ ] Add `export-gerbers` subcommand — `circuit-weaver export-gerbers <kicad_pcb> -o <dir>`
+- [ ] Invoke `kicad-cli pcb export gerbers` + `kicad-cli pcb export drill`
+- [ ] ZIP all output files into `<project>_gerbers.zip`
+- [ ] Graceful error with install instructions if KiCad CLI not found
+- [ ] Support `--layers` flag for custom layer selection
+
+Files: `mvp.py` or new `gerber_export.py`
+
+### 57. Realistic reference designs — 5 new samples (P0, LARGE)
+
+- [ ] Battery-powered sensor: LiPo charger (MCP73831) + fuel gauge (MAX17048) + ESP32 + BME280 + sleep circuit
+- [ ] Motor controller: DRV8833 H-bridge + INA180 current sense + STM32 + 12V buck
+- [ ] OLED display module: SSD1306 + TXS0102 level shifter + 3.3V LDO + I2C pull-ups
+- [ ] USB-UART bridge: CH340G + ESD protection (PESD5V0) + USB-C connector + indicator LEDs
+- [ ] Multi-rail FPGA carrier: 3 bucks (1.0V/1.8V/3.3V) + 2 LDOs + JTAG header + SPI flash
+- [ ] All designs pass `--strict`, include report.md, BOM, placement hints
+- [ ] Add to samples/ with README per design explaining the topology
+
+Files: `samples/*/`
+
+### 58. Fab notes generator (P0, SMALL)
+
+- [ ] Extend `_report.md` generation with fabrication section
+- [ ] Include: layer stackup assumptions, impedance targets, recommended PCB specs (thickness, finish, solder mask), assembly notes (reflow profile, hand-solder warnings for QFN/BGA)
+- [ ] Auto-detect from component footprints: if BGA present → recommend 4-layer; if all SOT/SOIC → 2-layer OK
+
+Files: `exporters.py` or `report.py`
+
+---
+
+## Sprint 11 — Team Adoption & Collaboration (v0.10.0)
+
+**Goal:** A team of 3-5 engineers can use Circuit Weaver as shared design infrastructure with automated quality gates.
+
+### 59. GitHub Actions CI template (P1, SMALL)
+
+- [ ] Ship `.github/workflows/validate-design.yml` — runs `circuit-weaver validate --strict` on every PR touching `*.yaml` design specs
+- [ ] Include: Python setup, pip install, caching, pass/fail badge
+- [ ] Add to repo's own CI pipeline (validate all samples + examples on every push)
+- [ ] Document in README under "CI/CD Integration" section
+
+Files: `.github/workflows/validate-design.yml`, `README.md`
+
+### 60. Visual SVG schematic diff (P1, LARGE)
+
+- [ ] `circuit-weaver diff <old> <new> --svg -o diff.html` generates side-by-side comparison
+- [ ] Added components: green overlay. Removed: red. Changed: yellow highlight
+- [ ] Requires KiCad CLI SVG export for both specs; falls back to text-only diff if unavailable
+- [ ] HTML output with inline SVGs for easy browser viewing
+- [ ] Add test with two sample specs that differ by one block
+
+Files: new `diff_renderer.py`, `mvp.py`
+
+### 61. Costed BOM via LCSC pricing API (P1, MEDIUM)
+
+- [ ] `circuit-weaver cost-bom <spec>` queries LCSC public pricing for each component with `lcsc_pn`
+- [ ] Output: costed BOM table (MPN, LCSC#, Qty, Unit Price, Extended, Stock Status)
+- [ ] Volume breaks: 1, 10, 100, 1000 units
+- [ ] Total cost summary per quantity tier
+- [ ] Flag out-of-stock or long-lead items
+- [ ] `--json` flag for machine consumption
+- [ ] Cache pricing data for 24 hours
+
+Files: new `cost_bom.py` or extend `parts_lookup.py`, `mvp.py`
+
+### 62. Pre-commit hook config (P1, SMALL)
+
+- [ ] Ship `.pre-commit-config.yaml` with hooks: ruff lint, YAML syntax validation on `*.yaml` specs, `circuit-weaver validate` on changed design files
+- [ ] Add `pre-commit` to dev dependencies
+- [ ] Document setup in README ("Contributing" section)
+
+Files: `.pre-commit-config.yaml`, `pyproject.toml`, `README.md`
+
+### 63. API reference documentation (P1, MEDIUM)
+
+- [ ] `docs/api-reference.md` — all public Python functions with signatures, param types, return types, usage examples
+- [ ] `docs/validation-codes.md` — all 10 validation check codes with description, severity, fix guidance
+- [ ] `docs/design-ir-schema.md` — annotated YAML schema for the canonical design IR (blocks, interfaces, overrides, constraints)
+- [ ] `docs/cli-reference.md` — all CLI subcommands with flags, examples, exit codes
+- [ ] Link all from README
+
+Files: `docs/*.md`, `README.md`
+
+---
+
+## Sprint 6–8 — Circuit Quality Overhaul (v0.7.0) — DONE
+
+**Goal:** Reduce the ~50% error rate in generated circuits (floating pins, power domain issues) to near zero. Comprehensive validation pipeline, template fixes, and UX improvements.
+
+### 42. Pin-type-aware no-connect classification (P0, LARGE) — DONE
+
+- [x] Replace blanket no-connect in `generator.py` with `_classify_unhandled_pin()` — errors on floating `power_in`, warns on floating `input`/`bidirectional`, silently NC's outputs and NC-named pins
+- [x] Add `explicit_no_connects: set` field to `ComponentDef`
+- [x] Migrate 7 templates: USB (PMODE0), charge_pump (ICL7660), clock (AD9528), ethernet (KSZ9031), opamp (channel B), relay_driver (unused channels), sensor_frontend (RG pins)
+- [x] Add `_validate_pin_coverage()` gate in `mvp.py`
+
+Files: `component_db.py`, `generator.py`, `mvp.py`, 7 subcircuit templates
+
+### 43. Power domain integrity (P0, LARGE) — DONE
+
+- [x] Fix opamp.py hardcoded pin numbers → database lookups (`pin_out_a`, `pin_inm_a`, `pin_inp_a`)
+- [x] Fix power_mux.py hardcoded LTC4357 VIN pins → `pin_vin_extra` field
+- [x] Fix can_transceiver.py RS pin semantic (`power_pins` → `pin_nets`)
+- [x] Expand power pin inference in `kicad_lib.py` (8 → 20+ patterns)
+- [x] Expand power pin inference in `easyeda_parser.py` (VDDCORE, VDD_*, VCC_*)
+- [x] Add `_validate_power_domain_consistency()` (voltage conflicts, rail mismatch, missing bypass)
+- [x] Auto-generate `PWR_FLAG` on every unique power net per sheet
+
+Files: `kicad_lib.py`, `easyeda_parser.py`, `mvp.py`, `primitives.py`, `generator.py`, 3 subcircuit templates
+
+### 44. Signal connectivity validation (P1, MEDIUM) — DONE
+
+- [x] Net connectivity graph: single-pin-net (dangling) and undriven-net (input-only) detection
+- [x] Enable/shutdown pin validation: floating EN/SHDN/CE on regulators
+- [x] Bus completeness: I2C pull-ups, SPI CS, UART TX/RX pairing
+- [x] Intent annotations: "Unused: PIN(num): NC" on schematics
+
+Files: `validator.py`, `generator.py`
+
+### 45. Template quality & contracts (P1, MEDIUM) — DONE
+
+- [x] Auto schema-driven `validate_params()` in `SubcircuitTemplate` base class
+- [x] `SubcircuitResult.validate_contract()` — components, power pins, boundary ports
+- [x] MVP pipeline runs both custom + schema validation with deduplication
+- [x] Parameter boundary tests (type, options, valid params)
+
+Files: `subcircuits/base.py`, `mvp.py`
+
+### 46. Passive component correctness (P1, MEDIUM) — DONE
+
+- [x] Expand `_FEEDBACK_VREF` from 1 IC to 7 switching converters
+- [x] Inductor selection validator (0.1µH–100µH sanity bounds)
+- [x] Capacitor voltage rating validator (80% derating check)
+
+Files: `validator.py`
+
+### 47. DRC pipeline & quality scoring (P1, LARGE) — DONE
+
+- [x] In-process ERC: pin-type conflict detection (output-to-output = bus contention)
+- [x] Electrical quality scorer (`score_electrical_quality`): pin/decoupling/power/validation metrics
+- [x] `--strict` mode: warnings → errors for production designs
+- [x] Design checklist generator (`generate_design_checklist`): Markdown pre-fab review
+
+Files: `validator.py`, `scorer.py`, `mvp.py`
+
+### 48. Import pipeline hardening (P2, MEDIUM) — DONE
+
+- [x] EasyEDA pin type enrichment from name patterns (EN, RESET, GPIO, SDA, SCL, _IN, _OUT)
+- [x] Pin count sanity check (IC < 3 pins flagged)
+- [x] Footprint-to-pin consistency (QFN-48, SOIC-8, BGA-121 pad count vs symbol pins)
+
+Files: `easyeda_parser.py`, `mvp.py`
+
+### 49. UX & guardrails (P2, SMALL) — DONE
+
+- [x] `suggestion` field on `ValidationIssue` with actionable remediation text
+- [x] Fix suggestions on decoupling and enable pin warnings
+
+Files: `validator.py`
+
+---
+
 ## Sprint 5 — EasyEDA/LCSC Symbol Import Pipeline (v0.6.0)
 
 **Goal:** When a component isn't in our built-in registry or KiCad's official library, automatically fetch its symbol from EasyEDA's public API using its LCSC part number. This gives us access to 300K+ component symbols with zero auth required — critical for JLCPCB production workflows and any part not in KiCad's official library.

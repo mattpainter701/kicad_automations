@@ -297,6 +297,18 @@ class RelayDriverTemplate(SubcircuitTemplate):
             f"Vdrive={vdrive}V (MCU GPIO)",
         ]
 
+        # Mark unused channel input pins as explicit no-connects
+        explicit_nc: set[str] = set()
+        handled_pins = set(pin_nets) | set(power_pins) | {s.pin for s in straps}
+        for pin in ic_db["pins"]:
+            if pin.number in handled_pins:
+                continue
+            if pin.electrical_type in ("output", "power_out", "power_in"):
+                continue
+            if pin.name in ("NC", "~"):
+                continue
+            explicit_nc.add(pin.number)
+
         # ---- Build IC component ----
         ic_comp = ComponentDef(
             mpn=ic_name,
@@ -311,6 +323,7 @@ class RelayDriverTemplate(SubcircuitTemplate):
             bypass_caps=bypass_caps,
             straps=straps,
             annotations=annotations,
+            explicit_no_connects=explicit_nc,
         )
         ic_comp.source_ref = ref
 

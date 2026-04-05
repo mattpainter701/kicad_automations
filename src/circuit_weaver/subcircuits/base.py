@@ -437,6 +437,39 @@ class SubcircuitResult:
     # The primary IC (first component) — used for sheet allocation
     primary_category: str = "power"
 
+    def validate_contract(self) -> list[str]:
+        """Validate the result against basic component contract rules.
+
+        Returns list of error strings.  Empty = contract satisfied.
+        """
+        errors: list[str] = []
+        if not self.components:
+            errors.append("SubcircuitResult has no components")
+            return errors
+
+        primary = self.components[0]
+
+        # Every IC must have at least one power pin connected
+        if primary.ref_prefix.upper() == "U" and not primary.power_pins:
+            errors.append(f"{primary.mpn}: no power pins assigned — IC will be unpowered")
+
+        # For IC-based blocks, boundary ports referencing GND must have power_pins
+        has_ic = any(c.ref_prefix.upper() in ("U", "IC") for c in self.components)
+        if has_ic:
+            all_power_nets = set()
+            for comp in self.components:
+                all_power_nets.update(comp.power_pins.values())
+            for port in self.boundary_ports:
+                if port.direction == "passive" and port.name.upper() in ("GND", "AGND", "DGND"):
+                    if "GND" not in all_power_nets:
+                        errors.append(f"Boundary port '{port.name}' declared but no GND power pin assigned")
+
+        # Must have at least one boundary port (otherwise block is isolated)
+        if not self.boundary_ports:
+            errors.append(f"{primary.mpn}: no boundary ports — block cannot interface with rest of design")
+
+        return errors
+
 
 # ================================================================
 # Template base class
@@ -468,8 +501,67 @@ class SubcircuitTemplate(ABC):
         """
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:
-        """Return list of error messages for invalid params. Empty = valid."""
-        return []
+        """Validate params against param_schema. Subclasses may extend."""
+        errors = self._validate_params_from_schema(params)
+        return errors
+
+    def _validate_params_from_schema(self, params: dict[str, Any]) -> list[str]:
+        """Auto-validate params against the declared param_schema.
+
+        Checks: required params present, type correctness, options membership.
+        """
+        errors: list[str] = []
+        schema = getattr(self, "param_schema", [])
+        if not schema:
+            return errors
+
+        for spec in schema:
+            name = spec.get("name", "")
+            if not name:
+                continue
+
+            required = spec.get("required", False)
+            has_default = "default" in spec
+            value = params.get(name)
+
+            # Required check
+            if required and value is None and not has_default:
+                errors.append(f"Missing required parameter '{name}'")
+                continue
+
+            if value is None:
+                continue
+
+            # Type check
+            expected_type = spec.get("type", "")
+            if expected_type == "number" and not isinstance(value, (int, float)):
+                errors.append(f"Parameter '{name}' must be a number, got {type(value).__name__}")
+            elif expected_type == "integer" and not isinstance(value, int):
+                errors.append(f"Parameter '{name}' must be an integer, got {type(value).__name__}")
+            elif expected_type == "string" and not isinstance(value, str):
+                errors.append(f"Parameter '{name}' must be a string, got {type(value).__name__}")
+            elif expected_type == "boolean" and not isinstance(value, bool):
+                errors.append(f"Parameter '{name}' must be a boolean, got {type(value).__name__}")
+
+            # Options/enum check
+            options = spec.get("options") or spec.get("enum")
+            if options and value not in options:
+                errors.append(
+                    f"Parameter '{name}' must be one of {options}, got '{value}'"
+                )
+
+            # Range check (minimum/maximum)
+            if isinstance(value, (int, float)):
+                if "minimum" in spec and value < spec["minimum"]:
+                    errors.append(
+                        f"Parameter '{name}' must be >= {spec['minimum']}, got {value}"
+                    )
+                if "maximum" in spec and value > spec["maximum"]:
+                    errors.append(
+                        f"Parameter '{name}' must be <= {spec['maximum']}, got {value}"
+                    )
+
+        return errors
 
     def get_param_schema(self) -> list[dict[str, Any]]:
         """Return a copy of the template's declared parameter schema."""

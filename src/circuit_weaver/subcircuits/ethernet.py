@@ -479,6 +479,16 @@ class EthernetPHYTemplate(SubcircuitTemplate):
                 strap_desc_parts.append(f"{sd['net_suffix']}={direction}")
             annotations.append(f"Mode straps ({mode.upper()}): {', '.join(strap_desc_parts)}")
 
+        # ---- Wire remaining signal pins to named nets (data bus, PHY pairs) ----
+        for pin in ic_db["pins"]:
+            if pin.number in pin_nets or pin.number in power_pins:
+                continue
+            if pin.electrical_type in ("power_in", "power_out"):
+                continue
+            if pin.name in ("NC", "~"):
+                continue
+            pin_nets[pin.number] = f"{pin.name}_{ref}"
+
         # ---- Build IC component ----
         ic_comp = ComponentDef(
             mpn=ic_name,

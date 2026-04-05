@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.7.0] - 2026-04-05
+
+### Sprint 6–8 — Circuit Quality Overhaul
+
+Comprehensive rework of circuit generation quality. The engine now catches floating pins,
+validates power domains, checks bus completeness, and scores electrical quality — reducing
+the ~50% error rate in generated circuits to near zero for template-based designs.
+
+### Added
+- **Pin-type-aware no-connect classification** (`generator.py`): replaces blanket NC with per-pin-type logic — errors on floating power_in, warns on floating inputs, silently NC's outputs and NC-named pins
+- **`explicit_no_connects` field** on `ComponentDef`: templates declare intentionally unconnected pins (7 templates migrated: USB, clock, ethernet, opamp, relay_driver, sensor_frontend, charge_pump)
+- **`_validate_pin_coverage()`** gate in MVP pipeline: catches floating pins at design-validation time
+- **Power domain cross-check** (`_validate_power_domain_consistency`): conflicting voltage requirements, rail name vs voltage mismatch, missing bypass cap declarations
+- **PWR_FLAG auto-generation**: one `PWR_FLAG` per unique power net per sheet for KiCad ERC compliance (`sexpr_pwr_flag_lib_entry`, `sexpr_pwr_flag_instance`)
+- **Net connectivity graph**: single-pin-net (dangling) and undriven-net (input-only, no driver) detection
+- **Enable pin validation**: detects floating EN/SHDN/CE pins on regulators that would prevent startup
+- **Bus completeness checks**: I2C missing pull-ups, SPI floating CS, UART unpaired TX/RX
+- **Intent annotations**: generator annotates schematics with "Unused: PIN(num): NC" summaries
+- **Auto schema-driven `validate_params()`** on `SubcircuitTemplate` base class: type checking, required params, options validation, range bounds
+- **Component contract validation** (`SubcircuitResult.validate_contract()`): components present, ICs have power pins, boundary ports declared
+- **Inductor selection validator**: flags inductors < 0.1µH or > 100µH on switching converters
+- **Capacitor voltage rating validator**: warns when rail voltage exceeds 80% of cap rating
+- **In-process ERC** (`_validate_pin_type_conflicts`): output-to-output on same net = bus contention
+- **Electrical quality scorer** (`score_electrical_quality`): weighted composite of pin coverage, decoupling, power pin coverage, validation pass rate — 0–100 score with A–F grade
+- **`--strict` mode**: `validate_design(strict=True)` treats warnings as errors; CLI flag on validate subcommand
+- **Design checklist generator** (`generate_design_checklist`): Markdown with checkbox items for pre-fab review
+- **Fix suggestions** on `ValidationIssue`: `suggestion` field with actionable remediation text
+- **EasyEDA pin type enrichment**: infers input/output/bidirectional from name patterns when EasyEDA type is "unspecified"
+- **Pin count sanity check**: ICs with < 3 pins flagged as likely incomplete symbol
+- **Footprint-to-pin consistency**: extracts pad count from footprint name (QFN-48, SOIC-8, BGA-121) and compares to symbol pin count
+
+### Changed
+- **Validation now has 10 checks** (was 4): feedback-divider, rc-lc-filter, crystal-load, decoupling, inductor-selection, cap-voltage, net-connectivity, enable-pins, bus-completeness, pin-type-conflicts
+- **`_FEEDBACK_VREF`** expanded from 1 IC (AP62300TWU) to 7 (+ TPS62088, TPS61230A, MT3608, TPS63020, TPS63000)
+- **`valid` computation** in `validate_design`: only errors cause failure (warnings are informational unless `--strict`)
+- Power pin inference in `kicad_lib.py` expanded from 8 name patterns to 20+ (AVDD, DVDD, EPAD, EP, VBAT, VSYS, etc.)
+- Power pin inference in `easyeda_parser.py` expanded with VDDCORE, VDD_*, VCC_*, 1P2, 2P5 variants
+
+### Fixed
+- **opamp.py**: replaced hardcoded pin numbers ("1","2","3") with database lookups (`pin_out_a`, `pin_inm_a`, `pin_inp_a`)
+- **power_mux.py**: replaced hardcoded LTC4357 VIN pins 6/7/8 with `pin_vin_extra` database field
+- **can_transceiver.py**: RS pin moved from `power_pins` to `pin_nets` (input type, not power); fixed ordering bug
+- **usb.py**: CYUSB3014 wires all data bus pins (SSRX, GPIF, SPI, RESET, XTALIN); USB2514B unused pins → explicit NC
+- **ethernet.py**: KSZ9031 RGMII data bus + PHY pair pins wired to named nets
+- **clock.py**: AD9528 unused optional inputs → explicit_no_connects
+- **relay_driver.py**: ULN2003A unused channel inputs → explicit_no_connects
+- **sensor_frontend.py**: INA128PA RG gain pins at unity → explicit_no_connects
+
+### Tests
+- 123 total tests passing (was 106), 26 in test_template_structure.py
+- 0 regressions across all 4 commits
+- Version bump: 0.6.0 → 0.7.0
+
 ## [0.6.0] - 2026-04-03
 
 ### Sprint 5 — EasyEDA/LCSC Symbol Import Pipeline

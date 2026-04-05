@@ -293,6 +293,20 @@ class USBControllerTemplate(SubcircuitTemplate):
             elif pin.name == "D_N":
                 pin_nets[pin.number] = usb_dm_net
 
+        # Wire all remaining non-power, non-boot-mode signal pins to named nets.
+        # These become boundary ports for the user to connect externally.
+        _skip_prefixes = ("PMODE",)
+        for pin in ic_db["pins"]:
+            if pin.number in pin_nets or pin.number in power_pins:
+                continue
+            if any(pin.name.startswith(p) for p in _skip_prefixes):
+                continue
+            if pin.electrical_type in ("power_in", "power_out"):
+                continue
+            if pin.name in ("NC", "~"):
+                continue
+            pin_nets[pin.number] = f"{pin.name}_{ref}"
+
         # ---- Bypass caps: 100nF + 10uF per rail ----
         bypass_caps = []
         for rail_name, voltage in ic_db["power_rails"].items():
@@ -350,6 +364,17 @@ class USBControllerTemplate(SubcircuitTemplate):
                     )
                 )
 
+        # ---- Identify boot-mode pins intentionally left floating ----
+        explicit_nc: set[str] = set()
+        if boot_config:
+            boot_mode_name = "spi_slave"
+            boot_pins = boot_config.get(boot_mode_name, {})
+            strapped_names = set(boot_pins.keys())
+            # Any PMODE pin NOT strapped is intentionally floating (tri-state boot config)
+            for pin in ic_db["pins"]:
+                if pin.name.startswith("PMODE") and pin.name not in strapped_names:
+                    explicit_nc.add(pin.number)
+
         # ---- Annotations ----
         boot_desc = "SPI slave boot (PMODE[2:0]=1,0,Z)" if boot_config else "default boot"
         annotations = [
@@ -373,6 +398,7 @@ class USBControllerTemplate(SubcircuitTemplate):
             bypass_caps=bypass_caps,
             straps=straps,
             annotations=annotations,
+            explicit_no_connects=explicit_nc,
         )
 
         # ---- Boundary ports ----
@@ -558,6 +584,18 @@ class USBHubTemplate(SubcircuitTemplate):
             f"RESET_N: {format_resistance(10e3)} pull-up to {vdd_net}",
         ]
 
+        # Mark unused input pins (TEST, XTALIN when using internal osc) as explicit NC
+        hub_explicit_nc: set[str] = set()
+        hub_handled = set(pin_nets) | set(power_pins) | {s.pin for s in straps}
+        for pin in ic_db["pins"]:
+            if pin.number in hub_handled:
+                continue
+            if pin.electrical_type in ("output", "power_out", "power_in"):
+                continue
+            if pin.name in ("NC", "~"):
+                continue
+            hub_explicit_nc.add(pin.number)
+
         # ---- Build ComponentDef ----
         ic_comp = ComponentDef(
             mpn=ic_name,
@@ -572,6 +610,7 @@ class USBHubTemplate(SubcircuitTemplate):
             bypass_caps=bypass_caps,
             straps=straps,
             annotations=annotations,
+            explicit_no_connects=hub_explicit_nc,
         )
 
         # ---- Boundary ports ----

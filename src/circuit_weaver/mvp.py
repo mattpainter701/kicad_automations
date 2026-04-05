@@ -12,6 +12,7 @@ import contextlib
 import copy
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -360,16 +361,23 @@ def _validate_block_definitions(ir: DesignIR) -> tuple[list[ValidationMessage], 
             params = copy.deepcopy(block.params)
             if block.ref:
                 params.setdefault("ref", block.ref)
-            for error in template.validate_params(params):
-                electrical.append(
-                    ValidationMessage(
-                        category="electrical",
-                        code="template-param",
-                        level="error",
-                        subject=block.ref or block.id,
-                        message=error,
+            # Run template-specific validation + schema-driven validation
+            custom_errors = template.validate_params(params)
+            schema_errors = template._validate_params_from_schema(params)
+            # Deduplicate (custom validators may overlap with schema checks)
+            seen: set[str] = set()
+            for error in custom_errors + schema_errors:
+                if error not in seen:
+                    seen.add(error)
+                    electrical.append(
+                        ValidationMessage(
+                            category="electrical",
+                            code="template-param",
+                            level="error",
+                            subject=block.ref or block.id,
+                            message=error,
+                        )
                     )
-                )
         else:
             if not block.ic:
                 structural.append(
@@ -439,6 +447,42 @@ def _validate_component_resolution(
                     message="Resolved block has no footprint binding",
                 )
             )
+        # Pin count sanity: IC with very few pins is suspicious
+        if primary.pins and primary.ref_prefix.upper() in ("U", "IC"):
+            pin_count = len(primary.pins)
+            if pin_count < 3:
+                implementation.append(
+                    ValidationMessage(
+                        category="implementation",
+                        code="low-pin-count",
+                        level="warning",
+                        subject=block.ref or block.id,
+                        message=f"IC has only {pin_count} pin(s) — verify symbol is complete",
+                    )
+                )
+        # Footprint-to-pin consistency: extract expected pad count from footprint name
+        if primary.footprint and primary.pins:
+            fp = primary.footprint
+            fp_pin_match = re.search(r"(\d+)(?:[-_]Pin|pad|Pad|P(?:\d|$))", fp)
+            if not fp_pin_match:
+                # Try common patterns: QFN-48, SOIC-8, TSSOP-20, BGA-121
+                fp_pin_match = re.search(r"(?:QFN|SOIC|TSSOP|LQFP|BGA|DIP|SOP|MSOP|LFCSP)[-_]?(\d+)", fp)
+            if fp_pin_match:
+                fp_pins = int(fp_pin_match.group(1))
+                sym_pins = len(primary.pins)
+                if abs(fp_pins - sym_pins) > max(2, sym_pins * 0.1):
+                    implementation.append(
+                        ValidationMessage(
+                            category="implementation",
+                            code="pin-footprint-mismatch",
+                            level="warning",
+                            subject=block.ref or block.id,
+                            message=(
+                                f"Symbol has {sym_pins} pins but footprint '{fp}' "
+                                f"implies {fp_pins} pads — verify match"
+                            ),
+                        )
+                    )
         if block.kind == "component":
             support = block.required_support or {}
             has_contract = bool(block.interfaces or support or block.part_bindings)
@@ -543,6 +587,188 @@ def _validate_power_domains(compiled: CompiledDesign) -> list[ValidationMessage]
                         message=f"Power pin {pin_num} has no resolved rail assignment",
                     )
                 )
+    return issues
+
+
+_NC_PIN_NAME_RE = re.compile(r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE)
+
+
+def _validate_pin_coverage(compiled: CompiledDesign) -> list[ValidationMessage]:
+    """Check that every pin on every IC is explicitly handled.
+
+    Pins must be in pin_nets, power_pins, explicit_no_connects, or have
+    an NC-like name.  Unhandled pins are flagged by electrical type:
+      - power_in  → error  (must be connected to a rail)
+      - input / bidirectional → warning (likely needs a driver or pull)
+      - output / passive / other → info-level (usually safe to NC)
+    """
+    issues: list[ValidationMessage] = []
+    for comp in compiled.components:
+        # Only check ICs — passives, connectors, etc. are wired differently
+        if comp.ref_prefix.upper() not in ("U", "IC"):
+            continue
+
+        handled = set(comp.pin_nets) | set(comp.power_pins) | comp.explicit_no_connects
+        # Also count pins that have straps (the strap wires them)
+        for strap in comp.straps:
+            handled.add(strap.pin)
+
+        subject = comp.source_ref or comp.mpn
+
+        floating_power: list[str] = []
+        floating_input: list[str] = []
+
+        for pin in comp.pins:
+            if pin.number in handled:
+                continue
+            if _NC_PIN_NAME_RE.match(pin.name):
+                continue
+
+            etype = pin.electrical_type or "unspecified"
+
+            if etype == "power_in":
+                floating_power.append(f"{pin.number} ({pin.name})")
+            elif etype in ("input", "bidirectional", "tri_state"):
+                floating_input.append(f"{pin.number} ({pin.name})")
+
+        # Power pins floating is always an error (per pin)
+        for desc in floating_power:
+            issues.append(
+                ValidationMessage(
+                    category="electrical",
+                    code="floating-power-pin",
+                    level="error",
+                    subject=subject,
+                    message=f"Power pin {desc} is not connected to any rail",
+                )
+            )
+
+        # For input/bidirectional: summarize if many (MCUs with 20+ unused GPIOs)
+        if len(floating_input) > 8:
+            issues.append(
+                ValidationMessage(
+                    category="electrical",
+                    code="floating-input-pin",
+                    level="warning",
+                    subject=subject,
+                    message=(
+                        f"{len(floating_input)} input/bidirectional pins unconnected "
+                        f"(e.g., {', '.join(floating_input[:3])}, ...) — "
+                        f"add to explicit_no_connects or wire as needed"
+                    ),
+                )
+            )
+        else:
+            for desc in floating_input:
+                issues.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="floating-input-pin",
+                        level="warning",
+                        subject=subject,
+                        message=(
+                            f"Pin {desc} is unconnected "
+                            f"— may need a pull-up/down, driver, or explicit no-connect"
+                        ),
+                    )
+                )
+    return issues
+
+
+_VOLTAGE_PATTERN = re.compile(r"(\d+)[PV](\d+)|(\d+)V")
+
+
+def _infer_rail_voltage(net: str) -> float | None:
+    """Attempt to extract a voltage from a power net name (e.g., VDD_3P3 → 3.3)."""
+    known = {
+        "VDD_3P3": 3.3, "VDD_1P8": 1.8, "VDD_1P2": 1.2, "VDD_2P5": 2.5,
+        "VBUS_5V": 5.0, "VCCAUX": 1.8, "VCCINT": 1.0, "VDD_DDR": 1.35,
+    }
+    upper = (net or "").upper()
+    if upper in known:
+        return known[upper]
+    m = _VOLTAGE_PATTERN.search(upper)
+    if m:
+        if m.group(1) and m.group(2):
+            return float(f"{m.group(1)}.{m.group(2)}")
+        if m.group(3):
+            return float(m.group(3))
+    return None
+
+
+def _validate_power_domain_consistency(compiled: CompiledDesign) -> list[ValidationMessage]:
+    """Cross-check power domain assignments for consistency.
+
+    1. Collect all (net_name → voltage) assignments across all components.
+    2. Flag if the same net has conflicting voltage expectations.
+    3. Flag power_in pins where the assigned rail voltage doesn't match the
+       component's declared power_reqs voltage.
+    """
+    issues: list[ValidationMessage] = []
+
+    # Collect voltage expectations per net across all components
+    net_voltages: dict[str, list[tuple[str, float]]] = {}
+    for comp in compiled.components:
+        subject = comp.source_ref or comp.mpn
+        for req in comp.power_reqs:
+            if req.net and req.voltage > 0:
+                net_voltages.setdefault(req.net, []).append((subject, req.voltage))
+
+    # Check for conflicting voltage expectations on the same net
+    for net, sources in net_voltages.items():
+        voltages = {v for _, v in sources}
+        if len(voltages) > 1:
+            details = ", ".join(f"{src}={v}V" for src, v in sources)
+            issues.append(
+                ValidationMessage(
+                    category="electrical",
+                    code="power-domain-voltage-conflict",
+                    level="error",
+                    subject=net,
+                    message=f"Power net '{net}' has conflicting voltage requirements: {details}",
+                )
+            )
+
+    # Check that each component's power_reqs voltage matches what the rail name implies
+    for comp in compiled.components:
+        subject = comp.source_ref or comp.mpn
+        for req in comp.power_reqs:
+            if not req.net or req.voltage <= 0:
+                continue
+            implied_v = _infer_rail_voltage(req.net)
+            if implied_v is not None and abs(implied_v - req.voltage) / max(req.voltage, 0.1) > 0.10:
+                issues.append(
+                    ValidationMessage(
+                        category="electrical",
+                        code="power-domain-voltage-mismatch",
+                        level="warning",
+                        subject=subject,
+                        message=(
+                            f"Component requires {req.voltage}V on '{req.net}', "
+                            f"but rail name implies {implied_v}V"
+                        ),
+                    )
+                )
+
+    # Check that every non-GND power pin has a bypass cap somewhere
+    for comp in compiled.components:
+        if comp.ref_prefix.upper() != "U":
+            continue
+        subject = comp.source_ref or comp.mpn
+        cap_nets = {bc.net for bc in comp.bypass_caps}
+        for req in comp.power_reqs:
+            if req.net and not any(n.upper().startswith("GND") for n in [req.net]):
+                if req.net not in cap_nets:
+                    issues.append(
+                        ValidationMessage(
+                            category="electrical",
+                            code="missing-bypass-cap-for-rail",
+                            level="warning",
+                            subject=subject,
+                            message=f"Power rail '{req.net}' ({req.voltage}V) has no bypass cap declared",
+                        )
+                    )
+
     return issues
 
 
@@ -728,8 +954,12 @@ def validate_design(
     *,
     profile: str = _MVP_PROFILE,
     enrich_parts: bool = False,
+    strict: bool = False,
 ) -> ValidationReport:
-    """Validate a design spec against the strict MVP profile."""
+    """Validate a design spec against the strict MVP profile.
+
+    When *strict* is True, warnings also count as failures (not just errors).
+    """
     profile = _ensure_profile(profile)
     compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
 
@@ -750,6 +980,8 @@ def validate_design(
     categories["structural"].extend(_validate_shared_net_interfaces(compiled))
     categories["electrical"].extend(_validate_required_support(compiled))
     categories["electrical"].extend(_validate_power_domains(compiled))
+    categories["electrical"].extend(_validate_pin_coverage(compiled))
+    categories["electrical"].extend(_validate_power_domain_consistency(compiled))
 
     for result in run_validation_checks(compiled.components):
         for issue in result.issues:
@@ -763,8 +995,13 @@ def validate_design(
                 )
             )
 
+    def _has_errors(msgs: list[ValidationMessage]) -> bool:
+        return any(m.level == "error" for m in msgs)
+
     can_check_artifacts = (
-        not categories["structural"] and not categories["electrical"] and not categories["implementation"]
+        not _has_errors(categories["structural"])
+        and not _has_errors(categories["electrical"])
+        and not _has_errors(categories["implementation"])
     )
     if can_check_artifacts:
         with (
@@ -818,7 +1055,12 @@ def validate_design(
                 )
 
     summary = {key: len(value) for key, value in categories.items()}
-    valid = all(count == 0 for count in summary.values())
+    error_count = sum(1 for msgs in categories.values() for m in msgs if m.level == "error")
+    warning_count = sum(1 for msgs in categories.values() for m in msgs if m.level == "warning")
+    if strict:
+        valid = (error_count + warning_count) == 0
+    else:
+        valid = error_count == 0
     return ValidationReport(
         profile=profile,
         valid=valid,
@@ -830,6 +1072,67 @@ def validate_design(
             "block_count": len(compiled.ir.blocks),
         },
     )
+
+
+def generate_design_checklist(report: ValidationReport, components=None) -> str:
+    """Generate a human-readable pre-fabrication design checklist.
+
+    Returns a Markdown string summarizing the design health and actionable items.
+    """
+    lines = ["# Design Validation Checklist", ""]
+    proj = report.metadata.get("project", "project")
+    lines.append(f"**Project:** {proj}")
+    lines.append(f"**Status:** {'PASS' if report.valid else 'FAIL'}")
+    lines.append(f"**Components:** {report.metadata.get('component_count', '?')}")
+    lines.append(f"**Blocks:** {report.metadata.get('block_count', '?')}")
+    lines.append("")
+
+    # Checklist items derived from validation categories
+    checklist = [
+        ("All power pins connected", "electrical", "floating-power-pin", "missing-power-net"),
+        ("All bypass caps placed", "electrical", "decoupling"),
+        ("All enable pins driven", "electrical", "floating-enable"),
+        ("No floating inputs", "electrical", "floating-input-pin"),
+        ("Bus pull-ups present", "electrical", "i2c-missing-pullup"),
+        ("No output conflicts", "electrical", "output-conflict"),
+        ("No dangling nets", "electrical", "single-pin-net"),
+        ("Crystal load caps matched", "electrical", "crystal-load"),
+        ("Feedback dividers correct", "electrical", "feedback-divider"),
+        ("All blocks resolved", "structural", "unresolved-block", "unresolved-component"),
+        ("Footprints assigned", "implementation", "missing-footprint"),
+    ]
+
+    lines.append("## Checklist")
+    lines.append("")
+    for label, category, *codes in checklist:
+        msgs = report.categories.get(category, [])
+        has_issue = any(m.code in codes for m in msgs)
+        mark = "x" if not has_issue else " "
+        lines.append(f"- [{mark}] {label}")
+
+    # Issues summary
+    all_issues = [m for msgs in report.categories.values() for m in msgs]
+    errors = [m for m in all_issues if m.level == "error"]
+    warnings = [m for m in all_issues if m.level == "warning"]
+
+    if errors:
+        lines.append("")
+        lines.append(f"## Errors ({len(errors)})")
+        lines.append("")
+        for m in errors:
+            lines.append(f"- **{m.subject}**: {m.message}")
+
+    if warnings:
+        lines.append("")
+        lines.append(f"## Warnings ({len(warnings)})")
+        lines.append("")
+        for m in warnings[:20]:  # Cap at 20 to avoid overwhelming output
+            lines.append(f"- {m.subject}: {m.message}")
+        if len(warnings) > 20:
+            lines.append(f"- ... and {len(warnings) - 20} more")
+
+    lines.append("")
+    return "\n".join(lines)
 
 
 def apply_design_patch(
@@ -1178,6 +1481,8 @@ def main() -> None:
 
     validate_p = subparsers.add_parser("validate", help="Validate a canonical/legacy design spec")
     validate_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    validate_p.add_argument("--strict", action="store_true", default=False,
+                            help="Treat warnings as errors (fail on any warning)")
     validate_p.add_argument("--enrich-parts", action="store_true", default=False)
 
     patch_p = subparsers.add_parser("apply-patch", help="Apply a transactional patch to a design spec")
@@ -1210,11 +1515,25 @@ def main() -> None:
     pcb_p.add_argument("feedback", help="Path to PCB feedback JSON/YAML")
     pcb_p.add_argument("--output", help="Write updated spec to this YAML path")
 
+    list_p = subparsers.add_parser("list-templates", help="List all available subcircuit templates")
+    list_p.add_argument("--json", dest="json_output", action="store_true", default=False,
+                        help="Machine-readable JSON output")
+    list_p.add_argument("--verbose", action="store_true", default=False,
+                        help="Show full parameter schema")
+
+    scaffold_p = subparsers.add_parser("scaffold", help="Generate a YAML design spec stub from a template")
+    scaffold_p.add_argument("--template", "-t", help="Template type (e.g., buck, ldo, opamp)")
+    scaffold_p.add_argument("--ref", default="U1", help="Reference designator (default: U1)")
+    scaffold_p.add_argument("--output", "-o", help="Write to file instead of stdout")
+
     args = parser.parse_args()
 
     if args.command == "validate":
+        strict = getattr(args, "strict", False)
         report = _run_with_stderr_capture(
-            lambda: validate_design(_load_spec_file(args.spec), enrich_parts=args.enrich_parts)
+            lambda: validate_design(
+                _load_spec_file(args.spec), enrich_parts=args.enrich_parts, strict=strict,
+            )
         )
         _print_json(report.to_dict())
         raise SystemExit(0 if report.valid else 2)
@@ -1261,6 +1580,92 @@ def main() -> None:
             Path(args.output).write_text(spec_to_yaml_text(result.updated_spec), encoding="utf-8", newline="")
         _print_json(result.to_dict())
         raise SystemExit(0 if not result.rejected else 2)
+
+    if args.command == "list-templates":
+        registry = get_default_registry()
+        templates_info = []
+        for ttype in sorted(registry.available_types()):
+            tmpl = registry.get(ttype)
+            info = {
+                "type": ttype,
+                "description": tmpl.description,
+                "params": [
+                    {k: v for k, v in spec.items() if k in ("name", "type", "required", "default", "options")}
+                    for spec in tmpl.param_schema
+                ] if args.verbose or args.json_output else [
+                    {"name": s["name"], "required": s.get("required", False)} for s in tmpl.param_schema
+                ],
+            }
+            templates_info.append(info)
+
+        if args.json_output:
+            _print_json(templates_info)
+        else:
+            for info in templates_info:
+                params = ", ".join(
+                    p["name"] + ("*" if p.get("required") else "")
+                    for p in info["params"]
+                )
+                print(f"  {info['type']:25s} {info['description']}")
+                if args.verbose:
+                    for p in info["params"]:
+                        default = f" (default: {p['default']})" if "default" in p else ""
+                        options = f" [{', '.join(str(o) for o in p['options'])}]" if "options" in p else ""
+                        req = " REQUIRED" if p.get("required") else ""
+                        print(f"    {p['name']:20s} {p.get('type', ''):10s}{req}{default}{options}")
+                else:
+                    print(f"    params: {params}")
+        raise SystemExit(0)
+
+    if args.command == "scaffold":
+        registry = get_default_registry()
+        if not args.template:
+            # No template specified — list available templates
+            print("Available templates (use --template <name>):\n")
+            for ttype in sorted(registry.available_types()):
+                tmpl = registry.get(ttype)
+                print(f"  {ttype:25s} {tmpl.description}")
+            raise SystemExit(0)
+
+        tmpl = registry.get(args.template)
+        if tmpl is None:
+            print(f"Unknown template '{args.template}'. Use 'list-templates' to see available types.", file=sys.stderr)
+            raise SystemExit(1)
+
+        # Build a scaffold YAML spec with the template's params
+        block = {"type": args.template, "ref": args.ref}
+        for spec in tmpl.param_schema:
+            name = spec["name"]
+            if name in ("ref",):
+                continue
+            if "default" in spec:
+                block[name] = spec["default"]
+            elif spec.get("required"):
+                if spec.get("type") == "number":
+                    block[name] = 0.0
+                elif spec.get("type") == "integer":
+                    block[name] = 0
+                elif spec.get("type") == "boolean":
+                    block[name] = False
+                elif "options" in spec:
+                    block[name] = spec["options"][0]
+                else:
+                    block[name] = f"<{name}>"
+
+        section = tmpl.generate.__doc__ or ""
+        category = "power" if "power" in (tmpl.description + section).lower() else "digital"
+        scaffold_spec = {
+            "project": f"my_{args.template}_design",
+            category: [block],
+        }
+        yaml_text = spec_to_yaml_text(scaffold_spec)
+
+        if args.output:
+            Path(args.output).write_text(yaml_text, encoding="utf-8")
+            print(f"Wrote scaffold to {args.output}")
+        else:
+            print(yaml_text)
+        raise SystemExit(0)
 
 
 if __name__ == "__main__":

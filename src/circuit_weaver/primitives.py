@@ -375,6 +375,58 @@ def sexpr_power_instance(
 '''
 
 
+def sexpr_pwr_flag_lib_entry() -> str:
+    """Generate the lib_symbols entry for KiCad's PWR_FLAG symbol."""
+    return '''  (symbol "PWR_FLAG" (power) (pin_names (offset 0)) (exclude_from_sim no)
+    (in_bom yes) (on_board yes)
+    (property "Reference" "#FLG" (at 0 1.905 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Value" "PWR_FLAG" (at 0 3.81 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (symbol "PWR_FLAG_0_0"
+      (pin power_out line (at 0 0 90) (length 0)
+        (name "pwr" (effects (font (size 1.27 1.27))))
+        (number "1" (effects (font (size 1.27 1.27))))
+      )
+    )
+  )
+'''
+
+
+def sexpr_pwr_flag_instance(
+    x: float,
+    y: float,
+    project_name: str = "project",
+    root_uuid: str = "",
+    sheet_uuid: str = "",
+) -> str:
+    """Place a PWR_FLAG instance at (x, y) to satisfy KiCad ERC."""
+    x, y = snap(x), snap(y)
+    inst_uuid = uid(f"pwr_flag:{x:.2f}:{y:.2f}")
+    inst_path = f"/{root_uuid}/{sheet_uuid}/" if root_uuid and sheet_uuid else "/"
+
+    return f'''  (symbol (lib_id "PWR_FLAG") (at {x:.2f} {y:.2f} 0)
+    (uuid "{inst_uuid}")
+    (property "Reference" "#FLG" (at {x:.2f} {y + 1.905:.2f} 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "Value" "PWR_FLAG" (at {x:.2f} {y + 3.81:.2f} 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (instances
+      (project "{project_name}"
+        (path "{inst_path}"
+          (reference "#FLG")
+          (unit 1)
+        )
+      )
+    )
+  )
+'''
+
+
 # ================================================================
 # Bus notation (Phase 3)
 # ================================================================

@@ -262,3 +262,101 @@ def score_project(layouts: list[SheetLayout]) -> dict:
         "grade": _grade(avg),
         "sheets": [s.to_dict() for s in sheet_scores],
     }
+
+
+# ================================================================
+# Electrical quality scoring (Sprint 6)
+# ================================================================
+
+
+@dataclass
+class ElectricalQualityScore:
+    """Aggregate electrical quality score for a set of components."""
+
+    total: float
+    grade: str
+    pin_coverage_pct: float
+    decoupling_coverage_pct: float
+    power_pin_coverage_pct: float
+    validation_pass_pct: float
+    details: dict
+
+    def to_dict(self) -> dict:
+        return {
+            "total": round(self.total, 1),
+            "grade": self.grade,
+            "pin_coverage_pct": round(self.pin_coverage_pct, 1),
+            "decoupling_coverage_pct": round(self.decoupling_coverage_pct, 1),
+            "power_pin_coverage_pct": round(self.power_pin_coverage_pct, 1),
+            "validation_pass_pct": round(self.validation_pass_pct, 1),
+            "details": self.details,
+        }
+
+
+def score_electrical_quality(components, validation_results=None) -> ElectricalQualityScore:
+    """Score the electrical quality of a component set (0-100, A-F).
+
+    Metrics:
+    - Pin coverage: % of IC pins explicitly connected (vs blanket NC)
+    - Decoupling coverage: % of power pins with bypass caps
+    - Power pin coverage: % of power_in pins assigned to rails
+    - Validation pass rate: % of validation checks passing
+    """
+    total_ic_pins = 0
+    connected_ic_pins = 0
+    total_power_pins = 0
+    assigned_power_pins = 0
+    total_decouple_targets = 0
+    covered_decouple = 0
+
+    for comp in components:
+        if comp.ref_prefix.upper() not in ("U", "IC"):
+            continue
+        handled = set(comp.pin_nets) | set(comp.power_pins) | comp.explicit_no_connects
+        for strap in comp.straps:
+            handled.add(strap.pin)
+        for pin in comp.pins:
+            total_ic_pins += 1
+            if pin.number in handled:
+                connected_ic_pins += 1
+            if pin.electrical_type == "power_in":
+                total_power_pins += 1
+                if pin.number in comp.power_pins:
+                    assigned_power_pins += 1
+
+        # Decoupling: count non-GND power pins
+        for _pnum, net in comp.power_pins.items():
+            if not any(net.upper().startswith(g) for g in ("GND", "AGND", "DGND")):
+                total_decouple_targets += 1
+                if any(bc.net == net or bc.pin == _pnum for bc in comp.bypass_caps):
+                    covered_decouple += 1
+
+    pin_pct = (connected_ic_pins / max(1, total_ic_pins)) * 100
+    power_pct = (assigned_power_pins / max(1, total_power_pins)) * 100
+    decouple_pct = (covered_decouple / max(1, total_decouple_targets)) * 100
+
+    # Validation pass rate
+    val_pass_pct = 100.0
+    if validation_results:
+        passing = sum(1 for r in validation_results if r.status == "PASS")
+        val_pass_pct = (passing / max(1, len(validation_results))) * 100
+
+    # Weighted total
+    total = (pin_pct * 0.25 + power_pct * 0.30 + decouple_pct * 0.25 + val_pass_pct * 0.20)
+
+    return ElectricalQualityScore(
+        total=total,
+        grade=_grade(total),
+        pin_coverage_pct=pin_pct,
+        decoupling_coverage_pct=decouple_pct,
+        power_pin_coverage_pct=power_pct,
+        validation_pass_pct=val_pass_pct,
+        details={
+            "total_ic_pins": total_ic_pins,
+            "connected_ic_pins": connected_ic_pins,
+            "total_power_pins": total_power_pins,
+            "assigned_power_pins": assigned_power_pins,
+            "decoupling_targets": total_decouple_targets,
+            "decoupling_covered": covered_decouple,
+        },
+    )
