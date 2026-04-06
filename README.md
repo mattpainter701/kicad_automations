@@ -133,6 +133,14 @@ pip install -e ".[all]"
 circuit-weaver --version
 ```
 
+### Start the Interactive Design Wizard (Offline)
+
+```bash
+circuit-weaver design-wizard
+```
+
+Walks you through creating a circuit design interactively. No agents or APIs required — fully offline. Generates a YAML design spec you can then validate and generate artifacts from.
+
 ### Validate a design
 
 ```bash
@@ -270,13 +278,17 @@ Installers require an explicit target selection. There is no implicit Claude-onl
 
 ### Global skills (install via `./install.sh` or `./install.ps1`)
 
+- `circuit-weaver` — master orchestrator skill (agent-driven IC research via Perplexity, fastest path)
+- `design_wizard` — manual step-by-step design guide (human-in-the-loop)
 - `kicad` — schematic, PCB, and Gerber analysis
 - `bom` — BOM management, auditing, and export
 - `digikey`, `mouser`, `lcsc` — part sourcing and datasheet sync
 - `jlcpcb`, `pcbway` — manufacturing file prep and quoting
 - `ee` — general electrical engineering helpers
 - `vivado` — FPGA design integration
-- `design_wizard` — interactive circuit design wizard (requirements through quote-ready outputs)
+
+**Or use the CLI directly:**
+- `circuit-weaver design-wizard` — interactive offline wizard (no agents/APIs, works standalone)
 
 ### Project skill templates (install into downstream repos)
 

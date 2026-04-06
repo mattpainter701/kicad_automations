@@ -1560,6 +1560,16 @@ def main() -> None:
         help="Output raw JSON instead of formatted table",
     )
 
+    wizard_p = subparsers.add_parser(
+        "design-wizard",
+        help="Interactive circuit design wizard (offline, self-contained — no agents/APIs required)",
+    )
+    wizard_p.add_argument(
+        "--output",
+        "-o",
+        help="Save final design.yaml to this file (default: design.yaml in current directory)",
+    )
+
     autoroute_p = subparsers.add_parser(
         "autoroute", help="Route PCB using Freerouting (optional; requires Freerouting JAR)"
     )
@@ -1814,6 +1824,20 @@ def main() -> None:
 
         raise SystemExit(0 if result["status"] == "ok" else 1)
 
+    if args.command == "design-wizard":
+        spec = _run_design_wizard()
+        if spec:
+            output_file = Path(args.output) if args.output else Path("design.yaml")
+            output_file.write_text(spec_to_yaml_text(spec), encoding="utf-8", newline="")
+            print(f"\n✓ Design saved to {output_file.absolute()}")
+            print("\nNext steps:")
+            print(f"  1. Review the spec: cat {output_file}")
+            print(f"  2. Validate: circuit-weaver validate {output_file}")
+            print(f"  3. Generate: circuit-weaver generate {output_file} -o ./output")
+            raise SystemExit(0)
+        else:
+            raise SystemExit(1)
+
     if args.command == "autoroute":
         from .autoroute import autoroute_pcb
 
@@ -1826,6 +1850,132 @@ def main() -> None:
 
         _print_json(result)
         raise SystemExit(0 if result["status"] == "ok" else 1)
+
+
+def _run_design_wizard() -> dict[str, Any] | None:
+    """Interactive offline design wizard — self-contained, no agents/APIs."""
+    print("\n" + "=" * 72)
+    print("Circuit Weaver Design Wizard (Offline)")
+    print("=" * 72)
+    print("\nI'll guide you through creating a circuit design from scratch.")
+    print("This wizard uses built-in templates and runs completely offline.\n")
+
+    # Step 0: Project name
+    project_name = input("Project name (e.g., 'WiFi_Sensor_v1'): ").strip()
+    if not project_name:
+        project_name = "MyDesign_v1"
+
+    # Step 1: Experience level (affects guidance tone, not functionality)
+    print("\nExperience level?")
+    print("  [1] Beginner (new to PCB design)")
+    print("  [2] Intermediate (designed 1-3 boards)")
+    print("  [3] Advanced (regular designer)")
+    exp_choice = input("Choice [1-3, default 2]: ").strip() or "2"
+
+    # Step 2: Main component selection
+    print("\nLet's build your circuit. Start with the power supply:")
+    print("  [1] Simple LDO (voltage regulator)")
+    print("  [2] Buck converter (higher efficiency)")
+    print("  [3] Boost converter (step-up)")
+    power_choice = input("Power supply [1-3, default 1]: ").strip() or "1"
+
+    print("\nMain microcontroller/processor?")
+    print("  [1] Microcontroller (STM32, ESP32, RP2040, etc.)")
+    print("  [2] FPGA (Xilinx, Lattice, etc.)")
+    print("  [3] Other (just GPIO/analog)")
+    mcu_choice = input("Choice [1-3, default 1]: ").strip() or "1"
+
+    print("\nSensors or peripherals?")
+    print("  [1] Temperature/humidity (BME280, DHT22)")
+    print("  [2] IMU/accelerometer (MPU6050, LSM6DS3)")
+    print("  [3] Light sensor (ambient light, distance)")
+    print("  [4] None (I'll add manually)")
+    sensor_choice = input("Choice [1-4, default 4]: ").strip() or "4"
+
+    # Step 3: Basic circuit topology
+    input_v = input("\nInput voltage (e.g., '3.7' for LiPo, '5' for USB): ").strip() or "3.3"
+    try:
+        input_v_float = float(input_v)
+    except ValueError:
+        input_v_float = 3.3
+
+    output_v = input("Output voltage for MCU (e.g., '3.3'): ").strip() or "3.3"
+    try:
+        output_v_float = float(output_v)
+    except ValueError:
+        output_v_float = 3.3
+
+    # Build a minimal design spec
+    spec: dict[str, Any] = {
+        "metadata": {
+            "title": project_name,
+            "version": "1.0",
+            "description": "Design created via circuit-weaver design-wizard (offline)",
+        },
+        "interfaces": {
+            "power_in": {
+                "purpose": "Input power",
+                "voltage": input_v_float,
+                "current_budget_ma": 500,
+            }
+        },
+        "blocks": {},
+    }
+
+    # Add power supply block
+    power_template = "ldo" if power_choice == "1" else "buck" if power_choice == "2" else "boost"
+    spec["blocks"]["U1_power"] = {
+        "ref": "U1",
+        "section": "power",
+        "kind": "template",
+        "template_type": power_template,
+        "params": {
+            "vin_net": "VBAT",
+            "vin": input_v_float,
+            "vout": output_v_float,
+            "vout_net": "VDD_3P3" if output_v_float == 3.3 else f"VDD_{output_v_float}",
+            "iout_ma": 500,
+        },
+    }
+
+    # Add MCU block (stub — user will customize)
+    if mcu_choice == "1":
+        spec["blocks"]["U2_mcu"] = {
+            "ref": "U2",
+            "section": "processor",
+            "kind": "component",
+            "value": "ESP32-WROOM-32E",
+            "footprint": "ESP32-WROOM-32E",
+            "mpn": "ESP32-WROOM-32E",
+            "lcsc_pn": "C529676",
+        }
+
+    # Add sensor block (stub)
+    if sensor_choice in ("1", "2", "3"):
+        sensor_name = "BME280" if sensor_choice == "1" else "MPU6050" if sensor_choice == "2" else "APDS9930"
+        spec["blocks"]["U3_sensor"] = {
+            "ref": "U3",
+            "section": "sensors",
+            "kind": "component",
+            "value": sensor_name,
+            "footprint": "LQFP48" if sensor_name == "BME280" else "BGA16",
+            "mpn": sensor_name,
+        }
+
+    print("\n" + "=" * 72)
+    print("Design spec created (stub — you'll customize this):")
+    print("=" * 72)
+    print(f"\nProject: {project_name}")
+    print(f"Input: {input_v_float}V | Output: {output_v_float}V")
+    print(f"Blocks: {list(spec['blocks'].keys())}")
+    print("\nNext steps:")
+    print("  1. Review and edit the YAML file")
+    print("  2. Run: circuit-weaver validate <file>")
+    print("  3. Run: circuit-weaver generate <file> -o ./output")
+    print("\nFor more control, use the /circuit-weaver skill via Claude Code.")
+    print("=" * 72 + "\n")
+
+    return spec
 
 
 def _print_cost_bom_table(result: dict) -> None:

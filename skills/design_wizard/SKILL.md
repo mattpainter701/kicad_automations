@@ -16,6 +16,10 @@ An interactive, console-level question-and-answer workflow that hand-holds
 users through the full Circuit Weaver pipeline — from vague idea to
 quote-ready KiCad outputs.
 
+**About this skill:** This is the **manual, step-by-step guide** with human-in-the-loop control. Compare with:
+- **`/circuit-weaver` skill** — Automatic, agent-driven (spawns research-analyst for IC research; fast; requires Perplexity API key)
+- **`circuit-weaver design-wizard` CLI** — Offline interactive wizard (no agents, works standalone, good for learning)
+
 **How this skill works:** You (the AI agent) drive a multi-step conversation.
 At each step you ask the user targeted questions, summarize what you learned,
 and then proceed. Never skip a step without telling the user why. Use the
