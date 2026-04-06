@@ -121,7 +121,7 @@ worse than a modest chip with great tooling.
 
 **After you confirm the selections**, the wizard researches each IC:
 
-- **Stock check** across DigiKey, Mouser, and LCSC with current pricing
+- **Distributor availability** — checks LCSC and suggests DigiKey/Mouser alternatives
 - **Datasheet highlights** — recommended application circuit, key specs,
   decoupling requirements
 - **Alternative parts** — at least one backup for each IC
@@ -171,13 +171,10 @@ Active components:     8 unique / 8 total
 Passive components:    ~24 (auto-generated decoupling, pull-ups, etc.)
 Connectors:            3
 
-Estimated BOM cost:    ~$12.50/board @ qty 5 (DigiKey prototype pricing)
-JLCPCB assembly cost:  ~$4.20/board (6 basic + 2 extended parts)
-
 All parts in stock:    Yes
 ```
 
-You can drill into the full part list with MPNs, unit costs, and distributors.
+You can then run `cost-bom` to estimate pricing at multiple quantity breaks, or drill into the full part list with MPNs, unit costs, and distributor details.
 
 ---
 
@@ -209,7 +206,6 @@ Buses:      I2C (BME280), UART (debug), SPI (none)
 
 - `.kicad_sch` schematic files (top-level + sub-sheets)
 - A design report (markdown)
-- Placer hints for PCB layout (JSON)
 - Placer hints for PCB layout (JSON)
 
 ### What's automated vs. what you finish
@@ -283,8 +279,10 @@ and connector positions are already defined.
 The wizard identifies which nets need manual attention and suggests trace widths
 for power vs. signal nets.
 
-For non-critical signal nets, the `autoroute` skill integrates with Freerouting
-to handle the tedious routing.
+**Optional: Freerouting autorouting** — If you have Freerouting installed
+(separate download from https://github.com/mirage335/freerouting/releases),
+the wizard can autoroute non-critical signal nets. Otherwise, manual routing
+in KiCad is your best option.
 
 #### Manufacturing checklist
 
@@ -386,10 +384,8 @@ Being clear about boundaries prevents frustration:
 | `*.kicad_sch` | Step 4 | Generated schematic files | Yes |
 | `*_report.md` | Step 4 | Design report | Yes |
 | `placer_hints.json` | Step 4 | PCB placement guidance | Yes |
-| `schematic_analysis.json` | Step 5 | Automated review results | Optional |
-| `erc.txt` | Step 5 | KiCad ERC results | No (regenerate) |
-| `bom/bom.csv` | Step 3/6 | BOM tracking spreadsheet | Yes |
-| `scripts/place_*.py` | Step 6 | PCB placement scripts | Yes |
+| `jlcpcb/bom_jlcpcb.csv` | Step 6 | BOM for JLCPCB assembly | Yes |
+| `jlcpcb/cpl_jlcpcb.csv` | Step 6 | Component placement for JLCPCB | Yes |
 | `datasheets/` | Step 2 | Downloaded IC datasheets | No (large, re-downloadable) |
 
 ---
@@ -410,10 +406,6 @@ on any topic.
 | `kicad` | Schematic and PCB analysis | Validation, design review |
 | `jlcpcb` | JLCPCB DFM rules | Manufacturing prep |
 | `pcbway` | PCBWay DFM rules | Manufacturing prep |
-| `kicad_gen` | Programmatic schematic generation | Schematic output |
-| `kicad_pcb_place` | PCB placement scripting | Board layout |
-| `kicad_validate` | Design validation | Review checkpoint |
-| `autoroute` | Freerouting integration | PCB routing |
 
 ---
 

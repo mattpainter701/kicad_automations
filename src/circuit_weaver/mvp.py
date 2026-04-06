@@ -1560,6 +1560,16 @@ def main() -> None:
         help="Output raw JSON instead of formatted table",
     )
 
+    autoroute_p = subparsers.add_parser(
+        "autoroute", help="Route PCB using Freerouting (optional; requires Freerouting JAR)"
+    )
+    autoroute_p.add_argument("kicad_pcb", help="Path to .kicad_pcb file")
+    autoroute_p.add_argument(
+        "--output",
+        "-o",
+        help="Output routed PCB (default: <name>_routed.kicad_pcb)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -1802,6 +1812,19 @@ def main() -> None:
         else:
             _print_cost_bom_table(result)
 
+        raise SystemExit(0 if result["status"] == "ok" else 1)
+
+    if args.command == "autoroute":
+        from .autoroute import autoroute_pcb
+
+        result = _run_with_stderr_capture(
+            lambda: autoroute_pcb(
+                args.kicad_pcb,
+                output_path=args.output,
+            )
+        )
+
+        _print_json(result)
         raise SystemExit(0 if result["status"] == "ok" else 1)
 
 
