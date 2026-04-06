@@ -8,17 +8,20 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-![Terminal recording of Circuit Weaver demo with phase highlights](demo_enhanced.gif)
+![Professional Circuit Weaver demo with design narrative](demo_professional.gif)
 
-**Enhanced Animated GIF** (767 KB, 60 seconds) — slower playback with **phase highlighting**:
-- Blue: List Templates
-- Green: Create YAML Spec
-- Yellow: Validate
-- Red: Generate Schematic
-- Purple: Cost BOM
-- Pink: Export JLCPCB Files
+**Professional Demo** (711 KB, 2 minutes) — shows the complete design workflow with **explanations**:
 
-Includes progress bar and phase timer. **Mobile-friendly** — plays on all devices.
+**What You'll See:**
+1. **Design Brief** — Requirements for a WiFi Environmental Sensor
+2. **Explore Templates** — 30+ available subcircuits for power, comms, sensors
+3. **Create Spec** — YAML definition of the complete circuit
+4. **Validate** — Electrical rules, decoupling, connectivity checks
+5. **Generate** — Auto-routed KiCad schematic with 4 ICs + 16 passives
+6. **Cost Analysis** — Real LCSC pricing at 1, 10, 100, 1000 units
+7. **Export** — JLCPCB BOM + CPL ready to order
+
+**Total Time: 60 seconds of engineering → 2 minutes of narrative** ✨
 
 ---
 

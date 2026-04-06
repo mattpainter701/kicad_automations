@@ -58,14 +58,21 @@ Circuit Weaver sits in the useful middle:
 
 ## 🎬 Live Demo
 
-**YAML spec → validated schematic → JLCPCB-ready files in 60 seconds**
+**WiFi Environmental Sensor — from design brief to quote-ready in 60 seconds**
 
-![Terminal recording of Circuit Weaver demo with phase highlights](demo_live/demo_enhanced.gif)
+![Professional Circuit Weaver demo showing design narrative and engineering workflow](demo_live/demo_professional.gif)
 
-**Enhanced demo** with color-coded phases and progress bar:  
-1️⃣ Templates → 2️⃣ Spec (YAML) → 3️⃣ Validate → 4️⃣ Schematic → 5️⃣ Cost BOM → 6️⃣ JLCPCB Export
+**Watch the demo** (2 minutes) showing:
+- Design requirements & circuit specifications
+- Component selection from 30+ templates
+- Real-time electrical validation
+- Schematic generation (4 ICs + 16 auto-calculated passives)
+- Cost analysis at volume (1, 10, 100, 1K units)
+- Manufacturing file export (JLCPCB-ready)
 
-[**View full demo →**](demo_live/) | [Step-by-step walkthrough](demo_live/DEMO_WALKTHROUGH.md)
+What takes 2 weeks normally → **60 seconds** with Circuit Weaver
+
+[**Full walkthrough**](demo_live/DEMO_WALKTHROUGH.md)
 
 ---
 
