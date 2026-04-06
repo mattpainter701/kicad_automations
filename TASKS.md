@@ -630,17 +630,13 @@ Deferred until KiCad CLI SVG export is integrated into CI.
 
 **Goal:** Circuit Weaver is an LLM-first tool — Claude Code, Codex, and OpenCode ARE the interface. The Python engine is the backend. Graduate from manually-triggered skills to a seamless guided workflow with reliable orchestration and comprehensive logging.
 
-### 74. Clean up demo artifacts (P0, XS) — IN PROGRESS
+### 74. Clean up demo artifacts (P0, XS) — DONE
 
-- [ ] Remove demo_server.py via git rm
-- [ ] Remove auto_record_demo.py via git rm
-- [ ] Remove demo_cli.sh via git rm
-- [ ] Remove DEMO_RECORDING.md via git rm
-- [ ] Remove RECORD_QUICK_START.md via git rm
-- [ ] Remove requirements-recording.txt via git rm
-- [ ] Remove MVP.md or edit out demo_server.py reference
-- [ ] Update .gitignore: add ffmpeg.exe, *.mp4
-- [ ] Verify no remaining demo/record references in git ls-files
+- [x] Remove demo_live/ directory (35 files: HTML, GIFs, demo scripts) via git rm
+- [x] Remove demo_realistic.gif via git rm
+- [x] Update .gitignore: added *.gif (*.mp4 already present)
+- [x] Update README.md: replaced GIF demo section with CLI demo commands
+- [x] Verify no remaining git-tracked demo files (only DEMO_COMMANDS.md remains as reference)
 
 Files: `.gitignore`, `git rm`
 
