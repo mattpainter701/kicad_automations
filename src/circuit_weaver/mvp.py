@@ -32,6 +32,7 @@ from .design_ir import (
     normalize_design_spec,
     semantic_diff,
 )
+from .design_logger import DesignLogger
 from .generator import generate_from_components
 from .project_spec import _parse_yaml, _simple_yaml_parse, resolve_project_spec
 from .subcircuits.base import BoundaryPort, get_default_registry
@@ -1865,22 +1866,8 @@ def main() -> None:
         raise SystemExit(0 if result["status"] == "ok" else 1)
 
     if args.command == "design-wizard":
-        project_dir = Path(args.output).parent if args.output else Path.cwd()
-        spec, logger = _run_design_wizard(project_dir)
-        if spec and logger:
-            output_file = Path(args.output) if args.output else Path("design.yaml")
-            output_file.write_text(spec_to_yaml_text(spec), encoding="utf-8", newline="")
-            print(f"\n[+] Design saved to {output_file.absolute()}")
-            print(f"[+] Workflow log saved to {logger.log_path}")
-            logger.log_step(0, "design-wizard completed", {"output_file": str(output_file)})
-            logger.print_summary()
-            print("\nNext steps:")
-            print(f"  1. Review the spec: cat {output_file}")
-            print(f"  2. Validate: circuit-weaver validate {output_file}")
-            print(f"  3. Generate: circuit-weaver generate {output_file} -o ./output")
-            raise SystemExit(0)
-        else:
-            raise SystemExit(1)
+        _handle_design_workflow()
+        raise SystemExit(0)
 
     if args.command == "log-status":
         try:
@@ -1905,11 +1892,140 @@ def main() -> None:
         raise SystemExit(0 if result["status"] == "ok" else 1)
 
 
-def _run_design_wizard(project_dir: Path | str = ".") -> tuple[dict[str, Any] | None, DesignLogger | None]:
+def _find_existing_circuits(root_dir: Path = None) -> list[Path]:
+    """Find all circuit project directories (contain design.yaml).
+
+    Args:
+        root_dir: Directory to search in (default: current working directory)
+
+    Returns:
+        List of Path objects to project directories, sorted by name
+    """
+    if root_dir is None:
+        root_dir = Path.cwd()
+
+    root_dir = Path(root_dir)
+    if not root_dir.exists():
+        return []
+
+    projects = []
+    for item in root_dir.iterdir():
+        if item.is_dir() and (item / "design.yaml").exists():
+            projects.append(item)
+
+    return sorted(projects, key=lambda p: p.name)
+
+
+def _handle_design_workflow() -> None:
+    """Orchestrate new or existing circuit design workflow.
+
+    Prompts user to choose:
+    1. Create a new circuit (captures name, creates folder, runs wizard)
+    2. Open an existing circuit (lists available, loads and shows status)
+    """
+    print("\n" + "=" * 72)
+    print("Circuit Weaver — Design Workflow")
+    print("=" * 72)
+    print("\nWhat would you like to do?\n")
+    print("  [1] Design a new circuit")
+    print("  [2] Open an existing circuit\n")
+
+    choice = input("Your choice (1 or 2): ").strip()
+
+    if choice == "2":
+        # EXISTING CIRCUIT FLOW
+        root = Path.cwd()
+        projects = _find_existing_circuits(root)
+
+        if not projects:
+            print("[!] No existing circuits found in current directory.")
+            print("    Tip: Create a new circuit first.\n")
+            raise SystemExit(1)
+
+        print("\nAvailable circuits:\n")
+        for i, proj in enumerate(projects, 1):
+            print(f"  [{i}] {proj.name}")
+        print()
+
+        try:
+            proj_choice = int(input(f"Select (1-{len(projects)}): ").strip())
+            if proj_choice < 1 or proj_choice > len(projects):
+                raise ValueError
+            selected_project = projects[proj_choice - 1]
+        except (ValueError, IndexError):
+            print("[!] Invalid choice.\n")
+            raise SystemExit(1)
+
+        # Load and show status
+        logger = DesignLogger(selected_project)
+        print()
+        logger.print_summary()
+
+        print("\nNext steps:")
+        print(f"  1. Validate: circuit-weaver validate {selected_project / 'design.yaml'}")
+        print(
+            f"  2. Generate: circuit-weaver generate {selected_project / 'design.yaml'} -o {selected_project / 'output'}"
+        )
+        print(f"  3. Modify: Edit {selected_project / 'design.yaml'} and re-validate\n")
+
+        raise SystemExit(0)
+
+    elif choice == "1":
+        # NEW CIRCUIT FLOW
+        print("\n--- New Circuit ---\n")
+
+        # Capture project name FIRST
+        project_name = input("Project name (folder will be created with this name): ").strip()
+        if not project_name:
+            project_name = "MyCircuit_v1"
+
+        # Create project directory
+        project_dir = Path.cwd() / project_name
+        if project_dir.exists():
+            response = input(f"\nFolder '{project_name}' already exists. Continue? (y/n): ").strip().lower()
+            if response != "y":
+                print("[!] Cancelled.\n")
+                raise SystemExit(1)
+        else:
+            project_dir.mkdir(parents=True, exist_ok=True)
+            print(f"\n[+] Created folder: {project_dir.absolute()}\n")
+
+        # Run wizard in that directory
+        spec, logger = _run_design_wizard(project_dir, project_name_override=project_name)
+
+        if spec and logger:
+            output_file = project_dir / "design.yaml"
+            output_file.write_text(spec_to_yaml_text(spec), encoding="utf-8", newline="")
+            print(f"\n[+] Design saved to {output_file.absolute()}")
+            print(f"[+] Workflow log saved to {logger.log_path}")
+            logger.log_step(
+                0, "design-wizard completed", {"output_file": str(output_file), "project_name": project_name}
+            )
+            logger.print_summary()
+
+            print("\nNext steps:")
+            print(f"  1. Review the spec: cat {output_file}")
+            print(f"  2. Validate: circuit-weaver validate {output_file}")
+            print(f"  3. Generate: circuit-weaver generate {output_file} -o {project_dir / 'output'}")
+            print()
+
+            raise SystemExit(0)
+        else:
+            raise SystemExit(1)
+
+    else:
+        print("[!] Invalid choice. Please enter 1 or 2.\n")
+        raise SystemExit(1)
+
+
+def _run_design_wizard(
+    project_dir: Path | str = ".", project_name_override: str | None = None
+) -> tuple[dict[str, Any] | None, DesignLogger | None]:
     """Interactive offline design wizard — capture requirements, scaffold spec (no hardcoded options).
 
     Args:
         project_dir: Directory to write design.log to
+        project_name_override: If provided, use this project name instead of asking
 
     Returns:
         Tuple of (spec dict, logger) or (None, None) if cancelled
@@ -1924,10 +2040,14 @@ def _run_design_wizard(project_dir: Path | str = ".") -> tuple[dict[str, Any] | 
     print("\nI'll scaffold a design spec from your requirements.")
     print("This wizard captures YOUR specifics — no hardcoded choices.\n")
 
-    # Gather requirements via open-ended questions
-    project_name = input("Project name: ").strip()
-    if not project_name:
-        project_name = "MyDesign_v1"
+    # Use provided project name or ask for it
+    if project_name_override:
+        project_name = project_name_override
+        print(f"Project: {project_name}\n")
+    else:
+        project_name = input("Project name: ").strip()
+        if not project_name:
+            project_name = "MyDesign_v1"
 
     purpose = input("What does this circuit do? (e.g., 'WiFi sensor', 'motor controller'): ").strip()
     if not purpose:
