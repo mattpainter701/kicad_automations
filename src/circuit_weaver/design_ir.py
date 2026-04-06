@@ -271,6 +271,11 @@ def normalize_design_spec(spec: dict[str, Any]) -> DesignIR:
     if not isinstance(spec, dict):
         raise TypeError("Design spec must be a mapping")
 
+    # Convert wizard-generated specs to engine format if needed
+    from .preparser import extract_engine_spec
+
+    spec = extract_engine_spec(spec)
+
     metadata = _normalize_metadata(spec)
     if isinstance(spec.get("blocks"), list):
         blocks = [
