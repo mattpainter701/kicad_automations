@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Create final demo GIF showing actual outputs: schematics, BOM, design report, PCB."""
 
+import re
 from pathlib import Path
 
 try:
@@ -8,6 +9,82 @@ try:
 except ImportError:
     print("Error: Install pillow with: pip install pillow")
     exit(1)
+
+
+def parse_schematic_components(sch_path):
+    """Extract component references and values from .kicad_sch file."""
+    try:
+        with open(sch_path) as f:
+            content = f.read()
+
+        # Find all instances with references
+        components = {}
+        # Look for (uuid ...) followed by (property "Reference" ...) and (property "Value" ...)
+        instance_pattern = r'\(uuid "([^"]+)"\).*?\(property "Reference" "([^"]+)".*?\(property "Value" "([^"]+)"'
+
+        for match in re.finditer(instance_pattern, content, re.DOTALL):
+            uuid, ref, value = match.groups()
+            if ref and not ref.startswith("#"):  # Skip power symbols
+                components[ref] = value
+
+        return components
+    except Exception as e:
+        print(f"Warning: Could not parse schematic: {e}")
+        return {}
+
+
+def draw_schematic_diagram(draw, width, height, start_y):
+    """Draw a simple block diagram of the power chain and main components."""
+    # Block positions and colors
+    blocks = [
+        {"name": "3.7V\nBattery", "x": 50, "color": (100, 100, 100)},
+        {"name": "MT3608\nBoost\n→ 5V", "x": 200, "color": (100, 150, 200)},
+        {"name": "AP62300\nBuck\n→ 3.3V", "x": 350, "color": (100, 150, 200)},
+        {"name": "ESP32\nWiFi MCU", "x": 550, "color": (150, 100, 200)},
+        {"name": "BME280\nSensor", "x": 750, "color": (100, 200, 100)},
+    ]
+
+    box_w, box_h = 100, 80
+    y = start_y + 20
+
+    try:
+        small_font = ImageFont.truetype(r"C:\Windows\Fonts\consola.ttf", 11)
+    except:
+        small_font = ImageFont.load_default()
+
+    # Draw boxes and connections
+    for i, block in enumerate(blocks):
+        x = block["x"]
+
+        # Draw box
+        draw.rectangle([(x, y), (x + box_w, y + box_h)], fill=block["color"], outline=(200, 200, 200), width=2)
+
+        # Draw text (split lines)
+        lines = block["name"].split("\n")
+        text_y = y + 10
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=small_font)
+            text_w = bbox[2] - bbox[0]
+            text_x = x + (box_w - text_w) // 2
+            draw.text((text_x, text_y), line, fill=(255, 255, 255), font=small_font)
+            text_y += 18
+
+        # Draw arrow to next block
+        if i < len(blocks) - 1:
+            next_x = blocks[i + 1]["x"]
+            arrow_y = y + box_h // 2
+            draw.line([(x + box_w, arrow_y), (next_x - 10, arrow_y)], fill=(150, 200, 150), width=2)
+            # Arrowhead
+            draw.polygon(
+                [(next_x - 10, arrow_y), (next_x - 15, arrow_y - 5), (next_x - 15, arrow_y + 5)], fill=(150, 200, 150)
+            )
+
+    # Add labels
+    label_y = y + box_h + 30
+    draw.text((50, label_y), "Input", fill=(150, 150, 150), font=small_font)
+    draw.text((200, label_y), "Power", fill=(150, 150, 150), font=small_font)
+    draw.text((550, label_y), "Logic", fill=(150, 150, 150), font=small_font)
+
 
 # Slides with actual outputs
 slides = [
@@ -71,13 +148,11 @@ slides = [
         "subtitle": "$ circuit-weaver generate design.yaml",
         "color": (255, 150, 150),
         "duration": 3,
+        "draw_diagram": True,
         "content": [
             "GENERATED SCHEMATIC: main.kicad_sch (74 KB)",
-            "",
             "Components: 4 ICs + 16 auto-calculated passives",
             "Nets: 16 unique signal/power networks",
-            "Auto-placed decoupling on every VCC/GND pair",
-            "Ready for PCB layout in KiCad",
         ],
     },
     {
@@ -168,6 +243,10 @@ for slide_idx, slide in enumerate(slides):
             if line:
                 draw.text((40, y), line, fill=(220, 220, 220), font=content_font)
             y += 38
+
+        # Draw schematic diagram if requested
+        if slide.get("draw_diagram"):
+            draw_schematic_diagram(draw, 1280, 720, 200)
 
         # Progress bar
         progress = (slide_idx + frame_num / max(frames_per_slide, 1)) / len(slides)
