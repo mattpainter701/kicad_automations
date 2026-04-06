@@ -28,6 +28,23 @@ options, suggest defaults, and let the user confirm or override.
 
 ---
 
+## Output Formatting Rules
+
+When presenting CLI command output to the user, follow these rules for clarity:
+
+| Command | Success Output | Error Output |
+|---------|---|---|
+| `validate` | `"Validation passed: X errors, Y warnings"` or full categories if issues exist | List each error with code + message |
+| `apply-patch` | `"Added [ref] ([template_type]) to design.yaml"` | List errors from patch validation |
+| `scaffold` | Print the generated YAML snippet | Report error with details |
+| `generate` | `"Generated N files to [output_dir]"` with file list | Report generation failure reason |
+| `export-jlcpcb` | `"JLCPCB export: [bom_rows] rows, [missing_lcsc] need manual lookup"` | Report export error |
+| `cost-bom` | Print formatted BOM table with totals | List pricing lookup failures |
+
+Never output raw JSON unless the user explicitly requests `--json` flag. Present human-readable tables and summaries instead.
+
+---
+
 ## Step 0 — Welcome & Orientation
 
 Greet the user and explain what the wizard will cover:
@@ -745,25 +762,25 @@ Explain the PCB workflow:
 ```
 === PCB Layout — What Comes Next ===
 
-The generated schematic includes placer hints (placer_hints.json) that
-suggest component grouping and rough placement zones.
-
-WHAT WE CAN SCRIPT FOR YOU:
-  - Board outline / edge cuts (Python script generation)
-  - Initial component placement from placer hints
-  - Mounting hole positions
-  - Design rule constraints (trace widths, clearances, via sizes)
-  - Zone fills for ground/power planes
-  - Fiducial markers for assembly
+The generated schematic is ready for PCB layout. You now have:
+  - Schematic with all symbols placed and nets labeled
+  - Placer hints (JSON) with component grouping suggestions
+  - Design report with power budgets and DFM recommendations
 
 WHAT REQUIRES MANUAL KICAD WORK:
-  - Critical trace routing (power, high-speed signals)
-  - Component fine-tuning for thermal and signal integrity
+  - Board outline and edge cuts
+  - Component placement and fine-tuning for routing
+  - Trace routing (power first, then signal traces)
+  - Critical routing for high-speed or sensitive signals
   - Silkscreen labels and polarity markers
+  - Ground/power planes and zone fills
   - Design review and DFM verification
 
-I can generate Python placement scripts that automate the tedious
-parts. Want me to create those?
+WHAT WE CAN HELP WITH:
+  - Provide layout guidelines based on power budget and signal integrity
+  - Suggest trace widths for power vs. signal nets (using ee skill)
+  - Recommend layer stackup if 4-layer board needed
+  - Identify candidates for autorouting (non-critical signal nets)
 ```
 
 If mechanical constraints were captured in Step 1a-mech, incorporate them now:
