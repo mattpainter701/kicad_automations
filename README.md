@@ -60,10 +60,12 @@ Circuit Weaver sits in the useful middle:
 
 **YAML spec → validated schematic → JLCPCB-ready files in 30 seconds**
 
-### **[▶️ Watch demo.mp4](demo_live/demo.mp4)** (715 KB)
+![Terminal recording of Circuit Weaver demo](demo_live/demo.gif)
 
-30-second terminal recording of the complete workflow:  
+30-second animated GIF of the complete workflow:  
 Templates → Spec (YAML) → Validate → Schematic → Cost BOM → JLCPCB Export
+
+[**View full demo →**](demo_live/)
 
 ---
 

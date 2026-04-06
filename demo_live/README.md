@@ -8,9 +8,11 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-**[▶️ Play demo.mp4](demo.mp4)** (715 KB, 30 seconds) — click to watch in your browser
+![Terminal recording of Circuit Weaver demo](demo.gif)
 
-30-second terminal recording showing the complete design workflow: spec → validate → generate → export
+**Animated GIF** (603 KB, 30 seconds) — shows the complete design workflow: spec → validate → generate → export
+
+[📥 Download demo.gif](demo.gif) | [📹 MP4 version](demo.mp4) (if MP4 works on your device)
 
 ---
 
