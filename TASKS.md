@@ -89,14 +89,13 @@ Files: `__init__.py`, `pyproject.toml`, `test_bootstrap.py`, `CHANGELOG.md`
 
 Files: `component_db.py`, `subcircuits/driver.py`, `subcircuits/usb.py`, `tests/test_presentation.py`
 
-### 68. Remove dead `presentation_wiring_policy` field (P2, SMALL)
+### 68. Remove dead `presentation_wiring_policy` field (P2, SMALL) — WON'T FIX
 
-- [ ] Confirm field is never read by generator, placer, or exporters
-- [ ] Remove `PresentationWiringPolicy` type and `presentation_wiring_policy` field from `ComponentDef`
-- [ ] Remove any references in type hints or docstrings
-- [ ] Verify no test regressions
+- [x] Confirm field is never read by generator, placer, or exporters — **RESULT: field IS actively used**
 
-Files: `component_db.py`
+**Audit result:** `presentation_wiring_policy` is NOT dead code. It is read in `placer.py` (`_resolve_support_passive_presentation`), threaded through `generator.py` and `allocator.py`, and configured in `mvp.py` per presentation profile. Removing it would break support-passive rendering. Closing as won't-fix.
+
+Files: `component_db.py`, `placer.py`, `generator.py`, `allocator.py`, `mvp.py`
 
 ### 69. Remove forward references to unimplemented features in design wizard (P2, SMALL) — DONE
 
@@ -161,12 +160,12 @@ Files: `exporters.py` or `report.py`
 
 **Goal:** A team of 3-5 engineers can use Circuit Weaver as shared design infrastructure with automated quality gates.
 
-### 59. GitHub Actions CI template (P1, SMALL)
+### 59. GitHub Actions CI template (P1, SMALL) — DONE
 
-- [ ] Ship `.github/workflows/validate-design.yml` — runs `circuit-weaver validate --strict` on every PR touching `*.yaml` design specs
-- [ ] Include: Python setup, pip install, caching, pass/fail badge
-- [ ] Add to repo's own CI pipeline (validate all samples + examples on every push)
-- [ ] Document in README under "CI/CD Integration" section
+- [x] Ship `.github/workflows/validate-design.yml` — runs `circuit-weaver validate --strict` on every PR touching `*.yaml` design specs
+- [x] Include: Python setup, pip install, caching, pass/fail badge
+- [x] Add to repo's own CI pipeline (validate all samples + examples on every push)
+- [x] Document in README under "CI/CD Integration" section
 
 Files: `.github/workflows/validate-design.yml`, `README.md`
 
@@ -181,35 +180,35 @@ Files: `.github/workflows/validate-design.yml`, `README.md`
 
 Files: new `diff_renderer.py`, `mvp.py`, `tests/test_template_structure.py`
 
-### 61. Costed BOM via LCSC pricing API (P1, MEDIUM)
+### 61. Costed BOM via LCSC pricing API (P1, MEDIUM) — DONE
 
-- [ ] `circuit-weaver cost-bom <spec>` queries LCSC public pricing for each component with `lcsc_pn`
-- [ ] Output: costed BOM table (MPN, LCSC#, Qty, Unit Price, Extended, Stock Status)
-- [ ] Volume breaks: 1, 10, 100, 1000 units
-- [ ] Total cost summary per quantity tier
-- [ ] Flag out-of-stock or long-lead items
-- [ ] `--json` flag for machine consumption
-- [ ] Cache pricing data for 24 hours
+- [x] `circuit-weaver cost-bom <spec>` queries LCSC public pricing for each component with `lcsc_pn`
+- [x] Output: costed BOM table (MPN, LCSC#, Qty, Unit Price, Extended, Stock Status)
+- [x] Volume breaks: 1, 10, 100, 1000 units
+- [x] Total cost summary per quantity tier
+- [x] Flag out-of-stock or long-lead items
+- [x] `--json` flag for machine consumption
+- [x] Cache pricing data for 24 hours (via 7-day PartsLookup disk cache)
 
-Files: new `cost_bom.py` or extend `parts_lookup.py`, `mvp.py`
+Files: `cost_bom.py`, `parts_lookup.py`, `mvp.py` — implemented in Sprint 12 (v0.10.1)
 
-### 62. Pre-commit hook config (P1, SMALL)
+### 62. Pre-commit hook config (P1, SMALL) — DONE
 
-- [ ] Ship `.pre-commit-config.yaml` with hooks: ruff lint, YAML syntax validation on `*.yaml` specs, `circuit-weaver validate` on changed design files
-- [ ] Add `pre-commit` to dev dependencies
-- [ ] Document setup in README ("Contributing" section)
+- [x] Ship `.pre-commit-config.yaml` with hooks: ruff lint+format, YAML syntax validation on `*.yaml` specs, `circuit-weaver validate` on changed design files
+- [x] Add `pre-commit` to dev dependencies
+- [x] Document setup in README ("Contributing" section)
 
 Files: `.pre-commit-config.yaml`, `pyproject.toml`, `README.md`
 
-### 63. API reference documentation (P1, MEDIUM)
+### 63. API reference documentation (P1, MEDIUM) — DONE
 
-- [ ] `docs/api-reference.md` — all public Python functions with signatures, param types, return types, usage examples
-- [ ] `docs/validation-codes.md` — all 10 validation check codes with description, severity, fix guidance
-- [ ] `docs/design-ir-schema.md` — annotated YAML schema for the canonical design IR (blocks, interfaces, overrides, constraints)
-- [ ] `docs/cli-reference.md` — all CLI subcommands with flags, examples, exit codes
-- [ ] Link all from README
+- [x] `docs/api-reference.md` — all public Python functions with signatures, param types, return types, usage examples
+- [x] `docs/validation-codes.md` — all 10 validation check codes with description, severity, fix guidance
+- [x] `docs/design-ir-schema.md` — annotated YAML schema for the canonical design IR (blocks, interfaces, overrides, constraints)
+- [x] `docs/cli-reference.md` — all CLI subcommands with flags, examples, exit codes
+- [x] Link all from README under "Reference Documentation" table
 
-Files: `docs/*.md`, `README.md`
+Files: `docs/api-reference.md`, `docs/validation-codes.md`, `docs/design-ir-schema.md`, `docs/cli-reference.md`, `README.md`
 
 ---
 

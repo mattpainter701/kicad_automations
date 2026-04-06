@@ -6,6 +6,9 @@
   <a href="https://github.com/mattpainter701/kicad_automations/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/mattpainter701/kicad_automations/ci.yml?branch=main&label=CI&style=flat-square" alt="CI">
   </a>
+  <a href="https://github.com/mattpainter701/kicad_automations/actions/workflows/validate-design.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/mattpainter701/kicad_automations/validate-design.yml?branch=main&label=designs&style=flat-square" alt="Design Validation">
+  </a>
   <img src="https://img.shields.io/badge/python-3.10%2B-0b1320?logo=python&logoColor=ffd43b&style=flat-square" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/KiCad-10-0ea5e9?style=flat-square" alt="KiCad 10">
   <img src="https://img.shields.io/badge/FastAPI-ready-0f766e?style=flat-square" alt="FastAPI">
@@ -409,9 +412,15 @@ python3 skills/kicad/scripts/analyze_pcb.py buck.kicad_pcb
 
 ---
 
-## Template Reference
+## Reference Documentation
 
-See **[docs/templates.md](docs/templates.md)** for the full parameter reference of all 30 subcircuit templates (auto-generated from `param_schema`).
+| Document | Description |
+|-|-|
+| [API Reference](docs/api-reference.md) | Public Python functions — signatures, parameters, return types, examples |
+| [CLI Reference](docs/cli-reference.md) | All CLI subcommands with flags, examples, and exit codes |
+| [Validation Codes](docs/validation-codes.md) | All 10 validation check categories with severity, sub-codes, and fix guidance |
+| [Design IR Schema](docs/design-ir-schema.md) | Annotated YAML schema for the canonical design intermediate representation |
+| [Template Reference](docs/templates.md) | Full parameter reference for all 30 subcircuit templates (auto-generated) |
 
 Quick discovery from CLI:
 
@@ -428,18 +437,37 @@ circuit-weaver scaffold --template buck --ref U1
 
 ---
 
-## Development
+## CI/CD Integration
+
+Two GitHub Actions workflows run automatically:
+
+- **CI** (`ci.yml`) — ruff lint + pytest across Python 3.10–3.13 on every push/PR
+- **Design Validation** (`validate-design.yml`) — `circuit-weaver validate --strict` on all sample and example specs when design files change
+
+To add design validation to your own repo, copy `.github/workflows/validate-design.yml` and adjust the `paths` filter to match your spec locations.
+
+---
+
+## Contributing
 
 ```bash
+# Install in editable mode with dev dependencies
+pip install -e ".[dev]"
+
+# Set up pre-commit hooks
+pre-commit install
+
 # Run linting
 python -m ruff check src tests
 
 # Run tests
 python -m pytest tests -q
-
-# Install in editable mode from another repo
-pip install -e /path/to/kicad_automations
 ```
+
+Pre-commit hooks run automatically on `git commit`:
+- **ruff** — lint + format Python files
+- **check-yaml** — validate YAML syntax
+- **validate-designs** — run `circuit-weaver validate --strict` on changed design specs
 
 ---
 

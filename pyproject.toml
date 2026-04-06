@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuit-weaver"
-version = "0.10.1"
+version = "0.10.2"
 description = "Programmatic circuit design, validation, and KiCad artifact generation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,7 +30,7 @@ dependencies = []
 api = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.7"]
 yaml = ["PyYAML>=6.0"]
 lookup = ["requests>=2.31"]
-dev = ["pytest>=8.0", "ruff>=0.4"]
+dev = ["pytest>=8.0", "ruff>=0.4", "pre-commit>=3.7"]
 all = ["circuit-weaver[api,yaml,lookup]"]
 
 [project.scripts]

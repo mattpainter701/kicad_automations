@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.10.2] - 2026-04-06
+
+### Sprint 11 — Team Adoption & Collaboration (completion)
+
+### Added
+- `.github/workflows/validate-design.yml` — CI workflow that runs `circuit-weaver validate --strict` on all sample and example specs when design files change (Task 59)
+- `.pre-commit-config.yaml` — ruff lint+format, YAML syntax validation, and design validation hooks (Task 62)
+- `pre-commit>=3.7` added to `[dev]` optional dependencies
+- `docs/api-reference.md` — public Python API with signatures, parameters, return types, and usage examples (Task 63)
+- `docs/cli-reference.md` — all 13 CLI subcommands with flags, examples, and exit codes (Task 63)
+- `docs/validation-codes.md` — all 10 validation check categories with severity, sub-codes, and fix guidance (Task 63)
+- `docs/design-ir-schema.md` — annotated YAML schema for the canonical design IR (Task 63)
+- "Reference Documentation" table in README linking all 5 reference docs
+- "CI/CD Integration" section in README documenting both CI workflows
+- "Contributing" section in README with pre-commit setup instructions
+- Design validation CI badge in README header
+
+### Changed
+- Task 68 (`presentation_wiring_policy` removal) closed as won't-fix — field is actively used in placer.py, generator.py, allocator.py, and mvp.py for support-passive rendering
+- Task 61 (costed BOM) confirmed already complete from Sprint 12 — checkboxes updated
+
+### Tests
+- Design validation CI validates all `samples/` and `examples/` specs on every push
+
 ## [0.10.1] - 2026-04-05
 
 ### Sprint 12 — Platform Integrity: Guided CLI Workflow

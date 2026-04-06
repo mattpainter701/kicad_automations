@@ -1,0 +1,24 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.10
+    hooks:
+      - id: ruff
+        args: [check, --fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: validate-designs
+        name: Validate changed design specs
+        entry: python -m circuit_weaver.mvp validate --strict
+        language: system
+        files: '^(samples|src/circuit_weaver/examples)/.*\.yaml$'
+        pass_filenames: true
