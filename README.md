@@ -58,29 +58,26 @@ Circuit Weaver sits in the useful middle:
 
 ## 🎬 Live Demo
 
-**WiFi Environmental Sensor — from design brief to quote-ready in 60 seconds**
+**WiFi Environmental Sensor — from design brief to quote-ready**
 
-![Circuit Weaver demo showing actual deliverables: schematics, BOM, PCB placement](demo_live/demo_final.gif)
+![Circuit Weaver design wizard: user interaction + real schematics, BOM, placement](demo_live/demo_realistic.gif)
 
-**Watch the demo** (27 seconds, shows actual outputs):
-- Schematic generation (74 KB, 4 ICs + 16 passives, 16 nets)
-- BOM with real LCSC pricing at volume breaks
-- PCB placement coordinates and rotation angles
-- Design validation results (power domain, decoupling, connectivity)
-- Quote-ready manufacturing metrics
-- Slide-based format with 1-second pacing for comprehension
+**Watch the realistic workflow** (34 seconds) — user types into the design wizard, sees actual outputs:
 
-**8 steps shown:**
-1. Design brief (WiFi Environmental Sensor requirements)
-2. List templates (30+ available subcircuits)
-3. Design specification (YAML circuit definition)
-4. Validation results (electrical rules checking)
-5. Schematic generation (4 ICs, 16 passives auto-calculated)
-6. BOM with pricing (real LCSC costs at 1, 10, 100, 1K units)
-7. PCB placement (X/Y coordinates, rotation for assembly)
-8. Complete deliverables (files ready for JLCPCB)
+1. **Design Wizard** — User selects: WiFi/BLE device, LiPo battery power, ESP32 MCU, BME280 sensor
+2. **Validation** — Automatic checks: power budget, feedback networks, decoupling, ERC
+3. **Schematic** — Power chain visualization: 3.7V battery → boost → buck → 3.3V rails → MCU + sensor
+4. **BOM Table** — Real LCSC costs: U1 $2.50, U2 $1.20, U3 $5.80, U4 $2.15, total $12.25
+5. **Placement** — PCB coordinates ready for pick-and-place: U1 (10,10), U2 (18,10), U3 (50,30), U4 (90,60)
+6. **Export** — Files generated: KiCad schematic (73 KB), BOM CSV, CPL CSV — ready for JLCPCB
 
-What takes 2 weeks normally → **60 seconds** with Circuit Weaver
+**Key outputs shown:**
+- Schematic block diagram with power conversion stages
+- BOM with component references, LCSC part numbers, and per-unit costs
+- PCB placement coordinates and rotation angles for each component
+- Real design validation report (0 errors, ready to manufacture)
+
+What takes 1-2 weeks normally → **3-4 minutes** with Circuit Weaver wizard
 
 [**Full walkthrough with all outputs**](demo_live/DEMO_WALKTHROUGH.md)
 

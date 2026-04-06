@@ -8,26 +8,33 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-![Circuit Weaver demo showing actual deliverables: schematics, BOM, PCB placement](demo_final.gif)
+![Circuit Weaver design wizard: user interaction + real schematics, BOM, placement](demo_realistic.gif)
 
-**Final Demo** (230 KB, 27 seconds) — **SHOWS ACTUAL OUTPUTS**: schematic generation, BOM with real component pricing, PCB placement coordinates, design metrics
+**Realistic Advertisement Demo** (161 KB, 34 seconds) — **SEE THE WORKFLOW**: user types wizard prompts, reviews actual engineering outputs
 
 **What You'll See:**
-1. **Design Brief** — Requirements for a WiFi Environmental Sensor
-2. **List Templates** — 30+ available circuit templates (power, communications, sensors, support)
-3. **Design Specification** — YAML circuit definition with components and parameters
-4. **Validation Results** — Automated electrical checks that pass
-5. **Generated Schematic** — 74 KB KiCad schematic with 4 ICs + 16 passives
-6. **BOM with Pricing** — Real LCSC component costs at volume breaks
-7. **PCB Placement** — Exact X/Y coordinates and rotation for assembly
-8. **Complete** — All deliverables ready for fabrication
+1. **Design Wizard Step 1** — User selects device type (WiFi/BLE, power source, MCU)
+2. **Design Wizard Step 2** — User chooses sensors (BME280 for temp/humidity/pressure)
+3. **Automatic Analysis** — Validation runs: power budget, feedback networks, decoupling checks
+4. **Schematic Diagram** — Visual block diagram showing power chain: 3.7V → boost (5V) → buck (3.3V) → MCU + Sensor
+5. **BOM Table** — Real LCSC part numbers and costs:
+   - U1 TPS61230A boost converter: $2.50
+   - U2 AP62300 buck converter: $1.20
+   - U3 ESP32-WROOM-32E MCU: $5.80
+   - U4 BME280 sensor: $2.15
+   - **Total: $12.25**
+6. **PCB Placement** — Exact coordinates and rotation for assembly:
+   - U1 at (10mm, 10mm)
+   - U2 at (18mm, 10mm)
+   - U3 at (50mm, 30mm)
+   - U4 at (90mm, 60mm)
+7. **Export Complete** — Files ready: KiCad schematic, BOM CSV, placement CSV
 
-**Features:**
-- 📊 **Shows actual deliverables** — BOM tables, component costs, PCB placement data (not just terminal output)
-- 💰 **Real pricing data** — LCSC costs at 1, 10, 100, 1000 unit quantities
-- 🎯 **Design metrics** — schematic size, component count, net count, decoupling status
-- ⏱️ **1-second-per-slide pacing** — time to absorb key results
-- 🔧 **Production-ready outputs** — same files you'd send to JLCPCB
+**Why This Demo:**
+- 👤 **User perspective** — See the wizard prompts and questions a real user answers
+- 🔧 **Actual outputs** — Schematic diagram, pricing table, placement coordinates — not mock data
+- ⚡ **Speed** — What normally takes 1-2 weeks shown in 3-4 minutes
+- 📦 **Manufacturing-ready** — All files ready to upload to JLCPCB
 
 ---
 
