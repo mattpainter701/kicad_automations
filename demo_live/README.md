@@ -8,38 +8,19 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-### **📹 MP4 Video (Click to Play)**
+<video src="demo.mp4" controls width="100%" style="max-width: 800px; border-radius: 8px; margin: 20px 0;"></video>
 
-[**Watch demo.mp4 in your browser →**](demo.mp4) (715 KB, 30 seconds)
-
-GitHub will show a native video player above. Full-screen, play/pause, and seek controls available.
+**30-second terminal recording** showing the complete design workflow: spec → validate → generate → export
 
 ---
 
-### Alternative: Interactive Web Player
-Open `index.html` in your browser to see an interactive terminal recording with play/pause controls.
+### Want More?
 
-```bash
-# Open in browser
-start index.html
-```
+**📖 Step-by-step walkthrough:**  
+See [**DEMO_WALKTHROUGH.md**](DEMO_WALKTHROUGH.md) for the full guide with all CLI commands and outputs.
 
-Features:
-- ▶️ Play/pause/seek through the recording
-- 🎨 Clean dark theme
-- 📊 Summary stats and workflow diagram
-- 📱 Responsive on desktop and mobile
-
-### Or: asciinema Player
-The `demo.cast` file is a standard asciinema recording format. Play it directly:
-
-```bash
-# Play with asciinema (install: pip install asciinema)
-asciinema play demo.cast
-
-# Or upload and share: https://asciinema.org/
-asciinema upload demo.cast
-```
+**🌐 Interactive player:**  
+Open [**index.html**](index.html) locally for an interactive terminal player with play/pause controls.
 
 ---
 
@@ -62,27 +43,16 @@ The demo walks through 6 steps to design a complete WiFi-enabled environmental s
 
 ## 🗂️ Files in This Directory
 
-```
-demo_live/
-├── demo.mp4                      ⭐ MP4 video (715 KB, 30 sec) — watch in browser
-├── index.html                    Interactive web player with controls
-├── demo.cast                     asciinema terminal recording (JSON format)
-├── DEMO_WALKTHROUGH.md           Detailed markdown walkthrough with all outputs
-├── design.yaml                   24-line design specification
-├── make_video_simple.py          Python script to regenerate MP4 from demo.cast
-│
-├── output/                       Generated schematic artifacts
-│   ├── main.kicad_sch           KiCad schematic (73 KB)
-│   ├── WiFi_Sensor_v1_report.md Design analysis report
-│   ├── WiFi_Sensor_v1_placement.kicad_pcb  PCB placement hints
-│   ├── design_ir.json           Design IR
-│   └── canonical_spec.yaml      Normalized spec with calculated values
-│
-└── jlcpcb_export/               Manufacturing files (ready to order)
-    ├── bom_jlcpcb.csv           BOM in JLCPCB format
-    ├── cpl_jlcpcb.csv           Centroid/placement file
-    └── README.txt               Upload instructions
-```
+| File | Description |
+|-|-|
+| **demo.mp4** | 30-second terminal recording (embedded above) |
+| **DEMO_WALKTHROUGH.md** | Step-by-step guide with all CLI commands and outputs |
+| **design.yaml** | 24-line YAML specification for the sensor |
+| **index.html** | Alternative: interactive web player (for local use) |
+| **demo.cast** | asciinema terminal recording (JSON format) |
+| **make_video_simple.py** | Python script to regenerate demo.mp4 from demo.cast |
+| **output/** | Generated KiCad artifacts (schematic, placement, report, design IR) |
+| **jlcpcb_export/** | Manufacturing files ready to order (BOM, CPL, instructions) |
 
 ---
 
@@ -175,13 +145,11 @@ Re-run validation and generation — all dependent components auto-update.
 
 ---
 
-## 📚 Documentation
+## 📚 Learn More
 
-- **`demo.mp4`** — Native MP4 video (watch directly in GitHub/browser)
-- **`DEMO_WALKTHROUGH.md`** — Complete step-by-step guide with all outputs
-- **`design.yaml`** — The design specification used in the demo
-- **`index.html`** — Interactive web player (alternative to MP4)
-- **`make_video_simple.py`** — Regenerate MP4 from demo.cast (uses PIL + imageio)
+- **[DEMO_WALKTHROUGH.md](DEMO_WALKTHROUGH.md)** — Complete step-by-step guide with all CLI outputs
+- **[design.yaml](design.yaml)** — The 24-line YAML spec used in the demo
+- **[output/WiFi_Sensor_v1_report.md](output/WiFi_Sensor_v1_report.md)** — Generated design analysis report
 
 ---
 
