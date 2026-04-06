@@ -1853,126 +1853,97 @@ def main() -> None:
 
 
 def _run_design_wizard() -> dict[str, Any] | None:
-    """Interactive offline design wizard — self-contained, no agents/APIs."""
+    """Interactive offline design wizard — capture requirements, scaffold spec (no hardcoded options)."""
     print("\n" + "=" * 72)
     print("Circuit Weaver Design Wizard (Offline)")
     print("=" * 72)
-    print("\nI'll guide you through creating a circuit design from scratch.")
-    print("This wizard uses built-in templates and runs completely offline.\n")
+    print("\nI'll scaffold a design spec from your requirements.")
+    print("This wizard captures YOUR specifics — no hardcoded choices.\n")
 
-    # Step 0: Project name
-    project_name = input("Project name (e.g., 'WiFi_Sensor_v1'): ").strip()
+    # Gather requirements via open-ended questions
+    project_name = input("Project name: ").strip()
     if not project_name:
         project_name = "MyDesign_v1"
 
-    # Step 1: Experience level (affects guidance tone, not functionality)
-    print("\nExperience level?")
-    print("  [1] Beginner (new to PCB design)")
-    print("  [2] Intermediate (designed 1-3 boards)")
-    print("  [3] Advanced (regular designer)")
-    exp_choice = input("Choice [1-3, default 2]: ").strip() or "2"
+    purpose = input("What does this circuit do? (e.g., 'WiFi sensor', 'motor controller'): ").strip()
+    if not purpose:
+        purpose = "Custom circuit"
 
-    # Step 2: Main component selection
-    print("\nLet's build your circuit. Start with the power supply:")
-    print("  [1] Simple LDO (voltage regulator)")
-    print("  [2] Buck converter (higher efficiency)")
-    print("  [3] Boost converter (step-up)")
-    power_choice = input("Power supply [1-3, default 1]: ").strip() or "1"
+    print("\n--- Power Supply ---")
+    input_power = input("Input power source (e.g., '3.7V LiPo', '5V USB', '12V supply'): ").strip()
+    if not input_power:
+        input_power = "3.3V"
 
-    print("\nMain microcontroller/processor?")
-    print("  [1] Microcontroller (STM32, ESP32, RP2040, etc.)")
-    print("  [2] FPGA (Xilinx, Lattice, etc.)")
-    print("  [3] Other (just GPIO/analog)")
-    mcu_choice = input("Choice [1-3, default 1]: ").strip() or "1"
+    output_rails = input("Output voltage rails needed (e.g., '3.3V, 500mA; 5V, 100mA'): ").strip()
+    if not output_rails:
+        output_rails = "3.3V, 500mA"
 
-    print("\nSensors or peripherals?")
-    print("  [1] Temperature/humidity (BME280, DHT22)")
-    print("  [2] IMU/accelerometer (MPU6050, LSM6DS3)")
-    print("  [3] Light sensor (ambient light, distance)")
-    print("  [4] None (I'll add manually)")
-    sensor_choice = input("Choice [1-4, default 4]: ").strip() or "4"
+    print("\n--- Components & Interfaces ---")
+    interfaces = input("Interfaces/buses (e.g., 'I2C, SPI, UART, USB, WiFi'): ").strip()
+    if not interfaces:
+        interfaces = "I2C, UART"
 
-    # Step 3: Basic circuit topology
-    input_v = input("\nInput voltage (e.g., '3.7' for LiPo, '5' for USB): ").strip() or "3.3"
-    try:
-        input_v_float = float(input_v)
-    except ValueError:
-        input_v_float = 3.3
+    mcu = input("Main processor/MCU (e.g., 'ESP32', 'STM32L0', 'RP2040', 'none'): ").strip()
+    if not mcu:
+        mcu = "to be selected"
 
-    output_v = input("Output voltage for MCU (e.g., '3.3'): ").strip() or "3.3"
-    try:
-        output_v_float = float(output_v)
-    except ValueError:
-        output_v_float = 3.3
+    components = input("Other key components (e.g., 'BME280 sensor, DRV8833 H-bridge'): ").strip()
+    if not components:
+        components = "to be added"
 
-    # Build a minimal design spec
+    special_reqs = input("Special requirements (e.g., 'low power', 'high speed', 'analog frontend'): ").strip()
+
+    # Build a minimal, editable spec scaffold
     spec: dict[str, Any] = {
         "metadata": {
             "title": project_name,
             "version": "1.0",
-            "description": "Design created via circuit-weaver design-wizard (offline)",
+            "description": f"{purpose}. Created via circuit-weaver design-wizard (offline).",
         },
         "interfaces": {
             "power_in": {
-                "purpose": "Input power",
-                "voltage": input_v_float,
+                "purpose": f"Input: {input_power}",
+                "voltage": 3.3,  # placeholder
                 "current_budget_ma": 500,
-            }
+            },
         },
-        "blocks": {},
-    }
-
-    # Add power supply block
-    power_template = "ldo" if power_choice == "1" else "buck" if power_choice == "2" else "boost"
-    spec["blocks"]["U1_power"] = {
-        "ref": "U1",
-        "section": "power",
-        "kind": "template",
-        "template_type": power_template,
-        "params": {
-            "vin_net": "VBAT",
-            "vin": input_v_float,
-            "vout": output_v_float,
-            "vout_net": "VDD_3P3" if output_v_float == 3.3 else f"VDD_{output_v_float}",
-            "iout_ma": 500,
+        "blocks": {
+            "U1_power": {
+                "ref": "U1",
+                "section": "power",
+                "kind": "template",
+                "template_type": "ldo",  # user to customize: ldo, buck, boost, etc.
+                "params": {
+                    "vin": 3.3,  # user to customize
+                    "vout": 3.3,  # user to customize
+                    "iout_ma": 500,  # user to customize
+                },
+            },
         },
     }
 
-    # Add MCU block (stub — user will customize)
-    if mcu_choice == "1":
-        spec["blocks"]["U2_mcu"] = {
-            "ref": "U2",
-            "section": "processor",
-            "kind": "component",
-            "value": "ESP32-WROOM-32E",
-            "footprint": "ESP32-WROOM-32E",
-            "mpn": "ESP32-WROOM-32E",
-            "lcsc_pn": "C529676",
-        }
-
-    # Add sensor block (stub)
-    if sensor_choice in ("1", "2", "3"):
-        sensor_name = "BME280" if sensor_choice == "1" else "MPU6050" if sensor_choice == "2" else "APDS9930"
-        spec["blocks"]["U3_sensor"] = {
-            "ref": "U3",
-            "section": "sensors",
-            "kind": "component",
-            "value": sensor_name,
-            "footprint": "LQFP48" if sensor_name == "BME280" else "BGA16",
-            "mpn": sensor_name,
-        }
-
+    # Print summary
     print("\n" + "=" * 72)
-    print("Design spec created (stub — you'll customize this):")
+    print("Design Spec Scaffold Created")
     print("=" * 72)
     print(f"\nProject: {project_name}")
-    print(f"Input: {input_v_float}V | Output: {output_v_float}V")
-    print(f"Blocks: {list(spec['blocks'].keys())}")
-    print("\nNext steps:")
-    print("  1. Review and edit the YAML file")
-    print("  2. Run: circuit-weaver validate <file>")
-    print("  3. Run: circuit-weaver generate <file> -o ./output")
-    print("\nFor more control, use the /circuit-weaver skill via Claude Code.")
+    print(f"Purpose: {purpose}")
+    print(f"Input: {input_power}")
+    print(f"Output Rails: {output_rails}")
+    print(f"Interfaces: {interfaces}")
+    print(f"MCU: {mcu}")
+    print(f"Components: {components}")
+    if special_reqs:
+        print(f"Special: {special_reqs}")
+
+    print("\n" + "-" * 72)
+    print("Next steps:")
+    print("  1. Edit the YAML file to add your components and customize the power supply")
+    print("  2. Use 'circuit-weaver list-templates' to see available circuit templates")
+    print("  3. Use 'circuit-weaver scaffold --template <name>' to add templates")
+    print("  4. Validate: circuit-weaver validate <file>")
+    print("  5. Generate: circuit-weaver generate <file> -o ./output")
+    print("\nFor automatic IC research and selection, use the /circuit-weaver skill in Claude Code.")
     print("=" * 72 + "\n")
 
     return spec
