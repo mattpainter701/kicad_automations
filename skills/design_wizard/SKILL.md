@@ -501,36 +501,71 @@ Ask:
   - Any approved vendor list (AVL) to follow?
   - Preferred passive sizes? (0402 for density, 0603 for hand-solder, 0805 for easy rework)
 
-### 3c. BOM Construction
+### 3c. Real Spec Assembly (Scaffold + Apply-Patch Workflow)
 
-Using the confirmed ICs and user preferences, build the initial YAML spec:
+Build the YAML spec incrementally using the CLI commands:
 
-1. Map each IC to its block definition (power, digital, sensors, connectors)
-2. Add support passives (decoupling caps, pull-ups, etc.) — the engine handles
-   most of these automatically
-3. Set distributor preference flags
-4. Generate the initial spec file
+**Step 1: Scaffold the first block**
 
-Present the draft BOM summary:
+Identify the primary power source and scaffold the first IC:
 
-```
-=== Draft BOM Summary ===
-
-Active components:     8 unique / 8 total
-Passive components:    ~24 (auto-generated decoupling, pull-ups, etc.)
-Connectors:            3
-
-Estimated BOM cost:    ~$12.50/board @ qty 5 (DigiKey prototype pricing)
-JLCPCB assembly cost:  ~$4.20/board (6 basic + 2 extended parts)
-
-All parts in stock:    Yes (checked DigiKey + LCSC)
+```bash
+circuit-weaver scaffold --template buck --ref U1 --output design.yaml
 ```
 
-Ask: **Want to review the full part list, or does this summary look good
-to proceed?**
+This creates a minimal spec with the first power block. Present the output to the user and confirm it looks reasonable before proceeding.
 
-If they want the full list, present it in a table with MPN, description,
-quantity, unit cost, and distributor.
+**Step 2: Add blocks iteratively with apply-patch**
+
+For each additional IC, create a patch JSON file and apply it:
+
+```bash
+# patch_u2_ldo.json
+{
+  "upsert_blocks": [
+    {
+      "id": "U2_ldo",
+      "section": "power",
+      "kind": "template",
+      "template_type": "ldo",
+      "ref": "U2",
+      "params": {
+        "vin": 3.3,
+        "vout": 1.8,
+        "vin_net": "VDD_3P3",
+        "rail_name": "VDD_1P8"
+      }
+    }
+  ]
+}
+
+# Apply the patch
+circuit-weaver apply-patch design.yaml patch_u2_ldo.json --output design.yaml
+```
+
+For each new block, present ONLY the newly-added components (from `diff.added_blocks`). Do NOT show the full updated spec — it's too verbose.
+
+```
+=== Block Added: U2 LDO ===
+
+U2  TLV75533  1.8V → 3.3V LDO, 500mA
+  Bypass caps: C2, C3 (100nF on input/output)
+  Enable pulled to VDD_3P3
+
+Ready for next block? (or 'done' to move to validation)
+```
+
+Repeat this for each IC until all blocks are added.
+
+**Step 3: Cost Estimation (Optional)**
+
+Once all blocks are added, generate an estimated BOM cost at target quantities:
+
+```bash
+circuit-weaver cost-bom design.yaml --qty 1,10,100
+```
+
+Present the pricing summary (prices by quantity break), noting any parts without LCSC codes that need manual sourcing.
 
 ---
 
@@ -624,18 +659,14 @@ respin costs weeks and dollars.
 
 ### 5a. Automated Review
 
-Run the generated schematic through the analysis tools:
+Run the generated schematic through the validation tools:
 
 ```bash
-# Full schematic analysis
-python3 <kicad-skill-path>/scripts/analyze_schematic.py [output_dir]/[project].kicad_sch \
-  --output [output_dir]/schematic_analysis.json
-
-# KiCad ERC (if kicad-cli available)
-kicad-cli sch erc [output_dir]/[project].kicad_sch --output [output_dir]/erc.txt
+# Full schematic validation
+circuit-weaver validate [spec.yaml]
 ```
 
-Present a structured review summary:
+Parse the validation report (categories level=error or level=warning) and present a structured review summary:
 
 ```
 === Design Review ===
@@ -737,16 +768,6 @@ If mechanical constraints were captured in Step 1a-mech, incorporate them now:
 - Connectors placed on specified edges
 - Height-restricted zones marked as keep-outs
 
-### 6b. Placement Script Generation
-
-If the user wants placement scripts, generate them using the `kicad_pcb_place`
-project skill patterns:
-
-- Board outline definition (coordinates, corner radii)
-- Component placement by functional group
-- Design rule settings (per the manufacturer's capabilities)
-- Zone definitions for power/ground pours
-
 ### 6c. Routing Guidance
 
 Based on the design:
@@ -756,7 +777,16 @@ Based on the design:
 - Recommend layer stackup if 4-layer
 - Identify candidates for autorouting (non-critical signal nets)
 
-Reference the `autoroute` project skill for Freerouting integration.
+**Optional: Freerouting Autorouting**
+
+If the user has Freerouting installed, offer to autoroute the PCB:
+
+```bash
+# Export to PCB layout file, then route
+circuit-weaver autoroute output/[project].kicad_pcb -o routed.kicad_pcb
+```
+
+**Note:** Freerouting must be installed separately. If not available, the user can route manually in KiCad using the placer hints as guidance.
 
 ### 6d. Manufacturing Checklist
 
@@ -851,10 +881,6 @@ Throughout the wizard, follow these principles:
 | `kicad` | 4, 5 | Schematic analysis, validation, and design review |
 | `jlcpcb` | 3, 6 | DFM rules, assembly ordering |
 | `pcbway` | 3, 6 | Alternative fab DFM rules |
-| `kicad_gen` | 4 | Programmatic schematic generation (planned) |
-| `kicad_pcb_place` | 6 | Placement scripting (planned) |
-| `kicad_validate` | 4, 5 | Validation runner (planned) |
-| `autoroute` | 6 | Freerouting integration (planned) |
 
 ---
 

@@ -157,6 +157,28 @@ def _write_cache(mpn: str, data: dict) -> None:
 _LCSC_SEARCH_URL = "https://jlcsearch.tscircuit.com/api/search"
 
 
+def get_unit_price(price_tiers: list[dict], qty: int) -> float | None:
+    """Return unit price for the given quantity from price tiers.
+
+    Args:
+        price_tiers: List of {min_qty, max_qty, unit_price} dicts, sorted by min_qty.
+        qty: Quantity to price.
+
+    Returns:
+        Unit price at the appropriate tier, or None if no tiers available.
+    """
+    if not price_tiers:
+        return None
+
+    # Find the tier that covers this quantity
+    for tier in sorted(price_tiers, key=lambda t: t["min_qty"]):
+        if tier["min_qty"] <= qty <= tier.get("max_qty", 9_999_999):
+            return tier["unit_price"]
+
+    # Quantity exceeds all tiers — return the last (highest quantity) tier
+    return sorted(price_tiers, key=lambda t: t["min_qty"])[-1]["unit_price"]
+
+
 def _search_lcsc(mpn: str) -> dict | None:
     """Search LCSC via the jlcsearch community API.
 
@@ -194,6 +216,21 @@ def _search_lcsc(mpn: str) -> dict | None:
         if raw_lcsc:
             lcsc_code = f"C{raw_lcsc}"
 
+    # Parse price tiers from extra.prices
+    raw_prices = extra.get("prices") or []
+    price_tiers = []
+    for tier in raw_prices:
+        try:
+            price_tiers.append(
+                {
+                    "min_qty": int(tier.get("min_qty", 1)),
+                    "max_qty": int(tier.get("max_qty", 9999)),
+                    "unit_price": float(tier.get("price", 0)),
+                }
+            )
+        except (TypeError, ValueError):
+            continue
+
     return {
         "source": "lcsc",
         "mpn": extra.get("mpn", "") or best.get("mfr", ""),
@@ -205,6 +242,7 @@ def _search_lcsc(mpn: str) -> dict | None:
         "attributes": attrs,
         "stock": extra.get("quantity", 0) or best.get("stock", 0),
         "basic": bool(best.get("basic", 0)),
+        "price_tiers": price_tiers,
     }
 
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.10.1] - 2026-04-05
+
+### Sprint 12 — Platform Integrity: Guided CLI Workflow
+
+### Added
+- `cost-bom` CLI subcommand — generates costed BOM with LCSC pricing at multiple volume breaks (1, 10, 100, 1000 qty)
+- `cost_bom.py` module: queries LCSC, extracts price tiers, calculates per-board and total costs
+- Extended `parts_lookup.py` with `get_unit_price()` helper to select correct price tier for given quantity
+- Price tier parsing in `_search_lcsc()` — converts API `extra.prices` array to `[{min_qty, max_qty, unit_price}]` dicts
+- Rewrote `design_wizard/SKILL.md` Step 3c to reflect real CLI workflow: `scaffold` → `apply-patch` → `cost-bom`
+- All wizard steps now reference working CLI commands (removed non-existent analyze_schematic.py, kicad_gen, kicad_pcb_place, kicad_validate)
+
+### Changed
+- Design wizard Step 3c: shifted from abstract BOM description to concrete `scaffold`+`apply-patch`+`cost-bom` commands
+- Design wizard Step 5a: replaced non-existent script call with `circuit-weaver validate` direct call
+- Design wizard Step 6c: Freerouting made optional (separate installation required, graceful fallback)
+
+### Fixed
+- Removed non-existent `comp.dnp` attribute check in `cost_bom.py` (ComponentDef has no DNP field)
+
+### Tests
+- `cost-bom samples/iot_sensor_node/iot_sensor_node.yaml --qty 1,10` verified working
+- All wizard steps now use real, tested CLI commands
+- Version bump: 0.9.0 → 0.10.1
+
 ## [0.9.0] - 2026-04-05
 
 ### Sprint 11 — Visual Design Diff (partial)

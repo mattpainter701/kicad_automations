@@ -1545,6 +1545,21 @@ def main() -> None:
     gerber_p.add_argument("kicad_pcb", help="KiCad PCB file (.kicad_pcb)")
     gerber_p.add_argument("--output", "-o", required=True, help="Output directory for Gerber/drill files")
 
+    cost_bom_p = subparsers.add_parser("cost-bom", help="Show costed BOM with LCSC pricing at volume breaks")
+    cost_bom_p.add_argument("spec", help="Design spec YAML file")
+    cost_bom_p.add_argument(
+        "--qty",
+        default="1,10,100,1000",
+        help="Comma-separated build quantities (default: 1,10,100,1000)",
+    )
+    cost_bom_p.add_argument(
+        "--json",
+        dest="json_output",
+        action="store_true",
+        default=False,
+        help="Output raw JSON instead of formatted table",
+    )
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -1770,6 +1785,85 @@ def main() -> None:
             }
         )
         raise SystemExit(0)
+
+    if args.command == "cost-bom":
+        from .cost_bom import cost_bom
+
+        qty_breaks = [int(q.strip()) for q in args.qty.split(",")]
+        result = _run_with_stderr_capture(
+            lambda: cost_bom(
+                _load_spec_file(args.spec),
+                qty_breaks=qty_breaks,
+            )
+        )
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            _print_cost_bom_table(result)
+
+        raise SystemExit(0 if result["status"] == "ok" else 1)
+
+
+def _print_cost_bom_table(result: dict) -> None:
+    """Print a costed BOM result as a formatted table (stdlib only, no tabulate)."""
+    if result["status"] != "ok":
+        print(f"[!] Error: {result.get('message', 'Unknown error')}")
+        return
+
+    project = result.get("project", "Unknown")
+    qty_breaks = result.get("qty_breaks", [])
+    rows = result.get("rows", [])
+    totals = result.get("totals", {})
+    warnings = result.get("warnings", [])
+
+    # Print header
+    print()
+    print(f"=== Costed BOM: {project} ===")
+    print()
+
+    # Compute column widths
+    ref_width = max(10, max((len(r.get("ref", "")) for r in rows), default=10))
+    mpn_width = max(10, max((len(r.get("mpn", "")) for r in rows), default=10))
+    lcsc_width = 10
+    qty_width = 4
+    unit_widths = {str(q): max(7, len(f"${0.00}")) for q in qty_breaks}
+
+    # Print column headers
+    header = f"{'Ref':<{ref_width}} {'MPN':<{mpn_width}} {'LCSC':<{lcsc_width}} {'Qty':<{qty_width}}"
+    for q in qty_breaks:
+        header += f"  {'$' + str(q):<{unit_widths[str(q)]}}"
+    print(header)
+    print("-" * len(header))
+
+    # Print rows
+    for row in rows:
+        ref = row.get("ref", "")
+        mpn = row.get("mpn", "")
+        lcsc = row.get("lcsc_pn", "")
+        qty = row.get("qty_per_board", 0)
+        prices = row.get("prices", {})
+
+        line = f"{ref:<{ref_width}} {mpn:<{mpn_width}} {lcsc:<{lcsc_width}} {qty:<{qty_width}}"
+        for q in qty_breaks:
+            unit_price = prices.get(str(q), {}).get("unit", 0)
+            line += f"  ${unit_price:<{unit_widths[str(q)] - 1}}"
+        print(line)
+
+    # Print separator and totals
+    print("-" * len(header))
+    line = f"{'Total':<{ref_width + mpn_width + lcsc_width + qty_width + 1}}"
+    for q in qty_breaks:
+        total = totals.get(str(q), {}).get("component_cost", 0)
+        line += f"  ${total:<{unit_widths[str(q)] - 1}}"
+    print(line)
+    print()
+
+    # Print warnings
+    if warnings:
+        for warning in warnings:
+            print(f"[!] {warning}")
+        print()
 
 
 if __name__ == "__main__":
