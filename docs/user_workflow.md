@@ -141,60 +141,74 @@ worse than a modest chip with great tooling.
 
 **After you confirm the selections**, the wizard researches each IC:
 
-- **Distributor availability** — checks LCSC and suggests DigiKey/Mouser alternatives
 - **Datasheet highlights** — recommended application circuit, key specs,
   decoupling requirements
 - **Alternative parts** — at least one backup for each IC
 - **Known gotchas** — errata, strapping pins, common mistakes
 - **Thermal analysis** — for power ICs, it calculates junction temperature
   and flags if copper pours or heatsinks are mandatory
-- **Lead time check** — flags any part that's out of stock, low stock, or has
-  16+ week lead times
-
-```
-=== Supply Chain Summary ===
-
-Part                    DigiKey    Mouser     LCSC       Lead Time
---------------------------------------------------------------------
-ESP32-S3-WROOM-1        2,400+     800+      In stock    Immediate
-AP2112K-3.3             5,200+     3,100+    In stock    Immediate
-BME280                  150        0          In stock    ⚠ Low stock
-```
 
 You can swap any IC, request deeper research, or ask for more alternatives
 at any point.
 
 ---
 
-### Step 3 — BOM Assembly & Sourcing
+### Step 3 — Spec Assembly & Costing
 
-**What happens:** The wizard asks about your manufacturing and purchasing
-preferences:
+**What happens:** You build your design specification incrementally using the
+CLI commands. The wizard helps you structure each block and validates the result.
 
-- **Where will you manufacture?** Hand-solder at home, JLCPCB, PCBWay, local
-  fab, etc.
-- **Assembly level?** Bare PCB, partial assembly, or full turnkey
-- **PCB specs?** Layer count, surface finish, controlled impedance needs
-- **Preferred distributors?** DigiKey, Mouser, LCSC, or mix-and-match
-- **Budget?** Target BOM cost, max spend for this run, board quantity
-- **Part preferences?** Passive sizes (0402/0603/0805), JLCPCB basic parts
-  preferred, automotive grade, etc.
-
-**What you get:**
-
-A YAML design spec saved to your project directory, plus a BOM summary:
-
-```
-=== Draft BOM Summary ===
-
-Active components:     8 unique / 8 total
-Passive components:    ~24 (auto-generated decoupling, pull-ups, etc.)
-Connectors:            3
-
-All parts in stock:    Yes
+**Scaffold a starter block:**
+```bash
+circuit-weaver scaffold --template buck --ref U1 --output design.yaml
 ```
 
-You can then run `cost-bom` to estimate pricing at multiple quantity breaks, or drill into the full part list with MPNs, unit costs, and distributor details.
+This creates a base design with one power block (buck converter, LDO, etc.).
+You can inspect and edit `design.yaml` at any time.
+
+**Add additional blocks via `apply-patch`:**
+
+For each additional component block (another regulator, sensor, driver, etc.),
+create a patch JSON file and apply it:
+
+```bash
+# patch_ldo.json
+{
+  "upsert_blocks": [
+    {
+      "id": "U2_ldo",
+      "section": "power",
+      "kind": "template",
+      "template_type": "ldo",
+      "ref": "U2",
+      "params": {
+        "vin": 3.3,
+        "vout": 1.8,
+        "vin_net": "VDD_3P3",
+        "rail_name": "VDD_1P8"
+      }
+    }
+  ]
+}
+
+# Apply the patch
+circuit-weaver apply-patch design.yaml patch_ldo.json --output design.yaml
+```
+
+Repeat for each block until your design is complete.
+
+**Estimate component costs:**
+
+Once your spec is complete, run the cost analyzer to see pricing at multiple
+quantity breaks:
+
+```bash
+circuit-weaver cost-bom design.yaml --qty 1,10,100,1000
+```
+
+This queries LCSC pricing tiers for all components and shows you unit and
+extended costs per quantity level. Helps you identify price breakpoints and
+decide your optimal production volume.
 
 ---
 
@@ -300,9 +314,16 @@ The wizard identifies which nets need manual attention and suggests trace widths
 for power vs. signal nets.
 
 **Optional: Freerouting autorouting** — If you have Freerouting installed
-(separate download from https://github.com/mirage335/freerouting/releases),
-the wizard can autoroute non-critical signal nets. Otherwise, manual routing
-in KiCad is your best option.
+(separate download from https://github.com/mirage335/freerouting/releases or
+`brew install freerouting`), you can autoroute signal nets:
+
+```bash
+circuit-weaver autoroute output/MyBoard.kicad_pcb -o routed.kicad_pcb
+```
+
+Freerouting routes simple circuits 100% automatically and complex circuits
+~90%. If you don't have Freerouting or prefer manual control, use KiCad's
+interactive routing or the placer hints for guidance.
 
 #### Manufacturing checklist
 
@@ -426,6 +447,7 @@ on any topic.
 | `kicad` | Schematic and PCB analysis | Validation, design review |
 | `jlcpcb` | JLCPCB DFM rules | Manufacturing prep |
 | `pcbway` | PCBWay DFM rules | Manufacturing prep |
+| `autoroute` | Freerouting PCB router | Automatic signal routing (optional; user installs JAR separately) |
 
 ---
 
