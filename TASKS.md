@@ -640,19 +640,19 @@ Deferred until KiCad CLI SVG export is integrated into CI.
 
 Files: `.gitignore`, `git rm`
 
-### 72. cost-bom CLI subcommand (P1, MEDIUM)
+### 72. cost-bom CLI subcommand (P1, MEDIUM) — DONE
 
-- [ ] Extend parts_lookup.py: parse extra.prices array into price_tiers
-- [ ] Add get_unit_price(price_tiers, qty) helper
-- [ ] Add lookup_by_lcsc(lcsc_pn) to PartsLookup
-- [ ] Create cost_bom.py: cost_bom(spec, qty_breaks) → structured costed BOM
-- [ ] Add cost-bom subcommand to mvp.py with --qty flag
-- [ ] _print_cost_bom_table() for formatted output (stdlib only)
-- [ ] Tests: price tier selection, math validation, network test on iot_sensor_node sample
+- [x] Extend parts_lookup.py: parse extra.prices array into price_tiers (already done)
+- [x] Add get_unit_price(price_tiers, qty) helper (already done)
+- [x] Add lookup_by_lcsc(lcsc_pn) to PartsLookup
+- [x] Create cost_bom.py: cost_bom(spec, qty_breaks) → structured costed BOM (already done)
+- [x] Add cost-bom subcommand to mvp.py with --qty flag (already done)
+- [x] _print_cost_bom_table() for formatted output (already done)
+- [x] Tests: price tier selection, math validation, network test on iot_sensor_node sample
 
-Files: `parts_lookup.py`, new `cost_bom.py`, `mvp.py`, `tests/test_cost_bom.py`
+Files: `parts_lookup.py`, `cost_bom.py`, `mvp.py`, `tests/test_cost_bom.py`
 
-### 70. Rewrite design_wizard/SKILL.md (P0, MEDIUM)
+### 70. Rewrite design_wizard/SKILL.md (P0, MEDIUM) — IN PROGRESS
 
 - [ ] Fix upsert vs upsert_blocks patch key names (all 3 references)
 - [ ] Remove analyze_schematic.py references
