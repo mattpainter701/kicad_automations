@@ -684,11 +684,11 @@ Files: `autoroute.py`, `mvp.py`, `tests/test_autoroute.py`
 
 Files: `docs/user_workflow.md`
 
-### 75. CLI demo capture (P2, SMALL)
+### 75. CLI demo capture (P2, SMALL) — DONE
 
-- [ ] Create docs/DEMO_COMMANDS.md: git-tracked script with command sequence
-- [ ] Commands: list-templates, scaffold, apply-patch, validate, generate, cost-bom, export-jlcpcb
-- [ ] Document asciinema recording (optional tool, not a dependency)
-- [ ] Update README: point demo section to DEMO_COMMANDS.md
+- [x] Create docs/DEMO_COMMANDS.md: git-tracked script with command sequence (9 command groups)
+- [x] Commands: list-templates, scaffold, apply-patch, validate, generate, cost-bom, export-jlcpcb, autoroute
+- [x] Document asciinema recording (optional tool, not a dependency)
+- [x] Update README: README already pointed to DEMO_COMMANDS.md
 
 Files: `docs/DEMO_COMMANDS.md`, `README.md`

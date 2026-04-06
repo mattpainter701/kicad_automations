@@ -1,70 +1,45 @@
-# Circuit Weaver CLI Demo
+# Circuit Weaver CLI Demo — Command Sequence
 
-This file contains the command sequence for recording a live CLI demo using asciinema.
+This document shows the CLI workflow from initial design to production-ready output.
+All commands are executable and demonstrate the full design pipeline.
 
-## Prerequisites
-
-Install asciinema (not included in Circuit Weaver dependencies):
+## Quick Start
 
 ```bash
-# macOS (Homebrew)
-brew install asciinema
-
-# Linux (apt, yum, or pacman)
-sudo apt install asciinema
-
-# Windows (Chocolatey or manual download)
-choco install asciinema
-# or https://asciinema.org/
-```
-
-Install circuit-weaver in development mode:
-```bash
-cd circuit_weaver
+# Install Circuit Weaver
 pip install -e .
+
+# Run through the demo sequence (see below)
+cd demo/  # or create a fresh directory
 ```
 
-## Recording the Demo
+## Demo Sequence
 
-Create a demo directory:
+### 1. List Available Templates
+
 ```bash
-mkdir -p demo/{output,jlcpcb}
+circuit-weaver list-templates
 ```
 
-Record the demo:
+Shows all 30 built-in circuit templates with descriptions and key parameters.
+
+### 2. Scaffold a Battery Charger Design
+
+Create a starter project with a buck converter template:
+
 ```bash
-asciinema rec demo.cast
+mkdir -p demo && cd demo
+circuit-weaver scaffold --template battery_charger --ref U1 --output design.yaml
 ```
 
-Then run each command below in order:
+This generates `design.yaml` with a base buck converter (TP4056 charger circuit).
 
----
+### 3. Add a Linear Regulator Block (Optional)
 
-## Command Sequence
+Create a patch to add a 3.3V LDO:
 
-### Step 1: List available templates
 ```bash
-circuit-weaver list-templates | head -15
-```
-
-Output shows 30+ templates for power, analog, digital, communication circuits.
-
----
-
-### Step 2: Scaffold the first block (battery charger buck converter)
-```bash
-circuit-weaver scaffold --template buck --ref U1 --output demo/design.yaml
-cat demo/design.yaml
-```
-
-Output: YAML spec with U1 buck converter, scaffolded with defaults.
-
----
-
-### Step 3: Add an LDO via apply-patch
-Create a patch file first:
-```bash
-cat > demo/patch_ldo.json << 'EOF'
+cat > patch_ldo.json <<'PATCH'
 {
   "upsert_blocks": [
     {
@@ -76,96 +51,168 @@ cat > demo/patch_ldo.json << 'EOF'
       "params": {
         "vin": 5.0,
         "vout": 3.3,
-        "vin_net": "VBUS_5V",
+        "vin_net": "VBUS",
         "rail_name": "VDD_3P3"
       }
     }
   ]
 }
-EOF
+PATCH
+
+circuit-weaver apply-patch design.yaml patch_ldo.json --output design.yaml
 ```
 
-Apply the patch:
-```bash
-circuit-weaver apply-patch demo/design.yaml demo/patch_ldo.json --output demo/design.yaml
-```
+Inspect the updated `design.yaml` to see the new LDO block added alongside the buck converter.
 
-Output: "Added U2 (ldo) to design.yaml."
-
----
-
-### Step 4: Validate the design
-```bash
-circuit-weaver validate demo/design.yaml
-```
-
-Output: Validation passed, 0 errors, N warnings (decoupling cap recommendations, etc.)
-
----
-
-### Step 5: Generate KiCad schematic
-```bash
-circuit-weaver generate demo/design.yaml --output demo/output --no-svg
-ls -la demo/output/
-```
-
-Output: Generated KiCad files (.kicad_sch sheets), design report, placer hints.
-
----
-
-### Step 6: Estimate BOM cost at multiple quantities
-```bash
-circuit-weaver cost-bom demo/design.yaml --qty 1,10,100
-```
-
-Output: Formatted BOM table with LCSC pricing at qty breaks.
-
----
-
-### Step 7: Export JLCPCB assembly files
-```bash
-circuit-weaver export-jlcpcb demo/design.yaml -o demo/jlcpcb
-ls -la demo/jlcpcb/
-```
-
-Output: BOM and CPL CSV files ready for JLCPCB assembly ordering.
-
----
-
-## Stopping the Recording
-
-Press `Ctrl+D` or type `exit` to stop recording.
-
-asciinema will prompt for optional metadata (title, author, description).
-
-Example:
-```
-Title: Circuit Weaver CLI Demo
-Author: Demo User
-Description: End-to-end workflow: scaffold → patch → validate → generate → cost → export
-```
-
-## Playing Back the Recording
+### 4. Validate the Specification
 
 ```bash
+circuit-weaver validate design.yaml
+```
+
+Runs structural, electrical, and implementation checks. Reports any issues:
+- Floating pins
+- Power domain conflicts
+- Bus completeness (I2C pull-ups, SPI CS lines)
+- Decoupling requirements
+
+### 5. Generate Schematic & PCB Layout Files
+
+```bash
+circuit-weaver generate design.yaml --output ./output --no-svg
+```
+
+Creates:
+- `.kicad_sch` schematic files (top-level + functional sheets)
+- `.kicad_pcb` PCB with initial placement
+- `placer_hints.json` for layout guidance
+- `design_report.md` with validation summary
+
+### 6. Estimate Component Costs
+
+```bash
+circuit-weaver cost-bom design.yaml --qty 1,10,100,1000
+```
+
+Queries LCSC pricing for all components and shows:
+- Unit cost at each quantity tier
+- Extended cost (unit × qty × board qty)
+- Total project cost across qty breaks
+
+Use this to identify optimal production volume and price breakpoints.
+
+### 7. Export for JLCPCB Assembly (Optional)
+
+If you want to order the board from JLCPCB:
+
+```bash
+circuit-weaver export-jlcpcb design.yaml -o ./jlcpcb
+```
+
+Generates:
+- `jlcpcb/bom_jlcpcb.csv` — BOM with LCSC part numbers
+- `jlcpcb/cpl_jlcpcb.csv` — Component placement file
+- Ready to upload to JLCPCB's assembly service
+
+### 8. Export Gerbers for Bare PCB (Optional)
+
+```bash
+circuit-weaver export-gerbers output/YourBoard.kicad_pcb -o ./gerbers
+```
+
+Creates manufacturing-ready Gerber files for custom fab shops or local fabrication.
+
+### 9. Optional: Autoroute with Freerouting
+
+If you have Freerouting installed:
+
+```bash
+# Install Freerouting (macOS)
+brew install freerouting
+
+# Or download from: https://github.com/mirage335/freerouting/releases
+```
+
+Then autoroute the PCB:
+
+```bash
+circuit-weaver autoroute output/YourBoard.kicad_pcb -o routed.kicad_pcb
+```
+
+Routes signal nets automatically. Simple circuits route 100%; complex circuits ~90%.
+
+## Recording the Demo with Asciinema (Optional)
+
+To record this workflow as a terminal recording:
+
+```bash
+# Install asciinema (not a Circuit Weaver dependency)
+pip install asciinema
+
+# Record a session
+asciinema rec demo.cast
+
+# Paste the commands from the demo sequence above
+# Press Ctrl+D to finish recording
+
+# Play back the recording
 asciinema play demo.cast
+
+# Share the recording (text file, ~1-2 KB)
+# Can be viewed at: https://asciinema.org/
+cat demo.cast | wc -c
 ```
 
-Or view it in your browser:
-```bash
-asciinema upload demo.cast
+Asciinema records terminal sessions as plain-text `.cast` files — no video encoding, no large MP4 files, just text and timing data.
+
+## Output Files
+
+After running the full sequence, your demo directory looks like:
+
+```
+demo/
+├── design.yaml                    # Specification (YAML)
+├── patch_ldo.json                 # Optional patch to add LDO
+├── output/
+│   ├── BatteryCharger.kicad_sch   # Schematic files
+│   ├── BatteryCharger.kicad_pcb   # PCB layout
+│   └── placer_hints.json          # Placement guidance
+├── jlcpcb/
+│   ├── bom_jlcpcb.csv             # JLCPCB assembly BOM
+│   └── cpl_jlcpcb.csv             # JLCPCB placement file
+├── gerbers/                       # Gerber files (if exported)
+├── routed.kicad_pcb               # Autorouted PCB (if Freerouting available)
+└── demo.cast                      # Terminal recording (if asciinema used)
 ```
 
-This will give you a shareable URL.
+## What This Demonstrates
 
-## Tips for Good Recordings
+1. **Scaffolding** — start with a template, don't write YAML from scratch
+2. **Incremental design** — add blocks with `apply-patch`, see changes accumulate
+3. **Validation** — automated checks before layout (catch mistakes early)
+4. **Generation** — from YAML spec → KiCad files in one command
+5. **Costing** — see price breakpoints across quantity tiers
+6. **Manufacturing** — export in correct formats for JLCPCB or custom fabs
+7. **Automation** — Freerouting routes the PCB with one command
+8. **Documentation** — all files are git-trackable (YAML, CSV, KiCad formats)
 
-1. **Font size**: Use a large terminal font (18+ pt) for readability
-2. **Speed**: asciinema plays at recorded speed — most commands run fast
-3. **Pauses**: Use `sleep 1-2` between sections if you want time to read output
-4. **Annotations**: Add comments (start with `#`) to explain each step
-5. **Demo data**: Use sample designs (e.g., `samples/iot_sensor_node/`) instead of creating from scratch
+## Next Steps
 
-## Alternative: Static Markdown Script
+After the demo:
 
-If you prefer a static markdown file (no playback), keep this file as-is — it documents the complete workflow.
+1. **Review the schematic in KiCad** — open `.kicad_sch`, verify nets and components
+2. **Adjust PCB placement** — use `placer_hints.json` as guidance, route manually in KiCad
+3. **DFM check** — use `circuit-weaver kicad-drc output/*.kicad_pcb` for design rule violations
+4. **Order PCBs** — upload Gerbers to your fab (JLCPCB, PCBWay, local fab)
+5. **Order assembly** — upload BOM + CPL to JLCPCB if using their assembly service
+6. **Iterate** — save your design YAML, update for rev2, re-run pipeline
+
+## Tips
+
+- **Commit your design.yaml to git** — it's your source of truth
+- **Use `--json` flags for machine parsing** — scripts can consume JSON output
+- **Save YAML specs across revisions** — branch for rev2 experiments
+- **Validate early, validate often** — catch issues before PCB layout
+- **Read the placer hints** — they guide manual routing decisions
+
+For full documentation, see `docs/user_workflow.md`.
