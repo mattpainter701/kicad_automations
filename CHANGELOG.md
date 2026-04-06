@@ -5,6 +5,9 @@
 ### Sprint 12 — Platform Integrity: Guided CLI Workflow
 
 ### Added
+- `/circuit-weaver` master orchestrator skill — LLM-first skill that routes new vs existing designs, orchestrates research-analyst agent (Perplexity IC research), CLI subcommands, and generates quote-ready outputs
+- Skill implementation: `skills/circuit-weaver/SKILL.md` with Steps 0-7 (new design: welcome → requirements → research → BOM → schematic → review → export; existing design: load → validate/regenerate/export/modify)
+- `.agents/skills/circuit-weaver/SKILL.md` compatibility stub for Claude Code discovery
 - `cost-bom` CLI subcommand — generates costed BOM with LCSC pricing at multiple volume breaks (1, 10, 100, 1000 qty)
 - `cost_bom.py` module: queries LCSC, extracts price tiers, calculates per-board and total costs
 - Extended `parts_lookup.py` with `get_unit_price()` helper to select correct price tier for given quantity
