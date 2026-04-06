@@ -8,11 +8,17 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-![Terminal recording of Circuit Weaver demo](demo.gif)
+![Terminal recording of Circuit Weaver demo with phase highlights](demo_enhanced.gif)
 
-**Animated GIF** (603 KB, 30 seconds) — shows the complete design workflow: spec → validate → generate → export
+**Enhanced Animated GIF** (767 KB, 60 seconds) — slower playback with **phase highlighting**:
+- Blue: List Templates
+- Green: Create YAML Spec
+- Yellow: Validate
+- Red: Generate Schematic
+- Purple: Cost BOM
+- Pink: Export JLCPCB Files
 
-[📥 Download demo.gif](demo.gif) | [📹 MP4 version](demo.mp4) (if MP4 works on your device)
+Includes progress bar and phase timer. **Mobile-friendly** — plays on all devices.
 
 ---
 
