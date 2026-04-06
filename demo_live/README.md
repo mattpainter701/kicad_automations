@@ -8,19 +8,19 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-<video src="demo.mp4" controls width="100%" style="max-width: 800px; border-radius: 8px; margin: 20px 0;"></video>
+**[▶️ Play demo.mp4](demo.mp4)** (715 KB, 30 seconds) — click to watch in your browser
 
-**30-second terminal recording** showing the complete design workflow: spec → validate → generate → export
+30-second terminal recording showing the complete design workflow: spec → validate → generate → export
 
 ---
 
-### Want More?
+### More Ways to View
 
-**📖 Step-by-step walkthrough:**  
-See [**DEMO_WALKTHROUGH.md**](DEMO_WALKTHROUGH.md) for the full guide with all CLI commands and outputs.
-
-**🌐 Interactive player:**  
-Open [**index.html**](index.html) locally for an interactive terminal player with play/pause controls.
+| Option | How |
+|-|-|
+| **Step-by-step guide** | Read [**DEMO_WALKTHROUGH.md**](DEMO_WALKTHROUGH.md) with all CLI commands and outputs |
+| **Interactive player** | Open [**index.html**](index.html) locally for play/pause controls |
+| **Terminal recording** | View raw [**demo.cast**](demo.cast) format (asciinema) |
 
 ---
 
