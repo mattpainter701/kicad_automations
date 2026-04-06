@@ -8,26 +8,26 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-![Ultra-readable Circuit Weaver demo with large fonts and CLI commands](demo_ultra_readable.gif)
+![Circuit Weaver demo showing actual deliverables: schematics, BOM, PCB placement](demo_final.gif)
 
-**Ultra-Readable Demo** (399 KB, 28 seconds) — **MOBILE-FRIENDLY**: huge fonts, slow pacing, visible CLI commands
+**Final Demo** (230 KB, 27 seconds) — **SHOWS ACTUAL OUTPUTS**: schematic generation, BOM with real component pricing, PCB placement coordinates, design metrics
 
 **What You'll See:**
 1. **Design Brief** — Requirements for a WiFi Environmental Sensor
-2. **List Templates** — `$ circuit-weaver list-templates` (30+ available)
-3. **Create Spec** — `$ circuit-weaver scaffold ...` (define in YAML)
-4. **Validate** — `$ circuit-weaver validate design.yaml` (electrical checks)
-5. **Generate** — `$ circuit-weaver generate ...` (KiCad schematic, 4 ICs + 16 passives)
-6. **Cost Analysis** — `$ circuit-weaver cost-bom ...` (LCSC pricing at 1, 10, 100, 1K units)
-7. **Export** — `$ circuit-weaver export-jlcpcb ...` (JLCPCB-ready files)
-8. **Complete** — 60 seconds of engineering work
+2. **List Templates** — 30+ available circuit templates (power, communications, sensors, support)
+3. **Design Specification** — YAML circuit definition with components and parameters
+4. **Validation Results** — Automated electrical checks that pass
+5. **Generated Schematic** — 74 KB KiCad schematic with 4 ICs + 16 passives
+6. **BOM with Pricing** — Real LCSC component costs at volume breaks
+7. **PCB Placement** — Exact X/Y coordinates and rotation for assembly
+8. **Complete** — All deliverables ready for fabrication
 
 **Features:**
-- ✨ **Huge readable fonts** — 32pt titles, 18pt descriptions (readable on mobile)
-- 🎯 **Every command visible** — shows exactly what CLI command triggers each step
-- 🐢 **Ultra-slow pacing** — 1400ms per frame (time to read and understand)
-- 📊 **Color-coded phases** — each step highlighted with its own color
-- ⏱️ **Watch multiple times** — ~28 seconds total, easy to follow twice
+- 📊 **Shows actual deliverables** — BOM tables, component costs, PCB placement data (not just terminal output)
+- 💰 **Real pricing data** — LCSC costs at 1, 10, 100, 1000 unit quantities
+- 🎯 **Design metrics** — schematic size, component count, net count, decoupling status
+- ⏱️ **1-second-per-slide pacing** — time to absorb key results
+- 🔧 **Production-ready outputs** — same files you'd send to JLCPCB
 
 ---
 
