@@ -1,40 +1,39 @@
 # Circuit Weaver Live Demo
 
-**WiFi Environmental Sensor — Complete Design Workflow**
+**WiFi Environmental Sensor — `/circuit-weaver` Skill Workflow**
 
-This directory contains a complete end-to-end demonstration of Circuit Weaver, from YAML design spec to JLCPCB-ready manufacturing files.
+This directory contains a complete end-to-end demonstration of Circuit Weaver's master orchestrator skill, from user input through JLCPCB-ready manufacturing files.
 
 ---
 
 ## 🎬 Watch the Demo
 
-![Circuit Weaver design wizard: user interaction + real schematics, BOM, placement](demo_realistic.gif)
+![Circuit Weaver /circuit-weaver skill: automated IC research, BOM generation, schematic output](demo_realistic.gif)
 
-**Realistic Advertisement Demo** (161 KB, 34 seconds) — **SEE THE WORKFLOW**: user types wizard prompts, reviews actual engineering outputs
+**Live Skill Demo** (415 KB, 47 seconds) — **COMPLETE WORKFLOW**: User triggers `/circuit-weaver` skill in Claude Code → automatic agent-driven design → manufacturing-ready outputs
 
 **What You'll See:**
-1. **Design Wizard Step 1** — User selects device type (WiFi/BLE, power source, MCU)
-2. **Design Wizard Step 2** — User chooses sensors (BME280 for temp/humidity/pressure)
-3. **Automatic Analysis** — Validation runs: power budget, feedback networks, decoupling checks
-4. **Schematic Diagram** — Visual block diagram showing power chain: 3.7V → boost (5V) → buck (3.3V) → MCU + Sensor
-5. **BOM Table** — Real LCSC part numbers and costs:
-   - U1 TPS61230A boost converter: $2.50
-   - U2 AP62300 buck converter: $1.20
-   - U3 ESP32-WROOM-32E MCU: $5.80
-   - U4 BME280 sensor: $2.15
-   - **Total: $12.25**
-6. **PCB Placement** — Exact coordinates and rotation for assembly:
-   - U1 at (10mm, 10mm)
-   - U2 at (18mm, 10mm)
-   - U3 at (50mm, 30mm)
-   - U4 at (90mm, 60mm)
-7. **Export Complete** — Files ready: KiCad schematic, BOM CSV, placement CSV
+1. **User Triggers Skill** — Say `/circuit-weaver` in Claude Code
+2. **Experience Level** — Skill asks: beginner/intermediate/advanced
+3. **Requirements Capture** — What does it do? Interfaces? Power source?
+   - Example: WiFi sensor, USB + I2C, 3.7V LiPo battery
+4. **IC Research (Agent)** — Spawns research-analyst → Perplexity searches for similar designs + datasheets
+5. **IC Selection** — Shows candidates:
+   - U1: TPS61230A boost converter (3.7V → 5V, $2.50)
+   - U2: AP62300 buck converter (5V → 3.3V, $1.20)
+   - U3: ESP32-WROOM-32E WiFi MCU ($5.80)
+   - U4: BME280 temperature/humidity sensor ($2.15)
+6. **Passive Generation** — Auto-calculates feedback dividers, decoupling caps, crystal load caps
+7. **Schematic Generation** — Validates and generates KiCad schematic with block diagram
+8. **PCB Placement** — Placement hints for pick-and-place assembly
+9. **BOM + CPL Export** — Manufacturing files ready for JLCPCB (BOM CSV + CPL CSV)
 
 **Why This Demo:**
-- 👤 **User perspective** — See the wizard prompts and questions a real user answers
-- 🔧 **Actual outputs** — Schematic diagram, pricing table, placement coordinates — not mock data
-- ⚡ **Speed** — What normally takes 1-2 weeks shown in 3-4 minutes
-- 📦 **Manufacturing-ready** — All files ready to upload to JLCPCB
+- 👤 **Real user workflow** — See actual skill prompts and responses (not hardcoded slides)
+- 🔧 **Actual outputs** — Schematic diagram, BOM pricing, placement data (not mock data)
+- ⚡ **Speed** — What normally takes 1-2 weeks shown in ~5 minutes
+- 🤖 **Agent-driven** — Research-analyst finds ICs automatically via Perplexity API
+- 📦 **Manufacturing-ready** — All JLCPCB-format files included
 
 ---
 

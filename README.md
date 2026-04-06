@@ -58,26 +58,27 @@ Circuit Weaver sits in the useful middle:
 
 ## 🎬 Live Demo
 
-**WiFi Environmental Sensor — from design brief to quote-ready**
+**WiFi Environmental Sensor — `/circuit-weaver` skill workflow**
 
-![Circuit Weaver design wizard: user interaction + real schematics, BOM, placement](demo_live/demo_realistic.gif)
+![Circuit Weaver /circuit-weaver skill: automated IC research, requirements capture, schematic generation, BOM + CPL export](demo_live/demo_realistic.gif)
 
-**Watch the realistic workflow** (34 seconds) — user types into the design wizard, sees actual outputs:
+**Watch the complete workflow** (47 seconds) — user triggers `/circuit-weaver` skill (automatic, agent-driven):
 
-1. **Design Wizard** — User selects: WiFi/BLE device, LiPo battery power, ESP32 MCU, BME280 sensor
-2. **Validation** — Automatic checks: power budget, feedback networks, decoupling, ERC
-3. **Schematic** — Power chain visualization: 3.7V battery → boost → buck → 3.3V rails → MCU + sensor
-4. **BOM Table** — Real LCSC costs: U1 $2.50, U2 $1.20, U3 $5.80, U4 $2.15, total $12.25
-5. **Placement** — PCB coordinates ready for pick-and-place: U1 (10,10), U2 (18,10), U3 (50,30), U4 (90,60)
-6. **Export** — Files generated: KiCad schematic (73 KB), BOM CSV, CPL CSV — ready for JLCPCB
+1. **User Input** — Say `/circuit-weaver` in Claude Code → skill asks: experience level, what the board does, power source
+2. **Requirements Capture** — Captures purpose, interfaces, power budget; validates feasibility
+3. **IC Research (Agent)** — Spawns research-analyst agent → Perplexity searches for reference designs + datasheets
+4. **IC Selection** — Shows candidates: boost converters, buck converters, MCU options, sensors
+5. **Passive Generation** — Auto-calculates feedback dividers, decoupling caps, crystal load caps
+6. **Schematic Generation** — Validates and generates KiCad schematic with placement hints
+7. **Export** — BOM + CPL CSV files ready for JLCPCB assembly ordering
 
-**Key outputs shown:**
-- Schematic block diagram with power conversion stages
-- BOM with component references, LCSC part numbers, and per-unit costs
-- PCB placement coordinates and rotation angles for each component
-- Real design validation report (0 errors, ready to manufacture)
+**Outputs shown:**
+- Actual user prompts and skill Q&A (not hardcoded slides)
+- Schematic block diagram: 3.7V battery → boost (5V) → buck (3.3V) → MCU + sensor
+- BOM with LCSC part numbers and costs ($2.50 + $1.20 + $5.80 + $2.15 = $12.25)
+- Manufacturing-ready files (schematic, placement, BOM, CPL)
 
-What takes 1-2 weeks normally → **3-4 minutes** with Circuit Weaver wizard
+What takes 1-2 weeks normally → **5–10 minutes** with `/circuit-weaver` skill (includes research agent)
 
 [**Full walkthrough with all outputs**](demo_live/DEMO_WALKTHROUGH.md)
 
