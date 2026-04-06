@@ -170,15 +170,16 @@ Files: `exporters.py` or `report.py`
 
 Files: `.github/workflows/validate-design.yml`, `README.md`
 
-### 60. Visual SVG schematic diff (P1, LARGE)
+### 60. Visual SVG schematic diff (P1, LARGE) — DONE
 
-- [ ] `circuit-weaver diff <old> <new> --svg -o diff.html` generates side-by-side comparison
-- [ ] Added components: green overlay. Removed: red. Changed: yellow highlight
-- [ ] Requires KiCad CLI SVG export for both specs; falls back to text-only diff if unavailable
-- [ ] HTML output with inline SVGs for easy browser viewing
-- [ ] Add test with two sample specs that differ by one block
+- [x] `circuit-weaver diff <old> <new> --svg -o diff.html` generates side-by-side comparison
+- [x] Added components: green badges. Removed: red. Changed: yellow with field-level old/new details
+- [x] KiCad CLI SVG export for both specs when `--svg` flag used; text-only diff without it
+- [x] HTML output with inline SVGs, summary cards, metadata changes table, block diff table
+- [x] JSON-only mode (no flags) uses existing `semantic_diff` from `design_ir.py`
+- [x] 5 tests: added/removed/changed blocks, metadata changes, HTML output validation
 
-Files: new `diff_renderer.py`, `mvp.py`
+Files: new `diff_renderer.py`, `mvp.py`, `tests/test_template_structure.py`
 
 ### 61. Costed BOM via LCSC pricing API (P1, MEDIUM)
 

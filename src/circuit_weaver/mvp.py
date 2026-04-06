@@ -1510,9 +1510,16 @@ def main() -> None:
     gen_p.add_argument("--score", action="store_true", default=False, help="Run aesthetics scorer on generated layouts")
     gen_p.set_defaults(require_valid=True, export_svg=True)
 
-    diff_p = subparsers.add_parser("diff", help="Semantic diff between two design specs")
+    diff_p = subparsers.add_parser("diff", help="Compare two design specs — structural diff + optional SVG visual")
     diff_p.add_argument("old_spec", help="Path to the original YAML/JSON spec")
     diff_p.add_argument("new_spec", help="Path to the updated YAML/JSON spec")
+    diff_p.add_argument(
+        "--svg",
+        action="store_true",
+        default=False,
+        help="Generate SVG schematics for visual comparison (requires KiCad CLI)",
+    )
+    diff_p.add_argument("--output", "-o", help="Write HTML diff report to file")
 
     pcb_p = subparsers.add_parser("ingest-pcb-feedback", help="Merge PCB feedback into a design spec")
     pcb_p.add_argument("spec", help="Path to YAML/JSON design spec")
@@ -1583,7 +1590,17 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.command == "diff":
-        _print_json(diff_designs(_load_spec_file(args.old_spec), _load_spec_file(args.new_spec)))
+        old_spec = _load_spec_file(args.old_spec)
+        new_spec = _load_spec_file(args.new_spec)
+        use_svg = getattr(args, "svg", False)
+        output_path = getattr(args, "output", None)
+        if use_svg or output_path:
+            from .diff_renderer import diff_designs as visual_diff
+
+            result = _run_with_stderr_capture(lambda: visual_diff(old_spec, new_spec, svg=use_svg, output=output_path))
+        else:
+            result = diff_designs(old_spec, new_spec)
+        _print_json(result)
         raise SystemExit(0)
 
     if args.command == "ingest-pcb-feedback":

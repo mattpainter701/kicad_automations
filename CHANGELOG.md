@@ -2,6 +2,14 @@
 
 ## [0.9.0] - 2026-04-05
 
+### Sprint 11 — Visual Design Diff (partial)
+
+### Added
+- `diff` CLI subcommand enhanced with `--svg` and `--output` flags for visual HTML diff reports
+- `diff_renderer.py` module: structural block diff (added/removed/changed), metadata comparison, SVG side-by-side via KiCad CLI
+- HTML report with summary cards, color-coded block table, inline SVG panels
+- 5 diff tests covering add/remove/change/metadata/HTML output
+
 ### Sprint 10 — Close the Fab Gap
 
 ### Added

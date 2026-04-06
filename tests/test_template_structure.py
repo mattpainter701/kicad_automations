@@ -97,9 +97,7 @@ def _assert_no_unhandled_critical_pins(result) -> None:
             elif pin.electrical_type in ("input", "bidirectional", "tri_state"):
                 floating_input.append(label)
 
-        assert not floating_power, (
-            f"{comp.mpn} has floating power pins: {floating_power}"
-        )
+        assert not floating_power, f"{comp.mpn} has floating power pins: {floating_power}"
         assert not floating_input, (
             f"{comp.mpn} has floating input/bidirectional pins (need connection, "
             f"pull-up/down, or explicit_no_connects): {floating_input}"
@@ -220,8 +218,8 @@ def test_power_mux_only_advertises_supported_variant():
 
 def test_validator_catches_enable_pins():
     """Validator should detect floating EN pins on regulators."""
-    from circuit_weaver.validator import run_validation_checks
     from circuit_weaver.component_db import ComponentDef, PinDef
+    from circuit_weaver.validator import run_validation_checks
 
     # Simulate a regulator with floating EN pin
     comp = ComponentDef(
@@ -247,8 +245,8 @@ def test_validator_catches_enable_pins():
 
 def test_validator_bus_completeness_detects_missing_pullup():
     """I2C bus without pull-ups should be flagged."""
-    from circuit_weaver.validator import run_validation_checks
     from circuit_weaver.component_db import ComponentDef, PinDef
+    from circuit_weaver.validator import run_validation_checks
 
     comp = ComponentDef(
         mpn="TEST_I2C",
@@ -346,8 +344,8 @@ def test_validator_has_pin_type_conflict_check():
 
 def test_electrical_quality_scorer():
     """Electrical quality scorer should produce valid scores."""
+    from circuit_weaver.component_db import BypassCap, ComponentDef, PinDef
     from circuit_weaver.scorer import score_electrical_quality
-    from circuit_weaver.component_db import ComponentDef, PinDef, BypassCap
 
     comp = ComponentDef(
         mpn="TEST_IC",
@@ -369,14 +367,16 @@ def test_electrical_quality_scorer():
 
 def test_strict_mode_fails_on_warnings():
     """Strict mode should make warnings count as failures."""
-    from circuit_weaver.mvp import ValidationReport, ValidationMessage
+    from circuit_weaver.mvp import ValidationMessage, ValidationReport
 
     report = ValidationReport(
         profile="test",
         valid=True,
-        categories={"electrical": [
-            ValidationMessage("electrical", "test-warn", "warning", "U1", "test warning"),
-        ]},
+        categories={
+            "electrical": [
+                ValidationMessage("electrical", "test-warn", "warning", "U1", "test warning"),
+            ]
+        },
         summary={"electrical": 1},
     )
     # Simulate strict computation
@@ -384,13 +384,13 @@ def test_strict_mode_fails_on_warnings():
     warning_count = sum(1 for m in report.categories.get("electrical", []) if m.level == "warning")
     strict_valid = (error_count + warning_count) == 0
     normal_valid = error_count == 0
-    assert normal_valid is True   # Non-strict: warnings OK
+    assert normal_valid is True  # Non-strict: warnings OK
     assert strict_valid is False  # Strict: warnings fail
 
 
 def test_design_checklist_generation():
     """Design checklist should produce valid Markdown."""
-    from circuit_weaver.mvp import generate_design_checklist, ValidationReport
+    from circuit_weaver.mvp import ValidationReport, generate_design_checklist
 
     report = ValidationReport(
         profile="mvp_strict",
@@ -429,7 +429,116 @@ def test_validation_issues_have_suggestion_field():
     from circuit_weaver.validator import ValidationIssue
 
     issue = ValidationIssue(
-        code="test", level="warning", ref="U1", mpn="TEST",
-        message="test msg", suggestion="Add a 100nF cap",
+        code="test",
+        level="warning",
+        ref="U1",
+        mpn="TEST",
+        message="test msg",
+        suggestion="Add a 100nF cap",
     )
     assert issue.suggestion == "Add a 100nF cap"
+
+
+# ================================================================
+# Sprint 11: Design diff
+# ================================================================
+
+
+def test_diff_detects_added_block():
+    """Diff should detect a block added in the new spec."""
+    from circuit_weaver.diff_renderer import compute_diff
+
+    old_spec = {
+        "project": "TestOld",
+        "power": [{"type": "buck", "ref": "U1", "vin": 5, "vout": 3.3, "iout": 1}],
+    }
+    new_spec = {
+        "project": "TestNew",
+        "power": [
+            {"type": "buck", "ref": "U1", "vin": 5, "vout": 3.3, "iout": 1},
+            {"type": "ldo", "ref": "U2", "vin": 3.3, "vout": 1.8},
+        ],
+    }
+    diff = compute_diff(old_spec, new_spec)
+    assert len(diff.added) == 1
+    assert diff.added[0].ref == "U2"
+    assert diff.added[0].block_type == "ldo"
+    assert len(diff.unchanged) == 1
+    assert diff.unchanged[0].ref == "U1"
+
+
+def test_diff_detects_removed_block():
+    """Diff should detect a block removed in the new spec."""
+    from circuit_weaver.diff_renderer import compute_diff
+
+    old_spec = {
+        "project": "Test",
+        "power": [
+            {"type": "buck", "ref": "U1", "vin": 5, "vout": 3.3, "iout": 1},
+            {"type": "ldo", "ref": "U2", "vin": 3.3, "vout": 1.8},
+        ],
+    }
+    new_spec = {
+        "project": "Test",
+        "power": [{"type": "buck", "ref": "U1", "vin": 5, "vout": 3.3, "iout": 1}],
+    }
+    diff = compute_diff(old_spec, new_spec)
+    assert len(diff.removed) == 1
+    assert diff.removed[0].ref == "U2"
+
+
+def test_diff_detects_changed_params():
+    """Diff should detect parameter changes on existing blocks."""
+    from circuit_weaver.diff_renderer import compute_diff
+
+    old_spec = {
+        "project": "Test",
+        "power": [{"type": "buck", "ref": "U1", "vin": 5, "vout": 3.3, "iout": 1}],
+    }
+    new_spec = {
+        "project": "Test",
+        "power": [{"type": "buck", "ref": "U1", "vin": 12, "vout": 5.0, "iout": 2}],
+    }
+    diff = compute_diff(old_spec, new_spec)
+    assert len(diff.changed) == 1
+    assert "vin" in diff.changed[0].changed_fields
+    assert "vout" in diff.changed[0].changed_fields
+    assert "iout" in diff.changed[0].changed_fields
+
+
+def test_diff_detects_metadata_changes():
+    """Diff should detect project name and metadata changes."""
+    from circuit_weaver.diff_renderer import compute_diff
+
+    old_spec = {"project": "OldName", "description": "v1"}
+    new_spec = {"project": "NewName", "description": "v2"}
+    diff = compute_diff(old_spec, new_spec)
+    assert "project" in diff.metadata_changes
+    assert "description" in diff.metadata_changes
+    assert diff.metadata_changes["project"] == ("OldName", "NewName")
+
+
+def test_diff_html_output(tmp_path):
+    """Diff should produce valid HTML output when --output is specified."""
+    from circuit_weaver.diff_renderer import diff_designs
+
+    old_spec = {
+        "project": "Old",
+        "power": [{"type": "buck", "ref": "U1", "vin": 5, "vout": 3.3, "iout": 1}],
+    }
+    new_spec = {
+        "project": "New",
+        "power": [
+            {"type": "buck", "ref": "U1", "vin": 12, "vout": 5.0, "iout": 2},
+            {"type": "ldo", "ref": "U2", "vin": 5, "vout": 3.3},
+        ],
+    }
+    html_path = tmp_path / "diff.html"
+    result = diff_designs(old_spec, new_spec, output=str(html_path))
+    assert html_path.exists()
+    content = html_path.read_text(encoding="utf-8")
+    assert "<!DOCTYPE html>" in content
+    assert "ADDED" in content
+    assert "CHANGED" in content
+    assert result["summary"]["added"] == 1
+    assert result["summary"]["changed"] == 1
