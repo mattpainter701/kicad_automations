@@ -49,7 +49,19 @@ def extract_engine_spec(spec_dict: dict[str, Any]) -> dict[str, Any]:
 
 def _has_blocks(spec_dict: dict[str, Any]) -> bool:
     """Check if spec has native block sections."""
-    block_types = ["power", "digital", "storage", "audio", "interface", "analog"]
+    block_types = [
+        "power",
+        "digital",
+        "storage",
+        "audio",
+        "interface",
+        "analog",
+        "connectors",
+        "sensors",
+        "drivers",
+        "misc",
+        "protection",
+    ]
     return any(block in spec_dict for block in block_types)
 
 
