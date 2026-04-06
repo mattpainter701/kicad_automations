@@ -402,6 +402,22 @@ class PartsLookup:
         url = data.get("datasheet_url", "")
         return url if url else None
 
+    def lookup_by_lcsc(self, lcsc_pn: str) -> dict | None:
+        """Look up a component by LCSC part number.
+
+        Args:
+            lcsc_pn: LCSC part number (e.g., "C14663" or "14663")
+
+        Returns:
+            Normalised dict from LCSC API or None if not found.
+        """
+        if not lcsc_pn or not lcsc_pn.strip():
+            return None
+        lcsc_pn = lcsc_pn.strip()
+        # Ensure it starts with 'C' for the search query
+        query = lcsc_pn if lcsc_pn.startswith("C") else f"C{lcsc_pn}"
+        return self.lookup(query)
+
 
 # ---------------------------------------------------------------------------
 # ComponentDef enrichment
