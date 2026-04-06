@@ -19,8 +19,6 @@ import sys
 import zlib
 from pathlib import Path
 
-_logger = logging.getLogger(__name__)
-
 from .allocator import allocate_sheets
 from .component_db import (
     BUILTIN_REGISTRY,
@@ -69,6 +67,8 @@ from .primitives import (
     uid,
 )
 from .validator import run_validation_checks
+
+_logger = logging.getLogger(__name__)
 
 _UUID_ENV_VARS = ("SCHEMATIC_ENGINE_STABLE_UUIDS", "SCHEMATIC_ENGINE_DETERMINISTIC_UUIDS")
 _INTERFACE_POLICIES = {"inferred", "explicit"}

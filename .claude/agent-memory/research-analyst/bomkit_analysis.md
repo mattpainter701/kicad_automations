@@ -1,47 +1,56 @@
 ---
 name: bomkit repo analysis
-description: lamb356/bomkit — KiCad BOM/CPL export plugin targeting JLCPCB, architecture and overlap with circuit_weaver
+description: lamb356/bomkit — KiCad BOM/CPL export plugin + web dashboard + parts server, JLCPCB-focused
 type: reference
 ---
 
 ## bomkit (github.com/lamb356/bomkit)
 
-**Created:** 2026-04-03. MIT license. Python-only. KiCad 9/10 compatible.
-**Status:** v0.1.0, 15 commits, single-day build. Only bomkit-fab is implemented; dashboard and parts-server are empty `.gitkeep` stubs.
+**Updated:** 2026-04-06. MIT license. Mono-repo with 3 packages.
+**Status:** Single squashed commit (c6ed45a). Repo was force-pushed/rebased. All three packages now have code.
 
-### What it does
-- KiCad pcbnew ActionPlugin: reads loaded PCB, resolves LCSC PNs from field aliases, applies JLCPCB rotation offsets, exports BOM + CPL CSVs.
-- JLCPCB part classifier (basic/preferred-extended/extended) from a CSV parts DB.
-- Cost estimator: counts extended loading fees ($3/unique extended part).
-- wxPython dialog: sortable/filterable parts table, LCSC link on double-click.
+### Three packages
 
-### Architecture (bomkit-fab/)
-- `sexp_parser.py` — standalone S-expr tokenizer+parser for `.kicad_pcb` files
-- `board_adapter.py` — `ComponentData` dataclass, dual loader: pcbnew API or file parse
-- `field_resolver.py` — alias normalization for LCSC (8 aliases), MPN (13), manufacturer (9)
-- `bom_exporter.py` — groups by value/footprint/LCSC, chunks designators at 200, CSV output
-- `cpl_exporter.py` — placement CSV with rotation correction and bottom-layer mirroring
-- `rotations.py` — regex-based rotation offset DB with project-level overrides
-- `cost_estimator.py` — JLCPCB loading fee calculation from classifier output
-- `jlcpcb_classifier.py` — loads JLCPCB parts CSV, classifies by LCSC PN
-- `plugin.py` — pcbnew.ActionPlugin registration
-- `ui/` — wxPython dialog + parts table (mock fallback when wx unavailable)
+**bomkit-fab** (Python, KiCad plugin)
+- pcbnew ActionPlugin: reads loaded PCB, resolves LCSC PNs from field aliases, applies JLCPCB rotation offsets, exports BOM + CPL CSVs
+- JLCPCB part classifier (basic/preferred-extended/extended) from CSV parts DB
+- Cost estimator: $3/unique extended part loading fee
+- S-expr parser fallback for CLI/test use without pcbnew API
+- wxPython dialog with sortable/filterable parts table
+- Rotation DB: regex-based, 39 rules, project-level overrides via `rotations_custom.csv`
+- Field aliasing: LCSC (8 aliases), MPN (13), Manufacturer (9)
+- pytest suite: 8 test files
 
-### What it does NOT do
-- No distributor API search (DigiKey, Mouser, LCSC) — purely offline field resolution
-- No datasheet fetching
-- No schematic analysis (PCB-only)
-- No BOM diffing, stock checking, or cost optimization beyond loading fees
-- No part substitution or lifecycle checking
-- bomkit-dashboard and bomkit-parts are vaporware (empty dirs)
+**bomkit-dashboard** (Next.js 16 / React 19 / TypeScript)
+- Web app for persistent BOM workspace across revisions
+- Stack: Next.js + Drizzle ORM + Neon Postgres + NextAuth + Stripe + TanStack Table
+- **Revision diffing**: detects added/removed/changed rows between BOM revisions (by designator key)
+- **Carry-forward**: preserves locked sourcing choices across revisions
+- **JLC fee intelligence**: classifies parts via jlcsearch.tscircuit.com API, calculates loading fees at 5/10/30/50/100 qty
+- **Local offers**: manual price/MOQ/lead-time entries per row
+- **Locked choices**: pin a sourcing decision (source, SKU, unit price) to a BOM row
+- CSV parsers: auto-detects BOMKit Fab export and KiCad Symbol Fields CSV formats
+- Tiered pricing: Free (1 project, 50 rows), Solo ($15/mo), Pro ($29/mo)
+- Deploy target: Vercel (currently blocked by token issue per BLOCKED.md)
 
-### Overlap with circuit_weaver
-- Field aliasing pattern overlaps with circuit_weaver's `ComponentDef` fields (`lcsc_pn`, `digikey_pn`)
-- S-expr parser is a simpler version of what the kicad skill's `analyze_pcb.py` does
-- Rotation offset DB is useful reference data; circuit_weaver doesn't have this yet
-- JLCPCB classifier logic could inform circuit_weaver's future assembly cost estimation
+**bomkit-parts** (Python, HTTP server)
+- Minimal HTTP parts catalog server (stdlib http.server)
+- Serves curated parts from `seed_parts.json`
+- Endpoints: /categories, /parts?category_id=X, /parts/{id}
+- Lightweight, no external dependencies
 
-### Key technical details
-- No external dependencies beyond stdlib + wxPython (for UI only)
-- pytest test suite: 8 test files, integration tests with fixture `.kicad_pcb`
-- ComponentData: reference, value, footprint, pos_x/y_mm, rotation_deg, layer, fields dict, is_dnp, exclude_from_bom, exclude_from_board
+### What bomkit does NOT do
+- No distributor API search (DigiKey, Mouser, LCSC direct) -- relies on jlcsearch community API only
+- No datasheet fetching or sync
+- No schematic analysis (PCB-only for fab, CSV import for dashboard)
+- No schematic property writing (doesn't write back to .kicad_sch)
+- No stock checking beyond jlcsearch
+- No per-distributor order file generation
+- No BOM-to-schematic round-trip
+
+### Unique capabilities vs our tooling
+1. **Rotation offset DB** -- 39 regex rules for JLCPCB CPL correction. We don't have this.
+2. **Revision-aware BOM diffing** in web UI -- we have CLI-level BOM diffing concept but no persistent workspace.
+3. **Carry-forward locked choices** -- persists sourcing decisions across design revisions.
+4. **JLCPCB fee calculator** at multiple qty breakpoints -- we estimate but less structured.
+5. **KiCad pcbnew plugin UI** -- wxPython dialog inside KiCad itself. We're CLI-only.

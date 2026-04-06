@@ -79,7 +79,6 @@ def _extract_from_detailed(spec_dict: dict[str, Any]) -> dict[str, Any]:
     """
     metadata = spec_dict.get("metadata", {})
     elec = spec_dict.get("electrical_specifications", {})
-    blocks = spec_dict.get("circuit_blocks", {})
 
     engine_spec: dict[str, Any] = {
         "project": metadata.get("project_name", "Unknown"),

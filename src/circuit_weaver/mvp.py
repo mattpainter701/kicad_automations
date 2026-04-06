@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1962,11 +1963,11 @@ def _handle_design_workflow() -> None:
         logger.print_summary()
 
         print("\nNext steps:")
-        print(f"  1. Validate: circuit-weaver validate {selected_project / 'design.yaml'}")
-        print(
-            f"  2. Generate: circuit-weaver generate {selected_project / 'design.yaml'} -o {selected_project / 'output'}"
-        )
-        print(f"  3. Modify: Edit {selected_project / 'design.yaml'} and re-validate\n")
+        spec_path = selected_project / "design.yaml"
+        output_path = selected_project / "output"
+        print(f"  1. Validate: circuit-weaver validate {spec_path}")
+        print(f"  2. Generate: circuit-weaver generate {spec_path} -o {output_path}")
+        print(f"  3. Modify: Edit {spec_path} and re-validate\n")
 
         raise SystemExit(0)
 

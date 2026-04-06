@@ -254,7 +254,10 @@ def _render_block_row(b: BlockDiff) -> str:
     """Render one block diff as an HTML table row."""
     color = _STATUS_COLORS[b.status]
     bg = _STATUS_BG[b.status]
-    badge = f'<span style="color:white;background:{color};padding:2px 8px;border-radius:4px;font-size:12px">{b.status.upper()}</span>'
+    badge = (
+        f'<span style="color:white;background:{color};padding:2px 8px;'
+        f'border-radius:4px;font-size:12px">{b.status.upper()}</span>'
+    )
 
     details = ""
     if b.status == "changed":
@@ -263,7 +266,8 @@ def _render_block_row(b: BlockDiff) -> str:
             old_v = html.escape(str(b.old_params.get(k, "")))
             new_v = html.escape(str(b.new_params.get(k, "")))
             parts.append(
-                f'<code>{html.escape(k)}</code>: <del style="color:#ef4444">{old_v}</del> &rarr; <ins style="color:#22c55e">{new_v}</ins>'
+                f'<code>{html.escape(k)}</code>: <del style="color:#ef4444">{old_v}</del> '
+                f'&rarr; <ins style="color:#22c55e">{new_v}</ins>'
             )
         details = "<br>".join(parts)
     elif b.status == "added":
@@ -309,9 +313,9 @@ def render_html(
 
     # Header
     lines.append("<h1>Design Diff</h1>")
-    lines.append(
-        f"<p><strong>{html.escape(diff.old_project)}</strong> &rarr; <strong>{html.escape(diff.new_project)}</strong></p>"
-    )
+    old = html.escape(diff.old_project)
+    new = html.escape(diff.new_project)
+    lines.append(f"<p><strong>{old}</strong> &rarr; <strong>{new}</strong></p>")
 
     # Summary cards
     lines.append('<div class="summary">')
@@ -354,8 +358,10 @@ def render_html(
     # Unchanged summary
     if diff.unchanged:
         refs = ", ".join(b.ref for b in diff.unchanged)
+        count = len(diff.unchanged)
         lines.append(
-            f"<p style='color:#6b7280;margin-top:16px'><strong>{len(diff.unchanged)} unchanged blocks:</strong> {html.escape(refs)}</p>"
+            f"<p style='color:#6b7280;margin-top:16px'><strong>{count} unchanged blocks:</strong> "
+            f"{html.escape(refs)}</p>"
         )
 
     # SVG side-by-side

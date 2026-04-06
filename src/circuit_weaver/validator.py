@@ -521,7 +521,9 @@ def _validate_enable_pins(components: list[ComponentDef]) -> list[ValidationIssu
                     "floating-enable",
                     f"Enable pin {pin.number} ({pin.name}) is floating — regulator may not start",
                     level="warning",
-                    suggestion=f"Tie pin {pin.number} ({pin.name}) to VIN via 100k pull-up, or add to explicit_no_connects",
+                    suggestion=(
+                        f"Tie pin {pin.number} ({pin.name}) to VIN via 100k pull-up, or add to explicit_no_connects"
+                    ),
                 )
             )
     return issues
