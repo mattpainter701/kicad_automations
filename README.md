@@ -60,44 +60,20 @@ Circuit Weaver sits in the useful middle:
 
 **YAML spec → validated schematic → JLCPCB-ready files in 30 seconds**
 
-**WiFi Environmental Sensor Design:** 1️⃣ Templates → 2️⃣ Spec (YAML) → 3️⃣ Validate → 4️⃣ Schematic → 5️⃣ Cost BOM → 6️⃣ JLCPCB Export
+### **[▶️ Watch demo.mp4](demo_live/demo.mp4)** (715 KB)
 
-<table>
-<tr>
-<td width="50%">
+30-second terminal recording of the complete workflow:  
+Templates → Spec (YAML) → Validate → Schematic → Cost BOM → JLCPCB Export
 
-### 📺 Watch the Recording
+---
 
-**Option A: Online (Recommended)**
-[**Watch on asciinema.org**](demo_live/CREATE_VIDEO.md#option-1-host-on-asciinemaorg-easiest--) — free hosting, full interactive controls, shareable link
+### More Options
 
-**Option B: Interactive Player**
-[**Web player**](demo_live/index.html) — full-screen, play/pause/seek
-
-**Option C: MP4 Video**
-[**Generate video**](demo_live/CREATE_VIDEO.md#option-3-generate-mp4-video) — requires ffmpeg, creates .mp4 file
-
-[📖 How to create video](demo_live/CREATE_VIDEO.md)
-
-</td>
-<td width="50%">
-
-### 📖 Walkthrough & Artifacts
-
-[**Complete step-by-step guide**](demo_live/DEMO_WALKTHROUGH.md) — all 6 steps with outputs
-
-**Generated files:**
-- ✅ `main.kicad_sch` (73 KB)
-- ✅ Design report  
-- ✅ PCB placement hints
-- ✅ BOM + CPL files
-- ✅ Design IR (JSON)
-
-[**View all artifacts →**](demo_live/)
-
-</td>
-</tr>
-</table>
+| View | Link |
+|-|-|
+| **Step-by-step walkthrough** | [DEMO_WALKTHROUGH.md](demo_live/DEMO_WALKTHROUGH.md) — all 6 steps with outputs |
+| **Interactive web player** | [index.html](demo_live/index.html) — play/pause controls (local) |
+| **Generated artifacts** | [demo_live/](demo_live/) — schematic, report, BOM, CPL, design IR |
 
 ---
 
