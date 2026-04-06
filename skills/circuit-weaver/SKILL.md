@@ -82,34 +82,47 @@ Estimated BOM: 4-5 ICs (boost, buck, MCU, sensor, maybe charger)
 
 Ask: **"Does this look right? Any changes?"**
 
-### Step 2 — IC Research & Selection
+### Step 2 — IC Research & Selection (Hybrid Query Strategy)
 
-**Trigger the research-analyst agent** to find:
-1. Similar existing designs (reference implementations, app notes, eval boards)
-2. Candidate ICs for each functional block (boost, buck, MCU, charger, etc.)
-3. Key IC datasheets and typical application circuits
-4. Alternative parts (pin-compatible, different cost tiers)
+**Phase 2a — Project Context** (one broad query)
 
-**Run the research agent:**
+Run the research-analyst agent with a single project-level query to understand design context:
 
 ```bash
-/research "Design a [user's application description].
-  Find similar reference designs and select ICs for:
-  - Power input stage: [user's power source + output voltage/current]
-  - MCU: [WiFi/BLE/zigbee requirement]
-  - Sensor/peripherals: [specific sensors or interfaces]
-  
-  Return:
-  1. Similar designs from datasheets/app notes
-  2. IC recommendations (MPN, package, LCSC/DigiKey part numbers, cost)
-  3. Key parameters from datasheets
-  4. Alternative options for each block"
+/research "Design a [user's application description with form factor, power constraints, interfaces].
+  Find similar existing products, reference designs, and IC families commonly used in [application category].
+  Return: 1-2 comparable designs, key IC families, typical topologies, power budgets."
 ```
 
-The research-analyst agent will:
-- Use Perplexity Sonar API (via `PERPLEXITY_API_KEY` env var) to search for similar designs
-- Cross-reference with component databases (DigiKey, LCSC, Mouser)
-- Return structured findings with datasheets and links
+This grounds subsequent searches in project reality.
+
+**Phase 2b — Targeted Function Queries** (parallel sub-queries)
+
+Once you understand the design space, run **3-4 parallel targeted queries** for each functional block:
+
+```bash
+# These run in parallel:
+/research "Boost converter: [user's input voltage] to [output voltage] @ [current].
+  Find common ICs used in [application]. Return: 3 options with MPN, LCSC cost, typical application circuit."
+
+/research "MCU for [specific features: WiFi, BLE, audio processing, etc.]. 
+  Find suitable processors with [required interfaces]. Return: 3 options with MPN, LCSC cost, peripheral support."
+
+/research "Audio codec and speaker driver for battery-powered [application].
+  Find low-power solutions. Return: 3 options with MPN, LCSC cost, power consumption."
+
+/research "Sensor/interface: [specific sensor type or interface bus].
+  Find components suitable for [application]. Return: 3 options with MPN, LCSC cost, pins/packages."
+```
+
+Each narrow query (5-10 sec) is faster than one mega-query (15-60 sec).
+
+**Phase 2c — Merge & Present**
+
+Consolidate findings from all queries:
+- Project context from 2a guides IC selection
+- Specific recommendations from 2b (no duplication)
+- Display as unified table with cross-references to project context
 
 **User confirmation:**
 
