@@ -1,0 +1,78 @@
+{
+  "profile": "mvp_strict",
+  "valid": true,
+  "categories": {
+    "structural": [],
+    "electrical": [
+      {
+        "category": "electrical",
+        "code": "floating-input-pin",
+        "level": "warning",
+        "subject": "U3",
+        "message": "28 input/bidirectional pins unconnected (e.g., 4 (SENSOR_VP), 5 (SENSOR_VN), 6 (IO34), ...) \u2014 add to explicit_no_connects or wire as needed"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Net 'UART0_RX' has only one connection (pin 34 on U3) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Net 'UART0_TX' has only one connection (pin 35 on U3) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U4",
+        "message": "Net 'I2C_SDA' has only one connection (pin 3 on U4) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U4",
+        "message": "Net 'I2C_SCL' has only one connection (pin 4 on U4) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U4",
+        "message": "Net 'BME_SDO' has only one connection (pin 5 on U4) \u2014 likely dangling"
+      },
+      {
+        "category": "electrical",
+        "code": "bus-completeness",
+        "level": "warning",
+        "subject": "U4",
+        "message": "I2C signal 'I2C_SCL' has no pull-up resistor"
+      },
+      {
+        "category": "electrical",
+        "code": "bus-completeness",
+        "level": "warning",
+        "subject": "U4",
+        "message": "I2C signal 'I2C_SDA' has no pull-up resistor"
+      }
+    ],
+    "implementation": [],
+    "presentation": []
+  },
+  "summary": {
+    "structural": 0,
+    "electrical": 8,
+    "implementation": 0,
+    "presentation": 0
+  },
+  "metadata": {
+    "project": "WiFi_Sensor_v1",
+    "component_count": 4,
+    "block_count": 4
+  }
+}

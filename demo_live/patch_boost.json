@@ -1,0 +1,20 @@
+{
+  "upsert_blocks": [
+    {
+      "id": "U_boost",
+      "section": "power",
+      "kind": "template",
+      "template_type": "boost",
+      "ref": "U0",
+      "params": {
+        "vin": 3.7,
+        "vout": 5.0,
+        "iout": 1.0,
+        "ic": "MT3608",
+        "rail_name": "VBUS_5V",
+        "vin_net": "VBAT",
+        "en_net": "VBAT"
+      }
+    }
+  ]
+}

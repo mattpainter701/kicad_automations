@@ -108,6 +108,10 @@ circuit-weaver validate src/circuit_weaver/examples/iot_sensor.yaml
 circuit-weaver generate src/circuit_weaver/examples/iot_sensor.yaml --output out/iot_sensor
 ```
 
+### See a Complete Demo
+
+For a full end-to-end walkthrough, see [demo_live/DEMO_WALKTHROUGH.md](demo_live/DEMO_WALKTHROUGH.md) — a WiFi environmental sensor built from spec to JLCPCB-ready files in ~30 seconds.
+
 ### Use the Python API
 
 ```python
