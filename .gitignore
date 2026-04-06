@@ -15,3 +15,7 @@ dist/
 *.kicad_prl
 ~*.lck
 *-backups/
+
+# Demo recording artifacts (ffmpeg binary and video files)
+ffmpeg.exe
+*.mp4

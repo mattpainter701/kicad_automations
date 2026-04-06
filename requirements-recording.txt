@@ -1,8 +1,0 @@
-# Requirements for automated demo recording
-# Install with: pip install -r requirements-recording.txt
-
-mss>=1.9.0                # Screen capture
-opencv-python>=4.5.0      # Video encoding (cv2)
-selenium>=4.0.0           # Browser automation
-webdriver-manager>=4.0.0  # Automatic ChromeDriver management
-Pillow>=9.0.0             # Image processing (optional)
