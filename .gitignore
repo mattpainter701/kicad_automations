@@ -16,7 +16,14 @@ dist/
 ~*.lck
 *-backups/
 
-# Demo recording artifacts (ffmpeg binary and video files)
+# Demo recording artifacts (ffmpeg binary, video files, and recording scripts)
 ffmpeg.exe
 *.mp4
 *.gif
+auto_record*.py
+encode_frames*.py
+demo/
+demo_live/
+demo_server.py
+auto_record_demo.py
+.claude/
