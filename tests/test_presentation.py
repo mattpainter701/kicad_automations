@@ -186,6 +186,7 @@ class TestSampleValidation:
             )
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="KiCad symbol libraries not available on CI")
 @pytest.mark.parametrize(
     "sample_name",
     [

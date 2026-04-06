@@ -29,3 +29,5 @@ jobs:
 
       - name: Pytest
         run: python -m pytest tests -q
+        env:
+          CI: true
