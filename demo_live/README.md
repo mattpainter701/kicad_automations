@@ -8,7 +8,15 @@ This directory contains a complete end-to-end demonstration of Circuit Weaver, f
 
 ## 🎬 Watch the Demo
 
-### Option 1: Interactive Web Player (Recommended)
+### **📹 MP4 Video (Click to Play)**
+
+[**Watch demo.mp4 in your browser →**](demo.mp4) (715 KB, 30 seconds)
+
+GitHub will show a native video player above. Full-screen, play/pause, and seek controls available.
+
+---
+
+### Alternative: Interactive Web Player
 Open `index.html` in your browser to see an interactive terminal recording with play/pause controls.
 
 ```bash
@@ -22,36 +30,15 @@ Features:
 - 📊 Summary stats and workflow diagram
 - 📱 Responsive on desktop and mobile
 
-### Option 2: asciinema Player
+### Or: asciinema Player
 The `demo.cast` file is a standard asciinema recording format. Play it directly:
 
 ```bash
 # Play with asciinema (install: pip install asciinema)
 asciinema play demo.cast
 
-# Or view online at: https://asciinema.org/a/YOUR_ID
+# Or upload and share: https://asciinema.org/
 asciinema upload demo.cast
-```
-
-### Option 3: Convert to Video/GIF
-Several tools can convert the `.cast` file to video or GIF:
-
-**Using asciinema-to-gif:**
-```bash
-npm install -g asciinema-to-gif
-asciinema-to-gif demo.cast demo.gif
-```
-
-**Using svg-term:**
-```bash
-npm install -g svg-term-cli
-svg-term --cast demo.cast --output demo.svg
-```
-
-**Using terminalizer:**
-```bash
-npm install -g terminalizer
-terminalizer render demo.cast -o demo.gif
 ```
 
 ---
@@ -77,11 +64,12 @@ The demo walks through 6 steps to design a complete WiFi-enabled environmental s
 
 ```
 demo_live/
-├── index.html                    ⭐ START HERE — interactive web player
-├── demo.cast                     asciinema recording (JSON format)
-├── DEMO_WALKTHROUGH.md           Detailed markdown walkthrough
+├── demo.mp4                      ⭐ MP4 video (715 KB, 30 sec) — watch in browser
+├── index.html                    Interactive web player with controls
+├── demo.cast                     asciinema terminal recording (JSON format)
+├── DEMO_WALKTHROUGH.md           Detailed markdown walkthrough with all outputs
 ├── design.yaml                   24-line design specification
-├── render_cast_to_mp4.py         Python script to convert .cast to video
+├── make_video_simple.py          Python script to regenerate MP4 from demo.cast
 │
 ├── output/                       Generated schematic artifacts
 │   ├── main.kicad_sch           KiCad schematic (73 KB)
@@ -189,10 +177,11 @@ Re-run validation and generation — all dependent components auto-update.
 
 ## 📚 Documentation
 
+- **`demo.mp4`** — Native MP4 video (watch directly in GitHub/browser)
 - **`DEMO_WALKTHROUGH.md`** — Complete step-by-step guide with all outputs
 - **`design.yaml`** — The design specification used in the demo
-- **`index.html`** — Interactive web player (best for sharing)
-- **`render_cast_to_mp4.py`** — Convert `.cast` to video/GIF (requires external tools)
+- **`index.html`** — Interactive web player (alternative to MP4)
+- **`make_video_simple.py`** — Regenerate MP4 from demo.cast (uses PIL + imageio)
 
 ---
 
