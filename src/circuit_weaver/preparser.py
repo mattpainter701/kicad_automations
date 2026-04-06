@@ -48,7 +48,12 @@ def extract_engine_spec(spec_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 def _has_blocks(spec_dict: dict[str, Any]) -> bool:
-    """Check if spec has native block sections."""
+    """Check if spec has native block sections.
+
+    Recognizes:
+    - Categorical blocks: power, digital, storage, audio, interface, analog, etc.
+    - Generic blocks list: "blocks" key containing list of block dicts
+    """
     block_types = [
         "power",
         "digital",
@@ -61,6 +66,7 @@ def _has_blocks(spec_dict: dict[str, Any]) -> bool:
         "drivers",
         "misc",
         "protection",
+        "blocks",  # Generic blocks list format
     ]
     return any(block in spec_dict for block in block_types)
 
