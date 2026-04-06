@@ -60,40 +60,23 @@ Circuit Weaver sits in the useful middle:
 
 **YAML spec → validated schematic → JLCPCB-ready files in 30 seconds**
 
-```
-WiFi Environmental Sensor Design
-1️⃣  List templates  2️⃣  Create spec (YAML)  3️⃣  Validate
-4️⃣  Generate schematic  5️⃣  Cost BOM  6️⃣  Export JLCPCB
-```
+### Watch the Workflow
 
-<table>
-<tr>
-<td>
+**WiFi Environmental Sensor Design:** 1️⃣ Templates → 2️⃣ Spec (YAML) → 3️⃣ Validate → 4️⃣ Schematic → 5️⃣ Cost BOM → 6️⃣ JLCPCB Export
 
-**📺 Interactive Demo Player**
+📖 **[View Complete Step-by-Step Walkthrough](demo_live/DEMO_WALKTHROUGH.md)** (GitHub-rendered, with all outputs)
 
-[**Open Full-Screen Demo**](demo_live/index.html)
-- Play/pause/seek controls
-- Terminal recording: 30 seconds
-- Dark theme (GitHub-style)
+Or try the **[Interactive Terminal Player](demo_live/index.html)** (full-screen, play/pause/seek controls)
 
-</td>
-<td>
+### What Gets Generated
 
-**📊 Generated Artifacts**
+✅ `main.kicad_sch` (73 KB) — Full schematic with 4 ICs + 16 passives  
+✅ Design report with all component values  
+✅ PCB placement hints (102 × 69 mm board)  
+✅ BOM + CPL files for JLCPCB assembly  
+✅ Design IR (JSON) and validation report  
 
-- ✅ `main.kicad_sch` (73 KB)
-- ✅ Design report
-- ✅ Placement hints
-- ✅ BOM for JLCPCB
-- ✅ CPL for assembly
-- ✅ Design IR (JSON)
-
-[View all outputs →](demo_live/)
-
-</td>
-</tr>
-</table>
+**[View all demo artifacts →](demo_live/)**
 
 ---
 
