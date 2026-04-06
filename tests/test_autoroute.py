@@ -1,5 +1,6 @@
 """Tests for Freerouting PCB autorouting integration."""
 
+import subprocess
 from unittest import mock
 
 from circuit_weaver.autoroute import _find_freerouting_jar, autoroute_pcb
@@ -129,11 +130,11 @@ class TestAutoroutePcb:
 
         with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
             with mock.patch("subprocess.run") as mock_run:
-                mock_run.side_effect = TimeoutError()
+                mock_run.side_effect = subprocess.TimeoutExpired("java", 300)
                 result = autoroute_pcb(str(pcb_file))
 
         assert result["status"] == "error"
-        assert "timeout" in result["message"].lower()
+        assert "timed out" in result["message"].lower()
 
     def test_output_path_default(self, tmp_path):
         """Test default output path generation."""
