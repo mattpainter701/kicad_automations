@@ -127,20 +127,52 @@ The result is a clean path to BOMs and outputs ready to hand to PCBWay, JLCPCB, 
 
 ## Quick Start
 
-### Install
+### Installation (Automated)
+
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/mattpainter701/kicad_automations.git
+cd kicad_automations
+.\install.ps1
+```
+
+**Mac/Linux (Bash):**
 
 ```bash
-pip install -e ".[all]"
+git clone https://github.com/mattpainter701/kicad_automations.git
+cd kicad_automations
+./install.sh
+```
+
+This will:
+1. ✅ Install the `circuit-weaver` Python package
+2. ✅ Add to your PATH (Windows only)
+3. ✅ Register `/circuit-weaver` skill with Claude Code (globally available in any project)
+
+Verify installation:
+
+```bash
 circuit-weaver --version
 ```
 
-### Start the Interactive Design Wizard (Offline)
+### Use in Claude Code
+
+Open **Claude Code in any project** and type:
+
+```
+/circuit-weaver
+```
+
+The skill will guide you through designing a circuit with automated IC research, passive generation, and manufacturing export.
+
+### Or: Use the Offline CLI Wizard
 
 ```bash
 circuit-weaver design-wizard
 ```
 
-Walks you through creating a circuit design interactively. No agents or APIs required — fully offline. Generates a YAML design spec you can then validate and generate artifacts from.
+Interactive guide that works completely offline (no agents or APIs). Generates a YAML spec you can then validate and generate.
 
 ### Validate a design
 
