@@ -623,3 +623,78 @@ Deferred to Sprint 4. Current label-based bus connections work adequately.
 ### 22. Sample gallery refresh (P1, SMALL) — DEFERRED
 
 Deferred until KiCad CLI SVG export is integrated into CI.
+
+---
+
+## Sprint 12 — Platform Integrity: Guided CLI Workflow (v0.10.1)
+
+**Goal:** Circuit Weaver is an LLM-first tool — Claude Code, Codex, and OpenCode ARE the interface. The Python engine is the backend. Graduate from manually-triggered skills to a seamless guided workflow with reliable orchestration and comprehensive logging.
+
+### 74. Clean up demo artifacts (P0, XS) — IN PROGRESS
+
+- [ ] Remove demo_server.py via git rm
+- [ ] Remove auto_record_demo.py via git rm
+- [ ] Remove demo_cli.sh via git rm
+- [ ] Remove DEMO_RECORDING.md via git rm
+- [ ] Remove RECORD_QUICK_START.md via git rm
+- [ ] Remove requirements-recording.txt via git rm
+- [ ] Remove MVP.md or edit out demo_server.py reference
+- [ ] Update .gitignore: add ffmpeg.exe, *.mp4
+- [ ] Verify no remaining demo/record references in git ls-files
+
+Files: `.gitignore`, `git rm`
+
+### 72. cost-bom CLI subcommand (P1, MEDIUM)
+
+- [ ] Extend parts_lookup.py: parse extra.prices array into price_tiers
+- [ ] Add get_unit_price(price_tiers, qty) helper
+- [ ] Add lookup_by_lcsc(lcsc_pn) to PartsLookup
+- [ ] Create cost_bom.py: cost_bom(spec, qty_breaks) → structured costed BOM
+- [ ] Add cost-bom subcommand to mvp.py with --qty flag
+- [ ] _print_cost_bom_table() for formatted output (stdlib only)
+- [ ] Tests: price tier selection, math validation, network test on iot_sensor_node sample
+
+Files: `parts_lookup.py`, new `cost_bom.py`, `mvp.py`, `tests/test_cost_bom.py`
+
+### 70. Rewrite design_wizard/SKILL.md (P0, MEDIUM)
+
+- [ ] Fix upsert vs upsert_blocks patch key names (all 3 references)
+- [ ] Remove analyze_schematic.py references
+- [ ] Replace Freerouting mention with manual KiCad routing guidance
+- [ ] Update Step 3 with real scaffold + apply-patch commands
+- [ ] Add "Output Formatting Rules" section at top
+- [ ] Update command syntax table with exact CLI invocations
+- [ ] Remove references to unimplemented skills: kicad_gen, kicad_pcb_place, kicad_validate, autoroute
+
+Files: `skills/design_wizard/SKILL.md`
+
+### 76. Freerouting PCB autorouting integration (P1, MEDIUM)
+
+- [ ] Create autoroute.py: autoroute_pcb(pcb_path, output_path)
+- [ ] Check for Freerouting JAR installation, graceful failure with instructions
+- [ ] Export PCB to .dsn, run Freerouting, re-import routed traces/vias
+- [ ] Parse output .ses and update .kicad_pcb S-expressions
+- [ ] Add autoroute subcommand to mvp.py
+- [ ] Tests: mock Freerouting subprocess, graceful failure when missing, network test on sample
+
+Files: new `autoroute.py`, `mvp.py`, `tests/test_autoroute.py`
+
+### 73. Fix docs/user_workflow.md (P1, SMALL)
+
+- [ ] Remove false promises: DigiKey/Mouser/LCSC stock checks, estimated costs
+- [ ] Add scaffold + apply-patch workflow
+- [ ] Add cost-bom command
+- [ ] Add autoroute command (with note: optional, user installs JAR)
+- [ ] Remove unimplemented related skills rows
+- [ ] Update files table: add jlcpcb CSV files, remove non-existent files
+
+Files: `docs/user_workflow.md`
+
+### 75. CLI demo capture (P2, SMALL)
+
+- [ ] Create docs/DEMO_COMMANDS.md: git-tracked script with command sequence
+- [ ] Commands: list-templates, scaffold, apply-patch, validate, generate, cost-bom, export-jlcpcb
+- [ ] Document asciinema recording (optional tool, not a dependency)
+- [ ] Update README: point demo section to DEMO_COMMANDS.md
+
+Files: `docs/DEMO_COMMANDS.md`, `README.md`

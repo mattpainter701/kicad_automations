@@ -19,3 +19,4 @@ dist/
 # Demo recording artifacts (ffmpeg binary and video files)
 ffmpeg.exe
 *.mp4
+*.gif

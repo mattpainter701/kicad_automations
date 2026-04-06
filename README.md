@@ -56,41 +56,28 @@ Circuit Weaver sits in the useful middle:
 
 ---
 
-## 🎬 Live Demo
+## 🎬 Demo Commands
 
-**WiFi Environmental Sensor — `/circuit-weaver` skill workflow**
+**Record a live demo using asciinema** — see the complete CLI workflow in action:
 
-![Circuit Weaver /circuit-weaver skill: automated IC research, requirements capture, schematic generation, BOM + CPL export](demo_live/demo_realistic.gif)
+```bash
+asciinema rec demo.cast  # Start recording
+# Then run the commands in docs/DEMO_COMMANDS.md step-by-step
+```
 
-**Watch the complete workflow** (47 seconds) — user triggers `/circuit-weaver` skill (automatic, agent-driven):
+**Workflow overview:**
 
-1. **User Input** — Say `/circuit-weaver` in Claude Code → skill asks: experience level, what the board does, power source
-2. **Requirements Capture** — Captures purpose, interfaces, power budget; validates feasibility
-3. **IC Research (Agent)** — Spawns research-analyst agent → Perplexity searches for reference designs + datasheets
-4. **IC Selection** — Shows candidates: boost converters, buck converters, MCU options, sensors
-5. **Passive Generation** — Auto-calculates feedback dividers, decoupling caps, crystal load caps
-6. **Schematic Generation** — Validates and generates KiCad schematic with placement hints
-7. **Export** — BOM + CPL CSV files ready for JLCPCB assembly ordering
+1. **List templates** — `circuit-weaver list-templates` (30+ circuit templates)
+2. **Scaffold** — Create initial design: `circuit-weaver scaffold --template buck --ref U1`
+3. **Apply patches** — Add components: `circuit-weaver apply-patch design.yaml patch.json`
+4. **Validate** — Check electrical rules: `circuit-weaver validate design.yaml`
+5. **Generate** — Create KiCad schematic: `circuit-weaver generate design.yaml -o ./output`
+6. **Cost BOM** — Estimate at qty breaks: `circuit-weaver cost-bom design.yaml --qty 1,10,100`
+7. **Export** — JLCPCB assembly files: `circuit-weaver export-jlcpcb design.yaml -o ./jlcpcb`
 
-**Outputs shown:**
-- Actual user prompts and skill Q&A (not hardcoded slides)
-- Schematic block diagram: 3.7V battery → boost (5V) → buck (3.3V) → MCU + sensor
-- BOM with LCSC part numbers and costs ($2.50 + $1.20 + $5.80 + $2.15 = $12.25)
-- Manufacturing-ready files (schematic, placement, BOM, CPL)
+**Time to fabrication:** ~5 minutes (YAML → validated schematic → JLCPCB-ready files)
 
-What takes 1-2 weeks normally → **5–10 minutes** with `/circuit-weaver` skill (includes research agent)
-
-[**Full walkthrough with all outputs**](demo_live/DEMO_WALKTHROUGH.md)
-
----
-
-### More Options
-
-| View | Link |
-|-|-|
-| **Step-by-step walkthrough** | [DEMO_WALKTHROUGH.md](demo_live/DEMO_WALKTHROUGH.md) — all 6 steps with outputs |
-| **Interactive web player** | [index.html](demo_live/index.html) — play/pause controls (local) |
-| **Generated artifacts** | [demo_live/](demo_live/) — schematic, report, BOM, CPL, design IR |
+See [**docs/DEMO_COMMANDS.md**](docs/DEMO_COMMANDS.md) for complete step-by-step guide.
 
 ---
 
@@ -186,9 +173,22 @@ circuit-weaver validate src/circuit_weaver/examples/iot_sensor.yaml
 circuit-weaver generate src/circuit_weaver/examples/iot_sensor.yaml --output out/iot_sensor
 ```
 
-### See a Complete Demo
+### Run a Sample Design
 
-For a full end-to-end walkthrough, see [demo_live/DEMO_WALKTHROUGH.md](demo_live/DEMO_WALKTHROUGH.md) — a WiFi environmental sensor built from spec to JLCPCB-ready files in ~30 seconds.
+To test the complete workflow without using the skill:
+
+```bash
+# 1. Validate a sample design
+py -m circuit_weaver validate samples/iot_sensor_node/iot_sensor_node.yaml
+
+# 2. Generate schematic and report
+py -m circuit_weaver generate samples/iot_sensor_node/iot_sensor_node.yaml -o ./output
+
+# 3. Export for JLCPCB
+py -m circuit_weaver export-jlcpcb samples/iot_sensor_node/iot_sensor_node.yaml -o ./jlcpcb
+```
+
+Generated files (schematic, BOM, CPL, design report) ready for review or ordering.
 
 ### Use the Python API
 
