@@ -205,6 +205,59 @@ def generate_viewer(
     svg_content = "\n".join(svg_rects)
     thermal_content = "\n".join(thermal_rects)
 
+    # Build CSS styles (break long declarations across lines)
+    css_styles = (
+        "* { margin: 0; padding: 0; box-sizing: border-box; }\n"
+        "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',"
+        " sans-serif; background: #0f172a; color: #e2e8f0; }\n"
+        ".container { max-width: 1400px; margin: 0 auto; padding: 16px; }\n"
+        "h1 { font-size: 1.25rem; margin-bottom: 12px; color: #94a3b8; }\n"
+        ".toolbar { display: flex; gap: 8px; margin-bottom: 12px; "
+        "flex-wrap: wrap; align-items: center; }\n"
+        ".toolbar button { padding: 6px 14px; border: 1px solid #334155; "
+        "border-radius: 6px; background: #1e293b; color: #e2e8f0; "
+        "cursor: pointer; font-size: 0.85rem; }\n"
+        ".toolbar button:hover { background: #334155; }\n"
+        ".toolbar button.active { background: #3b82f6; border-color: #3b82f6; }\n"
+        ".board-container { position: relative; overflow: auto; "
+        "border: 1px solid #334155; border-radius: 8px; "
+        "background: #1a1a2e; }\n"
+        "svg { display: block; }\n"
+        ".comp { cursor: pointer; transition: opacity 0.15s; }\n"
+        ".comp:hover rect { stroke-width: 2.5; stroke: #fff; }\n"
+        ".comp.dimmed { opacity: 0.15; }\n"
+        ".comp.highlighted rect { stroke: #fbbf24; stroke-width: 3; }\n"
+        "#tooltip { position: fixed; background: #1e293b; "
+        "border: 1px solid #475569; border-radius: 6px; padding: 8px 12px; "
+        "font-size: 0.8rem; pointer-events: none; display: none; z-index: 100; "
+        "max-width: 280px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }\n"
+        "#tooltip .ref { font-weight: bold; color: #60a5fa; }\n"
+        "#tooltip .val { color: #94a3b8; }\n"
+        ".legend { display: flex; gap: 12px; margin-top: 8px; "
+        "flex-wrap: wrap; }\n"
+        ".legend-item { display: flex; align-items: center; gap: 4px; "
+        "font-size: 0.75rem; color: #94a3b8; }\n"
+        ".legend-swatch { width: 12px; height: 12px; border-radius: 2px; }\n"
+        ".stats { margin-top: 12px; font-size: 0.8rem; color: #64748b; }"
+    )
+
+    # Build legend HTML (break generator into variable)
+    legend_items = "".join(
+        f'<span class="legend-item"><span class="legend-swatch" style="background:{c}"></span>{cat.title()}</span>'
+        for cat, c in _CATEGORY_COLORS.items()
+    )
+
+    # Build stats text (break long line into parts)
+    stats_text = (
+        f"Components: {len(comp_map)} &middot; "
+        f"Board: {board_width_mm:.0f} x {board_height_mm:.0f} mm &middot; "
+        f"Scale: {scale}px/mm"
+    )
+
+    # Build board text (break viewBox into parts)
+    svg_viewbox = f"{-pad} {-pad} {svg_w + pad * 2:.0f} {svg_h + pad * 2:.0f}"
+    board_text = f"Board: {board_width_mm:.0f} x {board_height_mm:.0f} mm"
+
     page_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -212,27 +265,7 @@ def generate_viewer(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html_mod.escape(title)}</title>
 <style>
-* {{ margin: 0; padding: 0; box-sizing: border-box; }}
-body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; }}
-.container {{ max-width: 1400px; margin: 0 auto; padding: 16px; }}
-h1 {{ font-size: 1.25rem; margin-bottom: 12px; color: #94a3b8; }}
-.toolbar {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }}
-.toolbar button {{ padding: 6px 14px; border: 1px solid #334155; border-radius: 6px; background: #1e293b; color: #e2e8f0; cursor: pointer; font-size: 0.85rem; }}
-.toolbar button:hover {{ background: #334155; }}
-.toolbar button.active {{ background: #3b82f6; border-color: #3b82f6; }}
-.board-container {{ position: relative; overflow: auto; border: 1px solid #334155; border-radius: 8px; background: #1a1a2e; }}
-svg {{ display: block; }}
-.comp {{ cursor: pointer; transition: opacity 0.15s; }}
-.comp:hover rect {{ stroke-width: 2.5; stroke: #fff; }}
-.comp.dimmed {{ opacity: 0.15; }}
-.comp.highlighted rect {{ stroke: #fbbf24; stroke-width: 3; }}
-#tooltip {{ position: fixed; background: #1e293b; border: 1px solid #475569; border-radius: 6px; padding: 8px 12px; font-size: 0.8rem; pointer-events: none; display: none; z-index: 100; max-width: 280px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }}
-#tooltip .ref {{ font-weight: bold; color: #60a5fa; }}
-#tooltip .val {{ color: #94a3b8; }}
-.legend {{ display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }}
-.legend-item {{ display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: #94a3b8; }}
-.legend-swatch {{ width: 12px; height: 12px; border-radius: 2px; }}
-.stats {{ margin-top: 12px; font-size: 0.8rem; color: #64748b; }}
+{css_styles}
 </style>
 </head>
 <body>
@@ -242,21 +275,26 @@ svg {{ display: block; }}
   <button onclick="resetView()">Reset View</button>
   <button id="btn-thermal" onclick="toggleThermal()">Thermal Overlay</button>
   <button onclick="exportCSV()">Export CSV</button>
-  <span style="color:#64748b; font-size:0.8rem; margin-left:8px;">Click component to highlight net &middot; Hover for details</span>
+  <span style="color:#64748b; font-size:0.8rem; margin-left:8px;">
+    Click component to highlight net &middot; Hover for details
+  </span>
 </div>
 <div class="board-container">
-<svg id="board" width="{svg_w + pad * 2:.0f}" height="{svg_h + pad * 2:.0f}" viewBox="{-pad} {-pad} {svg_w + pad * 2:.0f} {svg_h + pad * 2:.0f}">
-  <rect x="0" y="0" width="{svg_w:.0f}" height="{svg_h:.0f}" fill="#1e293b" stroke="#475569" stroke-width="2" rx="4"/>
-  <text x="{svg_w / 2:.0f}" y="-8" text-anchor="middle" fill="#475569" font-size="11">{board_width_mm:.0f} x {board_height_mm:.0f} mm</text>
+<svg id="board" width="{svg_w + pad * 2:.0f}" height="{svg_h + pad * 2:.0f}"
+     viewBox="{svg_viewbox}">
+  <rect x="0" y="0" width="{svg_w:.0f}" height="{svg_h:.0f}"
+        fill="#1e293b" stroke="#475569" stroke-width="2" rx="4"/>
+  <text x="{svg_w / 2:.0f}" y="-8" text-anchor="middle"
+        fill="#475569" font-size="11">{board_text}</text>
   <g id="thermal-layer">{thermal_content}</g>
   <g id="comp-layer">{svg_content}</g>
 </svg>
 </div>
 <div class="legend">
-  {"".join(f'<span class="legend-item"><span class="legend-swatch" style="background:{c}"></span>{cat.title()}</span>' for cat, c in _CATEGORY_COLORS.items())}
+  {legend_items}
 </div>
 <div class="stats">
-  Components: {len(comp_map)} &middot; Board: {board_width_mm:.0f} x {board_height_mm:.0f} mm &middot; Scale: {scale}px/mm
+  {stats_text}
 </div>
 </div>
 <div id="tooltip"></div>
