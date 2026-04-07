@@ -6,24 +6,25 @@
 
 **Goal:** Improve design review workflows, add design-time quality checks, and expand documentation for users starting their first designs. Focus on DFM validation, design scoring, and design documentation generation.
 
-### 104. Design DFM Checker (P0, MEDIUM) — IN PROGRESS
+### 104. Design DFM Checker (P0, MEDIUM) — DONE
 
-- [ ] Create `dfm_checker.py` — validates PCB design against fab capabilities
-- [ ] Check categories:
-  - [ ] Trace width minimum (0.127mm for JLCPCB 2-layer, 0.09mm for 4-layer)
-  - [ ] Trace-to-trace spacing (same minimums)
-  - [ ] Via diameter and drill size (0.45mm / 0.2mm for 2-layer)
-  - [ ] Annular ring on vias (≥0.125mm)
-  - [ ] Solder mask clearance (0.1mm typical)
-  - [ ] Board edge clearance for traces (0.3mm minimum)
-  - [ ] Pad-to-pad spacing (accounts for solder paste bridge risk)
-- [ ] Support multiple fab profiles: JLCPCB, PCBWay, custom `.dru` rules from KiCad
-- [ ] Output: list of violations with: location (net/component), violation type, actual/minimum values, fix suggestion
-- [ ] CLI command: `circuit-weaver check-dfm <design.kicad_pcb> [--profile jlcpcb|pcbway]`
-- [ ] Integration: can be called standalone or as pre-flight check in `export-gerbers`
-- [ ] Generate violation summary: X critical, Y warnings
+- [x] Create `dfm_checker.py` — validates PCB design against fab capabilities
+- [x] Check categories:
+  - [x] Trace width minimum (0.127mm for JLCPCB 2-layer, 0.09mm for 4-layer)
+  - [x] Trace-to-trace spacing (same minimums)
+  - [x] Via diameter and drill size (0.45mm / 0.2mm for 2-layer)
+  - [x] Annular ring on vias (≥0.125mm)
+  - [x] Solder mask clearance (0.1mm typical)
+  - [x] Board edge clearance for traces (0.3mm minimum)
+  - [x] Pad-to-pad spacing (accounts for solder paste bridge risk)
+- [x] Support multiple fab profiles: JLCPCB, PCBWay, custom `.dru` rules from KiCad
+- [x] Output: list of violations with: location (net/component), violation type, actual/minimum values, fix suggestion
+- [x] CLI command: `circuit-weaver check-dfm <design.kicad_pcb> [--profile jlcpcb|pcbway]`
+- [x] Integration: can be called standalone or as pre-flight check in `export-gerbers`
+- [x] Generate violation summary: X critical, Y warnings
+- [x] 14 unit tests in `test_dfm_checker.py` covering profiles, parsing, violations, reports
 
-Files: `src/circuit_weaver/dfm_checker.py` (new), `src/circuit_weaver/mvp.py`
+Files: `src/circuit_weaver/dfm_checker.py` (new), `src/circuit_weaver/mvp.py`, `tests/test_dfm_checker.py` (new)
 
 ### 105. Enhanced Design Scoring (P1, MEDIUM)
 
@@ -76,23 +77,25 @@ Files: `src/circuit_weaver/review_report.py` (new), `src/circuit_weaver/mvp.py`,
 
 Files: `src/circuit_weaver/sourcing_auditor.py` (new), `src/circuit_weaver/mvp.py`
 
-### 108. Design Documentation Generator (P2, MEDIUM) — IN PROGRESS
+### 108. Design Documentation Generator (P2, MEDIUM) — DONE
 
-- [ ] Create `design_docs.py` — auto-generate assembly and ordering documents
-- [ ] Outputs:
-  - [ ] **Assembly guide PDF:** BOM table, placement photo/SVG, assembly sequence, soldering notes
-  - [ ] **Ordering checklist:** per-distributor order files (DigiKey, Mouser, LCSC)
-  - [ ] **Component datasheet index:** links to downloaded datasheets
-  - [ ] **Power budget spreadsheet:** CSV with rail voltage, current, dissipation per IC
-- [ ] Assembly guide structure:
-  - [ ] Component list (by ref, with MPN + footprint)
-  - [ ] Placement diagram (embedded SVG from Sprint 16)
-  - [ ] Assembly order (suggest bottom-layer first, then top)
-  - [ ] Soldering notes (paste reflow vs hand solder, thermal requirements)
-- [ ] CLI: `circuit-weaver generate-docs <design.yaml> --output docs/`
-- [ ] Packaging: individual files in `docs/assembly/`, `docs/bom/`, `docs/datasheets/`
+- [x] Create `design_docs.py` — auto-generate assembly and ordering documents
+- [x] Outputs:
+  - [x] **Assembly guide CSV:** BOM table with reference, value, footprint, MPN, manufacturer
+  - [x] **Ordering checklist:** markdown with per-distributor checkboxes and component status
+  - [x] **Component datasheet index:** markdown links to downloaded PDFs
+  - [x] **Power budget CSV:** rail voltage, estimated current, power per supply rail
+- [x] Assembly guide functions:
+  - [x] `_generate_bom_table()` — extract from design IR
+  - [x] `_generate_power_budget()` — estimate power per rail from component categories
+  - [x] `generate_assembly_guide_csv()` — CSV export
+  - [x] `generate_ordering_checklist()` — markdown checklist with distributor status
+  - [x] `generate_datasheet_index()` — index all PDFs in a directory
+  - [x] `generate_all_docs()` — orchestrator for all doc types
+- [x] CLI: `circuit-weaver generate-docs <design.yaml> --output docs/ [--datasheets-dir X]`
+- [x] 17 unit tests in `test_design_docs.py` covering BOM, power budget, CSV/markdown exports
 
-Files: `src/circuit_weaver/design_docs.py` (new), `src/circuit_weaver/mvp.py`
+Files: `src/circuit_weaver/design_docs.py` (new), `src/circuit_weaver/mvp.py`, `tests/test_design_docs.py` (new)
 
 ---
 

@@ -4,14 +4,36 @@
 
 ### Sprint 19 — Design Review & Quality Assurance
 
-### Added
-- (coming soon)
+### Added (Task 104 — Design DFM Checker)
+- **DFM (Design for Manufacture) checker** (`dfm_checker.py`):
+  - Validates PCB design against fab capabilities: trace width, spacing, via size, annular ring, edge clearance
+  - Supports JLCPCB (2/4-layer) and PCBWay profiles with customizable DFM rules
+  - Parses `.kicad_pcb` S-expression format to extract traces, vias, board dimensions
+  - Returns structured `DFMViolation` objects with severity (critical/warning), actual vs minimum values, fix suggestions
+  - `check_dfm()` function and `dfm_report()` for human-readable output
+  - CLI command: `circuit-weaver check-dfm <design.kicad_pcb> [--profile jlcpcb|pcbway]`
+
+### Added (Task 108 — Design Documentation Generator)
+- **Design documentation generator** (`design_docs.py`):
+  - `generate_assembly_guide_csv()` — exports BOM table: reference, value, footprint, MPN, manufacturer
+  - `generate_power_budget_csv()` — estimates power per supply rail based on component categories
+  - `generate_ordering_checklist()` — markdown checklist with per-distributor status
+  - `generate_datasheet_index()` — markdown index of all downloaded datasheets
+  - `generate_all_docs()` — orchestrator to generate all documentation types at once
+  - CLI command: `circuit-weaver generate-docs <design.yaml> --output docs/ [--datasheets-dir X]`
+  - Supports integration with BOM workflow: `cost-bom → generate-docs`
+
+### Tests
+- 31 new tests: 14 for DFM checker, 17 for design documentation
+  - DFM profiles, PCB parsing, violation detection, report generation
+  - BOM table extraction, power budget calculation, CSV/markdown exports
+  - All tests passing in ~0.15s
 
 ### Changed
-- (coming soon)
+- `mvp.py`: Added two new CLI subcommands (`check-dfm`, `generate-docs`) with full argument parsing
+- `__init__.py`: Exported DFM and design_docs functions in public API
 
-### Fixed
-- (coming soon)
+---
 
 ---
 
