@@ -72,6 +72,136 @@ Files: `CONTRIBUTING.md`, `docs/architecture.md`, `README.md`, `.github/ISSUE_TE
 
 ---
 
+## Sprint 14 — Intelligent Symbol/Footprint Discovery (v0.12.0)
+
+**Goal:** Users no longer hand-specify MPNs. When a component value/footprint is given, auto-discover the MPN, symbol, and footprint via DigiKey, Mouser, and LCSC APIs. Build a persistent symbol cache to speed up regenerations.
+
+### 83. DigiKey symbol autoloader (P1, LARGE)
+
+- [ ] Parse MPN or description (e.g., "100nF 0402 X7R") from component properties
+- [ ] Query DigiKey API `KeywordSearch` endpoint
+- [ ] Extract symbol and footprint from response (`ManufacturerPartNumber`, `Parameters`)
+- [ ] Download symbol/footprint (if available) via DigiKey API or fallback to EasyEDA
+- [ ] Store in local symbol cache (`~/.cache/circuit-weaver/symbols/digikey/`)
+- [ ] Integrate into `symbol_resolver.py` with fallback chain: custom → KiCad → DigiKey → EasyEDA
+- [ ] Add `--auto-source` flag to `scaffold` and `generate` commands
+
+Files: `digikey_loader.py` (new), `symbol_resolver.py`, `mvp.py`
+
+### 84. Mouser symbol autoloader (P1, MEDIUM)
+
+- [ ] Query Mouser Search API by MPN/description
+- [ ] Parse symbol/footprint metadata from Mouser response
+- [ ] Download via Mouser-hosted links or manufacturer sources
+- [ ] Add to symbol cache with Mouser branding
+- [ ] Integrate into fallback chain (after DigiKey, before EasyEDA)
+
+Files: `mouser_loader.py` (new), `symbol_resolver.py`
+
+### 85. Smart symbol caching layer (P1, SMALL)
+
+- [ ] Persistent cache: `~/.cache/circuit-weaver/symbols/` with vendor subdirs
+- [ ] Cache manifest: `index.json` with MPN → (symbol_file, footprint_file, source, timestamp)
+- [ ] TTL: 30 days (symbols don't change frequently)
+- [ ] Hit/miss metrics: CLI `--cache-stats` shows cache effectiveness
+- [ ] `--cache-clear` to reset cache when needed
+
+Files: `symbol_cache.py` (new), `mvp.py`
+
+### 86. Auto-populate BOM during generation (P1, MEDIUM)
+
+- [ ] When `generate` runs with `--auto-source`, populate blank MPN fields
+- [ ] Query each component's value + footprint against DigiKey/Mouser/LCSC
+- [ ] Show user: "Found 12 parts, 3 marked for manual pricing (no LCSC match)"
+- [ ] Write discovered MPNs back to spec with `--update-spec` flag
+- [ ] Report which distributor was used for each MPN (for cost-bom downstream)
+
+Files: `mvp.py`, `bom_resolver.py` (new)
+
+---
+
+## Sprint 15 — Advanced PCB Placement & Dual-Sided Assembly (v0.13.0)
+
+**Goal:** Go from schematic + netlist to complete PCB placement with thermal optimization, signal integrity constraints, and dual-sided assembly support (Flux AI level). Interactive SVG/vector viewer for placement review.
+
+### 87. PCB placement optimizer (P0, LARGE)
+
+- [ ] Multi-objective optimizer: thermal, signal integrity (length-matched groups), DFM clearance, cost
+- [ ] Input: netlist, board dimensions, layer stackup, component library (thermal specs from datasheets)
+- [ ] Output: placement coordinates + rotation + layer assignment
+- [ ] Algorithm: simulated annealing or genetic algorithm with constraint satisfaction
+- [ ] Integrate with `generate_pcb_placement()` — currently uses simple heuristics
+- [ ] Constraints:
+  - Thermal: Group power components, distance from heatsinks
+  - SI: USB/DDR within matched-length tolerance, impedance-controlled via length
+  - DFM: Min clearance per fab rules, thermal pad via count, silkscreen readability
+  - Cost: Minimize vias, consolidate to fewer layers if possible
+- [ ] Add `--placement-strategy` flag: `simple` (current), `thermal`, `si`, `cost`, `balanced`
+
+Files: `placement_optimizer.py` (new), `generator.py`, `mvp.py`
+
+### 88. Signal integrity constraint solver (P1, LARGE)
+
+- [ ] Detect high-speed buses: USB 3.x, DDR, LVDS, PCIe, MIPI
+- [ ] Compute impedance targets from datasheet (USB 90Ω, DDR 50Ω reference)
+- [ ] Length matching: group traces by signal type, enforce ±tolerance (DDR ±5mil, USB ±10mil)
+- [ ] Via placement: limit to critical pins (data lines), avoid on low-speed power
+- [ ] Return: placement suggestions + routing constraints as JSON for manual PCB work or Freerouting
+- [ ] Integrate with `placer.py` to suggest placement that minimizes routing complexity
+
+Files: `si_constraints.py` (new), `placer.py`
+
+### 89. Thermal analysis for placement (P1, LARGE)
+
+- [ ] Extract thermal specs from component datasheets: θJA, Pdiss, Tmax
+- [ ] Compute junction temps: Tj = Ta + Pdiss × θJA (need board Ta estimate or CLI arg)
+- [ ] Identify hotspots: if Tj > Tj_max - 10°C margin, flag as thermal risk
+- [ ] Placement optimization: separate hot components (>2W dissipation), allocate airflow
+- [ ] Suggest copper area or heatsink mounting
+- [ ] Output: thermal heatmap SVG (grid of component positions with color scale) for visual review
+
+Files: `thermal_analysis.py` (new), `datasheet_parser.py` (extend for thermal data), `mvp.py`
+
+### 90. Interactive PCB placement viewer (SVG/web) (P0, MEDIUM)
+
+- [ ] Generate interactive HTML/SVG viewer: board outline, component footprints, nets
+- [ ] Features:
+  - Click to highlight net (all connected pads turn blue)
+  - Hover over component → show MPN, value, thermal load
+  - Drag-to-move components (updates coordinates, re-renders routing complexity estimate)
+  - Thermal heatmap overlay toggle (red = hot, blue = cool)
+  - DFM checker: hover over region → shows clearance violations
+  - Export placement to CSV (Designator, X, Y, Rotation, Layer)
+- [ ] Mobile-friendly: responsive design, zoom/pan on touchscreen
+- [ ] Integrates with `generate` output: `--viewer` flag opens HTML file automatically (or `circuit-weaver open-viewer board.html`)
+
+Files: `placement_viewer.py` (new), `templates/viewer.html` (new), `mvp.py`
+
+### 91. Dual-sided assembly BOM + CPL (P1, MEDIUM)
+
+- [ ] Detect which components go on which side (via `layer` field in placement or user override)
+- [ ] Generate two CPL files: `cpl_top.csv`, `cpl_bottom.csv`
+- [ ] Support both simultaneous reflow (both sides at once, requires precise thermal profile) and sequential (flip and reflow bottom second)
+- [ ] Warnings for incompatible parts on bottom side:
+  - No tall components (connectors, electrolytic caps) if stacking/panelization
+  - Thermal pad vias must exist for bottom-side power ICs (risk of solder wicking)
+- [ ] Export for JLCPCB/PCBWay: format CPLs correctly per fab requirements
+- [ ] Add `--assembly-mode` flag: `single-sided`, `dual-sided-simultaneous`, `dual-sided-sequential`
+
+Files: `jlcpcb_export.py` (extend), `pcb_export.py` (extend), `mvp.py`
+
+### 92. Panelization hints generator (P2, SMALL)
+
+- [ ] For small boards, suggest panel layout (e.g., 3×3 array of 50mm boards on 100×100 panel)
+- [ ] Output: breakaway areas (V-cut or mouse bite locations), panelization drawing for manufacturing
+- [ ] Constraints: preserve at least one reference designator per board, no copper on breakaway area
+- [ ] Export format: KiCad PCB with panel structure, or DXF for manual panel design
+- [ ] Cost estimate: fab cost per board vs panel economies of scale
+
+Files: `panelizer.py` (new), `mvp.py`
+
+---
+
 ## Sprint 9 — Unblock Day-1 Onboarding (v0.8.0) — DONE
 
 **Goal:** A new user can pip install, run a design, and understand the system in under 5 minutes. Fix the broken first-run experience and make templates discoverable.
