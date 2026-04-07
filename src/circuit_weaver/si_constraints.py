@@ -137,6 +137,10 @@ def analyze_si_constraints(components: list[ComponentDef]) -> dict:
                 diff_pairs.append({"bus_type": bus_type, "net_p": net_p, "net_n": net_n, "source_ref": ref})
 
             if bus_info.get("z_diff"):
+                diff_desc = (
+                    f"{bus_info['description']}: {bus_info['z_diff']}\u03a9 "
+                    f"\u00b1{bus_info['tolerance_pct']}% differential"
+                )
                 impedance_constraints.append(
                     {
                         "bus_type": bus_type,
@@ -145,10 +149,14 @@ def analyze_si_constraints(components: list[ComponentDef]) -> dict:
                         "tolerance_pct": bus_info["tolerance_pct"],
                         "nets": nets,
                         "source_ref": ref,
-                        "description": f"{bus_info['description']}: {bus_info['z_diff']}\u03a9 \u00b1{bus_info['tolerance_pct']}% differential",
+                        "description": diff_desc,
                     }
                 )
             elif bus_info.get("z_single"):
+                single_desc = (
+                    f"{bus_info['description']}: {bus_info['z_single']}\u03a9 "
+                    f"\u00b1{bus_info['tolerance_pct']}% single-ended"
+                )
                 impedance_constraints.append(
                     {
                         "bus_type": bus_type,
@@ -157,7 +165,7 @@ def analyze_si_constraints(components: list[ComponentDef]) -> dict:
                         "tolerance_pct": bus_info["tolerance_pct"],
                         "nets": nets,
                         "source_ref": ref,
-                        "description": f"{bus_info['description']}: {bus_info['z_single']}\u03a9 \u00b1{bus_info['tolerance_pct']}% single-ended",
+                        "description": single_desc,
                     }
                 )
 
@@ -173,21 +181,26 @@ def analyze_si_constraints(components: list[ComponentDef]) -> dict:
                 )
 
             if bus_type in ("usb2", "usb3"):
+                usb_desc = f"Route {bus_info['description']} diff pairs with 4x trace-width spacing from other signals"
                 routing_rules.append(
                     {
                         "bus_type": bus_type,
                         "nets": nets,
                         "source_ref": ref,
-                        "description": f"Route {bus_info['description']} diff pairs with 4x trace-width spacing from other signals",
+                        "description": usb_desc,
                     }
                 )
             if bus_type.startswith("ddr"):
+                ddr_desc = (
+                    f"Route {bus_info['description']} with matched delays; "
+                    f"place termination resistors within 10mm of memory IC"
+                )
                 routing_rules.append(
                     {
                         "bus_type": bus_type,
                         "nets": nets,
                         "source_ref": ref,
-                        "description": f"Route {bus_info['description']} with matched delays; place termination resistors within 10mm of memory IC",
+                        "description": ddr_desc,
                     }
                 )
 
@@ -203,9 +216,8 @@ def analyze_si_constraints(components: list[ComponentDef]) -> dict:
 
     parts = []
     if buses_detected:
-        parts.append(
-            f"Detected {len(buses_detected)} high-speed buses: {', '.join(sorted(set(b['bus_type'] for b in buses_detected)))}"
-        )
+        bus_types = ", ".join(sorted(set(b["bus_type"] for b in buses_detected)))
+        parts.append(f"Detected {len(buses_detected)} high-speed buses: {bus_types}")
     if diff_pairs:
         parts.append(f"{len(diff_pairs)} differential pairs")
     if impedance_constraints:

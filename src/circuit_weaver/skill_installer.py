@@ -224,9 +224,8 @@ def install_skills(platforms: list[str] | None = None, skills: list[str] | None 
     # Determine final status
     if partial_failure:
         result["status"] = "partial"
-        result["message"] = (
-            f"Installed {sum(p.get('skills_installed', []) for p in result['platforms_installed'])} skills to {len(platforms)} platforms (with failures)"
-        )
+        total_skills = sum(len(p.get("skills_installed", [])) for p in result["platforms_installed"])
+        result["message"] = f"Installed {total_skills} skills to {len(platforms)} platforms (with failures)"
     else:
         result["status"] = "ok"
         result["message"] = f"Installed {len(skills_to_install)} skills to {len(platforms)} platform(s)"
