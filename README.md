@@ -59,24 +59,25 @@ Circuit Weaver sits in the useful middle:
 
 ---
 
-## 🎬 Demo Commands
+## Demo: Zigbee/BT Humidistat
 
-**Record a live demo using asciinema** — see the complete CLI workflow in action:
+Full 11-step pipeline from YAML spec to fab-ready outputs + 3D enclosure:
 
 ```bash
-asciinema rec demo.cast  # Start recording
-# Then run the commands in docs/DEMO_COMMANDS.md step-by-step
+circuit-weaver generate zigbee_humidistat.yaml -o ./output --no-svg --no-require-valid
+circuit-weaver cost-bom zigbee_humidistat.yaml --qty 1,10,100
+circuit-weaver si-constraints zigbee_humidistat.yaml
+circuit-weaver thermal-analysis zigbee_humidistat.yaml
+circuit-weaver optimize-placement zigbee_humidistat.yaml --iterations 1000 --seed 42
+circuit-weaver placement-viewer zigbee_humidistat.yaml -o output/viewer.html
+circuit-weaver panelize --board-width 50 --board-height 40 --qty 100
+circuit-weaver design-enclosure --board-width 50 --board-height 40 --component-height 10 -o output/enclosure.scad
+circuit-weaver export-jlcpcb zigbee_humidistat.yaml -o output/jlcpcb
 ```
 
-**Workflow overview:**
-
-1. **List templates** — `circuit-weaver list-templates` (30+ circuit templates)
-2. **Scaffold** — Create initial design: `circuit-weaver scaffold --template buck --ref U1`
-3. **Apply patches** — Add components: `circuit-weaver apply-patch design.yaml patch.json`
-4. **Validate** — Check electrical rules: `circuit-weaver validate design.yaml`
-5. **Generate** — Create KiCad schematic: `circuit-weaver generate design.yaml -o ./output`
-6. **Cost BOM** — Estimate at qty breaks: `circuit-weaver cost-bom design.yaml --qty 1,10,100`
-7. **Export** — JLCPCB assembly files: `circuit-weaver export-jlcpcb design.yaml -o ./jlcpcb`
+**Play the recorded demo:** `asciinema play demo_humidistat.cast`
+**Sample design:** [`samples/zigbee_humidistat/`](samples/zigbee_humidistat/)
+**Full walkthrough:** [`docs/DEMO_HUMIDISTAT.md`](docs/DEMO_HUMIDISTAT.md)
 
 **Time to fabrication:** ~5 minutes (YAML → validated schematic → JLCPCB-ready files)
 
