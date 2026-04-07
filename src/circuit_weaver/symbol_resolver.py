@@ -260,9 +260,15 @@ class SymbolResolver:
         try:
             from .digikey_loader import load_from_digikey
 
-            return load_from_digikey(mpn, cache=self._cache)
+            comp = load_from_digikey(mpn, cache=self._cache)
+            if not comp:
+                log.debug("DigiKey: MPN not found or API unavailable: %s", mpn)
+            return comp
         except ImportError:
-            log.debug("DigiKey loader not available")
+            log.debug("DigiKey loader module not available (missing dependencies?)")
+            return None
+        except Exception as exc:
+            log.debug("DigiKey loader error for %s: %s", mpn, exc)
             return None
 
     def _resolve_mouser(self, mpn: str) -> ComponentDef | None:
@@ -277,7 +283,13 @@ class SymbolResolver:
         try:
             from .mouser_loader import load_from_mouser
 
-            return load_from_mouser(mpn, cache=self._cache)
+            comp = load_from_mouser(mpn, cache=self._cache)
+            if not comp:
+                log.debug("Mouser: MPN not found or API unavailable: %s", mpn)
+            return comp
         except ImportError:
-            log.debug("Mouser loader not available")
+            log.debug("Mouser loader module not available (missing dependencies?)")
+            return None
+        except Exception as exc:
+            log.debug("Mouser loader error for %s: %s", mpn, exc)
             return None

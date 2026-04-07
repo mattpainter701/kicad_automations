@@ -537,6 +537,21 @@ circuit-weaver import-placement /tmp/out/placement.svg /tmp/out/design.kicad_pcb
 - Green: connectors
 - Yellow: passives (resistors, capacitors)
 
+**⚠️ SVG editing constraints for GIMP/Inkscape:**
+
+The SVG round-trip (export → edit → import) is most reliable when using **standard SVG transforms**:
+- **translate(x, y)** — move a component
+- **rotate(angle)** — rotate a component  
+
+Avoid:
+- Matrix transforms like `matrix(a b c d e f)` — the importer may misinterpret rotation
+- Complex shape edits (don't reshape the component rectangles)
+- 3-argument rotate like `rotate(angle cx cy)` — we extract the angle only (center point ignored)
+
+**In GIMP:** Use Move/Rotate tools (they output standard transforms). Avoid Effects → Distorts.
+
+**In Inkscape:** Use Transform → Position/Size for moving and rotating. Be careful with Bézier edits—if you reshape component geometry, the importer may not recognize it.
+
 **When to use:** After schematic generation, before sending to fab. Fast for adjusting
 component spacing, swapping placement between board sides, or sharing layout feedback.
 

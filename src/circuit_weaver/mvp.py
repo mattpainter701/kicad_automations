@@ -1384,12 +1384,12 @@ def _auto_source_report(
     sourced_data = {}
 
     for comp in components:
-        mpn = comp.get("mpn", "") or comp.get("value", "")
+        mpn = comp.mpn or comp.value or ""
         if not mpn:
             continue
 
         # Skip if already has LCSC or DigiKey PN
-        if comp.get("lcsc_pn") or comp.get("digikey_pn"):
+        if comp.lcsc_pn or comp.digikey_pn:
             resolved += 1
             continue
 
@@ -1950,6 +1950,43 @@ def main() -> None:
     viewer_p.add_argument("--specs-dir", help="Path to specs/ directory for thermal overlay")
     viewer_p.add_argument("--strategy", choices=["simple", "thermal", "si", "cost", "balanced"], default="balanced")
 
+    # Sprint 16 P1/P2: SI constraints, thermal analysis, dual-sided CPL, panelization
+    si_p = subparsers.add_parser(
+        "si-constraints", help="Analyze signal integrity constraints (impedance, length matching)"
+    )
+    si_p.add_argument("spec", help="Design spec YAML file")
+    si_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
+
+    thermal_p = subparsers.add_parser("thermal-analysis", help="Analyze thermal performance and generate heatmap")
+    thermal_p.add_argument("spec", help="Design spec YAML file")
+    thermal_p.add_argument("--specs-dir", help="Path to specs/ directory with thermal data")
+    thermal_p.add_argument("--ambient", type=float, default=25.0, help="Ambient temperature in °C (default: 25)")
+    thermal_p.add_argument("--heatmap", help="Output thermal heatmap SVG to this path")
+    thermal_p.add_argument("--board-width", type=float, default=100.0, help="Board width in mm (default: 100)")
+    thermal_p.add_argument("--board-height", type=float, default=80.0, help="Board height in mm (default: 80)")
+    thermal_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
+
+    dual_cpl_p = subparsers.add_parser("export-dual-cpl", help="Export dual-sided CPL files (top + bottom)")
+    dual_cpl_p.add_argument("spec", help="Design spec YAML file")
+    dual_cpl_p.add_argument("--output", "-o", required=True, help="Output directory for CPL files")
+    dual_cpl_p.add_argument(
+        "--assembly-mode",
+        choices=["single-sided", "dual-sided-simultaneous", "dual-sided-sequential"],
+        default="dual-sided-sequential",
+        help="Assembly mode (default: dual-sided-sequential)",
+    )
+
+    panel_p = subparsers.add_parser("panelize", help="Suggest panel layout for small boards")
+    panel_p.add_argument("--board-width", type=float, required=True, help="Single board width in mm")
+    panel_p.add_argument("--board-height", type=float, required=True, help="Single board height in mm")
+    panel_p.add_argument("--qty", type=int, default=100, help="Total boards needed (default: 100)")
+    panel_p.add_argument("--panel-width", type=float, default=100.0, help="Max panel width in mm (default: 100)")
+    panel_p.add_argument("--panel-height", type=float, default=100.0, help="Max panel height in mm (default: 100)")
+    panel_p.add_argument(
+        "--breakaway", choices=["v-cut", "mouse-bite"], default="v-cut", help="Breakaway type (default: v-cut)"
+    )
+    panel_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -1963,8 +2000,8 @@ def main() -> None:
                 strict=strict,
             )
         )
-        # Print as colored text if --color or --verbose specified, otherwise JSON
-        if verbose or color in ("always", "auto"):
+        # Print as colored text only if --verbose or if color is always/auto with TTY support
+        if verbose or (color in ("always", "auto") and _color_support(color)):
             use_color = _color_support(color)
             _print_validation_report(report, use_color=use_color, verbose=verbose)
         else:
@@ -2543,6 +2580,146 @@ def main() -> None:
             output_path=args.output,
         )
         print(f"Viewer written to {args.output}")
+        raise SystemExit(0)
+
+    if args.command == "si-constraints":
+        from .si_constraints import analyze_si_constraints
+
+        spec = _load_spec_file(args.spec)
+        compiled = compile_design_ir(spec)
+        result = analyze_si_constraints(compiled.components)
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            print(result["summary"])
+            for bus in result["buses_detected"]:
+                print(f"  {bus['description']} on {bus['component']} ({bus['net_count']} nets)")
+            for ic in result["impedance_constraints"]:
+                print(f"  Impedance: {ic['description']}")
+            for lg in result["length_groups"]:
+                print(f"  Length match: {lg['description']} ({len(lg['nets'])} nets)")
+            for rr in result["routing_rules"]:
+                print(f"  Rule: {rr['description']}")
+
+        raise SystemExit(0)
+
+    if args.command == "thermal-analysis":
+        from .placement_optimizer import PlacementConfig, optimize_placement
+        from .thermal_analysis import analyze_thermal, generate_heatmap_svg
+
+        spec = _load_spec_file(args.spec)
+        compiled = compile_design_ir(spec)
+
+        cfg = PlacementConfig(board_width_mm=args.board_width, board_height_mm=args.board_height)
+        opt = optimize_placement(compiled.components, config=cfg, specs_dir=args.specs_dir)
+        placements = opt["placements"]
+
+        result = analyze_thermal(
+            compiled.components,
+            placements,
+            specs_dir=args.specs_dir,
+            ambient_temp_c=args.ambient,
+        )
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            print(result["summary"])
+            for c in result["components"]:
+                status_icon = {"ok": "  ", "warning": "! ", "critical": "!!"}[c["status"]]
+                print(
+                    f"  {status_icon}{c['ref']:6s} {c['pdiss_w']:6.3f}W  Tj={c['tj_calculated']:.0f}°C  max={c['tj_max']:.0f}°C  margin={c['margin_c']:.0f}°C"
+                )
+                if c["suggestion"]:
+                    print(f"         {c['suggestion']}")
+            for w in result["proximity_warnings"]:
+                print(
+                    f"  [!] {w['ref_a']} + {w['ref_b']}: {w['distance_mm']}mm apart, {w['combined_heat_w']}W combined"
+                )
+            print()
+            for rec in result["recommendations"]:
+                print(f"  -> {rec}")
+
+        if args.heatmap:
+            generate_heatmap_svg(
+                compiled.components,
+                placements,
+                board_width_mm=args.board_width,
+                board_height_mm=args.board_height,
+                specs_dir=args.specs_dir,
+                ambient_temp_c=args.ambient,
+                output_path=args.heatmap,
+            )
+            print(f"Heatmap written to {args.heatmap}")
+
+        raise SystemExit(0)
+
+    if args.command == "export-dual-cpl":
+        from .jlcpcb_export import write_dual_sided_cpl
+        from .placement_optimizer import PlacementConfig, optimize_placement
+
+        spec = _load_spec_file(args.spec)
+        compiled = compile_design_ir(spec)
+
+        cfg = PlacementConfig()
+        opt = optimize_placement(compiled.components, config=cfg)
+        # Convert placement dict format to tuple format for CPL writer
+        tuple_placements = {}
+        for ref, p in opt["placements"].items():
+            layer = "top" if p.get("layer", "front") in ("front", "top") else "bottom"
+            tuple_placements[ref] = (p["x"], p["y"], p.get("rotation", 0), layer)
+
+        result = write_dual_sided_cpl(
+            compiled.components,
+            tuple_placements,
+            Path(args.output),
+            assembly_mode=args.assembly_mode,
+        )
+
+        print(f"Top CPL:    {result['top_file']} ({result['top_count']} components)")
+        print(f"Bottom CPL: {result['bottom_file']} ({result['bottom_count']} components)")
+        print(f"Mode:       {result['assembly_mode']}")
+        for w in result["warnings"]:
+            print(f"  [!] {w}")
+
+        raise SystemExit(0)
+
+    if args.command == "panelize":
+        from .panelizer import PanelConfig, suggest_panel
+
+        pcfg = PanelConfig(
+            max_panel_width_mm=args.panel_width,
+            max_panel_height_mm=args.panel_height,
+            breakaway_type=args.breakaway,
+        )
+        result = suggest_panel(args.board_width, args.board_height, qty=args.qty, config=pcfg)
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            print(f"Board: {args.board_width}x{args.board_height} mm, Qty: {args.qty}")
+            for i, opt in enumerate(result["panel_options"]):
+                rec = " (recommended)" if i == result["recommended"] else ""
+                print(
+                    f"  Option {i + 1}{rec}: {opt['cols']}x{opt['rows']} = {opt['boards_per_panel']}/panel "
+                    f"({opt['panel_width_mm']}x{opt['panel_height_mm']} mm, {opt['utilization_pct']}% util, "
+                    f"{opt['panels_needed']} panels, {opt['waste_boards']} waste)"
+                )
+            ce = result.get("cost_estimate", {})
+            if ce:
+                print(
+                    f"  Cost: panelized ${ce['panelized']['estimated_cost']:.2f} "
+                    f"(${ce['panelized']['per_board']:.4f}/board) vs "
+                    f"single ${ce['single_boards']['estimated_cost']:.2f} "
+                    f"(${ce['single_boards']['per_board']:.4f}/board) "
+                    f"— {ce['savings_pct']:.0f}% savings"
+                )
+            for w in result["warnings"]:
+                print(f"  [!] {w}")
+            for rule in result["design_rules"]:
+                print(f"  Rule: {rule}")
+
         raise SystemExit(0)
 
 

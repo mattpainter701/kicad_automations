@@ -244,7 +244,7 @@ Files: `datasheet_parser.py` (new), `metadata.py` (new), `mvp.py`
 
 ---
 
-## Sprint 16 — Advanced PCB Placement & Dual-Sided Assembly (v0.14.0)
+## Sprint 16 — Advanced PCB Placement & Dual-Sided Assembly (v0.14.0) — DONE
 
 **Goal:** Go from schematic + netlist to complete PCB placement with thermal optimization, signal integrity constraints, and dual-sided assembly support (Flux AI level). Placement optimizer reads spec data from Sprint 15. Interactive viewer for placement review.
 
@@ -265,27 +265,31 @@ Files: `datasheet_parser.py` (new), `metadata.py` (new), `mvp.py`
 
 Files: `placement_optimizer.py` (new), `mvp.py`
 
-### 88. Signal integrity constraint solver (P1, LARGE)
+### 88. Signal integrity constraint solver (P1, LARGE) — DONE
 
-- [ ] Detect high-speed buses: USB 3.x, DDR, LVDS, PCIe, MIPI
-- [ ] Compute impedance targets from datasheet (USB 90Ω, DDR 50Ω reference)
-- [ ] Length matching: group traces by signal type, enforce ±tolerance (DDR ±5mil, USB ±10mil)
-- [ ] Via placement: limit to critical pins (data lines), avoid on low-speed power
-- [ ] Return: placement suggestions + routing constraints as JSON for manual PCB work or Freerouting
-- [ ] Integrate with `placer.py` to suggest placement that minimizes routing complexity
+- [x] Detect high-speed buses from net names: USB 2.0/3.x, DDR3/DDR4, LVDS, PCIe, MIPI DSI/CSI, Ethernet, CAN, RS-485
+- [x] Detect buses from component description/MPN as fallback
+- [x] Compute impedance targets per bus type (USB 90Ω, DDR 67Ω, LVDS 100Ω, CAN/RS-485 120Ω, etc.)
+- [x] Differential pair detection from net naming patterns (P/N, +/-, D+/D-)
+- [x] Length matching groups with per-bus tolerances (DDR ±0.127mm, USB ±2.5mm)
+- [x] Routing rules (diff pair spacing, DDR termination placement)
+- [x] `si-constraints` CLI subcommand with `--json` output
+- [x] Summary report with bus count, diff pairs, impedance constraints, length groups
 
-Files: `si_constraints.py` (new), `placer.py`
+Files: `si_constraints.py` (new), `mvp.py`
 
-### 89. Thermal analysis for placement (P1, LARGE)
+### 89. Thermal analysis for placement (P1, LARGE) — DONE
 
-- [ ] Extract thermal specs from component datasheets: θJA, Pdiss, Tmax
-- [ ] Compute junction temps: Tj = Ta + Pdiss × θJA (need board Ta estimate or CLI arg)
-- [ ] Identify hotspots: if Tj > Tj_max - 10°C margin, flag as thermal risk
-- [ ] Placement optimization: separate hot components (>2W dissipation), allocate airflow
-- [ ] Suggest copper area or heatsink mounting
-- [ ] Output: thermal heatmap SVG (grid of component positions with color scale) for visual review
+- [x] Extract thermal specs from specs/metadata.json and specs/ic_thermal.json
+- [x] Compute junction temps: Tj = Ta + Pdiss × θJA with configurable ambient
+- [x] Identify hotspots: critical (Tj > Tj_max), warning (margin < 10°C), ok
+- [x] Proximity analysis: flag hot components within 10mm of each other
+- [x] Copper area suggestions for critical components
+- [x] Thermal heatmap SVG with radial gradients and temperature color legend
+- [x] `thermal-analysis` CLI subcommand with `--heatmap`, `--ambient`, `--specs-dir`, `--json`
+- [x] Recommendations list (heatsink, copper area, airflow, spreading)
 
-Files: `thermal_analysis.py` (new), `datasheet_parser.py` (extend for thermal data), `mvp.py`
+Files: `thermal_analysis.py` (new), `mvp.py`
 
 ### 90. Interactive PCB placement viewer (SVG/web) (P0, MEDIUM) — DONE
 

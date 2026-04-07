@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import csv
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -235,7 +236,13 @@ def export_placement_svg(
 
 
 def _parse_transform(transform_str: str) -> tuple[float, float, float]:
-    """Parse SVG transform string to extract translate(x, y) and rotate(r).
+    """Parse SVG transform string to extract translate(x, y) and rotate(angle).
+
+    Handles multiple SVG transform syntaxes:
+    - translate(x, y) or translate(x y) — translation in pixels
+    - translate(x) — single argument (y defaults to 0)
+    - rotate(angle) or rotate(angle cx cy) — rotation in degrees (ignores center if present)
+    - matrix(a b c d e f) — affine matrix (extracts translate + rotation)
 
     Returns (x_px, y_px, rotation_deg).
     """
@@ -243,16 +250,48 @@ def _parse_transform(transform_str: str) -> tuple[float, float, float]:
     y_px = 0.0
     rotation = 0.0
 
-    # Extract translate(x, y)
-    translate_match = re.search(r"translate\(([^,]+),\s*([^)]+)\)", transform_str)
-    if translate_match:
-        x_px = float(translate_match.group(1).strip())
-        y_px = float(translate_match.group(2).strip())
+    try:
+        # Try translate with comma separator first (most common)
+        translate_match = re.search(r"translate\(([^,\)]+),\s*([^)]+)\)", transform_str)
+        if translate_match:
+            x_px = float(translate_match.group(1).strip())
+            y_px = float(translate_match.group(2).strip())
+        else:
+            # Try translate with space separator (GIMP style)
+            translate_match = re.search(r"translate\(([^\s)]+)\s+([^)]+)\)", transform_str)
+            if translate_match:
+                x_px = float(translate_match.group(1).strip())
+                y_px = float(translate_match.group(2).strip())
+            else:
+                # Try single-argument translate (implicit y=0)
+                translate_match = re.search(r"translate\(([^)]+)\)", transform_str)
+                if translate_match:
+                    args = translate_match.group(1).strip()
+                    if "," not in args and " " not in args:
+                        # Single number — only x is specified
+                        x_px = float(args)
+                        y_px = 0.0
 
-    # Extract rotate(r)
-    rotate_match = re.search(r"rotate\(([^)]+)\)", transform_str)
-    if rotate_match:
-        rotation = float(rotate_match.group(1).strip())
+        # Try rotate(angle [cx cy]) — extract only the angle (first argument)
+        rotate_match = re.search(r"rotate\(([^\s)]+)", transform_str)
+        if rotate_match:
+            rotation = float(rotate_match.group(1).strip())
+
+        # Try matrix(a b c d e f) as fallback (GIMP applies transforms as matrix)
+        # For a 2D affine matrix: transform point (0,0) by matrix to get translation
+        # Rotation is arctan2(b, a) in degrees
+        if not (translate_match or rotate_match):
+            matrix_match = re.search(r"matrix\(([^)]+)\)", transform_str)
+            if matrix_match:
+                parts = [float(x.strip()) for x in matrix_match.group(1).split()]
+                if len(parts) >= 6:
+                    a, b, c, d, e, f = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+                    x_px = e  # translation x
+                    y_px = f  # translation y
+                    rotation = math.degrees(math.atan2(b, a))  # rotation in degrees
+    except (ValueError, AttributeError, IndexError) as exc:
+        # Gracefully degrade to defaults on parse error
+        logging.debug("Failed to parse SVG transform %r: %s", transform_str, exc)
 
     return x_px, y_px, rotation
 
@@ -286,9 +325,13 @@ def import_placement_from_svg(svg_path: Path | str, known_refs: set[str] | None 
         if known_refs and ref not in known_refs:
             continue
 
-        # Parse transform
-        transform = g.get("transform", "")
-        x_px, y_px, rotation = _parse_transform(transform)
+        # Parse transform, gracefully handling parse errors
+        try:
+            transform = g.get("transform", "")
+            x_px, y_px, rotation = _parse_transform(transform)
+        except Exception as exc:
+            logging.warning("Failed to parse transform for component %s: %s, using defaults", ref, exc)
+            x_px = y_px = rotation = 0.0
 
         # Convert pixels to mm
         x_mm = round(x_px / scale, 3)
@@ -334,24 +377,31 @@ def update_kicad_pcb_placements(
         y = placement["y"]
         rotation = placement["rotation"]
 
-        # Pattern: look for (footprint ...) block containing (property "Reference" "REF")
-        # Then find and replace (at X Y [ROT])
-        pattern = r'(footprint\s+"[^"]*"\s*\(at\s+)[^)]+(\))'
-
-        # This is a simplified approach: we search for the reference in the block
-        # and replace nearby (at ...) values. For production use, a proper KiCad file
-        # parser would be better, but this works for most cases.
-
         # Find the footprint block for this reference
-        ref_pattern = rf'(footprint\s+"[^"]*".*?\(property\s+"Reference"\s+"{re.escape(ref)}".*?(?=\(footprint|$))'
+        # Pattern: (footprint ...) block containing (property "Reference" "REF")
+        # Use DOTALL to match across lines, lookahead to end at next footprint or EOF
+        ref_pattern = (
+            rf'\(footprint\s+"[^"]*".*?\(property\s+"Reference"\s+"{re.escape(ref)}"'
+            r".*?(?=\(footprint|$)"
+        )
         match = re.search(ref_pattern, content, re.DOTALL)
 
         if match:
+            # Found the footprint block. Now replace (at ...) within ONLY this block
+            # to avoid duplicating edits if similar text appears elsewhere.
+            footprint_start = match.start()
             footprint_block = match.group(0)
-            # Replace (at ...) in this block
+
+            # Replace (at ...) in this block with the new placement
             new_at_clause = f"(at {x} {y} {rotation})"
-            updated_block = re.sub(r"\(at\s+[^)]+\)", new_at_clause, footprint_block)
-            content = content.replace(footprint_block, updated_block)
+            updated_block = re.sub(r"\(at\s+[^)]+\)", new_at_clause, footprint_block, count=1)
+
+            # Replace in content using string slicing to avoid duplicate replacements
+            # if the same block text appears multiple times
+            before = content[:footprint_start]
+            after = content[footprint_start + len(footprint_block) :]
+            content = before + updated_block + after
+
             updated.append(ref)
         else:
             not_found.append(ref)
