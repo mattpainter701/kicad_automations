@@ -15,9 +15,11 @@ from .dfm_checker import check_dfm, dfm_report
 from .enclosure_designer import generate_enclosure_scad, render_enclosure_stl
 from .kicad_placement_api import check_kicad_available, detect_kicad_version, update_board_placements
 from .review_report import generate_review_report_html
+from .sourcing_auditor import audit_bom
 
 __all__ = [
     "__version__",
+    "audit_bom",
     "check_dfm",
     "dfm_report",
     "generate_all_docs",

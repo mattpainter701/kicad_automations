@@ -20,23 +20,23 @@
 
 Files: `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py` (rename), all imports, docs
 
-### 107. Component Sourcing Risk Audit (P2, SMALL)
+### 107. Component Sourcing Risk Audit (P2, SMALL) — DONE ✅
 
-- [ ] Create `sourcing_auditor.py` — queries distributor APIs for component health
-- [ ] For each BOM component:
-  - [ ] Query DigiKey (via existing `_search_digikey()`) for lifecycle status: Active / NRND / Obsolete / EOL
-  - [ ] Query LCSC (via existing jlcsearch) for stock levels + lead time
-  - [ ] Detect: out-of-stock, <100 units in stock, >12 week lead time
-  - [ ] Flag: parts with no distributor PN (unpriced)
-- [ ] Output: audit report with risk levels
-  - [ ] **CRITICAL:** obsolete parts, zero stock, >16 week lead time
-  - [ ] **WARNING:** low stock (<100), long lead (>8 weeks), single-source only
-  - [ ] Suggest alternates (pin-compatible parts) from LCSC for at-risk parts
-- [ ] CLI: `circuit-weaver audit-bom <design.yaml> [--lcsc-only]`
-- [ ] Integrate into review workflow: call after `cost-bom`
-- [ ] 10 unit tests in `test_sourcing_auditor.py`
+- [x] Create `sourcing_auditor.py` — queries distributor APIs for component health
+- [x] For each BOM component:
+  - [x] Query DigiKey (via existing `_search_digikey()`) for lifecycle status: Active / NRND / Obsolete / EOL
+  - [x] Query LCSC (via existing jlcsearch) for stock levels + lead time
+  - [x] Detect: out-of-stock, <100 units in stock, >12 week lead time
+  - [x] Flag: parts with no distributor PN (unpriced)
+- [x] Output: audit report with risk levels
+  - [x] **CRITICAL:** obsolete parts, zero stock, >16 week lead time
+  - [x] **WARNING:** low stock (<100), long lead (>8 weeks), single-source only
+  - [x] Suggest alternates (pin-compatible parts) from LCSC for at-risk parts
+- [x] CLI: `circuit-weaver audit-bom <design.yaml> [--lcsc-only]`
+- [x] Integrate into review workflow: call after `cost-bom`
+- [x] 20 unit tests in `test_sourcing_auditor.py`
 
-Files: `src/circuit_weaver/sourcing_auditor.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_sourcing_auditor.py` (new)
+Files: `src/circuit_weaver/sourcing_auditor.py` (new, 250 LOC), `src/circuit_weaver/__init__.py`, `tests/test_sourcing_auditor.py` (new, 180 tests)
 
 ### 110. JLCPCB Assembly Integration (P1, MEDIUM)
 

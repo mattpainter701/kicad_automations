@@ -4,6 +4,16 @@
 
 ### Sprint 20 — Design Review Completion & Production Assembly
 
+### Added (Task 107 — Component Sourcing Risk Audit)
+- **Component sourcing auditor** (`sourcing_auditor.py`):
+  - `audit_bom()` — queries LCSC (stock/lead time) and DigiKey (lifecycle) for each component
+  - Risk classification: CRITICAL (obsolete, out-of-stock, >16 week lead), WARNING (low stock <100, lead 8-16 weeks), OK
+  - Identifies specific issues per component (out-of-stock, low stock, long lead time, obsolete, no distributor PN)
+  - `AuditFinding` and `AuditReport` dataclasses for structured output
+  - `audit_report_text()` for human-readable reports with CRITICAL/WARNING/OK sections and recommendations
+  - Integrates with existing `PartsLookup` and `compile_design_ir()` for BOM analysis
+  - 20 unit tests covering risk classification, issue identification, and report generation
+
 ### Changed (Task 109 — Dispatcher Refactor)
 - **Renamed core module** `mvp.py` → `dispatcher.py`:
   - Reflects actual role: CLI subcommand dispatcher, not MVP
@@ -12,14 +22,12 @@
   - Updated CONTRIBUTING.md, api-reference.md, architecture.md, cli-reference.md
   - All tests pass with new module name
 
-### Added
-- (to be filled during sprint)
-
 ### Fixed
 - (to be filled during sprint)
 
 ### Tests
 - All 60+ existing tests pass with dispatcher.py module name
+- Added 20 new tests for sourcing auditor (test_sourcing_auditor.py)
 
 ---
 
