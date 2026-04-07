@@ -10,6 +10,7 @@ from .design_docs import (
     generate_ordering_checklist,
     generate_power_budget_csv,
 )
+from .design_scorer import score_design_comprehensive
 from .dfm_checker import check_dfm, dfm_report
 from .enclosure_designer import generate_enclosure_scad, render_enclosure_stl
 from .kicad_placement_api import check_kicad_available, detect_kicad_version, update_board_placements
@@ -25,6 +26,7 @@ __all__ = [
     "generate_ordering_checklist",
     "generate_power_budget_csv",
     "render_enclosure_stl",
+    "score_design_comprehensive",
     "check_kicad_available",
     "detect_kicad_version",
     "update_board_placements",

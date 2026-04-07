@@ -26,23 +26,39 @@
 
 Files: `src/circuit_weaver/dfm_checker.py` (new), `src/circuit_weaver/mvp.py`, `tests/test_dfm_checker.py` (new)
 
-### 105. Enhanced Design Scoring (P1, MEDIUM)
+### 109. Rename mvp.py to dispatcher.py (P1, SMALL)
 
-- [ ] Extend current `score_electrical_quality()` with per-section metrics
-- [ ] New score categories:
-  - [ ] **Power Integrity:** decoupling adequacy, bulk cap presence, regulator headroom, rail noise risk (weighted)
-  - [ ] **Signal Integrity:** termination on high-speed nets, differential pair tuning, layer stack compliance
-  - [ ] **Placement Quality:** thermal clustering, decap proximity to power pins, connector-to-component distances
-  - [ ] **Thermal:** estimated junction temps vs max ratings, thermal via coverage on power devices
-  - [ ] **Manufacturing:** DFM violations (from Task 104), component availability, assembly complexity
-- [ ] Composite score: weighted average of 5 sections (each 0-100)
-- [ ] Return detailed report: {power: 85, signal: 92, placement: 78, thermal: 90, mfg: 88, overall: 86, grade: "B+"}
-- [ ] Add `--detailed-score` flag to `validate` command
-- [ ] Produce text summary with "gaps" flagged (any section < 75 triggers recommendation)
+- [ ] Rename `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py`
+- [ ] Update all imports across codebase
+- [ ] Update docstrings and comments
+- [ ] Update CLI help text and error messages if needed
+- [ ] Update test references and CI/CD configs
+- [ ] Verify all tests still pass after rename
+- [ ] Update CONTRIBUTING.md and architecture docs
 
-Files: `src/circuit_weaver/design_scorer.py` (new/refactor), `src/circuit_weaver/mvp.py`
+**Rationale**: "mvp" is outdated naming (no longer a minimum viable product, it's the full CLI dispatcher). "dispatcher.py" accurately reflects its role: routing subcommands to handlers.
 
-### 106. Interactive Design Review Report (P1, MEDIUM)
+Files: `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py` (rename), all imports, docs
+
+---
+
+### 105. Enhanced Design Scoring (P1, MEDIUM) — DONE
+
+- [x] Extend current `score_electrical_quality()` with per-section metrics
+- [x] New score categories:
+  - [x] **Power Integrity:** decoupling adequacy, bulk cap presence, regulator headroom, rail noise risk (weighted)
+  - [x] **Signal Integrity:** termination on high-speed nets, differential pair tuning, layer stack compliance
+  - [x] **Placement Quality:** thermal clustering, decap proximity to power pins, connector-to-component distances
+  - [x] **Thermal:** estimated junction temps vs max ratings, thermal via coverage on power devices
+  - [x] **Manufacturing:** DFM violations (from Task 104), component availability, assembly complexity
+- [x] Composite score: weighted average of 5 sections (each 0-100)
+- [x] Return detailed report: {power: 85, signal: 92, placement: 78, thermal: 90, mfg: 88, overall: 86, grade: "B+"}
+- [x] Add `--detailed-score` flag to `validate` command
+- [x] Produce text summary with "gaps" flagged (any section < 75 triggers recommendation)
+
+Files: `src/circuit_weaver/design_scorer.py` (new), `src/circuit_weaver/mvp.py`, `tests/test_design_scorer.py` (new, 19 tests)
+
+### 106. Interactive Design Review Report (P1, MEDIUM) — IN PROGRESS
 
 - [ ] Generate HTML report with all design analysis in one shareable file
 - [ ] Report sections:

@@ -1712,6 +1712,12 @@ def main() -> None:
     validate_p.add_argument(
         "--verbose", action="store_true", default=False, help="Print category and code for each issue"
     )
+    validate_p.add_argument(
+        "--detailed-score",
+        action="store_true",
+        default=False,
+        help="Include detailed design quality scoring (power, signal, placement, thermal, mfg)",
+    )
 
     patch_p = subparsers.add_parser("apply-patch", help="Apply a transactional patch to a design spec")
     patch_p.add_argument("spec", help="Path to YAML/JSON design spec")
@@ -2055,9 +2061,11 @@ def main() -> None:
         strict = getattr(args, "strict", False)
         color = getattr(args, "color", "auto")
         verbose = getattr(args, "verbose", False)
+        detailed_score = getattr(args, "detailed_score", False)
+        spec = _load_spec_file(args.spec)
         report = _run_with_stderr_capture(
             lambda: validate_design(
-                _load_spec_file(args.spec),
+                spec,
                 enrich_parts=args.enrich_parts,
                 strict=strict,
             )
@@ -2068,6 +2076,17 @@ def main() -> None:
             _print_validation_report(report, use_color=use_color, verbose=verbose)
         else:
             _print_json(report.to_dict())
+
+        # Add detailed design scoring if requested
+        if detailed_score:
+            from .design_scorer import score_design_comprehensive
+
+            compiled = compile_design_ir(spec, enrich_parts=args.enrich_parts)
+            score_result = score_design_comprehensive(compiled.ir)
+            print("\n" + "=" * 60)
+            print(score_result.summary_with_gaps())
+            print("=" * 60)
+
         raise SystemExit(0 if report.valid else 2)
 
     if args.command == "apply-patch":

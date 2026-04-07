@@ -23,11 +23,27 @@
   - CLI command: `circuit-weaver generate-docs <design.yaml> --output docs/ [--datasheets-dir X]`
   - Supports integration with BOM workflow: `cost-bom → generate-docs`
 
+### Added (Task 105 — Enhanced Design Scoring)
+- **Comprehensive design quality scoring** (`design_scorer.py`):
+  - `DetailedElectricalQualityScore` dataclass with per-section breakdown
+  - **5 quality dimensions** (each scored 0-100, A-F grading):
+    - **Power Integrity:** bulk capacitor presence, decoupling coverage, voltage regulator identification
+    - **Signal Integrity:** pull-up/pull-down resistor detection, differential pair indicators
+    - **Placement Quality:** component reference designation coverage, thermal constraints
+    - **Thermal:** power component identification, operating temperature range specification
+    - **Manufacturing:** MPN coverage, part sourcing bindings, assembly complexity (package variety)
+  - Weighted composite score (20% each dimension) with letter grades A-F
+  - `score_design_comprehensive()` analyzes `DesignIR` and returns detailed breakdown
+  - `summary_with_gaps()` method flags sections < 75 score with actionable recommendations
+  - CLI integration: `circuit-weaver validate --detailed-score` adds scoring to validation output
+  - Fully autonomous scoring without PCB data (works on schematic/DesignIR only)
+
 ### Tests
-- 31 new tests: 14 for DFM checker, 17 for design documentation
-  - DFM profiles, PCB parsing, violation detection, report generation
-  - BOM table extraction, power budget calculation, CSV/markdown exports
-  - All tests passing in ~0.15s
+- 50 new tests total:
+  - 14 DFM checker tests: profiles, PCB parsing, violation detection, report generation
+  - 17 design documentation tests: BOM table extraction, power budget calculation, CSV/markdown exports
+  - 19 design scoring tests: score creation, all 5 dimensions, weighted composites, gap detection, grade mapping
+  - All tests passing in ~0.25s total
 
 ### Changed
 - `mvp.py`: Added two new CLI subcommands (`check-dfm`, `generate-docs`) with full argument parsing
