@@ -99,7 +99,10 @@ def analyze_thermal(
         if status == "critical":
             needed = (tj_max_val - margin_c - ambient_temp_c) / pdiss_w if pdiss_w > 0 else 0
             if 0 < needed < theta_ja:
-                suggestion = f"Add heatsink or increase copper pour to >{_COPPER_THETA_PER_CM2 / needed:.0f} cm\u00b2. Consider thermal vias."
+                copper_area = _COPPER_THETA_PER_CM2 / needed
+                suggestion = (
+                    f"Add heatsink or increase copper pour to >{copper_area:.0f} cm\u00b2. Consider thermal vias."
+                )
             else:
                 suggestion = "Junction temperature exceeds maximum. Add heatsink or external cooling."
         elif status == "warning":
@@ -159,6 +162,10 @@ def analyze_thermal(
     if not recommendations:
         recommendations.append("Thermal design looks adequate at current ambient temperature")
 
+    summary = (
+        f"{len(results)} power-dissipating components, {total_power:.2f}W total. "
+        f"{critical} critical, {warning} warning, {ok_count} ok."
+    )
     return {
         "status": "ok",
         "ambient_temp_c": ambient_temp_c,
@@ -166,7 +173,7 @@ def analyze_thermal(
         "components": results,
         "hotspots": hotspots,
         "proximity_warnings": proximity_warnings,
-        "summary": f"{len(results)} power-dissipating components, {total_power:.2f}W total. {critical} critical, {warning} warning, {ok_count} ok.",
+        "summary": summary,
         "recommendations": recommendations,
     }
 
@@ -233,39 +240,54 @@ def generate_heatmap_svg(
     for i, c in enumerate(comp_data):
         t = min(c["tj"] / max(max_tj, 1), 1.0)
         r, g, b = _tj_to_rgb(t)
-        parts.append(
-            f'<radialGradient id="g{i}"><stop offset="0%" stop-color="rgb({r},{g},{b})" stop-opacity="0.7"/><stop offset="100%" stop-color="rgb({r},{g},{b})" stop-opacity="0"/></radialGradient>'
+        grad = (
+            f'<radialGradient id="g{i}"><stop offset="0%" stop-color="rgb({r},{g},{b})" '
+            f'stop-opacity="0.7"/><stop offset="100%" stop-color="rgb({r},{g},{b})" '
+            f'stop-opacity="0"/></radialGradient>'
         )
+        parts.append(grad)
     parts.append("</defs>")
-    parts.append(
-        f'<rect x="0" y="0" width="{svg_w:.0f}" height="{svg_h:.0f}" fill="#1a1a2e" stroke="#475569" stroke-width="2" rx="4"/>'
+    bg_rect = (
+        f'<rect x="0" y="0" width="{svg_w:.0f}" height="{svg_h:.0f}" fill="#1a1a2e" '
+        f'stroke="#475569" stroke-width="2" rx="4"/>'
     )
+    parts.append(bg_rect)
 
     for i, c in enumerate(comp_data):
         parts.append(f'<circle cx="{c["x"]:.1f}" cy="{c["y"]:.1f}" r="{c["radius"]:.0f}" fill="url(#g{i})"/>')
     for c in comp_data:
-        parts.append(
-            f'<text x="{c["x"]:.1f}" y="{c["y"]:.1f}" text-anchor="middle" dominant-baseline="central" font-size="9" fill="white" font-weight="bold">{c["ref"]}</text>'
+        ref_text = (
+            f'<text x="{c["x"]:.1f}" y="{c["y"]:.1f}" text-anchor="middle" '
+            f'dominant-baseline="central" font-size="9" fill="white" '
+            f'font-weight="bold">{c["ref"]}</text>'
         )
-        parts.append(
-            f'<text x="{c["x"]:.1f}" y="{c["y"] + 11:.1f}" text-anchor="middle" font-size="7" fill="#94a3b8">{c["tj"]:.0f}\u00b0C / {c["pdiss"]:.2f}W</text>'
+        parts.append(ref_text)
+        data_text = (
+            f'<text x="{c["x"]:.1f}" y="{c["y"] + 11:.1f}" text-anchor="middle" '
+            f'font-size="7" fill="#94a3b8">{c["tj"]:.0f}\u00b0C / {c["pdiss"]:.2f}W</text>'
         )
+        parts.append(data_text)
 
     legend_y = svg_h + 15
     bar_w = min(svg_w * 0.6, 300)
     bar_x = (svg_w - bar_w) / 2
-    parts.append(
-        f'<text x="{svg_w / 2:.0f}" y="{legend_y - 3:.0f}" text-anchor="middle" font-size="9" fill="#94a3b8">Junction Temperature</text>'
+    title_text = (
+        f'<text x="{svg_w / 2:.0f}" y="{legend_y - 3:.0f}" text-anchor="middle" '
+        f'font-size="9" fill="#94a3b8">Junction Temperature</text>'
     )
+    parts.append(title_text)
     for k in range(int(bar_w)):
         r, g, b = _tj_to_rgb(k / bar_w)
         parts.append(f'<rect x="{bar_x + k:.0f}" y="{legend_y:.0f}" width="1" height="10" fill="rgb({r},{g},{b})"/>')
-    parts.append(
+    min_label = (
         f'<text x="{bar_x:.0f}" y="{legend_y + 22:.0f}" font-size="8" fill="#94a3b8">{ambient_temp_c:.0f}\u00b0C</text>'
     )
-    parts.append(
-        f'<text x="{bar_x + bar_w:.0f}" y="{legend_y + 22:.0f}" text-anchor="end" font-size="8" fill="#94a3b8">{max_tj:.0f}\u00b0C</text>'
+    parts.append(min_label)
+    max_label = (
+        f'<text x="{bar_x + bar_w:.0f}" y="{legend_y + 22:.0f}" text-anchor="end" '
+        f'font-size="8" fill="#94a3b8">{max_tj:.0f}\u00b0C</text>'
     )
+    parts.append(max_label)
     parts.append("</svg>")
 
     svg_str = "\n".join(parts)
