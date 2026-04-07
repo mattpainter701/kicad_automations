@@ -1843,6 +1843,25 @@ def main() -> None:
     )
     log_status_p.add_argument("project_dir", help="Path to the design project directory (contains design.log)")
 
+    log_view_p = subparsers.add_parser(
+        "log-view",
+        help="View recent design log entries (JSON format for debugging)",
+    )
+    log_view_p.add_argument("project_dir", help="Path to the design project directory")
+    log_view_p.add_argument(
+        "--lines",
+        "-n",
+        type=int,
+        default=10,
+        help="Number of recent entries to show (default: 10)",
+    )
+    log_view_p.add_argument(
+        "--type",
+        choices=["all", "wizard_step", "cli_call", "validation", "research"],
+        default="all",
+        help="Filter by entry type (default: all)",
+    )
+
     autoroute_p = subparsers.add_parser(
         "autoroute", help="Route PCB using Freerouting (optional; requires Freerouting JAR)"
     )
@@ -2433,6 +2452,56 @@ def main() -> None:
             print(f"[!] Error reading project log: {e}", file=sys.stderr)
             raise SystemExit(1)
 
+    if args.command == "log-view":
+        import json
+
+        try:
+            logger = DesignLogger(args.project_dir)
+            if not logger.entries:
+                print("[!] No log entries found.")
+                raise SystemExit(1)
+
+            # Filter entries by type
+            entries = logger.entries
+            if args.type != "all":
+                entries = [e for e in entries if e.get("type") == args.type]
+
+            # Show last N entries
+            entries = entries[-args.lines :]
+
+            print(f"\n>>> Recent Log Entries ({len(entries)} shown):\n")
+            for i, entry in enumerate(entries, 1):
+                entry_type = entry.get("type", "unknown")
+                timestamp = entry.get("timestamp", "")[:19]  # YYYY-MM-DD HH:MM:SS
+
+                if entry_type == "wizard_step":
+                    step = entry.get("step", 0)
+                    desc = entry.get("description", "")
+                    print(f"  [{i}] {timestamp} [WIZARD] Step {step}: {desc}")
+
+                elif entry_type == "cli_call":
+                    cmd = entry.get("command", "")
+                    success = entry.get("success", False)
+                    status = "OK" if success else "FAIL"
+                    print(f"  [{i}] {timestamp} [CLI] {status}: {cmd}")
+
+                elif entry_type == "validation":
+                    passed = entry.get("passed", False)
+                    status = "PASS" if passed else "FAIL"
+                    print(f"  [{i}] {timestamp} [VALIDATION] {status}")
+
+                elif entry_type == "research":
+                    phase = entry.get("phase", "")
+                    status = entry.get("status", "")
+                    print(f"  [{i}] {timestamp} [RESEARCH] {phase}: {status}")
+
+            print(f"\nLog file: {logger.log_path}\n")
+            raise SystemExit(0)
+
+        except Exception as e:
+            print(f"[!] Error reading project log: {e}", file=sys.stderr)
+            raise SystemExit(1)
+
     if args.command == "autoroute":
         from .autoroute import autoroute_pcb
 
@@ -2959,7 +3028,10 @@ def _handle_design_workflow(resume: str | None = None, dry_run: bool = False) ->
             )
             logger.print_summary()
 
-            print("\nNext steps:")
+            print("\nWorkflow commands:")
+            print(f"  circuit-weaver log-view {project_dir}     # View log entries")
+            print(f"  circuit-weaver log-status {project_dir}   # Show workflow summary\n")
+            print("Next steps:")
             print(f"  1. Review the spec: cat {output_file}")
             print(f"  2. Validate: circuit-weaver validate {output_file}")
             print(f"  3. Generate: circuit-weaver generate {output_file} -o {project_dir / 'output'}")
@@ -2999,9 +3071,9 @@ def _run_design_wizard(
     # Use provided project name or ask for it
     if project_name_override:
         project_name = project_name_override
-        print(f"✓ Project: {project_name}\n")
+        print(f"[OK] Project: {project_name}\n")
     else:
-        project_name = input("📋 Project name: ").strip()
+        project_name = input("Project name: ").strip()
         if not project_name:
             project_name = "MyDesign_v1"
 
@@ -3087,18 +3159,18 @@ def _run_design_wizard(
 
     # Print summary in form-like table
     print("\n" + "=" * 80)
-    print("✓ DESIGN SPEC CAPTURED")
+    print("[DESIGN SPEC CAPTURED]")
     print("=" * 80)
 
-    print("\n📋 BASIC INFO")
+    print("\nBASIC INFO")
     print(f"  Project:    {project_name}")
     print(f"  Purpose:    {purpose}")
 
-    print("\n⚡ POWER SUPPLY")
+    print("\nPOWER SUPPLY")
     print(f"  Input:      {input_power}")
     print(f"  Output:     {output_rails}")
 
-    print("\n🔧 COMPONENTS & INTERFACES")
+    print("\nCOMPONENTS & INTERFACES")
     print(f"  Interfaces: {interfaces}")
     print(f"  MCU:        {mcu}")
     print(f"  Components: {components}")
@@ -3106,14 +3178,14 @@ def _run_design_wizard(
         print(f"  Special:    {special_reqs}")
 
     print("\n" + "-" * 80)
-    print("📝 NEXT STEPS")
+    print("NEXT STEPS")
     print("-" * 80)
     print("  1. Edit the YAML file to add your components and customize the power supply")
     print("  2. Use 'circuit-weaver list-templates' to see available circuit templates")
     print("  3. Use 'circuit-weaver scaffold --template <name>' to add templates")
     print("  4. Validate: circuit-weaver validate <file>")
     print("  5. Generate: circuit-weaver generate <file> -o ./output")
-    print("\n  💡 Tip: Use the /circuit-weaver skill in Claude Code for automatic IC research")
+    print("\n  Tip: Use the /circuit-weaver skill in Claude Code for automatic IC research")
     print("=" * 80 + "\n")
 
     return spec, logger
