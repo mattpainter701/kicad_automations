@@ -3,12 +3,27 @@
 Programmatic circuit design, validation, and KiCad artifact generation.
 """
 
+from .design_docs import (
+    generate_all_docs,
+    generate_assembly_guide_csv,
+    generate_datasheet_index,
+    generate_ordering_checklist,
+    generate_power_budget_csv,
+)
+from .dfm_checker import check_dfm, dfm_report
 from .enclosure_designer import generate_enclosure_scad, render_enclosure_stl
 from .kicad_placement_api import check_kicad_available, detect_kicad_version, update_board_placements
 
 __all__ = [
     "__version__",
+    "check_dfm",
+    "dfm_report",
+    "generate_all_docs",
+    "generate_assembly_guide_csv",
+    "generate_datasheet_index",
     "generate_enclosure_scad",
+    "generate_ordering_checklist",
+    "generate_power_budget_csv",
     "render_enclosure_stl",
     "check_kicad_available",
     "detect_kicad_version",

@@ -2028,6 +2028,27 @@ def main() -> None:
     enclosure_p.add_argument("--stl-output", type=str, help="Output STL file path (default: enclosure.stl)")
     enclosure_p.add_argument("--vents", action="store_true", default=False, help="Include vent holes in lid")
 
+    check_dfm_p = subparsers.add_parser("check-dfm", help="Check PCB design for DFM violations")
+    check_dfm_p.add_argument("kicad_pcb", type=str, help="Path to .kicad_pcb file")
+    check_dfm_p.add_argument(
+        "--profile",
+        choices=["jlcpcb", "jlcpcb_4layer", "pcbway"],
+        default="jlcpcb",
+        help="Fab profile (default: jlcpcb)",
+    )
+
+    gen_docs_p = subparsers.add_parser("generate-docs", help="Generate assembly guide and design documentation")
+    gen_docs_p.add_argument("spec", type=str, help="Design spec file (YAML)")
+    gen_docs_p.add_argument(
+        "-o", "--output", type=str, default="docs", help="Output directory for documentation (default: docs)"
+    )
+    gen_docs_p.add_argument(
+        "--datasheets-dir",
+        type=str,
+        default=None,
+        help="Optional directory with downloaded datasheets for datasheet index",
+    )
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -2875,6 +2896,52 @@ def main() -> None:
             else:
                 print("STL rendering skipped (OpenSCAD CLI not available)")
 
+        raise SystemExit(0)
+
+    if args.command == "check-dfm":
+        from .dfm_checker import check_dfm, dfm_report
+
+        violations = check_dfm(
+            args.kicad_pcb,
+            profile=args.profile or "jlcpcb",
+        )
+
+        # Print human-readable report to stderr, JSON to stdout
+        print(dfm_report(violations), file=sys.stderr)
+        _print_json(
+            {
+                "status": "ok",
+                "violations_count": len(violations),
+                "critical_count": len([v for v in violations if v.severity == "critical"]),
+                "warnings_count": len([v for v in violations if v.severity == "warning"]),
+                "violations": [v.to_dict() for v in violations],
+            }
+        )
+        raise SystemExit(0 if not any(v.severity == "critical" for v in violations) else 1)
+
+    if args.command == "generate-docs":
+        from .design_docs import generate_all_docs
+
+        spec = _load_spec_file(args.spec)
+        compiled = _run_with_stderr_capture(lambda: compile_design_ir(spec))
+
+        datasheets_dir = Path(args.datasheets_dir) if args.datasheets_dir else None
+
+        results = generate_all_docs(
+            compiled,
+            output_dir=args.output,
+            datasheets_dir=datasheets_dir,
+        )
+
+        file_summary = {name: str(path) for name, path in results.items()}
+        _print_json(
+            {
+                "status": "ok",
+                "message": f"Design documentation generated in {args.output}",
+                "output_dir": str(args.output),
+                "files": file_summary,
+            }
+        )
         raise SystemExit(0)
 
 

@@ -6,7 +6,7 @@
 
 **Goal:** Improve design review workflows, add design-time quality checks, and expand documentation for users starting their first designs. Focus on DFM validation, design scoring, and design documentation generation.
 
-### 104. Design DFM Checker (P0, MEDIUM)
+### 104. Design DFM Checker (P0, MEDIUM) — IN PROGRESS
 
 - [ ] Create `dfm_checker.py` — validates PCB design against fab capabilities
 - [ ] Check categories:
@@ -76,7 +76,7 @@ Files: `src/circuit_weaver/review_report.py` (new), `src/circuit_weaver/mvp.py`,
 
 Files: `src/circuit_weaver/sourcing_auditor.py` (new), `src/circuit_weaver/mvp.py`
 
-### 108. Design Documentation Generator (P2, MEDIUM)
+### 108. Design Documentation Generator (P2, MEDIUM) — IN PROGRESS
 
 - [ ] Create `design_docs.py` — auto-generate assembly and ordering documents
 - [ ] Outputs:
