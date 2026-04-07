@@ -2,7 +2,7 @@
 
 ## [0.14.1] - 2026-04-07
 
-### Sprint 17 — Housekeeping & Test Coverage
+### Sprint 17 — Housekeeping & Test Coverage + Mechanical & API Enhancements
 
 ### Fixed
 - Version mismatch: synced pyproject.toml, __init__.py, and test assertions to 0.14.0 (Task 97)
@@ -11,14 +11,37 @@
 - architecture.md: updated roadmap — all sprints through 16 marked stable (Task 101)
 - mvp.py: replaced SVG placement TODO with actual placement optimizer call (Task 101)
 
-### Added
+### Added (Sprint 17 — Housekeeping)
 - `test_cli_commands.py` — 37 end-to-end CLI tests covering all 20 subcommands (Task 99)
 - `test_enclosure_designer.py` — 7 tests for enclosure generation and package exports (Task 100)
 - Parameterized --help test validates every subcommand accepts help flag
 - JSON extraction helper for CLI output with prefix lines
 
+### Added (Mechanical & API Enhancements — Post-Sprint)
+- **OpenSCAD Enclosure Designer** (`enclosure_designer.py`):
+  - `design-enclosure` CLI subcommand for parametric 3D-printable enclosure generation
+  - `generate_enclosure_scad()` supports customizable wall thickness, clearance, component height, ports, mounting holes, and vents
+  - Port types: USB-C, Micro-USB, barrel jack, round, rectangular
+  - M3 mounting holes with countersink for PCB standoffs
+  - `render_enclosure_stl()` calls OpenSCAD CLI to generate STL files (optional)
+  - Full parametric OpenSCAD code generation — users can tweak dimensions and re-render in seconds
+
+- **KiCad Python API Integration** (`kicad_placement_api.py`):
+  - `check_kicad_available(min_version=6)` validates KiCad 6+ installed with platform-specific guidance
+  - `detect_kicad_version()` CLI-based detection via `kicad --version` + pcbnew module import
+  - `update_board_placements()` uses official KiCad pcbnew API for placement updates (robust, future-proof)
+  - Automatic fallback to regex-based updates when API unavailable (offline, legacy versions)
+  - Consistent result structure across both API and fallback paths
+  - `import-placement` command now reports KiCad API status and uses official API when available
+
 ### Tests
 - 44 new tests (37 CLI + 7 enclosure), all passing in 12.6s
+- 255 total tests pass (full suite: 11:25 runtime)
+
+### Documentation
+- `docs/user_workflow.md` — Added 'Prototype Enclosure Design' section with examples
+- Added openscad skill to Related Skills table
+- `svg_placement.py` — Updated docstring with KiCad API integration notes
 
 ## [0.14.0] - 2026-04-07
 

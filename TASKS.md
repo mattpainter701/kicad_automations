@@ -2,6 +2,45 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 18 — Mechanical & API Enhancements (v0.14.1)
+
+**Goal:** Add parametric 3D-printable enclosure generation via OpenSCAD and robust KiCad placement updates via official Python API with automatic fallback.
+
+### 102. OpenSCAD Enclosure Designer (P1, MEDIUM) — DONE
+
+- [x] Create `enclosure_designer.py` — parametric OpenSCAD code generator
+- [x] `generate_enclosure_scad()` with customizable wall thickness, clearance, component height
+- [x] Port cutout support: USB-C, Micro-USB, barrel jack, round, rectangular
+- [x] M3 mounting hole generation with countersink
+- [x] Optional vent hole pattern in lid
+- [x] `render_enclosure_stl()` calls OpenSCAD CLI to generate STL
+- [x] `design-enclosure` CLI subcommand with full parameter support
+- [x] Export functions in `__init__.py` public API
+- [x] Documentation: added enclosure design workflow to `user_workflow.md`
+
+Files: `src/circuit_weaver/enclosure_designer.py` (new), `src/circuit_weaver/mvp.py`, `src/circuit_weaver/__init__.py`, `docs/user_workflow.md`
+
+### 103. KiCad Python API Integration (P1, MEDIUM) — DONE
+
+- [x] Create `kicad_placement_api.py` — KiCad 6+ pcbnew API wrapper
+- [x] `detect_kicad_version()` — CLI-based detection + pcbnew module import
+- [x] `check_kicad_available(min_version=6)` — validates KiCad with platform-specific guidance
+  - [x] macOS: `brew install kicad`
+  - [x] Windows: direct kicad.org download link
+  - [x] Linux: package manager guidance
+- [x] `update_board_placements()` — uses official pcbnew API for placement updates
+  - [x] Converts mm to KiCad internal units (nm)
+  - [x] Handles layer flipping for bottom-side components
+  - [x] Full validation and error reporting
+- [x] Automatic fallback to regex-based updates when API unavailable (offline, legacy KiCad)
+- [x] Consistent result structure: {success, updated, not_found, errors, message}
+- [x] `import-placement` command now checks KiCad availability and reports API status
+- [x] Export API functions in `__init__.py` public API
+
+Files: `src/circuit_weaver/kicad_placement_api.py` (new), `src/circuit_weaver/svg_placement.py`, `src/circuit_weaver/mvp.py`, `src/circuit_weaver/__init__.py`
+
+---
+
 ## Sprint 17 — Housekeeping & Test Coverage (v0.14.0) — DONE
 
 **Goal:** Fix version mismatches, add .gitignore for generated files, comprehensive CLI end-to-end tests, enclosure designer test coverage, and update stale documentation.
