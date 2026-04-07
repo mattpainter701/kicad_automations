@@ -355,6 +355,9 @@ class TestReconciliation:
             "project": "test",
             "connectors": [{"ic": "USB-C-PWR", "ref": "J1"}],
         }
+        # In CI, skip artifact-generation checks (KiCad CLI unavailable)
+        if os.environ.get("CI"):
+            pytest.skip("Artifact generation requires KiCad CLI (unavailable in CI)")
         report = validate_design(spec)
         assert report.valid
 
