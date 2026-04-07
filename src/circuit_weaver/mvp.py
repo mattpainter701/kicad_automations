@@ -3051,6 +3051,11 @@ def _run_design_wizard(
 ) -> tuple[dict[str, Any] | None, DesignLogger | None]:
     """Interactive offline design wizard — capture requirements, scaffold spec (no hardcoded options).
 
+    Uses platform-aware interactive UI:
+    - Claude Code: clickable options (AskUserQuestion)
+    - Codex/OpenCode: conversational prompting
+    - CLI: terminal UI with arrow keys (questionary)
+
     Args:
         project_dir: Directory to write design.log to
         project_name_override: If provided, use this project name instead of asking
@@ -3062,10 +3067,13 @@ def _run_design_wizard(
     project_dir.mkdir(parents=True, exist_ok=True)
     logger = DesignLogger(project_dir)
 
+    platform = detect_platform()
+
     print("\n" + "=" * 80)
     print("Circuit Weaver Design Wizard (Interactive Form)")
     print("=" * 80)
-    print("\nI'll scaffold a design spec from your requirements.")
+    print(f"\n[Platform: {platform}]")
+    print("I'll scaffold a design spec from your requirements.")
     print("Fill in each section below. Press Enter to skip (use defaults).\n")
 
     # Use provided project name or ask for it
@@ -3073,54 +3081,81 @@ def _run_design_wizard(
         project_name = project_name_override
         print(f"[OK] Project: {project_name}\n")
     else:
-        project_name = input("Project name: ").strip()
-        if not project_name:
-            project_name = "MyDesign_v1"
+        project_name = ask_text("Project name", default="MyDesign_v1")
 
     # ===== BASIC SECTION =====
-    print("\n" + "-" * 80)
-    print("SECTION 1: BASIC INFO")
-    print("-" * 80)
-
-    purpose = input("  Purpose (e.g., 'WiFi sensor', 'motor controller'): ").strip()
-    if not purpose:
-        purpose = "Custom circuit"
+    basic_answers = ask_form_section(
+        "SECTION 1: BASIC INFO",
+        [
+            {
+                "name": "purpose",
+                "question": "What is the purpose of this circuit?",
+                "type": "text",
+                "default": "Custom circuit",
+            },
+        ],
+    )
+    purpose = basic_answers.get("purpose", "Custom circuit")
 
     logger.log_step(1, "Requirements captured - basic info", {"project_name": project_name, "purpose": purpose})
 
     # ===== POWER SECTION =====
-    print("\n" + "-" * 80)
-    print("SECTION 2: POWER SUPPLY")
-    print("-" * 80)
-
-    input_power = input("  Input power source (e.g., '3.7V LiPo', '5V USB', '12V supply'): ").strip()
-    if not input_power:
-        input_power = "3.3V"
-
-    output_rails = input("  Output rails (e.g., '3.3V, 500mA; 5V, 100mA'): ").strip()
-    if not output_rails:
-        output_rails = "3.3V, 500mA"
+    power_answers = ask_form_section(
+        "SECTION 2: POWER SUPPLY",
+        [
+            {
+                "name": "input_power",
+                "question": "Input power source",
+                "type": "text",
+                "default": "3.3V",
+            },
+            {
+                "name": "output_rails",
+                "question": "Output rails (e.g., '3.3V, 500mA; 5V, 100mA')",
+                "type": "text",
+                "default": "3.3V, 500mA",
+            },
+        ],
+    )
+    input_power = power_answers.get("input_power", "3.3V")
+    output_rails = power_answers.get("output_rails", "3.3V, 500mA")
 
     logger.log_step(2, "Power supply requirements captured", {"input_power": input_power, "output_rails": output_rails})
 
     # ===== COMPONENTS SECTION =====
-    print("\n" + "-" * 80)
-    print("SECTION 3: COMPONENTS & INTERFACES")
-    print("-" * 80)
-
-    interfaces = input("  Interfaces (e.g., 'I2C, SPI, UART, USB, WiFi'): ").strip()
-    if not interfaces:
-        interfaces = "I2C, UART"
-
-    mcu = input("  Main processor/MCU (e.g., 'ESP32', 'STM32L0', 'RP2040', 'none'): ").strip()
-    if not mcu:
-        mcu = "to be selected"
-
-    components = input("  Key components (e.g., 'BME280 sensor, DRV8833 H-bridge'): ").strip()
-    if not components:
-        components = "to be added"
-
-    special_reqs = input("  Special requirements (e.g., 'low power', 'high speed', 'analog'): ").strip()
+    component_answers = ask_form_section(
+        "SECTION 3: COMPONENTS & INTERFACES",
+        [
+            {
+                "name": "interfaces",
+                "question": "Interfaces (I2C, SPI, UART, USB, WiFi, etc.)",
+                "type": "text",
+                "default": "I2C, UART",
+            },
+            {
+                "name": "mcu",
+                "question": "Main processor/MCU (or 'none' if passive circuit)",
+                "type": "text",
+                "default": "to be selected",
+            },
+            {
+                "name": "components",
+                "question": "Key components (comma-separated)",
+                "type": "text",
+                "default": "to be added",
+            },
+            {
+                "name": "special_reqs",
+                "question": "Special requirements (low power, high speed, analog, RF, etc.)",
+                "type": "text",
+                "default": "",
+            },
+        ],
+    )
+    interfaces = component_answers.get("interfaces", "I2C, UART")
+    mcu = component_answers.get("mcu", "to be selected")
+    components = component_answers.get("components", "to be added")
+    special_reqs = component_answers.get("special_reqs", "")
 
     logger.log_step(
         3,
@@ -3177,14 +3212,18 @@ def _run_design_wizard(
     if special_reqs:
         print(f"  Special:    {special_reqs}")
 
+    log_file = project_dir / "design.log"
     print("\n" + "-" * 80)
     print("NEXT STEPS")
     print("-" * 80)
-    print("  1. Edit the YAML file to add your components and customize the power supply")
-    print("  2. Use 'circuit-weaver list-templates' to see available circuit templates")
-    print("  3. Use 'circuit-weaver scaffold --template <name>' to add templates")
-    print("  4. Validate: circuit-weaver validate <file>")
-    print("  5. Generate: circuit-weaver generate <file> -o ./output")
+    print(f"  1. Design log: {log_file}")
+    print("  2. View progress: circuit-weaver log-status <project_dir>")
+    print("  3. View recent entries: circuit-weaver log-view <project_dir>")
+    print("  4. Edit the YAML file to add your components and customize the power supply")
+    print("  5. Use 'circuit-weaver list-templates' to see available circuit templates")
+    print("  6. Use 'circuit-weaver scaffold --template <name>' to add templates")
+    print("  7. Validate: circuit-weaver validate <file>")
+    print("  8. Generate: circuit-weaver generate <file> -o ./output")
     print("\n  Tip: Use the /circuit-weaver skill in Claude Code for automatic IC research")
     print("=" * 80 + "\n")
 

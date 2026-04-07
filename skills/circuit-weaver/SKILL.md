@@ -18,7 +18,7 @@ The master entry point for circuit design workflows. This skill orchestrates:
 **For a new design:**
 ```
 /circuit-weaver
-→ [asks new/existing]
+→ [interactive choice: New or Existing Design]
 → [collects requirements via design_wizard]
 → [spawns research agent to find ICs]
 → [generates passives, validates, creates schematic]
@@ -29,8 +29,17 @@ The master entry point for circuit design workflows. This skill orchestrates:
 /circuit-weaver
 → [asks for design directory path]
 → [loads design.yaml and reports current state]
-→ [offers options: validate, regenerate, modify, review]
+→ [interactive choice: validate, regenerate, modify, review]
 ```
+
+### Platform Support
+
+This skill auto-detects your platform and uses the best UI:
+- **Claude Code users**: Interactive buttons/checkboxes (can click options, scroll to review)
+- **Codex/OpenCode users**: Conversational prompting (natural text, type response)
+- **CLI users**: Terminal UI with arrow keys + spacebar (questionary library)
+
+All platforms have the same design flow — just different UI for selections.
 
 ---
 
