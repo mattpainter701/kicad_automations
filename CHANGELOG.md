@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1] - 2026-04-07
+
+### Fixed
+- Add missing import for interactive prompts module in mvp.py
+
+---
+
 ## [0.15.0] - 2026-04-07
 
 ### Platform-Aware Interactive Prompts
