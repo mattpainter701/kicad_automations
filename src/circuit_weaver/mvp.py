@@ -2079,23 +2079,31 @@ def main() -> None:
 
         # Task 93: Export SVG placement diagram if requested
         if svg_placement and "project" in result:
+            from .placement_optimizer import PlacementConfig, optimize_placement
             from .svg_placement import export_placement_svg
 
             output_dir = Path(args.output)
             placement_svg_path = output_dir / "placement.svg"
 
-            # Simple placement data: ref → {x, y, rotation, layer} in mm (centered at 50, 40 for now)
-            # In a real workflow, this would come from the compiled design's placement data
-            placements = {}
-            # TODO: Extract actual placements from compiled.components or PCB layout
-            # For now, just create empty dict and let the function handle it gracefully
-
             try:
+                opt_result = optimize_placement(
+                    compiled.components if "compiled" in dir() else [],
+                    config=PlacementConfig(strategy="simple"),
+                )
+                placements = opt_result.get("placements", {})
+
+                # Convert to format expected by export_placement_svg
+                comp_dicts = [
+                    {"ref": c.source_ref, "value": c.value, "footprint": c.footprint, "category": c.category}
+                    for c in (compiled.components if "compiled" in dir() else [])
+                    if c.source_ref
+                ]
+
                 svg_str = export_placement_svg(
-                    [],  # Empty components list (would need compiled.components)
+                    comp_dicts,
                     placements,
-                    100.0,  # board width (would come from design spec)
-                    80.0,  # board height (would come from design spec)
+                    opt_result.get("board_width_mm", 100.0),
+                    opt_result.get("board_height_mm", 80.0),
                     output_path=placement_svg_path,
                     title=f"PCB Placement — {result.get('project', 'Design')}",
                 )

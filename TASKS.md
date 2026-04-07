@@ -2,6 +2,53 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 17 — Housekeeping & Test Coverage (v0.14.0) — DONE
+
+**Goal:** Fix version mismatches, add .gitignore for generated files, comprehensive CLI end-to-end tests, enclosure designer test coverage, and update stale documentation.
+
+### 97. Fix version mismatch (P0, XS) — DONE
+
+- [x] Sync pyproject.toml to 0.14.0
+- [x] Sync __init__.py to 0.14.0
+- [x] Sync test_bootstrap.py version assertions to 0.14.0
+
+Files: `pyproject.toml`, `src/circuit_weaver/__init__.py`, `tests/test_bootstrap.py`
+
+### 98. .gitignore for generated files (P0, XS) — DONE
+
+- [x] Add datasheets/, specs/, spice_models/, bom/orders/, *.bak
+
+Files: `.gitignore`
+
+### 99. CLI end-to-end test suite (P1, MEDIUM) — DONE
+
+- [x] Parameterized --help test for all 20 subcommands
+- [x] End-to-end tests: validate, validate --strict, list-templates, scaffold, schema, generate, cost-bom, export-jlcpcb, si-constraints, thermal-analysis, optimize-placement, panelize, export-dual-cpl, placement-viewer, diff
+- [x] JSON extraction helper for commands with prefix output lines
+- [x] 37 tests total in test_cli_commands.py
+
+Files: `tests/test_cli_commands.py` (new)
+
+### 100. Enclosure designer test coverage (P1, SMALL) — DONE
+
+- [x] Test basic enclosure generation, ports, mounting holes, custom dimensions
+- [x] Test render_enclosure_stl graceful fallback when OpenSCAD not installed
+- [x] Test package-level exports (generate_enclosure_scad, render_enclosure_stl)
+- [x] 7 tests in test_enclosure_designer.py
+
+Files: `tests/test_enclosure_designer.py` (new)
+
+### 101. Update stale docs (P1, SMALL) — DONE
+
+- [x] CONTRIBUTING.md: update release example from v0.11.0 to v0.14.0
+- [x] architecture.md: update version roadmap table (all sprints through 16 marked stable)
+- [x] architecture.md: update future roadmap to reflect actual next steps
+- [x] mvp.py: replace TODO placeholder with actual placement optimizer call in SVG export
+
+Files: `CONTRIBUTING.md`, `docs/architecture.md`, `src/circuit_weaver/mvp.py`
+
+---
+
 ## Sprint 13 — Community Ready: PyPI Distribution & Developer UX (v0.11.0)
 
 **Goal:** Circuit Weaver is on PyPI with clear, automated installation. New users get helpful error messages, better debugging, and a path to contribution. Reduce barriers to adoption and enable self-serve problem solving.

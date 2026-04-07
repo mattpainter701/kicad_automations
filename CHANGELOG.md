@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.14.1] - 2026-04-07
+
+### Sprint 17 — Housekeeping & Test Coverage
+
+### Fixed
+- Version mismatch: synced pyproject.toml, __init__.py, and test assertions to 0.14.0 (Task 97)
+- .gitignore: added datasheets/, specs/, spice_models/, bom/orders/, *.bak (Task 98)
+- CONTRIBUTING.md: updated release example from v0.11.0 to v0.14.0 (Task 101)
+- architecture.md: updated roadmap — all sprints through 16 marked stable (Task 101)
+- mvp.py: replaced SVG placement TODO with actual placement optimizer call (Task 101)
+
+### Added
+- `test_cli_commands.py` — 37 end-to-end CLI tests covering all 20 subcommands (Task 99)
+- `test_enclosure_designer.py` — 7 tests for enclosure generation and package exports (Task 100)
+- Parameterized --help test validates every subcommand accepts help flag
+- JSON extraction helper for CLI output with prefix lines
+
+### Tests
+- 44 new tests (37 CLI + 7 enclosure), all passing in 12.6s
+
 ## [0.14.0] - 2026-04-07
 
 ### Sprint 16 — Advanced PCB Placement & Dual-Sided Assembly (complete)

@@ -304,22 +304,20 @@ Used for IDE autocomplete (VS Code, PyCharm) and API documentation.
 ## Version & Compatibility
 
 | Version | Feature | Status |
-|---------|---------|--------|
-| 0.8.0 | Core IR + templates | ✅ Stable |
-| 0.9.0 | Visual diff (SVG) | ✅ Stable |
-| 0.10.x | Team adoption + CI | ✅ Stable |
-| 0.11.0 | PyPI distribution + UX | 🔨 Sprint 13 |
-| 0.12.0 | Auto-discovery + SVG placement | 📋 Sprint 14 |
-| 0.13.0 | Spec harvesting (datasheets, S-params) | 📋 Sprint 15 |
-| 0.14.0 | Placement optimizer (thermal-aware) | 📋 Sprint 16 |
+|-|-|-|
+| 0.8.0 | Core IR + templates | Stable |
+| 0.9.0 | Visual diff (SVG) | Stable |
+| 0.10.x | Team adoption + CI | Stable |
+| 0.11.0 | PyPI distribution + UX | Stable (Sprint 13) |
+| 0.12.0 | Auto-discovery + SVG placement | Stable (Sprint 14) |
+| 0.13.0 | Spec harvesting (datasheets, S-params, SPICE) | Stable (Sprint 15) |
+| 0.14.0 | Placement optimizer, SI constraints, thermal analysis, dual-sided CPL, panelization | Stable (Sprint 16) |
 
 ## Future Roadmap
 
-- **Placement Optimization** (Sprint 15–16) — Thermal-aware, signal-integrity constraints
-- **PCB Routing** (Sprint 17) — Freerouting integration + KiCad via-stitching automation
-- **Manufacturing Export** (Sprint 18) — Gerber/CPL generation, JLCPCB/PCBWay ordering
-- **Interactive Viewer** (Sprint 19) — Web-based schematic/placement viewer
-- **Multi-language Support** (Future) — French, German, Mandarin, Japanese
+- **Test coverage hardening** (Sprint 17) — CLI end-to-end tests for all subcommands
+- **PCB routing integration** — Freerouting + KiCad via-stitching automation
+- **Multi-language support** (Future) — French, German, Mandarin, Japanese
 
 ---
 

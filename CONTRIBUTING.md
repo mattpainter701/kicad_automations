@@ -201,8 +201,8 @@ Produces:
 
 Releases are automated via GitHub Actions (triggered by git tag):
 
-1. Tag a commit: `git tag v0.11.0`
-2. Push tag: `git push origin v0.11.0`
+1. Tag a commit: `git tag v0.14.0`
+2. Push tag: `git push origin v0.14.0`
 3. GitHub Actions runs tests, builds, and publishes to PyPI
 4. GitHub Release created with auto-generated notes
 
