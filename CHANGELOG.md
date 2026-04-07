@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.14.2] - 2026-04-07 (Hotfix)
+
+### Design Wizard & Logging Enhancements
+
+### Added
+- **Design Wizard UX Redesign**:
+  - Form-like interface with grouped sections (Basic Info, Power Supply, Components & Interfaces)
+  - Section headers and clear visual hierarchy
+  - Indented input prompts for better readability
+  - Structured summary display with labels
+  - Improved next-steps guidance
+
+- **Design Log Viewer** (`log-view` command):
+  - New `circuit-weaver log-view <project_dir>` command for viewing recent log entries
+  - Filter by entry type: `wizard_step`, `cli_call`, `validation`, `research`
+  - `--lines N` flag to show last N entries (default: 10)
+  - Human-readable timestamp and entry type formatting
+  - Helps troubleshoot issues and understand project history
+
+### Improved
+- **Logging Visibility**:
+  - Wizard now prominently displays log file location after project creation
+  - Added `log-view` and `log-status` commands to next-steps output
+  - Better integration between wizard and logging workflow
+
+### Fixed
+- Removed emoji characters for Windows terminal compatibility (cp1252 encoding)
+- All terminal output now uses ASCII-safe characters
+
+### Documentation
+- Updated `docs/DESIGN_LOGGING.md` with `log-view` command documentation
+- Updated `docs/cli-reference.md` with improved design-wizard and logging command details
+
+### Tests
+- All 37 CLI tests passing
+- Full test suite: 299 passed, 1 skipped
+
+---
+
 ## [0.14.1] - 2026-04-07
 
 ### Sprint 17 — Housekeeping & Test Coverage + Mechanical & API Enhancements

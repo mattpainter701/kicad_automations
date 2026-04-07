@@ -236,10 +236,28 @@ Requires KiCad CLI (`kicad-cli`) to be installed and on PATH.
 Interactive offline design wizard. No agents or APIs required.
 
 ```bash
-circuit-weaver design-wizard [--output <file>]
+circuit-weaver design-wizard [--dry-run] [--resume <path>]
 ```
 
-Walks through requirements capture, template selection, and spec generation step-by-step.
+**Features:**
+- Grouped form-like sections (Basic Info, Power Supply, Components & Interfaces)
+- Captures project context, purpose, power requirements, interfaces, MCU, components
+- Auto-creates project directory with `design.yaml` and `design.log`
+- All input logged for troubleshooting and resuming
+
+**Workflow:**
+```
+1. Creates project folder
+2. Guides through 3 sections of questions (Press Enter to skip/use defaults)
+3. Generates design.yaml scaffold
+4. Saves design.log with full workflow history
+5. Shows log-view and log-status commands for next steps
+```
+
+| Flag | Description |
+|-|-|
+| `--dry-run` | Run wizard with default answers (testing) |
+| `--resume` | Resume from existing design.yaml |
 
 ---
 
@@ -359,8 +377,46 @@ Tries known manufacturer URL patterns (TI, ADI, Microchip, ON Semi) for SPICE mo
 
 ## log-status
 
-Show workflow log status for a project directory.
+Show workflow log summary for a project directory.
 
 ```bash
 circuit-weaver log-status <project_dir>
 ```
+
+Displays high-level status: current step, entry count, generated files, validation status, errors and warnings.
+
+See docs/DESIGN_LOGGING.md for details.
+
+---
+
+## log-view
+
+View recent design log entries in human-readable format.
+
+```bash
+circuit-weaver log-view <project_dir> [--lines N] [--type TYPE]
+```
+
+| Flag | Description |
+|-|-|
+| `--lines`, `-n` | Number of recent entries to show (default: 10) |
+| `--type` | Filter by type: `all`, `wizard_step`, `cli_call`, `validation`, `research` (default: all) |
+
+**Examples:**
+```bash
+# View last 10 entries (default)
+circuit-weaver log-view my_project/
+
+# View last 20 entries
+circuit-weaver log-view my_project/ --lines 20
+
+# Show only validation results
+circuit-weaver log-view my_project/ --type validation
+
+# Show only failed CLI calls
+circuit-weaver log-view my_project/ --type cli_call
+```
+
+Helpful for troubleshooting tool failures, checking wizard inputs, and understanding validation issues.
+
+See docs/DESIGN_LOGGING.md for details.

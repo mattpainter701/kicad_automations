@@ -32,6 +32,8 @@ The `design.log` file is **JSON Lines** — one JSON object per line, easy to pa
 
 ## Viewing Workflow Status
 
+### Show Summary
+
 Check the current status of a design project:
 
 ```bash
@@ -57,6 +59,37 @@ Warnings (2 total):
 
 Log: /home/user/my_project/design.log
 ========================================================================
+```
+
+### View Recent Log Entries
+
+See detailed recent activity with human-readable formatting:
+
+```bash
+# View last 10 entries (default)
+circuit-weaver log-view <project_dir>
+
+# View last 20 entries
+circuit-weaver log-view <project_dir> --lines 20
+
+# Filter by entry type (wizard_step, cli_call, validation, research)
+circuit-weaver log-view <project_dir> --type cli_call
+
+# Show only validation results
+circuit-weaver log-view <project_dir> --type validation
+```
+
+Output example:
+
+```
+>>> Recent Log Entries (4 shown):
+
+  [1] 2026-04-07T14:52:58 [WIZARD] Step 1: Requirements captured - basic info
+  [2] 2026-04-07T14:52:58 [WIZARD] Step 2: Power supply requirements captured
+  [3] 2026-04-07T14:52:59 [WIZARD] Step 3: Components and interfaces specified
+  [4] 2026-04-07T15:01:23 [VALIDATION] PASS
+
+Log file: /home/user/my_project/design.log
 ```
 
 ## Logged Events
