@@ -38,7 +38,9 @@ Files: `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py` (renam
 
 Files: `src/circuit_weaver/sourcing_auditor.py` (new, 250 LOC), `src/circuit_weaver/__init__.py`, `tests/test_sourcing_auditor.py` (new, 180 tests)
 
-### 110. JLCPCB Assembly Integration (P1, MEDIUM)
+### 110. JLCPCB Assembly Integration (P1, MEDIUM) — DEFERRED
+
+**Deferred to Sprint 21+** — Product validation not yet at manufacturing stage.
 
 - [ ] Auto-generate **CPL (component placement list)** + **BOM CSV** in JLCPCB format
 - [ ] Map components to LCSC part numbers (fallback to MPN if LCSC missing)
@@ -52,7 +54,9 @@ Files: `src/circuit_weaver/sourcing_auditor.py` (new, 250 LOC), `src/circuit_wea
 
 Files: `src/circuit_weaver/jlcpcb_assembly.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_jlcpcb_assembly.py` (new)
 
-### 111. BOM Cost Estimation & Price Breaks (P2, SMALL)
+### 111. BOM Cost Estimation & Price Breaks (P2, SMALL) — DEFERRED
+
+**Deferred to Sprint 21+** — Dependent on Task 110; revisit when approaching production.
 
 - [ ] Query DigiKey + Mouser pricing at multiple quantities (1, 5, 10, 25, 50, 100)
 - [ ] Detect price breaks and alert: "Resistor R5: $0.01 @ 1, $0.005 @ 100 (50% savings for qty 100+)"

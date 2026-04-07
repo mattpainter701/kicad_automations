@@ -1,8 +1,8 @@
 # Changelog
 
-## [0.17.0] - (In Progress)
+## [0.17.0] - 2026-04-07
 
-### Sprint 20 — Design Review Completion & Production Assembly
+### Sprint 20 — Design Review Completion & Sourcing Audit
 
 ### Added (Task 107 — Component Sourcing Risk Audit)
 - **Component sourcing auditor** (`sourcing_auditor.py`):
