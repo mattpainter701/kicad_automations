@@ -14,6 +14,7 @@ from .design_scorer import score_design_comprehensive
 from .dfm_checker import check_dfm, dfm_report
 from .enclosure_designer import generate_enclosure_scad, render_enclosure_stl
 from .kicad_placement_api import check_kicad_available, detect_kicad_version, update_board_placements
+from .review_report import generate_review_report_html
 
 __all__ = [
     "__version__",
@@ -25,6 +26,7 @@ __all__ = [
     "generate_enclosure_scad",
     "generate_ordering_checklist",
     "generate_power_budget_csv",
+    "generate_review_report_html",
     "render_enclosure_stl",
     "score_design_comprehensive",
     "check_kicad_available",

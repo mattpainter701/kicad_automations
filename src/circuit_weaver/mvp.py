@@ -1758,6 +1758,12 @@ def main() -> None:
     )
     gen_p.set_defaults(require_valid=True, export_svg=True)
 
+    review_p = subparsers.add_parser("review-report", help="Generate comprehensive HTML design review report")
+    review_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    review_p.add_argument("--output", "-o", required=True, help="Path to write HTML report")
+    review_p.add_argument("--kicad-pcb", help="Optional path to .kicad_pcb file for DFM analysis")
+    review_p.add_argument("--enrich-parts", action="store_true", default=False)
+
     diff_p = subparsers.add_parser("diff", help="Compare two design specs — structural diff + optional SVG visual")
     diff_p.add_argument("old_spec", help="Path to the original YAML/JSON spec")
     diff_p.add_argument("new_spec", help="Path to the updated YAML/JSON spec")
@@ -2170,6 +2176,24 @@ def main() -> None:
                 print(f"Warning: SVG placement export failed: {e}", file=sys.stderr)
 
         _print_json(result)
+        raise SystemExit(0)
+
+    if args.command == "review-report":
+        from .review_report import generate_review_report_html
+
+        spec = _load_spec_file(args.spec)
+        compiled = compile_design_ir(spec, enrich_parts=args.enrich_parts)
+        kicad_pcb_path = getattr(args, "kicad_pcb", None)
+
+        report_path = _run_with_stderr_capture(
+            lambda: generate_review_report_html(
+                compiled.ir,
+                args.output,
+                kicad_pcb_path=kicad_pcb_path,
+            )
+        )
+        print(f"Design review report generated: {report_path}", file=sys.stderr)
+        _print_json({"report": str(report_path), "status": "success"})
         raise SystemExit(0)
 
     if args.command == "diff":

@@ -23,6 +23,25 @@
   - CLI command: `circuit-weaver generate-docs <design.yaml> --output docs/ [--datasheets-dir X]`
   - Supports integration with BOM workflow: `cost-bom → generate-docs`
 
+### Added (Task 106 — Interactive Design Review Report)
+- **HTML design review report generator** (`review_report.py`):
+  - `generate_review_report_html()` — generates comprehensive, self-contained HTML reports
+  - **Report sections**:
+    - Design summary card with project name, version, overall score/grade, creation timestamp
+    - Pre-fabrication checklist (8 standard review items, user-checkable)
+    - Detailed scoring breakdown with visual bar charts for all 5 quality dimensions
+    - DFM violations table (from Task 104) with severity, location, actual/minimum values, suggestions
+    - Component BOM table (reference, value, footprint, MPN, manufacturer, category, qty)
+    - Power distribution tree (rails, voltages, current, power budget)
+    - Actionable recommendations based on gap analysis (sections < 75 score)
+  - **HTML features**:
+    - Embedded CSS with responsive grid layout (no external dependencies)
+    - Professional styling with color-coded score badges
+    - Print-optimized layout with proper page breaks
+    - Fully self-contained (all data + styles in single HTML file)
+  - CLI command: `circuit-weaver review-report <design.yaml> [--kicad-pcb board.kicad_pcb] --output report.html`
+  - Optional DFM integration: analyzes violations from .kicad_pcb file if provided
+
 ### Added (Task 105 — Enhanced Design Scoring)
 - **Comprehensive design quality scoring** (`design_scorer.py`):
   - `DetailedElectricalQualityScore` dataclass with per-section breakdown
@@ -46,8 +65,9 @@
   - All tests passing in ~0.25s total
 
 ### Changed
-- `mvp.py`: Added two new CLI subcommands (`check-dfm`, `generate-docs`) with full argument parsing
-- `__init__.py`: Exported DFM and design_docs functions in public API
+- `mvp.py`: Added three new CLI subcommands: `check-dfm`, `generate-docs`, `review-report` with full argument parsing
+- `__init__.py`: Exported scoring, design_docs, DFM, and review_report functions in public API
+- `validate` command: Added `--detailed-score` flag to include 5-dimension quality analysis
 
 ---
 

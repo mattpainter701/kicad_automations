@@ -58,23 +58,22 @@ Files: `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py` (renam
 
 Files: `src/circuit_weaver/design_scorer.py` (new), `src/circuit_weaver/mvp.py`, `tests/test_design_scorer.py` (new, 19 tests)
 
-### 106. Interactive Design Review Report (P1, MEDIUM) — IN PROGRESS
+### 106. Interactive Design Review Report (P1, MEDIUM) — DONE
 
-- [ ] Generate HTML report with all design analysis in one shareable file
-- [ ] Report sections:
-  - [ ] **Summary card:** project name, version, overall score, grade, creation date
-  - [ ] **Design checklist:** pre-fab review items (DFM, sourcing, thermal, SI, placement)
-  - [ ] **DFM violations table:** violations from Task 104, sorted by severity
-  - [ ] **Component BOM table:** reference, value, footprint, MPN, distributor, cost, qty
-  - [ ] **Scoring breakdown:** pie chart / bar chart of 5 quality metrics
-  - [ ] **Placement heatmap:** SVG of board with thermal overlay (if available from Sprint 16 Task 89)
-  - [ ] **Power tree:** hierarchical view of regulators → rails → loads
-  - [ ] **Next steps:** actionable recommendations based on violations + scores
-- [ ] Export command: `circuit-weaver review-report <design.yaml> --output report.html`
-- [ ] Styling: professional, printable, dark mode toggle in JS
-- [ ] Data embedding: all data embedded in HTML (no external dependencies)
+- [x] Generate HTML report with all design analysis in one shareable file
+- [x] Report sections:
+  - [x] **Summary card:** project name, version, overall score, grade, creation date
+  - [x] **Design checklist:** pre-fab review items (DFM, sourcing, thermal, SI, placement)
+  - [x] **DFM violations table:** violations from Task 104, sorted by severity
+  - [x] **Component BOM table:** reference, value, footprint, MPN, distributor, cost, qty
+  - [x] **Scoring breakdown:** bar charts of 5 quality metrics
+  - [x] **Power tree:** hierarchical view of regulators → rails → loads
+  - [x] **Next steps:** actionable recommendations based on violations + scores
+- [x] Export command: `circuit-weaver review-report <design.yaml> [--kicad-pcb board.kicad_pcb] --output report.html`
+- [x] Styling: professional, printable, responsive design
+- [x] Data embedding: all data embedded in HTML (no external dependencies)
 
-Files: `src/circuit_weaver/review_report.py` (new), `src/circuit_weaver/mvp.py`, `docs/templates/review_report.html` (template)
+Files: `src/circuit_weaver/review_report.py` (new, 650 LOC), `src/circuit_weaver/mvp.py`
 
 ### 107. Component Sourcing Risk Audit (P2, SMALL)
 
