@@ -7,6 +7,7 @@ power pin mapping, misc sheet, passive inference, reconciliation.
 from __future__ import annotations
 
 import copy
+import os
 
 import pytest
 
