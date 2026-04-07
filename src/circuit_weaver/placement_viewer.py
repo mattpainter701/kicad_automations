@@ -174,7 +174,6 @@ def generate_viewer(
         h = c["height"] * scale
         color = c["color"]
         label = html_mod.escape(ref)
-        value = html_mod.escape(c["value"])
 
         svg_rects.append(
             f'<g class="comp" data-ref="{html_mod.escape(ref)}" '

@@ -6,6 +6,7 @@ Supports KiCad 6+ with version detection and compatibility checks.
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import platform
 import subprocess
@@ -46,15 +47,11 @@ def detect_kicad_version() -> tuple[int, bool] | None:
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
-    # Try pcbnew module directly
-    try:
-        import pcbnew
-
+    # Try pcbnew module directly using importlib (check for availability without importing)
+    if importlib.util.find_spec("pcbnew") is not None:
         # pcbnew doesn't expose version cleanly, but presence indicates KiCad 6+
         log.info("KiCad pcbnew module available (6+)")
         return (6, True)
-    except ImportError:
-        pass
 
     return None
 

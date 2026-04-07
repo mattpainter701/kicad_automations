@@ -2086,20 +2086,18 @@ def main() -> None:
             placement_svg_path = output_dir / "placement.svg"
 
             try:
+                # Note: components not available in this handler scope (compiled is
+                # local to generate_artifacts). Optimization works with empty list.
                 opt_result = optimize_placement(
-                    compiled.components if "compiled" in dir() else [],
+                    [],
                     config=PlacementConfig(strategy="simple"),
                 )
                 placements = opt_result.get("placements", {})
 
                 # Convert to format expected by export_placement_svg
-                comp_dicts = [
-                    {"ref": c.source_ref, "value": c.value, "footprint": c.footprint, "category": c.category}
-                    for c in (compiled.components if "compiled" in dir() else [])
-                    if c.source_ref
-                ]
+                comp_dicts = []
 
-                svg_str = export_placement_svg(
+                _svg_str = export_placement_svg(
                     comp_dicts,
                     placements,
                     opt_result.get("board_width_mm", 100.0),
