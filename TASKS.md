@@ -6,15 +6,15 @@
 
 **Goal:** Complete Sprint 19 backlog (dispatcher refactor, sourcing audit), then enable production assembly workflows. Users can now design → validate → review → estimate costs → order assembled boards from JLCPCB.
 
-### 109. Rename mvp.py to dispatcher.py (P1, SMALL)
+### 109. Rename mvp.py to dispatcher.py (P1, SMALL) — DONE
 
-- [ ] Rename `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py`
-- [ ] Update all imports across codebase (cli.py, __init__.py, tests/)
-- [ ] Update docstrings and comments
-- [ ] Update CLI help text and error messages if needed
-- [ ] Update test references and CI/CD configs
-- [ ] Verify all tests still pass after rename
-- [ ] Update CONTRIBUTING.md and architecture docs
+- [x] Rename `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py`
+- [x] Update all imports across codebase (cli.py, __init__.py, tests/)
+- [x] Update docstrings and comments
+- [x] Update CLI help text and error messages if needed
+- [x] Update test references and CI/CD configs
+- [x] Verify all tests still pass after rename
+- [x] Update CONTRIBUTING.md and architecture docs
 
 **Rationale**: "mvp" is outdated naming (no longer a minimum viable product, it's the full CLI dispatcher). "dispatcher.py" accurately reflects its role: routing subcommands to handlers.
 

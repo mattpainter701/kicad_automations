@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from .component_db import ComponentDef
-from .mvp import compile_design_ir
+from .dispatcher import compile_design_ir
 from .parts_lookup import PartsLookup, get_unit_price
 
 log = logging.getLogger(__name__)

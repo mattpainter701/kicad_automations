@@ -4,17 +4,22 @@
 
 ### Sprint 20 — Design Review Completion & Production Assembly
 
-### Added
-- (to be filled during sprint)
+### Changed (Task 109 — Dispatcher Refactor)
+- **Renamed core module** `mvp.py` → `dispatcher.py`:
+  - Reflects actual role: CLI subcommand dispatcher, not MVP
+  - Updated all imports in source code (7 modules), tests (6 test suites), and documentation
+  - Updated module docstring to clarify dispatcher + workflow engine role
+  - Updated CONTRIBUTING.md, api-reference.md, architecture.md, cli-reference.md
+  - All tests pass with new module name
 
-### Changed
+### Added
 - (to be filled during sprint)
 
 ### Fixed
 - (to be filled during sprint)
 
 ### Tests
-- (to be filled during sprint)
+- All 60+ existing tests pass with dispatcher.py module name
 
 ---
 

@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from .component_db import ComponentDef
-from .mvp import compile_design_ir
+from .dispatcher import compile_design_ir
 from .parts_lookup import PartsLookup
 
 log = logging.getLogger(__name__)

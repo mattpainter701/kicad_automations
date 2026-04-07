@@ -434,7 +434,7 @@ def create_app() -> Any:
         profile: str = Query("standard"),
         enrich_parts: bool = Query(False),
     ):
-        from .mvp import validate_design
+        from .dispatcher import validate_design
 
         content_type = request.headers.get("content-type", "")
         body = await request.body()
@@ -454,7 +454,7 @@ def create_app() -> Any:
     ):
         import json
 
-        from .mvp import apply_design_patch
+        from .dispatcher import apply_design_patch
 
         body = await request.body()
         body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
@@ -476,7 +476,7 @@ def create_app() -> Any:
     async def mvp_diff(request: Request):
         import json
 
-        from .mvp import diff_designs
+        from .dispatcher import diff_designs
 
         body = await request.body()
         body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
@@ -500,7 +500,7 @@ def create_app() -> Any:
     async def mvp_pcb_feedback(request: Request):
         import json
 
-        from .mvp import ingest_pcb_feedback
+        from .dispatcher import ingest_pcb_feedback
 
         body = await request.body()
         body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
@@ -528,7 +528,7 @@ def create_app() -> Any:
         enrich_parts: bool = Query(False),
         export_svg: bool = Query(True),
     ):
-        from .mvp import generate_artifacts
+        from .dispatcher import generate_artifacts
 
         content_type = request.headers.get("content-type", "")
         body = await request.body()

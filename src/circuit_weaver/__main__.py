@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 from . import __version__
-from .mvp import main as mvp_main
+from .dispatcher import main as mvp_main
 
 
 def main() -> None:

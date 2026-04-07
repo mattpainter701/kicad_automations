@@ -1,8 +1,8 @@
-"""Transactional MVP workflow for the schematic engine.
+"""CLI dispatcher and workflow engine for circuit-weaver.
 
-This module layers a canonical Design IR, patch application, strict grouped
-validation, derived artifact generation, semantic diffing, and PCB constraint
-feedback on top of the existing schematic engine.
+Routes subcommands to handlers, orchestrates validation, artifact generation,
+and semantic diffing. Provides the design IR abstraction, patch application,
+grouped validation, and PCB constraint feedback on top of the schematic engine.
 """
 
 from __future__ import annotations

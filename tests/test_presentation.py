@@ -16,7 +16,7 @@ import pytest
 
 from circuit_weaver.component_db import BUILTIN_REGISTRY
 from circuit_weaver.design_ir import normalize_design_spec
-from circuit_weaver.mvp import compile_design_ir, validate_design
+from circuit_weaver.dispatcher import compile_design_ir, validate_design
 from circuit_weaver.subcircuits.ldo import LDOTemplate
 from circuit_weaver.subcircuits.usb import USBControllerTemplate, USBHubTemplate
 
@@ -126,7 +126,7 @@ class TestReviewProfile:
 
 def _load_sample_spec(name: str) -> dict:
     """Load a sample YAML spec by directory name."""
-    from circuit_weaver.mvp import _simple_yaml_parse
+    from circuit_weaver.dispatcher import _simple_yaml_parse
 
     yaml_path = SAMPLES_DIR / name / f"{name}.yaml"
     if not yaml_path.exists():

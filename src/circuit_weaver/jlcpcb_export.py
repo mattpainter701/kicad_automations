@@ -227,7 +227,7 @@ def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bo
         }
     """
     try:
-        from .mvp import compile_design_ir
+        from .dispatcher import compile_design_ir
 
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)

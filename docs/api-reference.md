@@ -1,9 +1,9 @@
 # API Reference
 
-Public Python API for Circuit Weaver. All functions are in `circuit_weaver.mvp`.
+Public Python API for Circuit Weaver. All functions are in `circuit_weaver.dispatcher`.
 
 ```python
-from circuit_weaver.mvp import (
+from circuit_weaver.dispatcher import (
     validate_design,
     apply_design_patch,
     generate_artifacts,
@@ -44,7 +44,7 @@ Validate a design spec against the strict MVP profile.
 
 ```python
 import yaml
-from circuit_weaver.mvp import validate_design
+from circuit_weaver.dispatcher import validate_design
 
 with open("design.yaml") as f:
     spec = yaml.safe_load(f)

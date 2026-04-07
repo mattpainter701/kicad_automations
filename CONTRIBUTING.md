@@ -58,7 +58,7 @@ git checkout -b feature/your-feature-name
 python -m pytest tests/ -q
 
 # Run specific test file
-python -m pytest tests/test_mvp.py -v
+python -m pytest tests/test_dispatcher.py -v
 
 # Run with coverage
 python -m pytest tests/ --cov=src/circuit_weaver
@@ -120,7 +120,7 @@ python -m ruff check src/ tests/
 circuit-weaver/
 ├── src/circuit_weaver/
 │   ├── __main__.py            # CLI entry point
-│   ├── mvp.py                 # Core workflow (validate, generate, scaffold, etc.)
+│   ├── dispatcher.py                 # Core workflow (validate, generate, scaffold, etc.)
 │   ├── design_ir.py           # Internal Design Representation (IR)
 │   ├── validator.py           # Design validation logic
 │   ├── generator.py           # KiCad artifact generation
@@ -129,7 +129,7 @@ circuit-weaver/
 │   ├── project_spec.py        # YAML/JSON spec parsing
 │   └── skills/                # Global skills (circuit-weaver, bom, ee, etc.)
 ├── tests/
-│   ├── test_mvp.py            # Core workflow tests
+│   ├── test_dispatcher.py            # Core workflow tests
 │   ├── test_presentation.py   # Component rendering tests
 │   ├── test_import_pipeline.py # Spec import/patch tests
 │   └── samples/               # Example designs for regression testing
@@ -145,7 +145,7 @@ circuit-weaver/
 
 ## Key Modules
 
-### `mvp.py` — Core Workflow Engine
+### `dispatcher.py` — Core Workflow Engine
 Handles all CLI subcommands:
 - `validate` — Design validation
 - `generate` — KiCad artifact generation
@@ -187,7 +187,7 @@ Produces:
 
 1. Add subparser in `main()` function
 2. Implement dispatch logic: `if args.command == "my-command":`
-3. Add tests in `tests/test_mvp.py`
+3. Add tests in `tests/test_dispatcher.py`
 4. Document in `docs/cli-reference.md`
 
 ### Updating Validation Rules

@@ -9,7 +9,7 @@ Circuit Weaver is a transactional circuit design engine that transforms YAML spe
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ USER INTERFACE LAYER                                           │
-│ ├─ CLI Commands (mvp.py: validate, generate, scaffold, etc.)   │
+│ ├─ CLI Commands (dispatcher.py: validate, generate, scaffold, etc.)   │
 │ ├─ Interactive Wizard (design_wizard skill)                    │
 │ └─ Skills (bom, digikey, lcsc, jlcpcb, kicad, etc.)            │
 └──────────────────────┬──────────────────────────────────────────┘
@@ -179,7 +179,7 @@ Generated files (output/)
 
 ## Key Modules
 
-### `mvp.py` — Core Workflow
+### `dispatcher.py` — Core Workflow
 
 Main CLI dispatcher and validation pipeline orchestrator.
 

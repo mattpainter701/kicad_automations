@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 from .component_db import ComponentDef
-from .mvp import compile_design_ir
+from .dispatcher import compile_design_ir
 
 log = logging.getLogger(__name__)
 

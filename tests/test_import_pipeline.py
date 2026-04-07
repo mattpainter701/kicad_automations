@@ -350,7 +350,7 @@ class TestPassiveInference:
 
 class TestReconciliation:
     def test_valid_spec_passes_validation(self):
-        from circuit_weaver.mvp import validate_design
+        from circuit_weaver.dispatcher import validate_design
 
         spec = {
             "project": "test",
@@ -363,7 +363,7 @@ class TestReconciliation:
         assert report.valid
 
     def test_unresolved_component_fails_validation(self):
-        from circuit_weaver.mvp import compile_design_ir
+        from circuit_weaver.dispatcher import compile_design_ir
 
         spec = {
             "project": "test",

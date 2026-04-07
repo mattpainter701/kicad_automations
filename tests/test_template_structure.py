@@ -367,7 +367,7 @@ def test_electrical_quality_scorer():
 
 def test_strict_mode_fails_on_warnings():
     """Strict mode should make warnings count as failures."""
-    from circuit_weaver.mvp import ValidationMessage, ValidationReport
+    from circuit_weaver.dispatcher import ValidationMessage, ValidationReport
 
     report = ValidationReport(
         profile="test",
@@ -390,7 +390,7 @@ def test_strict_mode_fails_on_warnings():
 
 def test_design_checklist_generation():
     """Design checklist should produce valid Markdown."""
-    from circuit_weaver.mvp import ValidationReport, generate_design_checklist
+    from circuit_weaver.dispatcher import ValidationReport, generate_design_checklist
 
     report = ValidationReport(
         profile="standard",
