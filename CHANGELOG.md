@@ -1,8 +1,8 @@
 # Changelog
 
-## [0.14.0-alpha] - 2026-04-06
+## [0.14.0] - 2026-04-06
 
-### Sprint 16 — Advanced PCB Placement (P0 tasks)
+### Sprint 16 — Advanced PCB Placement & Dual-Sided Assembly (complete)
 
 ### Added
 - `placement_optimizer.py` — simulated annealing PCB placement optimizer with multi-objective cost functions (overlap, boundary, thermal proximity, zone affinity) (Task 87)
@@ -15,8 +15,19 @@
 - Viewer features: click-to-highlight nets, hover tooltips (MPN, value, position, power), thermal heatmap overlay toggle, CSV export button, category color-coding
 - 16 tests covering optimizer (empty, single, multi-component, strategies, thermal warnings, determinism, specs loading) and viewer (HTML generation, file output, thermal overlay, CSV export, empty input)
 
+### Added (P1/P2 completion)
+- `si_constraints.py` — signal integrity constraint solver detecting USB/DDR/LVDS/PCIe/MIPI/Ethernet/CAN/RS-485 buses from net names and descriptions (Task 88)
+- `si-constraints` CLI subcommand — impedance targets, differential pair detection, length-matching groups, routing rules
+- `thermal_analysis.py` — junction temperature calculator with hotspot detection, proximity analysis, and thermal heatmap SVG generation (Task 89)
+- `thermal-analysis` CLI subcommand with `--heatmap`, `--ambient`, `--specs-dir`
+- `write_dual_sided_cpl()` in jlcpcb_export.py — splits placements into top/bottom CPL files with assembly mode warnings (Task 91)
+- `export-dual-cpl` CLI subcommand with `--assembly-mode` flag
+- `panelizer.py` — panel layout optimizer with breakaway positions, cost estimates, design rules for V-cut and mouse-bite (Task 92)
+- `panelize` CLI subcommand with `--board-width`, `--board-height`, `--qty`, `--breakaway`
+
 ### Tests
-- 16 new tests in `test_placement_optimizer.py` — all passing in 0.65s
+- 16 tests in `test_placement_optimizer.py` (P0 tasks)
+- 30 tests in `test_sprint16_remaining.py` (P1/P2 tasks) — all passing
 
 ## [0.12.0] - 2026-04-06
 

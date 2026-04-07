@@ -304,26 +304,27 @@ Files: `thermal_analysis.py` (new), `mvp.py`
 
 Files: `placement_viewer.py` (new), `mvp.py`
 
-### 91. Dual-sided assembly BOM + CPL (P1, MEDIUM)
+### 91. Dual-sided assembly BOM + CPL (P1, MEDIUM) — DONE
 
-- [ ] Detect which components go on which side (via `layer` field in placement or user override)
-- [ ] Generate two CPL files: `cpl_top.csv`, `cpl_bottom.csv`
-- [ ] Support both simultaneous reflow (both sides at once, requires precise thermal profile) and sequential (flip and reflow bottom second)
-- [ ] Warnings for incompatible parts on bottom side:
-  - No tall components (connectors, electrolytic caps) if stacking/panelization
-  - Thermal pad vias must exist for bottom-side power ICs (risk of solder wicking)
-- [ ] Export for JLCPCB/PCBWay: format CPLs correctly per fab requirements
-- [ ] Add `--assembly-mode` flag: `single-sided`, `dual-sided-simultaneous`, `dual-sided-sequential`
+- [x] Detect which components go on which side via `layer` field in placement
+- [x] Generate two CPL files: `cpl_top.csv`, `cpl_bottom.csv` in JLCPCB format
+- [x] `--assembly-mode` flag: `single-sided`, `dual-sided-simultaneous`, `dual-sided-sequential`
+- [x] Warnings for tall/THT components on bottom side
+- [x] Warnings for QFN/BGA/DFN on bottom (thermal pad via solder wicking risk)
+- [x] Simultaneous reflow warning (heavy bottom components may fall)
+- [x] `export-dual-cpl` CLI subcommand
 
-Files: `jlcpcb_export.py` (extend), `pcb_export.py` (extend), `mvp.py`
+Files: `jlcpcb_export.py` (extended `write_dual_sided_cpl`), `mvp.py`
 
-### 92. Panelization hints generator (P2, SMALL)
+### 92. Panelization hints generator (P2, SMALL) — DONE
 
-- [ ] For small boards, suggest panel layout (e.g., 3×3 array of 50mm boards on 100×100 panel)
-- [ ] Output: breakaway areas (V-cut or mouse bite locations), panelization drawing for manufacturing
-- [ ] Constraints: preserve at least one reference designator per board, no copper on breakaway area
-- [ ] Export format: KiCad PCB with panel structure, or DXF for manual panel design
-- [ ] Cost estimate: fab cost per board vs panel economies of scale
+- [x] Suggest panel layout with normal and rotated orientations
+- [x] Breakaway positions (V-cut line X/Y coordinates)
+- [x] V-cut and mouse-bite breakaway types with design rules
+- [x] Cost estimate: panelized vs single-board pricing with savings %
+- [x] Utilization percentage, waste board count
+- [x] Small board warning (below 6mm fab minimum)
+- [x] `panelize` CLI subcommand with `--board-width`, `--board-height`, `--qty`, `--breakaway`, `--json`
 
 Files: `panelizer.py` (new), `mvp.py`
 

@@ -116,6 +116,65 @@ def write_jlcpcb_cpl(
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_dual_sided_cpl(
+    components: list[ComponentDef],
+    placements: dict[str, tuple[float, float, float, str]],
+    output_dir: Path,
+    *,
+    assembly_mode: str = "dual-sided-sequential",
+) -> dict:
+    """Write separate top/bottom CPL files for dual-sided assembly."""
+    top_lines = ["Designator,Mid X,Mid Y,Rotation,Layer"]
+    bottom_lines = ["Designator,Mid X,Mid Y,Rotation,Layer"]
+    warnings: list[str] = []
+    bottom_refs: list[str] = []
+
+    for comp in components:
+        ref = comp.source_ref or ""
+        if not ref or ref not in placements:
+            continue
+        x, y, rotation, layer = placements[ref]
+        jlcpcb_layer = "top" if layer in ("top", "front", "F.Cu") else "bottom"
+        line = f"{ref},{x:.2f},{y:.2f},{rotation:.1f},{jlcpcb_layer}"
+        if jlcpcb_layer == "top":
+            top_lines.append(line)
+        else:
+            bottom_lines.append(line)
+            bottom_refs.append(ref)
+
+    for comp in components:
+        ref = comp.source_ref or ""
+        if ref not in bottom_refs:
+            continue
+        fp = (comp.footprint or "").upper()
+        if any(kw in fp for kw in ("THT", "CONN", "USB", "BARREL", "HEADER")):
+            warnings.append(f"{ref}: tall/THT component on bottom side — may interfere with stacking")
+        if any(kw in fp for kw in ("QFN", "BGA", "DFN")):
+            warnings.append(f"{ref}: {fp} on bottom side — ensure thermal pad vias exist (solder wicking risk)")
+
+    if assembly_mode == "single-sided" and len(bottom_lines) > 1:
+        warnings.append(f"{len(bottom_lines) - 1} components assigned to bottom but assembly mode is single-sided")
+    if assembly_mode == "dual-sided-simultaneous":
+        warnings.append(
+            "Simultaneous reflow: verify thermal profile handles both sides. Heavy bottom components may fall."
+        )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    top_path = output_dir / "cpl_top.csv"
+    bottom_path = output_dir / "cpl_bottom.csv"
+    top_path.write_text("\n".join(top_lines) + "\n", encoding="utf-8")
+    bottom_path.write_text("\n".join(bottom_lines) + "\n", encoding="utf-8")
+
+    return {
+        "top_file": str(top_path),
+        "bottom_file": str(bottom_path),
+        "top_count": len(top_lines) - 1,
+        "bottom_count": len(bottom_lines) - 1,
+        "assembly_mode": assembly_mode,
+        "warnings": warnings,
+    }
+
+
 def write_jlcpcb_readme(project_name: str, output_path: Path) -> None:
     """Write JLCPCB upload instructions and notes."""
     lines = []
