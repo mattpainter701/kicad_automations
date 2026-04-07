@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.14.0-alpha] - 2026-04-06
+
+### Sprint 16 — Advanced PCB Placement (P0 tasks)
+
+### Added
+- `placement_optimizer.py` — simulated annealing PCB placement optimizer with multi-objective cost functions (overlap, boundary, thermal proximity, zone affinity) (Task 87)
+- `optimize-placement` CLI subcommand — `circuit-weaver optimize-placement <spec> --strategy balanced --board-width 100 --board-height 80`
+- 5 placement strategies: `simple` (zone heuristic), `thermal`, `si`, `cost`, `balanced` (all combined)
+- Reads Sprint 15 `specs/ic_thermal.json` and `specs/si_params.json` for thermal/SI-aware placement
+- Deterministic placement with `--seed` flag for reproducible results
+- `placement_viewer.py` — interactive HTML/SVG PCB placement viewer with dark theme (Task 90)
+- `placement-viewer` CLI subcommand — runs optimizer then generates interactive HTML
+- Viewer features: click-to-highlight nets, hover tooltips (MPN, value, position, power), thermal heatmap overlay toggle, CSV export button, category color-coding
+- 16 tests covering optimizer (empty, single, multi-component, strategies, thermal warnings, determinism, specs loading) and viewer (HTML generation, file output, thermal overlay, CSV export, empty input)
+
+### Tests
+- 16 new tests in `test_placement_optimizer.py` — all passing in 0.65s
+
 ## [0.12.0] - 2026-04-06
 
 ### Sprint 14 — Auto-Discovery + Visual Placement Editing

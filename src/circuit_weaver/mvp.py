@@ -1925,6 +1925,31 @@ def main() -> None:
         "--stale-only", action="store_true", default=False, help="Only remove entries older than 30 days"
     )
 
+    # Sprint 16: Placement optimizer + interactive viewer
+    opt_p = subparsers.add_parser("optimize-placement", help="Run simulated annealing placement optimizer")
+    opt_p.add_argument("spec", help="Design spec YAML file")
+    opt_p.add_argument("--output", "-o", help="Write placement JSON to file")
+    opt_p.add_argument("--board-width", type=float, default=100.0, help="Board width in mm (default: 100)")
+    opt_p.add_argument("--board-height", type=float, default=80.0, help="Board height in mm (default: 80)")
+    opt_p.add_argument(
+        "--strategy",
+        choices=["simple", "thermal", "si", "cost", "balanced"],
+        default="balanced",
+        help="Placement strategy (default: balanced)",
+    )
+    opt_p.add_argument("--specs-dir", help="Path to specs/ directory with thermal/SI JSON")
+    opt_p.add_argument("--iterations", type=int, default=5000, help="SA iterations (default: 5000)")
+    opt_p.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
+    opt_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
+
+    viewer_p = subparsers.add_parser("placement-viewer", help="Generate interactive HTML PCB placement viewer")
+    viewer_p.add_argument("spec", help="Design spec YAML file")
+    viewer_p.add_argument("--output", "-o", required=True, help="Output HTML file path")
+    viewer_p.add_argument("--board-width", type=float, default=100.0, help="Board width in mm (default: 100)")
+    viewer_p.add_argument("--board-height", type=float, default=80.0, help="Board height in mm (default: 80)")
+    viewer_p.add_argument("--specs-dir", help="Path to specs/ directory for thermal overlay")
+    viewer_p.add_argument("--strategy", choices=["simple", "thermal", "si", "cost", "balanced"], default="balanced")
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -2448,6 +2473,77 @@ def main() -> None:
             else:
                 print(f"Cleared {n} cache entries.")
             raise SystemExit(0)
+
+    if args.command == "optimize-placement":
+        from .placement_optimizer import PlacementConfig, optimize_placement
+
+        spec = _load_spec_file(args.spec)
+        compiled = compile_design_ir(spec)
+        cfg = PlacementConfig(
+            board_width_mm=args.board_width,
+            board_height_mm=args.board_height,
+            strategy=args.strategy,
+            iterations=args.iterations,
+            seed=args.seed,
+        )
+        result = _run_with_stderr_capture(
+            lambda: optimize_placement(compiled.components, config=cfg, specs_dir=args.specs_dir)
+        )
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            print(f"Strategy: {result['strategy']}")
+            print(f"Board: {result['board_width_mm']}x{result['board_height_mm']} mm")
+            print(f"Components placed: {len(result['placements'])}")
+            print(f"Iterations: {result['iterations']}")
+            print(f"Cost: {result['initial_cost']} → {result['final_cost']}")
+            for w in result.get("thermal_warnings", []):
+                print(f"  [!] {w}")
+
+        if args.output:
+            Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.output).write_text(
+                json.dumps(result["placements"], indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            print(f"Placement written to {args.output}")
+
+        raise SystemExit(0 if result.get("status") == "ok" else 1)
+
+    if args.command == "placement-viewer":
+        from .placement_optimizer import PlacementConfig, optimize_placement
+        from .placement_viewer import generate_viewer
+
+        spec = _load_spec_file(args.spec)
+        compiled = compile_design_ir(spec)
+        cfg = PlacementConfig(
+            board_width_mm=args.board_width,
+            board_height_mm=args.board_height,
+            strategy=args.strategy,
+        )
+        opt_result = optimize_placement(compiled.components, config=cfg, specs_dir=args.specs_dir)
+        placements = opt_result["placements"]
+
+        thermal_data = None
+        if args.specs_dir:
+            thermal_path = Path(args.specs_dir) / "ic_thermal.json"
+            if thermal_path.exists():
+                try:
+                    thermal_data = json.loads(thermal_path.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+        generate_viewer(
+            compiled.components,
+            placements,
+            board_width_mm=args.board_width,
+            board_height_mm=args.board_height,
+            thermal_data=thermal_data,
+            title=spec.get("project", "PCB Placement"),
+            output_path=args.output,
+        )
+        print(f"Viewer written to {args.output}")
+        raise SystemExit(0)
 
 
 def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:

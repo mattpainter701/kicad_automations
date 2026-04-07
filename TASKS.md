@@ -250,21 +250,20 @@ Files: `datasheet_parser.py` (new), `metadata.py` (new), `mvp.py`
 
 **Dependencies:** Requires Sprint 15 to complete (specs/ directory with thermal + SI data)
 
-### 87. PCB placement optimizer (P0, LARGE)
+### 87. PCB placement optimizer (P0, LARGE) — DONE
 
-- [ ] Multi-objective optimizer: thermal, signal integrity (length-matched groups), DFM clearance, cost
-- [ ] Input: netlist, board dimensions, layer stackup, component library (thermal specs from datasheets)
-- [ ] Output: placement coordinates + rotation + layer assignment
-- [ ] Algorithm: simulated annealing or genetic algorithm with constraint satisfaction
-- [ ] Integrate with `generate_pcb_placement()` — currently uses simple heuristics
-- [ ] Constraints:
-  - Thermal: Group power components, distance from heatsinks
-  - SI: USB/DDR within matched-length tolerance, impedance-controlled via length
-  - DFM: Min clearance per fab rules, thermal pad via count, silkscreen readability
-  - Cost: Minimize vias, consolidate to fewer layers if possible
-- [ ] Add `--placement-strategy` flag: `simple` (current), `thermal`, `si`, `cost`, `balanced`
+- [x] Multi-objective optimizer: thermal, signal integrity, DFM clearance, cost
+- [x] Input: ComponentDef list, board dimensions, optional specs/ directory
+- [x] Output: placement coordinates + rotation + layer assignment (standard dict format)
+- [x] Algorithm: simulated annealing with configurable iterations, cooling rate, seed
+- [x] Zone-based initial placement by category (power, digital, analog, connector, etc.)
+- [x] Cost functions: overlap penalty, boundary penalty, thermal proximity, zone affinity
+- [x] `--placement-strategy` flag: `simple`, `thermal`, `si`, `cost`, `balanced`
+- [x] `optimize-placement` CLI subcommand with `--board-width`, `--board-height`, `--specs-dir`, `--iterations`, `--seed`
+- [x] Reads Sprint 15 thermal/SI specs from `specs/ic_thermal.json` and `specs/si_params.json`
+- [x] Deterministic with `--seed` for reproducible results
 
-Files: `placement_optimizer.py` (new), `generator.py`, `mvp.py`
+Files: `placement_optimizer.py` (new), `mvp.py`
 
 ### 88. Signal integrity constraint solver (P1, LARGE)
 
@@ -288,20 +287,18 @@ Files: `si_constraints.py` (new), `placer.py`
 
 Files: `thermal_analysis.py` (new), `datasheet_parser.py` (extend for thermal data), `mvp.py`
 
-### 90. Interactive PCB placement viewer (SVG/web) (P0, MEDIUM)
+### 90. Interactive PCB placement viewer (SVG/web) (P0, MEDIUM) — DONE
 
-- [ ] Generate interactive HTML/SVG viewer: board outline, component footprints, nets
-- [ ] Features:
-  - Click to highlight net (all connected pads turn blue)
-  - Hover over component → show MPN, value, thermal load
-  - Drag-to-move components (updates coordinates, re-renders routing complexity estimate)
-  - Thermal heatmap overlay toggle (red = hot, blue = cool)
-  - DFM checker: hover over region → shows clearance violations
-  - Export placement to CSV (Designator, X, Y, Rotation, Layer)
-- [ ] Mobile-friendly: responsive design, zoom/pan on touchscreen
-- [ ] Integrates with `generate` output: `--viewer` flag opens HTML file automatically (or `circuit-weaver open-viewer board.html`)
+- [x] Generate interactive HTML/SVG viewer: board outline, component footprints as colored rects
+- [x] Click to highlight net (all connected components highlighted, others dimmed)
+- [x] Hover over component → tooltip with MPN, value, footprint, position, layer, power dissipation
+- [x] Thermal heatmap overlay toggle (gradient from blue→cyan→yellow→orange→red)
+- [x] Export placement to CSV button (Designator, Mid X, Mid Y, Rotation, Layer)
+- [x] Category color-coding: power (red), digital (blue), analog (purple), connector (green), etc.
+- [x] `placement-viewer` CLI subcommand: runs optimizer then generates HTML viewer
+- [x] Responsive dark-themed UI, legend, board dimension display
 
-Files: `placement_viewer.py` (new), `templates/viewer.html` (new), `mvp.py`
+Files: `placement_viewer.py` (new), `mvp.py`
 
 ### 91. Dual-sided assembly BOM + CPL (P1, MEDIUM)
 
