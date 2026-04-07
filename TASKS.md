@@ -6,7 +6,7 @@
 
 **Goal:** Complete Sprint 19 backlog (dispatcher refactor, sourcing audit), then enable production assembly workflows. Users can now design → validate → review → estimate costs → order assembled boards from JLCPCB.
 
-### 109. Rename mvp.py to dispatcher.py (P1, SMALL) — DONE
+### 109. Rename mvp.py to dispatcher.py (P1, SMALL) — DONE ✅
 
 - [x] Rename `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py`
 - [x] Update all imports across codebase (cli.py, __init__.py, tests/)
