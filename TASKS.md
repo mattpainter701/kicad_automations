@@ -2,6 +2,76 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 13 — Community Ready: PyPI Distribution & Developer UX (v0.11.0)
+
+**Goal:** Circuit Weaver is on PyPI with clear, automated installation. New users get helpful error messages, better debugging, and a path to contribution. Reduce barriers to adoption and enable self-serve problem solving.
+
+### 77. Implement `install-skills` command (P0, MEDIUM)
+
+- [ ] Add `install-skills` CLI subcommand — detects Claude Code / Codex / OpenCode / Kilo and registers global skills
+- [ ] Detects platform by checking `~/.claude/`, `~/.codex/`, `~/.opencode/`, `~/.kilo/` directories
+- [ ] Copies skill YAML files to correct platform directories (`global/skills/`, `~/.codex/skills/`, etc.)
+- [ ] Validates installation by checking file presence and reporting success
+- [ ] `--platform` flag to force specific platform (useful for CI/CD)
+- [ ] Graceful error if no platform detected: "No AI platform found. Supported: Claude Code, Codex, OpenCode, Kilo"
+
+Files: `mvp.py`, `skill_installer.py` (new)
+
+### 78. Enhanced error messages for common failures (P1, MEDIUM)
+
+- [ ] Categorize validation errors: "Structural", "Electrical", "Implementation", "Presentation"
+- [ ] Add "How to fix" section to each error category (e.g., "Floating pin detected on U1 pin 3 (VCC). Add capacitor or check if pin should be no-connect.")
+- [ ] Detect common patterns: "Did you mean to use `ldo` template instead of `buck`?" when power output is too low
+- [ ] Surface the `suggestion` field from ValidationIssue prominently in CLI output
+- [ ] Color-code errors (red), warnings (yellow), suggestions (blue) in terminal output when `--color` flag used (default: auto-detect)
+- [ ] Add `--verbose` flag to validator: includes full datasheet-cited reasoning and alternative solutions
+
+Files: `validator.py`, `mvp.py`, `exporters.py`
+
+### 79. Developer debugging: YAML schema inspector (P1, SMALL)
+
+- [ ] `circuit-weaver schema` command — outputs JSON schema for design IR
+- [ ] `--format` flag: `json`, `yaml`, `markdown` (schema as documentation)
+- [ ] Markdown format: per-block reference with field descriptions, type constraints, required vs optional
+- [ ] Enables IDE autocomplete (VS Code can use JSON schema for YAML validation)
+
+Files: `mvp.py`, new `schema.py`
+
+### 80. Interactive CLI wizard improvements (P1, MEDIUM)
+
+- [ ] Add `--resume <yaml>` flag to `design-wizard` — loads partially-completed design and resumes from current step
+- [ ] `--dry-run` flag: generates spec without asking for confirmation (test automation)
+- [ ] Better error recovery: on invalid answer, re-ask the question (3 attempts, then skip)
+- [ ] Show previous answers when re-asking (context for user correction)
+- [ ] Color output for clarity: headers in bold, prompts in bright color, defaults in dim text
+
+Files: `design_wizard/SKILL.md`, `mvp.py`
+
+### 81. PyPI release checklist automation (P2, SMALL)
+
+- [ ] Create `.github/workflows/release.yml` — triggered by git tag `v*.*.*`
+- [ ] Runs full test suite + security scan before publishing
+- [ ] Bumps version in `__init__.py` and `pyproject.toml` (parse from git tag)
+- [ ] Generates CHANGELOG entry from git log since last tag
+- [ ] Publishes to PyPI via OIDC trusted publisher
+- [ ] Creates GitHub Release with auto-generated release notes
+- [ ] Document release process in `CONTRIBUTING.md`
+
+Files: `.github/workflows/release.yml`, `CONTRIBUTING.md` (new)
+
+### 82. Community contribution guide (P2, MEDIUM)
+
+- [ ] Create `CONTRIBUTING.md` — step-by-step: fork, setup, branch, test, PR
+- [ ] Template circuit: minimal example template structure for new contributors
+- [ ] Coding standards: 120-char line limit, f-strings, pathlib, type hints on public APIs
+- [ ] Add "Good first issue" label to GitHub issues (identify low-hanging fruit)
+- [ ] Create `docs/architecture.md` — high-level system design, data flow, key modules
+- [ ] Add `ARCHITECTURE.md` reference to README
+
+Files: `CONTRIBUTING.md`, `docs/architecture.md`, `README.md`, `.github/ISSUE_TEMPLATE/` (templates)
+
+---
+
 ## Sprint 9 — Unblock Day-1 Onboarding (v0.8.0) — DONE
 
 **Goal:** A new user can pip install, run a design, and understand the system in under 5 minutes. Fix the broken first-run experience and make templates discoverable.

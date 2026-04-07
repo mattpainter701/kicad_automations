@@ -13,11 +13,17 @@ Circuit Weaver offers **three ways** to design a circuit:
 
 | Path | Command/Trigger | Best For | Speed | Requirements |
 |------|-----------------|----------|-------|--------------|
-| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code/Codex/OpenCode | Automatic, AI-driven IC research (Perplexity) | 5–10 min | API key for Perplexity |
-| **`design_wizard` skill** | Say "design wizard" in Claude Code/Codex/OpenCode | Manual step-by-step control with AI guidance | 10–20 min | LLM access (no APIs) |
-| **`circuit-weaver design-wizard` CLI** | Run `circuit-weaver design-wizard` in terminal | Offline, standalone, good for learning | 5–10 min | Python only (no agents/APIs) |
+| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code (registered globally) | Automatic, AI-driven IC research (Perplexity) | 5–10 min | `pip install circuit-weaver[skills]` + Perplexity API key |
+| **`design_wizard` skill** | Say "design wizard" in Claude Code (registered globally) | Manual step-by-step control with AI guidance | 10–20 min | `pip install circuit-weaver[skills]` + LLM access |
+| **`circuit-weaver design-wizard` CLI** | Run `circuit-weaver design-wizard` in terminal | Offline, standalone, good for learning | 5–10 min | `pip install circuit-weaver` (no APIs, no agents) |
 
-**Recommendation:** Start with `/circuit-weaver` (fastest, automatic research) if you have Perplexity API key. Otherwise, use the CLI wizard (fully offline, no dependencies).
+**Getting Started:**
+
+1. Install circuit-weaver: `pip install circuit-weaver[skills]`
+2. Register skills: `circuit-weaver install-skills`
+3. Choose your path (see table above)
+
+**Recommendation:** Start with `/circuit-weaver` (fastest) if you have a Perplexity API key. Otherwise, use the CLI wizard (fully offline).
 
 ---
 

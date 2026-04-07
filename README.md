@@ -117,33 +117,44 @@ The result is a clean path to BOMs and outputs ready to hand to PCBWay, JLCPCB, 
 
 ## Quick Start
 
-### Installation (Automated)
+### Installation
 
-**Windows (PowerShell):**
-
-```powershell
-git clone https://github.com/mattpainter701/kicad_automations.git
-cd kicad_automations
-.\install.ps1
-```
-
-**Mac/Linux (Bash):**
+**Option 1: PyPI (Recommended)**
 
 ```bash
-git clone https://github.com/mattpainter701/kicad_automations.git
-cd kicad_automations
-./install.sh
+pip install circuit-weaver
 ```
 
-This will:
-1. ✅ Install the `circuit-weaver` Python package
-2. ✅ Add to your PATH (Windows only)
-3. ✅ Register `/circuit-weaver` skill with Claude Code (globally available in any project)
+Or with workflow skills (includes BOM, sourcing, KiCad analysis, etc.):
+
+```bash
+pip install circuit-weaver[skills]
+```
 
 Verify installation:
 
 ```bash
 circuit-weaver --version
+```
+
+Register the `/circuit-weaver` skill globally in Claude Code (one-time):
+
+```bash
+circuit-weaver install-skills
+```
+
+**Option 2: From Source (For Development)**
+
+```bash
+git clone https://github.com/mattpainter701/kicad_automations.git
+cd kicad_automations
+pip install -e ".[dev]"
+```
+
+Then register skills:
+
+```bash
+circuit-weaver install-skills
 ```
 
 ### Use in Claude Code
