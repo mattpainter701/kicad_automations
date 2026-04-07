@@ -35,6 +35,7 @@ from .design_ir import (
 )
 from .design_logger import DesignLogger
 from .generator import generate_from_components
+from .interactive_prompts import ask_form_section, ask_text, detect_platform
 from .project_spec import _parse_yaml, _simple_yaml_parse, resolve_project_spec
 from .subcircuits.base import BoundaryPort, get_default_registry
 from .validator import run_validation_checks
