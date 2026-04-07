@@ -2589,7 +2589,7 @@ def main() -> None:
             print(f"Board: {result['board_width_mm']}x{result['board_height_mm']} mm")
             print(f"Components placed: {len(result['placements'])}")
             print(f"Iterations: {result['iterations']}")
-            print(f"Cost: {result['initial_cost']} → {result['final_cost']}")
+            print(f"Cost: {result['initial_cost']} -> {result['final_cost']}")
             for w in result.get("thermal_warnings", []):
                 print(f"  [!] {w}")
 

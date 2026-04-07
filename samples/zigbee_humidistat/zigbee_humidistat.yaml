@@ -1,0 +1,57 @@
+project: Zigbee_Humidistat
+company: Demo
+version: "1.0"
+description: "Zigbee/BT humidistat — SHT40 sensor, CC2652R radio, LiPo powered, USB-C charging"
+
+power:
+  - section: power
+    template: ldo
+    ref: U1
+    ic: AP2112K-3.3TRG1
+    params:
+      vin: 5.0
+      vout: 3.3
+      iout: 0.6
+      rail_name: VDD_3P3
+      vin_net: VUSB
+      en_net: VUSB
+
+digital:
+  - section: digital
+    template: usb_controller
+    ref: U2
+    ic: CH340G
+    params:
+      mode: device
+      data_bus: uart
+      vdd_net: VDD_3P3
+      usb_dp_net: USB_DP
+      usb_dm_net: USB_DM
+
+  - section: digital
+    template: i2c_bus
+    ref: U3
+    ic: PULLUPS_ONLY
+    params:
+      vdd: 3.3
+      speed: 400
+      c_bus: 50
+      vdd_net: VDD_3P3
+      sda_net: I2C_SDA
+      scl_net: I2C_SCL
+
+interfaces:
+  - block_id: U1
+    name: VDD_3P3
+    direction: output
+    description: "3.3V regulated supply"
+
+  - block_id: U2
+    name: UART
+    direction: bidirectional
+    description: "USB-UART bridge for programming"
+
+  - block_id: U3
+    name: I2C
+    direction: bidirectional
+    description: "I2C bus for SHT40 humidity sensor"
