@@ -2,6 +2,100 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 19 — Design Review & Quality Assurance (v0.16.0)
+
+**Goal:** Improve design review workflows, add design-time quality checks, and expand documentation for users starting their first designs. Focus on DFM validation, design scoring, and design documentation generation.
+
+### 104. Design DFM Checker (P0, MEDIUM)
+
+- [ ] Create `dfm_checker.py` — validates PCB design against fab capabilities
+- [ ] Check categories:
+  - [ ] Trace width minimum (0.127mm for JLCPCB 2-layer, 0.09mm for 4-layer)
+  - [ ] Trace-to-trace spacing (same minimums)
+  - [ ] Via diameter and drill size (0.45mm / 0.2mm for 2-layer)
+  - [ ] Annular ring on vias (≥0.125mm)
+  - [ ] Solder mask clearance (0.1mm typical)
+  - [ ] Board edge clearance for traces (0.3mm minimum)
+  - [ ] Pad-to-pad spacing (accounts for solder paste bridge risk)
+- [ ] Support multiple fab profiles: JLCPCB, PCBWay, custom `.dru` rules from KiCad
+- [ ] Output: list of violations with: location (net/component), violation type, actual/minimum values, fix suggestion
+- [ ] CLI command: `circuit-weaver check-dfm <design.kicad_pcb> [--profile jlcpcb|pcbway]`
+- [ ] Integration: can be called standalone or as pre-flight check in `export-gerbers`
+- [ ] Generate violation summary: X critical, Y warnings
+
+Files: `src/circuit_weaver/dfm_checker.py` (new), `src/circuit_weaver/mvp.py`
+
+### 105. Enhanced Design Scoring (P1, MEDIUM)
+
+- [ ] Extend current `score_electrical_quality()` with per-section metrics
+- [ ] New score categories:
+  - [ ] **Power Integrity:** decoupling adequacy, bulk cap presence, regulator headroom, rail noise risk (weighted)
+  - [ ] **Signal Integrity:** termination on high-speed nets, differential pair tuning, layer stack compliance
+  - [ ] **Placement Quality:** thermal clustering, decap proximity to power pins, connector-to-component distances
+  - [ ] **Thermal:** estimated junction temps vs max ratings, thermal via coverage on power devices
+  - [ ] **Manufacturing:** DFM violations (from Task 104), component availability, assembly complexity
+- [ ] Composite score: weighted average of 5 sections (each 0-100)
+- [ ] Return detailed report: {power: 85, signal: 92, placement: 78, thermal: 90, mfg: 88, overall: 86, grade: "B+"}
+- [ ] Add `--detailed-score` flag to `validate` command
+- [ ] Produce text summary with "gaps" flagged (any section < 75 triggers recommendation)
+
+Files: `src/circuit_weaver/design_scorer.py` (new/refactor), `src/circuit_weaver/mvp.py`
+
+### 106. Interactive Design Review Report (P1, MEDIUM)
+
+- [ ] Generate HTML report with all design analysis in one shareable file
+- [ ] Report sections:
+  - [ ] **Summary card:** project name, version, overall score, grade, creation date
+  - [ ] **Design checklist:** pre-fab review items (DFM, sourcing, thermal, SI, placement)
+  - [ ] **DFM violations table:** violations from Task 104, sorted by severity
+  - [ ] **Component BOM table:** reference, value, footprint, MPN, distributor, cost, qty
+  - [ ] **Scoring breakdown:** pie chart / bar chart of 5 quality metrics
+  - [ ] **Placement heatmap:** SVG of board with thermal overlay (if available from Sprint 16 Task 89)
+  - [ ] **Power tree:** hierarchical view of regulators → rails → loads
+  - [ ] **Next steps:** actionable recommendations based on violations + scores
+- [ ] Export command: `circuit-weaver review-report <design.yaml> --output report.html`
+- [ ] Styling: professional, printable, dark mode toggle in JS
+- [ ] Data embedding: all data embedded in HTML (no external dependencies)
+
+Files: `src/circuit_weaver/review_report.py` (new), `src/circuit_weaver/mvp.py`, `docs/templates/review_report.html` (template)
+
+### 107. Component Sourcing Risk Audit (P2, SMALL)
+
+- [ ] Create `sourcing_auditor.py` — queries distributor APIs for component health
+- [ ] For each BOM component:
+  - [ ] Query DigiKey (via existing `_search_digikey()`) for lifecycle status: Active / NRND / Obsolete / EOL
+  - [ ] Query LCSC (via existing jlcsearch) for stock levels + lead time
+  - [ ] Detect: out-of-stock, <100 units in stock, >12 week lead time
+  - [ ] Flag: parts with no distributor PN (unpriced)
+- [ ] Output: audit report with risk levels
+  - [ ] **CRITICAL:** obsolete parts, zero stock, >16 week lead time
+  - [ ] **WARNING:** low stock (<100), long lead (>8 weeks), single-source only
+  - [ ] Suggest alternates (pin-compatible parts) from LCSC for at-risk parts
+- [ ] CLI: `circuit-weaver audit-bom <design.yaml> [--lcsc-only]`
+- [ ] Integrate into review workflow: call after `cost-bom`
+
+Files: `src/circuit_weaver/sourcing_auditor.py` (new), `src/circuit_weaver/mvp.py`
+
+### 108. Design Documentation Generator (P2, MEDIUM)
+
+- [ ] Create `design_docs.py` — auto-generate assembly and ordering documents
+- [ ] Outputs:
+  - [ ] **Assembly guide PDF:** BOM table, placement photo/SVG, assembly sequence, soldering notes
+  - [ ] **Ordering checklist:** per-distributor order files (DigiKey, Mouser, LCSC)
+  - [ ] **Component datasheet index:** links to downloaded datasheets
+  - [ ] **Power budget spreadsheet:** CSV with rail voltage, current, dissipation per IC
+- [ ] Assembly guide structure:
+  - [ ] Component list (by ref, with MPN + footprint)
+  - [ ] Placement diagram (embedded SVG from Sprint 16)
+  - [ ] Assembly order (suggest bottom-layer first, then top)
+  - [ ] Soldering notes (paste reflow vs hand solder, thermal requirements)
+- [ ] CLI: `circuit-weaver generate-docs <design.yaml> --output docs/`
+- [ ] Packaging: individual files in `docs/assembly/`, `docs/bom/`, `docs/datasheets/`
+
+Files: `src/circuit_weaver/design_docs.py` (new), `src/circuit_weaver/mvp.py`
+
+---
+
 ## Sprint 18 — Mechanical & API Enhancements (v0.14.1)
 
 **Goal:** Add parametric 3D-printable enclosure generation via OpenSCAD and robust KiCad placement updates via official Python API with automatic fallback.

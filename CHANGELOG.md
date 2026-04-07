@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.16.0] - (In Progress)
+
+### Sprint 19 — Design Review & Quality Assurance
+
+### Added
+- (coming soon)
+
+### Changed
+- (coming soon)
+
+### Fixed
+- (coming soon)
+
+---
+
 ## [0.15.2] - 2026-04-07 (Hotfix)
 
 ### Fixed
