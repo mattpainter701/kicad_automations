@@ -2139,14 +2139,30 @@ def main() -> None:
         raise SystemExit(0 if not result.rejected else 2)
 
     if args.command == "import-placement":
-        from .svg_placement import import_placement_from_svg, update_cpl_placements, update_kicad_pcb_placements
+        from .kicad_placement_api import check_kicad_available
+        from .svg_placement import (
+            import_placement_from_svg,
+            update_cpl_placements,
+            update_kicad_pcb_placements,
+        )
+
+        # Check if KiCad API is available
+        kicad_available, kicad_msg = check_kicad_available()
+        if not kicad_available:
+            print(f"[!] KiCad API not available. Using regex-based fallback.\n    {kicad_msg}", file=sys.stderr)
+            use_api = False
+        else:
+            use_api = True
 
         svg_placements = import_placement_from_svg(args.svg)
 
         # Update .kicad_pcb
         output_pcb = getattr(args, "output_pcb", None) or args.kicad_pcb
         pcb_result = update_kicad_pcb_placements(
-            args.kicad_pcb, svg_placements, output_path=output_pcb if not args.dry_run else None
+            args.kicad_pcb,
+            svg_placements,
+            output_path=output_pcb if not args.dry_run else None,
+            use_api=use_api,
         )
 
         # Try to update CPL file (optional)
@@ -2162,14 +2178,21 @@ def main() -> None:
         result = {
             "kicad_pcb": {
                 "file": str(output_pcb),
-                "updated": len(pcb_result["updated"]),
-                "not_found": pcb_result["not_found"],
+                "updated": len(pcb_result.get("updated", [])),
+                "not_found": pcb_result.get("not_found", []),
+                "errors": pcb_result.get("errors", []),
+                "message": pcb_result.get("message", ""),
                 "dry_run": args.dry_run,
+                "api_used": use_api,
             },
             "cpl": cpl_result,
         }
+
+        if pcb_result.get("errors"):
+            print(f"[!] Placement import had errors: {pcb_result['message']}", file=sys.stderr)
+
         _print_json(result)
-        raise SystemExit(0)
+        raise SystemExit(0 if pcb_result.get("success", True) else 1)
 
     if args.command == "list-templates":
         registry = get_default_registry()

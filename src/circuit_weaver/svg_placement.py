@@ -4,8 +4,18 @@ Exports PCB component placements as an SVG diagram that users can edit in
 Inkscape/CorelDRAW, then imports the edited SVG back to update KiCad .kicad_pcb
 and CPL files.
 
+The update_kicad_pcb_placements() function uses the official KiCad Python API
+(pcbnew) when available (KiCad 6+), with automatic fallback to regex-based
+updates if KiCad is not installed or the API is unavailable.
+
 Usage:
     from circuit_weaver.svg_placement import export_placement_svg, import_placement_from_svg
+    from circuit_weaver.kicad_placement_api import check_kicad_available
+
+    # Check if KiCad API is available
+    available, msg = check_kicad_available()
+    if not available:
+        print(f"Warning: KiCad not available. {msg}")
 
     # Export placement to SVG
     svg_path = export_placement_svg(components, placements, 100, 80, output_path="placement.svg")
@@ -14,7 +24,13 @@ Usage:
 
     # Import edited SVG back
     updated_placements = import_placement_from_svg("placement.svg")
-    update_kicad_pcb_placements("design.kicad_pcb", updated_placements, output_path="design.kicad_pcb")
+    result = update_kicad_pcb_placements(
+        "design.kicad_pcb",
+        updated_placements,
+        output_path="design.kicad_pcb",
+        use_api=True  # Use KiCad API if available, fallback to regex
+    )
+    print(result["message"])
 """
 
 from __future__ import annotations
@@ -351,22 +367,57 @@ def import_placement_from_svg(svg_path: Path | str, known_refs: set[str] | None 
 
 
 def update_kicad_pcb_placements(
-    kicad_pcb_path: Path | str, placements: dict[str, dict[str, Any]], output_path: Path | str | None = None
+    kicad_pcb_path: Path | str,
+    placements: dict[str, dict[str, Any]],
+    output_path: Path | str | None = None,
+    use_api: bool = True,
 ) -> dict[str, Any]:
     """Update .kicad_pcb footprint placements from placement dict.
 
-    Uses regex to find and replace (at X Y [ROT]) values within footprint blocks.
+    Prefers KiCad Python API (pcbnew) for robustness, falls back to regex if unavailable.
 
     Args:
         kicad_pcb_path: Path to .kicad_pcb file.
         placements: Dict mapping ref → {x, y, rotation, layer}.
         output_path: Write updated file here. If None, dry-run only.
+        use_api: If True (default), try KiCad API first; fallback to regex if unavailable.
 
     Returns:
-        Dict with {updated: [...], not_found: [...]} lists.
+        Dict with {success: bool, updated: [...], not_found: [...], errors: [...], message: str}.
     """
     kicad_pcb_path = Path(kicad_pcb_path)
-    content = kicad_pcb_path.read_text(encoding="utf-8")
+
+    # Try KiCad API first if enabled
+    if use_api:
+        from .kicad_placement_api import update_board_placements
+
+        result = update_board_placements(
+            kicad_pcb_path,
+            placements,
+            output_path=Path(output_path) if output_path else None,
+            dry_run=False,
+        )
+        return result
+
+    # Fallback: regex-based approach
+    try:
+        content = kicad_pcb_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "updated": [],
+            "not_found": list(placements.keys()),
+            "errors": [f"File not found: {kicad_pcb_path}"],
+            "message": f"Could not read {kicad_pcb_path}",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "updated": [],
+            "not_found": list(placements.keys()),
+            "errors": [str(e)],
+            "message": f"Error reading file: {e}",
+        }
 
     updated = []
     not_found = []
@@ -408,10 +459,25 @@ def update_kicad_pcb_placements(
 
     # Write output if requested
     if output_path:
-        output_path = Path(output_path)
-        output_path.write_text(content, encoding="utf-8")
+        try:
+            output_path = Path(output_path)
+            output_path.write_text(content, encoding="utf-8")
+        except Exception as e:
+            return {
+                "success": False,
+                "updated": updated,
+                "not_found": not_found,
+                "errors": [f"Error writing output: {e}"],
+                "message": f"Could not write to {output_path}",
+            }
 
-    return {"updated": updated, "not_found": not_found}
+    return {
+        "success": len(not_found) == 0 and len(updated) > 0,
+        "updated": updated,
+        "not_found": not_found,
+        "errors": [],
+        "message": f"Updated {len(updated)}/{len(placements)} placements (regex fallback)",
+    }
 
 
 def update_cpl_placements(
