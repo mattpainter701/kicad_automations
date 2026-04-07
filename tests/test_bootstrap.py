@@ -9,7 +9,7 @@ import circuit_weaver
 
 
 def test_package_import_exposes_version():
-    assert circuit_weaver.__version__ == "0.15.2"
+    assert circuit_weaver.__version__ == "0.17.0"
 
 
 def test_cli_reports_version():
@@ -20,7 +20,7 @@ def test_cli_reports_version():
         check=True,
     )
 
-    assert result.stdout.strip() == "0.15.2"
+    assert result.stdout.strip() == "0.17.0"
 
 
 def test_validate_command_accepts_example_spec():
