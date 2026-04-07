@@ -7,6 +7,7 @@ import errors, and crash-on-startup bugs that unit tests miss.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -65,6 +66,8 @@ def test_subcommand_help(cmd):
 
 def test_validate_example_spec():
     """validate should accept the example spec."""
+    if os.environ.get("CI"):
+        pytest.skip("Artifact validation requires KiCad CLI (unavailable in CI)")
     result = _run(["validate", str(_EXAMPLE_SPEC)])
     # Exit 0 or 1 (warnings are ok), but shouldn't crash
     assert result.returncode in (0, 1), f"validate crashed: {result.stderr[:500]}"
