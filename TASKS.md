@@ -6,7 +6,9 @@
 
 **Goal:** Circuit Weaver is on PyPI with clear, automated installation. New users get helpful error messages, better debugging, and a path to contribution. Reduce barriers to adoption and enable self-serve problem solving.
 
-### 77. Implement `install-skills` command (P0, MEDIUM)
+**Priority Order:** Start with Task 77 (P0 blocker). Tasks 78–80 unlock user workflows. Tasks 81–82 can ship in patch release.
+
+### 77. Implement `install-skills` command (P0, MEDIUM) — UNBLOCKS ALL WORKFLOWS
 
 - [ ] Add `install-skills` CLI subcommand — detects Claude Code / Codex / OpenCode / Kilo and registers global skills
 - [ ] Detects platform by checking `~/.claude/`, `~/.codex/`, `~/.opencode/`, `~/.kilo/` directories
@@ -72,9 +74,9 @@ Files: `CONTRIBUTING.md`, `docs/architecture.md`, `README.md`, `.github/ISSUE_TE
 
 ---
 
-## Sprint 14 — Intelligent Symbol/Footprint Discovery (v0.12.0)
+## Sprint 14 — Auto-Discovery + Visual Placement Editing (v0.12.0)
 
-**Goal:** Users no longer hand-specify MPNs. When a component value/footprint is given, auto-discover the MPN, symbol, and footprint via DigiKey, Mouser, and LCSC APIs. Build a persistent symbol cache to speed up regenerations.
+**Goal:** Users no longer hand-specify MPNs or placement coordinates. When a component value/footprint is given, auto-discover the MPN, symbol, and footprint via DigiKey, Mouser, and LCSC APIs. Build a persistent symbol cache. Enable visual placement editing in Inkscape/vector tools.
 
 ### 83. DigiKey symbol autoloader (P1, LARGE)
 
@@ -118,11 +120,134 @@ Files: `symbol_cache.py` (new), `mvp.py`
 
 Files: `mvp.py`, `bom_resolver.py` (new)
 
+### 93. SVG placement editor — bidirectional conversion (P1, MEDIUM)
+
+- [ ] **Export placement → SVG:** Draw board outline (gray rectangle), component footprints as colored rectangles with ref labels
+  - Color by category: power (red), digital (blue), connector (green), passive (yellow)
+  - Labels show Ref + Value, click to highlight
+  - Include silk-screen layer hints (text positions, testpoint markers)
+- [ ] **Import modified SVG → placement dict:** Parse `<rect>` and `<text>` elements, extract (x, y, rotation, layer) back to placement format
+  - Preserve user edits: moved components, rotations, layer reassignment (data attribute)
+- [ ] Workflow: `circuit-weaver generate --svg-placement` → `design_placement.svg`
+  - User edits in Inkscape, CorelDRAW, or even Python SVG libs
+  - `circuit-weaver import-placement design_placement.svg` → updates `.kicad_pcb` + CPL files
+- [ ] Version control: SVG is text/XML, git-friendly for design review
+- [ ] No custom UI required: users leverage existing vector tools they know
+
+Files: `svg_placement.py` (new), `mvp.py`
+
+**Why this works:** Instead of building an interactive web viewer immediately (Sprint 16, Task 90), users can edit placement in tools they already own (Inkscape = free, professional). Reduces scope while maintaining precision.
+
 ---
 
-## Sprint 15 — Advanced PCB Placement & Dual-Sided Assembly (v0.13.0)
+## Sprint 15 — Spec Harvesting & Datasheet Automation (v0.13.0-alpha)
 
-**Goal:** Go from schematic + netlist to complete PCB placement with thermal optimization, signal integrity constraints, and dual-sided assembly support (Flux AI level). Interactive SVG/vector viewer for placement review.
+**Goal:** Automatically fetch datasheets and extract structured specs (thermal, SI, power) from DigiKey, LCSC, EasyEDA, and manufacturers. Build a local spec database that feeds the placement optimizer.
+
+**Prerequisite for:** Sprint 16 Tasks 87–89 (placement optimizer needs thermal + SI specs from here)
+
+### 94. Datasheet + spec sheet harvester — unified API client (P1, LARGE)
+
+- [ ] **Problem:** Datasheets, S-parameters, SPICE models, thermal specs are scattered across TI, ADI, Microchip, Mouser, DigiKey, EasyEDA
+- [ ] **Solution:** Unified fetcher that leverages existing APIs + manufacturer fallbacks
+- [ ] Architecture:
+  ```
+  MPN → DigiKey API (DatasheetUrl) → PDF download
+       → LCSC API (datasheet.pdf link) → PDF download
+       → EasyEDA (if LCSC part) → symbol + specs
+       → Manufacturer direct (TI, ADI, Microchip) → SPICE, S-params
+  ```
+- [ ] For each component in BOM:
+  1. Query DigiKey API: `ProductDetails` endpoint → extract `DatasheetUrl` + `Parameters` (voltage, current, package)
+  2. Query LCSC jlcsearch: Extract `extra.datasheet.pdf` URL (wmsc.lcsc.com CDN, fast downloads)
+  3. Fallback: EasyEDA API (if LCSC part) → embedded metadata
+  4. Download to project structure:
+     ```
+     project/
+       ├─ datasheets/
+     │   ├─ TPS61023DRLR.pdf (from DigiKey)
+     │   ├─ GRM155R71C104KA88D.pdf (from LCSC)
+     │   └─ index.json {MPN → (pdf_file, source, timestamp)}
+       ├─ specs/
+     │   ├─ ic_thermal.json {MPN → {theta_ja, pdiss_max, tmax}}
+     │   ├─ passives.json {value+footprint → {voltage_rating, tolerance, temp_coeff}}
+     │   └─ si_params.json {MPN → {impedance_target, length_match_tolerance}}
+     ```
+- [ ] Parse PDFs for structured data:
+  - Thermal: Extract θJA (junction-to-ambient) from "Thermal Characteristics" table → store in JSON
+  - Power: Extract Pdiss_max, VCC limits from Absolute Maximum Ratings
+  - SI: For ICs with USB/DDR/LVDS, parse impedance specs (e.g., "Differential impedance: 90Ω ±15%")
+  - Passives: Extract voltage rating, temperature coefficient, tolerance from datasheet title/first page
+- [ ] Caching: Don't re-download same MPN within 30 days (use `index.json` manifest)
+- [ ] `--skip-download` flag: Only compute structure, don't fetch (for offline use)
+
+Files: `spec_harvester.py` (new), `datasheet_parser.py` (new), `parts_lookup.py` (extend)
+
+**Integration points:**
+- Called after Sprint 14 BOM population (`cost-bom` → `spec-harvest`)
+- Feeds thermal data to Sprint 16 Task 89 (thermal placement optimizer)
+- Feeds SI specs to Sprint 16 Task 88 (SI constraint solver)
+
+### 95. SPICE model + S-parameter fetcher (P2, MEDIUM)
+
+- [ ] **SPICE models:** For analog ICs (op-amps, regulators, comparators), download `.subckt` files
+  - TI: `ti.com/lit/zip/...` SPICE model zips
+  - ADI: `analog.com/media/en/...` `.cir` files
+  - Microchip: Direct product datasheets often include `.subckt` in appendix or separate download
+  - Cache in `project/spice_models/` with MPN-based filenames
+- [ ] **S-parameters:** For RF/high-speed ICs (USB PHY, DDR terminators, RF amps)
+  - Try: Manufacturer S2P/S4P files (if available online)
+  - Fallback: Extract from datasheet (if embedded as images/tables)
+  - Cache in `project/s_params/` with MPN-based filenames
+- [ ] Integration: `circuit-weaver generate --with-spice --with-s-params`
+  - Downloads SPICE + S-params alongside datasheets
+  - User can then run LTspice/ngspice simulations or RF analysis without re-fetching
+- [ ] Graceful degradation: If SPICE/S-params not found, just note in log (don't block generation)
+
+Files: `spice_fetcher.py` (new), `si_params.py` (extend), `spec_harvester.py` (extend)
+
+### 96. Datasheet parser — extract metadata to JSON (P2, MEDIUM)
+
+- [ ] **PDF → structured JSON** using pdf2image + OCR or embedded text extraction
+  - Libraries: `pypdf` (text extraction), `pdfplumber` (table extraction)
+  - Fallback: Manual regex patterns on extracted text
+- [ ] What to extract per component type:
+  - **ICs:** Pinout table, θJA, Absolute Max, Typical application circuit, part status (active/NRND/obsolete)
+  - **Passives:** Voltage rating, tolerance, temperature coefficient, derating curves
+  - **Connectors:** Pin count, pitch, current/voltage rating, mating cycles
+  - **Crystals:** Load capacitance (CL), ESR, frequency tolerance
+- [ ] Store in `project/specs/metadata.json`:
+  ```json
+  {
+    "TPS61023DRLR": {
+      "type": "boost_converter",
+      "theta_ja_still_air": 145,
+      "pdiss_max_w": 0.5,
+      "vin_min": 1.8,
+      "vin_max": 6,
+      "vout_nom": 5.0,
+      "iq_typical_ua": 45,
+      "fsw_mhz": 1.5,
+      "status": "active",
+      "datasheet_pages": 24,
+      "extracted_timestamp": "2026-04-06T12:34:56Z"
+    },
+    ...
+  }
+  ```
+- [ ] Provide CLI tool: `circuit-weaver extract-specs project/datasheets/ --output project/specs/`
+  - Batch processes all PDFs in `datasheets/` directory
+  - Skips already-extracted parts (timestamp check)
+
+Files: `datasheet_parser.py` (new), `metadata.py` (new), `mvp.py`
+
+---
+
+## Sprint 16 — Advanced PCB Placement & Dual-Sided Assembly (v0.14.0)
+
+**Goal:** Go from schematic + netlist to complete PCB placement with thermal optimization, signal integrity constraints, and dual-sided assembly support (Flux AI level). Placement optimizer reads spec data from Sprint 15. Interactive viewer for placement review.
+
+**Dependencies:** Requires Sprint 15 to complete (specs/ directory with thermal + SI data)
 
 ### 87. PCB placement optimizer (P0, LARGE)
 
@@ -199,119 +324,6 @@ Files: `jlcpcb_export.py` (extend), `pcb_export.py` (extend), `mvp.py`
 - [ ] Cost estimate: fab cost per board vs panel economies of scale
 
 Files: `panelizer.py` (new), `mvp.py`
-
-### 93. SVG placement editor — bidirectional conversion (P1, MEDIUM)
-
-- [ ] **Export placement → SVG:** Draw board outline (gray rectangle), component footprints as colored rectangles with ref labels
-  - Color by category: power (red), digital (blue), connector (green), passive (yellow)
-  - Labels show Ref + Value, click to highlight
-  - Include silk-screen layer hints (text positions, testpoint markers)
-- [ ] **Import modified SVG → placement dict:** Parse `<rect>` and `<text>` elements, extract (x, y, rotation, layer) back to placement format
-  - Preserve user edits: moved components, rotations, layer reassignment (data attribute)
-- [ ] Workflow: `circuit-weaver generate --svg-placement` → `design_placement.svg`
-  - User edits in Inkscape, CorelDRAW, or even Python SVG libs
-  - `circuit-weaver import-placement design_placement.svg` → updates `.kicad_pcb` + CPL files
-- [ ] Version control: SVG is text/XML, git-friendly for design review
-- [ ] No custom UI required: users leverage existing vector tools they know
-
-Files: `svg_placement.py` (new), `mvp.py`
-
-**Why this works:** Instead of building an interactive web viewer immediately (Sprint 15, Task 90), users can edit placement in tools they already own (Inkscape = free, professional). Reduces scope while maintaining precision.
-
-### 94. Datasheet + spec sheet harvester — unified API client (P1, LARGE)
-
-- [ ] **Problem:** Datasheets, S-parameters, SPICE models, thermal specs are scattered across TI, ADI, Microchip, Mouser, DigiKey, EasyEDA
-- [ ] **Solution:** Unified fetcher that leverages existing APIs + manufacturer fallbacks
-- [ ] Architecture:
-  ```
-  MPN → DigiKey API (DatasheetUrl) → PDF download
-       → LCSC API (datasheet.pdf link) → PDF download
-       → EasyEDA (if LCSC part) → symbol + specs
-       → Manufacturer direct (TI, ADI, Microchip) → SPICE, S-params
-  ```
-- [ ] For each component in BOM:
-  1. Query DigiKey API: `ProductDetails` endpoint → extract `DatasheetUrl` + `Parameters` (voltage, current, package)
-  2. Query LCSC jlcsearch: Extract `extra.datasheet.pdf` URL (wmsc.lcsc.com CDN, fast downloads)
-  3. Fallback: EasyEDA API (if LCSC part) → embedded metadata
-  4. Download to project structure:
-     ```
-     project/
-       ├─ datasheets/
-     │   ├─ TPS61023DRLR.pdf (from DigiKey)
-     │   ├─ GRM155R71C104KA88D.pdf (from LCSC)
-     │   └─ index.json {MPN → (pdf_file, source, timestamp)}
-       ├─ specs/
-     │   ├─ ic_thermal.json {MPN → {theta_ja, pdiss_max, tmax}}
-     │   ├─ passives.json {value+footprint → {voltage_rating, tolerance, temp_coeff}}
-     │   └─ si_params.json {MPN → {impedance_target, length_match_tolerance}}
-     ```
-- [ ] Parse PDFs for structured data:
-  - Thermal: Extract θJA (junction-to-ambient) from "Thermal Characteristics" table → store in JSON
-  - Power: Extract Pdiss_max, VCC limits from Absolute Maximum Ratings
-  - SI: For ICs with USB/DDR/LVDS, parse impedance specs (e.g., "Differential impedance: 90Ω ±15%")
-  - Passives: Extract voltage rating, temperature coefficient, tolerance from datasheet title/first page
-- [ ] Caching: Don't re-download same MPN within 30 days (use `index.json` manifest)
-- [ ] `--skip-download` flag: Only compute structure, don't fetch (for offline use)
-
-Files: `spec_harvester.py` (new), `datasheet_parser.py` (new), `parts_lookup.py` (extend)
-
-**Integration points:**
-- Called after Sprint 14 BOM population (`cost-bom` → `spec-harvest`)
-- Feeds thermal data to Sprint 15 Task 89 (thermal placement optimizer)
-- Feeds SI specs to Sprint 15 Task 88 (SI constraint solver)
-
-### 95. SPICE model + S-parameter fetcher (P2, MEDIUM)
-
-- [ ] **SPICE models:** For analog ICs (op-amps, regulators, comparators), download `.subckt` files
-  - TI: `ti.com/lit/zip/...` SPICE model zips
-  - ADI: `analog.com/media/en/...` `.cir` files
-  - Microchip: Direct product datasheets often include `.subckt` in appendix or separate download
-  - Cache in `project/spice_models/` with MPN-based filenames
-- [ ] **S-parameters:** For RF/high-speed ICs (USB PHY, DDR terminators, RF amps)
-  - Try: Manufacturer S2P/S4P files (if available online)
-  - Fallback: Extract from datasheet (if embedded as images/tables)
-  - Cache in `project/s_params/` with MPN-based filenames
-- [ ] Integration: `circuit-weaver generate --with-spice --with-s-params`
-  - Downloads SPICE + S-params alongside datasheets
-  - User can then run LTspice/ngspice simulations or RF analysis without re-fetching
-- [ ] Graceful degradation: If SPICE/S-params not found, just note in log (don't block generation)
-
-Files: `spice_fetcher.py` (new), `si_params.py` (extend), `spec_harvester.py` (extend)
-
-### 96. Datasheet parser — extract metadata to JSON (P2, MEDIUM)
-
-- [ ] **PDF → structured JSON** using pdf2image + OCR or embedded text extraction
-  - Libraries: `pypdf` (text extraction), `pdfplumber` (table extraction)
-  - Fallback: Manual regex patterns on extracted text
-- [ ] What to extract per component type:
-  - **ICs:** Pinout table, θJA, Absolute Max, Typical application circuit, part status (active/NRND/obsolete)
-  - **Passives:** Voltage rating, tolerance, temperature coefficient, derating curves
-  - **Connectors:** Pin count, pitch, current/voltage rating, mating cycles
-  - **Crystals:** Load capacitance (CL), ESR, frequency tolerance
-- [ ] Store in `project/specs/metadata.json`:
-  ```json
-  {
-    "TPS61023DRLR": {
-      "type": "boost_converter",
-      "theta_ja_still_air": 145,
-      "pdiss_max_w": 0.5,
-      "vin_min": 1.8,
-      "vin_max": 6,
-      "vout_nom": 5.0,
-      "iq_typical_ua": 45,
-      "fsw_mhz": 1.5,
-      "status": "active",
-      "datasheet_pages": 24,
-      "extracted_timestamp": "2026-04-06T12:34:56Z"
-    },
-    ...
-  }
-  ```
-- [ ] Provide CLI tool: `circuit-weaver extract-specs project/datasheets/ --output project/specs/`
-  - Batch processes all PDFs in `datasheets/` directory
-  - Skips already-extracted parts (timestamp check)
-
-Files: `datasheet_parser.py` (new), `metadata.py` (new), `mvp.py`
 
 ---
 
