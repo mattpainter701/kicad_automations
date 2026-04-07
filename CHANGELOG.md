@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.15.2] - 2026-04-07 (Hotfix)
+
+### Fixed
+- **Design wizard architecture**: Restructured to use SKILL.md instructions instead of broken Python-level platform detection
+  - Python code cannot invoke Claude Code tools (AskUserQuestion) — only Claude instructions can
+  - Removed non-functional `interactive_prompts.py` module (dead code)
+  - Refactored `_run_design_wizard()` to use plain `input()` for CLI compatibility
+  - Restored cross-platform support: Claude Code (buttons), Codex/OpenCode (conversational), CLI (terminal input)
+- **Dependencies**: Removed unused `questionary` from optional dependencies
+
+### Architecture
+- Interactive prompts now handled by SKILL.md instructions (Claude invokes AskUserQuestion)
+- Python `mvp.py` contains only CLI implementation (non-interactive input())
+- CLI mode: `python -m circuit_weaver design-wizard` with plain input() prompts
+- Skill mode: Invoked via `/circuit-weaver` in Claude Code for native interactive UI
+
+---
+
 ## [0.15.1] - 2026-04-07
 
 ### Fixed
