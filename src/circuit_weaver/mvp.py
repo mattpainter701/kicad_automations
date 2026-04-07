@@ -43,6 +43,79 @@ _MVP_PROFILE = "mvp_strict"
 _POWER_NET_PREFIXES = ("GND", "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
 _PRESENTATION_SVG_MARGIN = 0.5
 
+_ANSI = {
+    "red": "\x1b[31m",
+    "yellow": "\x1b[33m",
+    "blue": "\x1b[34m",
+    "bold": "\x1b[1m",
+    "reset": "\x1b[0m",
+}
+
+
+def _color_support(mode: str) -> bool:
+    """Check if ANSI color output is supported.
+
+    Args:
+        mode: "auto" (detect), "always", or "never"
+
+    Returns:
+        True if colors should be used, False otherwise
+    """
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    # auto: check if stdout is a TTY
+    if not sys.stdout.isatty():
+        return False
+    # On Windows, check for WT_SESSION (Windows Terminal) or TERM env var
+    if sys.platform == "win32":
+        import os
+
+        return bool(os.environ.get("WT_SESSION") or os.environ.get("TERM"))
+    return True
+
+
+def _print_validation_report(report: ValidationReport, *, use_color: bool, verbose: bool) -> None:
+    """Print a validation report with optional colors and verbosity.
+
+    Args:
+        report: ValidationReport object to print
+        use_color: Whether to use ANSI color codes
+        verbose: Whether to include category and code in output
+    """
+    # Header
+    status_str = (
+        f"{_ANSI['bold'] if use_color else ''}PASS ✓{_ANSI['reset'] if use_color else ''}"
+        if report.valid
+        else f"{_ANSI['red'] if use_color else ''}FAIL ✗{_ANSI['reset'] if use_color else ''}"
+    )
+    project = report.metadata.get("project", "design")
+    print(f"{status_str} {project}")
+
+    # Issues by category
+    for category in sorted(report.categories.keys()):
+        messages = report.categories[category]
+        for msg in messages:
+            # Level prefix (colored if enabled)
+            if msg.level == "error":
+                level_str = f"{_ANSI['red'] if use_color else ''}[ERROR]{_ANSI['reset'] if use_color else ''}"
+            elif msg.level == "warning":
+                level_str = f"{_ANSI['yellow'] if use_color else ''}[WARN]{_ANSI['reset'] if use_color else ''}"
+            else:
+                level_str = f"[{msg.level.upper()}]"
+
+            print(f"{level_str} {msg.message}")
+
+            if verbose:
+                print(f"    category: {msg.category}, code: {msg.code}")
+
+            if msg.suggestion:
+                suggestion_str = (
+                    f"{_ANSI['blue'] if use_color else ''}  → {msg.suggestion}{_ANSI['reset'] if use_color else ''}"
+                )
+                print(suggestion_str)
+
 
 @dataclass(frozen=True)
 class ValidationMessage:
@@ -51,6 +124,7 @@ class ValidationMessage:
     level: str
     subject: str
     message: str
+    suggestion: str = ""
 
 
 @dataclass
@@ -1524,6 +1598,15 @@ def main() -> None:
         "--strict", action="store_true", default=False, help="Treat warnings as errors (fail on any warning)"
     )
     validate_p.add_argument("--enrich-parts", action="store_true", default=False)
+    validate_p.add_argument(
+        "--color",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="Enable/disable ANSI colors (default: auto-detect)",
+    )
+    validate_p.add_argument(
+        "--verbose", action="store_true", default=False, help="Print category and code for each issue"
+    )
 
     patch_p = subparsers.add_parser("apply-patch", help="Apply a transactional patch to a design spec")
     patch_p.add_argument("spec", help="Path to YAML/JSON design spec")
@@ -1622,10 +1705,43 @@ def main() -> None:
         help="Output routed PCB (default: <name>_routed.kicad_pcb)",
     )
 
+    install_p = subparsers.add_parser(
+        "install-skills",
+        help="Install Circuit Weaver skills to detected AI platforms (Claude Code, Codex, OpenCode, Kilo)",
+    )
+    install_p.add_argument(
+        "--platform",
+        nargs="+",
+        choices=["claude", "codex", "opencode", "kilo", "all"],
+        default=None,
+        help="Platforms to install to (default: auto-detect available)",
+    )
+    install_p.add_argument(
+        "--skills",
+        nargs="+",
+        default=None,
+        help="Skill names to install (default: all available)",
+    )
+    install_p.add_argument(
+        "--list",
+        action="store_true",
+        help="List detected platforms without installing",
+    )
+
+    schema_p = subparsers.add_parser("schema", help="Print JSON schema for the DesignIR format")
+    schema_p.add_argument(
+        "--format",
+        choices=["json", "yaml", "markdown"],
+        default="json",
+        help="Output format (default: json)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "validate":
         strict = getattr(args, "strict", False)
+        color = getattr(args, "color", "auto")
+        verbose = getattr(args, "verbose", False)
         report = _run_with_stderr_capture(
             lambda: validate_design(
                 _load_spec_file(args.spec),
@@ -1633,7 +1749,12 @@ def main() -> None:
                 strict=strict,
             )
         )
-        _print_json(report.to_dict())
+        # Print as colored text if --color or --verbose specified, otherwise JSON
+        if verbose or color in ("always", "auto"):
+            use_color = _color_support(color)
+            _print_validation_report(report, use_color=use_color, verbose=verbose)
+        else:
+            _print_json(report.to_dict())
         raise SystemExit(0 if report.valid else 2)
 
     if args.command == "apply-patch":
@@ -1865,6 +1986,51 @@ def main() -> None:
             _print_cost_bom_table(result)
 
         raise SystemExit(0 if result["status"] == "ok" else 1)
+
+    if args.command == "install-skills":
+        from .skill_installer import detect_platforms, install_skills
+
+        if getattr(args, "list", False):
+            _print_json({"platforms": detect_platforms()})
+            raise SystemExit(0)
+
+        platforms = None
+        if args.platform and "all" not in args.platform:
+            platforms = args.platform
+
+        result = install_skills(platforms=platforms, skills=getattr(args, "skills", None))
+        _print_json(result)
+        raise SystemExit(0 if result["status"] in ("ok", "partial") else 1)
+
+    if args.command == "schema":
+        from .schema import get_design_ir_schema
+
+        schema = get_design_ir_schema()
+        fmt = getattr(args, "format", "json")
+
+        if fmt == "json":
+            _print_json(schema)
+        elif fmt == "yaml":
+            try:
+                import yaml
+
+                print(yaml.dump(schema, default_flow_style=False, sort_keys=False))
+            except ImportError:
+                print("[!] PyYAML not installed. Install with: pip install pyyaml", file=sys.stderr)
+                raise SystemExit(1)
+        elif fmt == "markdown":
+            # Convert schema to markdown table
+            md = "# Design IR Schema\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n"
+            props = schema.get("properties", {})
+            required = schema.get("required", [])
+            for field_name, field_schema in props.items():
+                field_type = field_schema.get("type", "unknown")
+                is_required = "Yes" if field_name in required else "No"
+                desc = field_schema.get("description", "")
+                md += f"| {field_name} | {field_type} | {is_required} | {desc} |\n"
+            print(md)
+
+        raise SystemExit(0)
 
     if args.command == "design-wizard":
         _handle_design_workflow()

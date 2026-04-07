@@ -8,36 +8,36 @@
 
 **Priority Order:** Start with Task 77 (P0 blocker). Tasks 78–80 unlock user workflows. Tasks 81–82 can ship in patch release.
 
-### 77. Implement `install-skills` command (P0, MEDIUM) — UNBLOCKS ALL WORKFLOWS
+### 77. Implement `install-skills` command (P0, MEDIUM) — UNBLOCKS ALL WORKFLOWS ✓
 
-- [ ] Add `install-skills` CLI subcommand — detects Claude Code / Codex / OpenCode / Kilo and registers global skills
-- [ ] Detects platform by checking `~/.claude/`, `~/.codex/`, `~/.opencode/`, `~/.kilo/` directories
-- [ ] Copies skill YAML files to correct platform directories (`global/skills/`, `~/.codex/skills/`, etc.)
-- [ ] Validates installation by checking file presence and reporting success
-- [ ] `--platform` flag to force specific platform (useful for CI/CD)
-- [ ] Graceful error if no platform detected: "No AI platform found. Supported: Claude Code, Codex, OpenCode, Kilo"
+- [x] Add `install-skills` CLI subcommand — detects Claude Code / Codex / OpenCode / Kilo and registers global skills
+- [x] Detects platform by checking `~/.claude/`, `~/.codex/`, `~/.opencode/`, `~/.kilo/` directories
+- [x] Copies skill YAML files to correct platform directories (`global/skills/`, `~/.codex/skills/`, etc.)
+- [x] Validates installation by checking file presence and reporting success
+- [x] `--platform` flag to force specific platform (useful for CI/CD)
+- [x] Graceful error if no platform detected: "No AI platform found. Supported: Claude Code, Codex, OpenCode, Kilo"
 
-Files: `mvp.py`, `skill_installer.py` (new)
+Files: `mvp.py`, `skill_installer.py` (new), `_bundled_skills/circuit-weaver/SKILL.md` (new), `pyproject.toml`
 
-### 78. Enhanced error messages for common failures (P1, MEDIUM)
+### 78. Enhanced error messages for common failures (P1, MEDIUM) ✓
 
-- [ ] Categorize validation errors: "Structural", "Electrical", "Implementation", "Presentation"
-- [ ] Add "How to fix" section to each error category (e.g., "Floating pin detected on U1 pin 3 (VCC). Add capacitor or check if pin should be no-connect.")
-- [ ] Detect common patterns: "Did you mean to use `ldo` template instead of `buck`?" when power output is too low
-- [ ] Surface the `suggestion` field from ValidationIssue prominently in CLI output
-- [ ] Color-code errors (red), warnings (yellow), suggestions (blue) in terminal output when `--color` flag used (default: auto-detect)
-- [ ] Add `--verbose` flag to validator: includes full datasheet-cited reasoning and alternative solutions
+- [x] Categorize validation errors: "Structural", "Electrical", "Implementation", "Presentation"
+- [x] Add "How to fix" section to each error category (e.g., "Floating pin detected on U1 pin 3 (VCC). Add capacitor or check if pin should be no-connect.")
+- [-] Detect common patterns: "Did you mean to use `ldo` template instead of `buck`?" when power output is too low
+- [x] Surface the `suggestion` field from ValidationIssue prominently in CLI output
+- [x] Color-code errors (red), warnings (yellow), suggestions (blue) in terminal output when `--color` flag used (default: auto-detect)
+- [x] Add `--verbose` flag to validator: includes full datasheet-cited reasoning and alternative solutions
 
-Files: `validator.py`, `mvp.py`, `exporters.py`
+Files: `mvp.py` (added --color, --verbose, _ANSI, _color_support, _print_validation_report)
 
-### 79. Developer debugging: YAML schema inspector (P1, SMALL)
+### 79. Developer debugging: YAML schema inspector (P1, SMALL) ✓
 
-- [ ] `circuit-weaver schema` command — outputs JSON schema for design IR
-- [ ] `--format` flag: `json`, `yaml`, `markdown` (schema as documentation)
-- [ ] Markdown format: per-block reference with field descriptions, type constraints, required vs optional
-- [ ] Enables IDE autocomplete (VS Code can use JSON schema for YAML validation)
+- [x] `circuit-weaver schema` command — outputs JSON schema for design IR
+- [x] `--format` flag: `json`, `yaml`, `markdown` (schema as documentation)
+- [x] Markdown format: per-block reference with field descriptions, type constraints, required vs optional
+- [-] Enables IDE autocomplete (VS Code can use JSON schema for YAML validation)
 
-Files: `mvp.py`, new `schema.py`
+Files: `mvp.py`, `schema.py` (new)
 
 ### 80. Interactive CLI wizard improvements (P1, MEDIUM)
 
