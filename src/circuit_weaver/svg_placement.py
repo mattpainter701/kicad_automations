@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import csv
+import logging
 import math
 import re
 from pathlib import Path
@@ -146,7 +147,7 @@ def export_placement_svg(
     title_elem.text = title
 
     # Add board outline
-    board_outline = ET.SubElement(
+    _board_outline = ET.SubElement(
         svg,
         "rect",
         {
@@ -205,7 +206,7 @@ def export_placement_svg(
         opacity = "0.5" if layer == "back" else "1"
         stroke_dasharray = "4 2" if layer == "back" else "none"
 
-        rect = ET.SubElement(
+        _rect = ET.SubElement(
             g,
             "rect",
             {
@@ -239,7 +240,7 @@ def export_placement_svg(
         text.text = ref
 
     # Convert to string
-    tree = ET.ElementTree(svg)
+    _tree = ET.ElementTree(svg)
     svg_str = ET.tostring(svg, encoding="unicode", method="xml")
 
     # Write to file if requested
@@ -301,7 +302,7 @@ def _parse_transform(transform_str: str) -> tuple[float, float, float]:
             if matrix_match:
                 parts = [float(x.strip()) for x in matrix_match.group(1).split()]
                 if len(parts) >= 6:
-                    a, b, c, d, e, f = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+                    a, b, _, _, e, f = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
                     x_px = e  # translation x
                     y_px = f  # translation y
                     rotation = math.degrees(math.atan2(b, a))  # rotation in degrees
