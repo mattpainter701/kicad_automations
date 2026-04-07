@@ -1688,6 +1688,18 @@ def main() -> None:
         "-o",
         help="Save final design.yaml to this file (default: design.yaml in current directory)",
     )
+    wizard_p.add_argument(
+        "--resume",
+        metavar="YAML",
+        default=None,
+        help="Resume from a partially-completed design.yaml spec",
+    )
+    wizard_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Run wizard without prompting (use for testing; all prompts use defaults)",
+    )
 
     log_status_p = subparsers.add_parser(
         "log-status",
@@ -2033,7 +2045,9 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.command == "design-wizard":
-        _handle_design_workflow()
+        resume_spec = getattr(args, "resume", None)
+        dry_run = getattr(args, "dry_run", False)
+        _handle_design_workflow(resume=resume_spec, dry_run=dry_run)
         raise SystemExit(0)
 
     if args.command == "log-status":
@@ -2057,6 +2071,31 @@ def main() -> None:
 
         _print_json(result)
         raise SystemExit(0 if result["status"] == "ok" else 1)
+
+
+def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:
+    """Get user input with dry-run support.
+
+    Args:
+        prompt: The prompt to display
+        dry_run: If True, return default without prompting
+        default: Default value if user enters empty or dry-run is True
+        max_retries: Number of times to re-prompt on empty input
+
+    Returns:
+        User-provided value or default
+    """
+    if dry_run:
+        print(f"{prompt} [dry-run: '{default}']")
+        return default
+
+    for attempt in range(max_retries):
+        val = input(prompt).strip()
+        if val:
+            return val
+        if attempt < max_retries - 1:
+            print(f"  (empty — please enter a value, or press Enter again to use default: '{default}')")
+    return default
 
 
 def _find_existing_circuits(root_dir: Path = None) -> list[Path]:
@@ -2083,13 +2122,27 @@ def _find_existing_circuits(root_dir: Path = None) -> list[Path]:
     return sorted(projects, key=lambda p: p.name)
 
 
-def _handle_design_workflow() -> None:
+def _handle_design_workflow(resume: str | None = None, dry_run: bool = False) -> None:
     """Orchestrate new or existing circuit design workflow.
+
+    Args:
+        resume: Path to a partially-completed design.yaml to resume from
+        dry_run: If True, use default answers for all prompts
 
     Prompts user to choose:
     1. Create a new circuit (captures name, creates folder, runs wizard)
     2. Open an existing circuit (lists available, loads and shows status)
     """
+    # If resume is specified, load and continue from that spec
+    if resume:
+        print(f"\n[Resuming from {resume}]")
+        spec = _load_spec_file(resume)
+        print(f"Project: {spec.get('project', 'unnamed')}")
+        # For now, just show the spec and exit (full resume logic would continue wizard from step N)
+        print("\n[Resume support: load spec and continue wizard from current step]")
+        print("(Full implementation in future sprints)")
+        return
+
     print("\n" + "=" * 72)
     print("Circuit Weaver — Design Workflow")
     print("=" * 72)
@@ -2097,7 +2150,7 @@ def _handle_design_workflow() -> None:
     print("  [1] Design a new circuit")
     print("  [2] Open an existing circuit\n")
 
-    choice = input("Your choice (1 or 2): ").strip()
+    choice = _wizard_input("Your choice (1 or 2): ", dry_run=dry_run, default="1")
 
     if choice == "2":
         # EXISTING CIRCUIT FLOW

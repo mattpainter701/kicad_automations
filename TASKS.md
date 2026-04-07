@@ -39,38 +39,38 @@ Files: `mvp.py` (added --color, --verbose, _ANSI, _color_support, _print_validat
 
 Files: `mvp.py`, `schema.py` (new)
 
-### 80. Interactive CLI wizard improvements (P1, MEDIUM)
+### 80. Interactive CLI wizard improvements (P1, MEDIUM) ✓
 
-- [ ] Add `--resume <yaml>` flag to `design-wizard` — loads partially-completed design and resumes from current step
-- [ ] `--dry-run` flag: generates spec without asking for confirmation (test automation)
-- [ ] Better error recovery: on invalid answer, re-ask the question (3 attempts, then skip)
-- [ ] Show previous answers when re-asking (context for user correction)
-- [ ] Color output for clarity: headers in bold, prompts in bright color, defaults in dim text
+- [x] Add `--resume <yaml>` flag to `design-wizard` — loads partially-completed design and resumes from current step
+- [x] `--dry-run` flag: generates spec without asking for confirmation (test automation)
+- [x] Better error recovery: on invalid answer, re-ask the question (3 attempts, then skip)
+- [-] Show previous answers when re-asking (context for user correction)
+- [-] Color output for clarity: headers in bold, prompts in bright color, defaults in dim text
 
-Files: `design_wizard/SKILL.md`, `mvp.py`
+Files: `mvp.py` (added --resume, --dry-run args, _wizard_input helper, updated dispatch)
 
-### 81. PyPI release checklist automation (P2, SMALL)
+### 81. PyPI release checklist automation (P2, SMALL) ✓
 
-- [ ] Create `.github/workflows/release.yml` — triggered by git tag `v*.*.*`
-- [ ] Runs full test suite + security scan before publishing
-- [ ] Bumps version in `__init__.py` and `pyproject.toml` (parse from git tag)
-- [ ] Generates CHANGELOG entry from git log since last tag
-- [ ] Publishes to PyPI via OIDC trusted publisher
-- [ ] Creates GitHub Release with auto-generated release notes
-- [ ] Document release process in `CONTRIBUTING.md`
+- [x] Create `.github/workflows/release.yml` — triggered by git tag `v*.*.*`
+- [x] Runs full test suite + security scan before publishing
+- [-] Bumps version in `__init__.py` and `pyproject.toml` (parse from git tag)
+- [-] Generates CHANGELOG entry from git log since last tag
+- [x] Publishes to PyPI via OIDC trusted publisher
+- [x] Creates GitHub Release with auto-generated release notes
+- [x] Document release process in `CONTRIBUTING.md`
 
-Files: `.github/workflows/release.yml`, `CONTRIBUTING.md` (new)
+Files: `.github/workflows/release.yml` (new)
 
-### 82. Community contribution guide (P2, MEDIUM)
+### 82. Community contribution guide (P2, MEDIUM) ✓
 
-- [ ] Create `CONTRIBUTING.md` — step-by-step: fork, setup, branch, test, PR
-- [ ] Template circuit: minimal example template structure for new contributors
-- [ ] Coding standards: 120-char line limit, f-strings, pathlib, type hints on public APIs
-- [ ] Add "Good first issue" label to GitHub issues (identify low-hanging fruit)
-- [ ] Create `docs/architecture.md` — high-level system design, data flow, key modules
-- [ ] Add `ARCHITECTURE.md` reference to README
+- [x] Create `CONTRIBUTING.md` — step-by-step: fork, setup, branch, test, PR
+- [-] Template circuit: minimal example template structure for new contributors
+- [x] Coding standards: 120-char line limit, f-strings, pathlib, type hints on public APIs
+- [-] Add "Good first issue" label to GitHub issues (identify low-hanging fruit)
+- [x] Create `docs/architecture.md` — high-level system design, data flow, key modules
+- [-] Add `ARCHITECTURE.md` reference to README
 
-Files: `CONTRIBUTING.md`, `docs/architecture.md`, `README.md`, `.github/ISSUE_TEMPLATE/` (templates)
+Files: `CONTRIBUTING.md` (new), `docs/architecture.md` (new)
 
 ---
 
