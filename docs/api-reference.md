@@ -344,3 +344,91 @@ class ValidationIssue:
 ### DesignIR, DesignBlock, DesignInterface
 
 See [docs/design-ir-schema.md](design-ir-schema.md).
+
+---
+
+## Spec Harvesting (spec_harvester.py)
+
+```python
+from circuit_weaver.spec_harvester import harvest_specs
+
+result = harvest_specs(spec, output_dir="./project", skip_download=False, delay=0.5)
+# result["datasheets_dir"] → "project/datasheets"
+# result["specs_dir"] → "project/specs"
+# result["specs_extracted"] → number of components with extracted specs
+```
+
+Downloads datasheets and extracts structured parametric data for all BOM components. Outputs `datasheets/index.json`, `specs/ic_thermal.json`, `specs/passives.json`, `specs/si_params.json`.
+
+---
+
+## Datasheet Parser (datasheet_parser.py)
+
+```python
+from circuit_weaver.datasheet_parser import parse_datasheet, extract_specs
+
+# Single PDF
+specs = parse_datasheet("datasheets/TPS61023DRLR.pdf")
+# specs → {"theta_ja": 45.2, "tj_max": 150, "fsw_mhz": 1.5, ...}
+
+# Batch all PDFs
+result = extract_specs("datasheets/", "specs/")
+# result["output_file"] → "specs/metadata.json"
+```
+
+Requires `pypdf` (optional dependency). Extracts thermal (θJA, Pdiss, Tj_max), electrical (Vin, Vout, Iq, Fsw), and passive specs via regex patterns.
+
+---
+
+## SPICE Fetcher (spice_fetcher.py)
+
+```python
+from circuit_weaver.spice_fetcher import fetch_spice_models
+
+result = fetch_spice_models(spec, output_dir="./project", include_s_params=False)
+# result["spice_dir"] → "project/spice_models"
+# result["spice_downloaded"] → count
+```
+
+Downloads SPICE models from TI, ADI, Microchip, ON Semi using known URL patterns. Graceful degradation when not found.
+
+---
+
+## Placement Optimizer (placement_optimizer.py)
+
+```python
+from circuit_weaver.placement_optimizer import optimize_placement, PlacementConfig
+
+config = PlacementConfig(
+    board_width_mm=100,
+    board_height_mm=80,
+    strategy="balanced",  # simple | thermal | si | cost | balanced
+    iterations=5000,
+    seed=42,
+)
+
+result = optimize_placement(components, config=config, specs_dir="specs/")
+placements = result["placements"]
+# placements → {"U1": {"x": 50.0, "y": 40.0, "rotation": 0, "layer": "front"}, ...}
+```
+
+Simulated annealing optimizer with cost functions for overlap, boundary, thermal proximity, and zone affinity. Reads thermal/SI specs from Sprint 15 output.
+
+---
+
+## Placement Viewer (placement_viewer.py)
+
+```python
+from circuit_weaver.placement_viewer import generate_viewer
+
+html = generate_viewer(
+    components,
+    placements,
+    board_width_mm=100,
+    board_height_mm=80,
+    thermal_data={"IC_U1": {"pdiss_max_w": 2.5}},
+    output_path="viewer.html",
+)
+```
+
+Generates an interactive HTML page with SVG board visualization, click-to-highlight nets, hover tooltips, thermal heatmap overlay, and CSV export.

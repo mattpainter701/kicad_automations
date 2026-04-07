@@ -484,23 +484,30 @@ Pre-commit hooks run automatically on `git commit`:
 
 ## Status
 
-**Working now**
-- Standalone `circuit_weaver` package (v0.7.0)
+**Working now (v0.14.0-alpha)**
 - Full MVP API surface (`validate`, `patch`, `generate`, `diff`, `pcb-feedback`)
 - FastAPI HTTP server with all endpoints
-- Package-level tests and CI (123 tests passing)
+- 200+ tests, CI on every push, design validation CI
 - Subcircuit template library (30 templates, all with contract validation)
-- Helper extraction (placement, silkscreen, impedance)
-- **10-check validation pipeline**: feedback dividers, RC/LC filters, crystal load caps, decoupling coverage, inductor selection, capacitor voltage ratings, net connectivity, enable pin detection, bus completeness (I2C/SPI/UART), pin-type conflict ERC
-- **Pin-type-aware circuit generation**: floating power pins → errors, floating inputs → warnings, explicit no-connects for intentional NC pins, PWR_FLAG auto-generation
-- **Electrical quality scorer**: 0–100 score with A–F grade for generated designs
-- **`--strict` mode** for production designs (warnings = errors)
-- **Design checklist generator** for pre-fabrication review
+- 10-check validation pipeline with `--strict` mode for production
+- Electrical quality scorer (0–100 with A–F grade)
+- Costed BOM via LCSC pricing at volume breaks (`cost-bom`)
+- JLCPCB BOM+CPL export, Gerber export (`export-jlcpcb`, `export-gerbers`)
+- Visual design diff with SVG side-by-side comparison (`diff --svg`)
+- DigiKey/Mouser/LCSC symbol autoloader with 30-day cache
+- SVG placement editor — export/import placements via Inkscape
+- **Datasheet + spec harvesting** — download datasheets, extract thermal/SI/passive specs (`harvest-specs`, `extract-specs`)
+- **SPICE model fetcher** — TI, ADI, Microchip, ON Semi URL patterns (`fetch-spice`)
+- **Simulated annealing placement optimizer** — thermal, SI, DFM, cost objectives (`optimize-placement`)
+- **Interactive HTML placement viewer** — net highlighting, thermal heatmap, CSV export (`placement-viewer`)
+- PyPI distribution with `install-skills` command for Claude Code / Codex / OpenCode / Kilo
+- Pre-commit hooks, GitHub Actions CI, release automation
 
 **Active next steps**
-- Continue polishing downstream package consumption
-- Deepen workflow asset extraction and cleanup
-- Expand acceptance fixtures beyond current example designs
+- Signal integrity constraint solver (USB/DDR/LVDS length matching)
+- Thermal analysis with heatmap SVG output
+- Dual-sided assembly BOM + CPL
+- Panelization hints generator
 
 ---
 
