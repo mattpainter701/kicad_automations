@@ -61,22 +61,13 @@ Circuit Weaver sits in the useful middle:
 
 ## Demo: Zigbee/BT Humidistat
 
-Full 11-step pipeline from YAML spec to fab-ready outputs + 3D enclosure:
+Full pipeline from YAML spec to fab-ready outputs + 3D enclosure (11 steps, ~90 seconds):
 
-```bash
-circuit-weaver generate zigbee_humidistat.yaml -o ./output --no-svg --no-require-valid
-circuit-weaver cost-bom zigbee_humidistat.yaml --qty 1,10,100
-circuit-weaver si-constraints zigbee_humidistat.yaml
-circuit-weaver thermal-analysis zigbee_humidistat.yaml
-circuit-weaver optimize-placement zigbee_humidistat.yaml --iterations 1000 --seed 42
-circuit-weaver placement-viewer zigbee_humidistat.yaml -o output/viewer.html
-circuit-weaver panelize --board-width 50 --board-height 40 --qty 100
-circuit-weaver design-enclosure --board-width 50 --board-height 40 --component-height 10 -o output/enclosure.scad
-circuit-weaver export-jlcpcb zigbee_humidistat.yaml -o output/jlcpcb
-```
+<p align="center">
+  <img src="assets/demo_humidistat.svg" alt="Circuit Weaver Demo — Zigbee/BT Humidistat pipeline" width="100%">
+</p>
 
-**Play the recorded demo:** `asciinema play demo_humidistat.cast`
-**Sample design:** [`samples/zigbee_humidistat/`](samples/zigbee_humidistat/)
+**Sample design:** [`samples/zigbee_humidistat/`](samples/zigbee_humidistat/) |
 **Full walkthrough:** [`docs/DEMO_HUMIDISTAT.md`](docs/DEMO_HUMIDISTAT.md)
 
 **Time to fabrication:** ~5 minutes (YAML → validated schematic → JLCPCB-ready files)
