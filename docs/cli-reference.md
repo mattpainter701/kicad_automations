@@ -35,8 +35,20 @@ circuit-weaver generate <spec.yaml> --output <dir> [flags]
 | `--presentation-profile` | `default` or `review` (changes schematic layout) |
 | `--enrich-parts` | Query distributors for missing part data |
 | `--score` | Include electrical quality score in report |
+| `--auto-source` | Auto-discover blank MPNs via DigiKey/Mouser APIs; caches results for 30 days |
+| `--update-spec` | Write discovered MPNs/LCSC back to the original YAML spec (requires `--auto-source`) |
+| `--svg-placement` | Export interactive SVG placement diagram to `placement.svg` for editing |
 
-**Outputs:** `.kicad_sch` files, `_report.md`, placement hints, SVGs.
+**Outputs:** `.kicad_sch` files, `_report.md`, placement hints, SVGs, (optional) `placement.svg`.
+
+**Example:**
+```bash
+# Auto-discover components and update spec
+circuit-weaver generate design.yaml -o /tmp/out --auto-source --update-spec
+
+# Export placement for visual editing
+circuit-weaver generate design.yaml -o /tmp/out --svg-placement
+```
 
 ---
 
@@ -84,6 +96,59 @@ circuit-weaver ingest-pcb-feedback <spec.yaml> <feedback.yaml> [--output <file>]
 ```
 
 Accepts constraint additions (placement, routing) and approved component substitutions.
+
+---
+
+## cache
+
+Manage the symbol and parts cache (30-day TTL at `~/.cache/circuit-weaver/symbols/`).
+
+```bash
+circuit-weaver cache <action> [flags]
+```
+
+**Subcommands:**
+
+| Action | Description |
+|-|-|
+| `stats` | Show cache hit rate, size, and entry count |
+| `clear [--stale-only]` | Clear cache (default: all entries; `--stale-only`: older than 30 days) |
+
+**Example:**
+```bash
+circuit-weaver cache stats         # Show cache statistics
+circuit-weaver cache clear --stale-only  # Remove expired entries
+```
+
+---
+
+## import-placement
+
+Import SVG placement edits back into .kicad_pcb and CPL files.
+
+```bash
+circuit-weaver import-placement <placement.svg> <board.kicad_pcb> [flags]
+```
+
+| Flag | Description |
+|-|-|
+| `--output-pcb`, `-o` | Write updated .kicad_pcb to this path (default: overwrite input) |
+| `--output-cpl` | Write updated CPL CSV to this path (default: auto-find `*_cpl.csv`) |
+| `--dry-run` | Preview changes without writing files |
+
+**Workflow:**
+1. `circuit-weaver generate design.yaml -o /tmp --svg-placement` → `placement.svg`
+2. Edit `placement.svg` in Inkscape/CorelDRAW
+3. `circuit-weaver import-placement /tmp/placement.svg /tmp/*.kicad_pcb` → updates PCB + CPL
+
+**Example:**
+```bash
+# Dry-run to preview changes
+circuit-weaver import-placement placement.svg design.kicad_pcb --dry-run
+
+# Apply changes
+circuit-weaver import-placement placement.svg design.kicad_pcb -o design_updated.kicad_pcb
+```
 
 ---
 

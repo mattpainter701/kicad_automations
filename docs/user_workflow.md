@@ -479,3 +479,83 @@ on any topic.
 6. **Plan for rev2.** Your first board almost never works perfectly. The spare
    GPIO, debug headers, and test points the wizard recommends will pay for
    themselves on the first debug session.
+
+---
+
+## Advanced Workflows — Auto-Sourcing & Placement Editing
+
+Once you have a working schematic, Circuit Weaver 0.12.0+ offers two powerful shortcuts:
+
+### Auto-Source Components (Task 86)
+
+Instead of hand-specifying part numbers for every component, Circuit Weaver can auto-discover
+them from component values/footprints via DigiKey and Mouser APIs:
+
+```bash
+# Auto-discover and cache part numbers (30-day TTL)
+circuit-weaver generate design.yaml -o /tmp/out --auto-source
+
+# Also write discovered parts back to your YAML spec
+circuit-weaver generate design.yaml -o /tmp/out --auto-source --update-spec
+```
+
+**What happens:**
+1. For each component with a blank MPN, Circuit Weaver queries DigiKey, Mouser, and LCSC APIs
+2. Results are cached locally for 30 days (no redundant API calls)
+3. A summary is printed: "Auto-sourced 42/45 parts (DigiKey: 25, Mouser: 12, LCSC: 5)"
+4. If `--update-spec` is set, discovered part numbers are written back to your YAML file
+
+**When to use:** After your schematic is finalized and you're ready for a costed BOM.
+
+### Edit Placement Visually (Task 93)
+
+Instead of hand-moving every component in KiCad, export an SVG diagram that you can edit
+in Inkscape or any vector tool, then import the edits back:
+
+```bash
+# Export placement diagram
+circuit-weaver generate design.yaml -o /tmp/out --svg-placement
+# → Creates /tmp/out/placement.svg
+
+# User opens placement.svg in Inkscape and moves components around...
+
+# Import edits back into KiCad
+circuit-weaver import-placement /tmp/out/placement.svg /tmp/out/design.kicad_pcb
+# → Updates design.kicad_pcb and *_cpl.csv automatically
+```
+
+**What you can do in the SVG:**
+- Move components (drag rectangles)
+- Rotate components (rotate rectangles)
+- Change layer (front/back) — edit the `data-layer` attribute
+- Use Inkscape's snap-to-grid for precision
+- Version control the SVG (it's plain XML) for design review
+
+**Component colors by category:**
+- Red: power rails, regulators
+- Blue: digital ICs
+- Green: connectors
+- Yellow: passives (resistors, capacitors)
+
+**When to use:** After schematic generation, before sending to fab. Fast for adjusting
+component spacing, swapping placement between board sides, or sharing layout feedback.
+
+---
+
+## FAQ — Auto-Source & Placement
+
+**Q: Do I need API keys for auto-sourcing?**
+A: No. If DigiKey/Mouser credentials are missing, the tool silently falls back to your local
+LCSC database or leaves components unresolved. No errors.
+
+**Q: How fresh are the cached parts?**
+A: 30 days. After that, Circuit Weaver re-queries the APIs. You can clear the cache
+manually with `circuit-weaver cache clear`.
+
+**Q: Can I edit placement without exiting KiCad?**
+A: Yes. Export SVG *before* opening the .kicad_pcb in KiCad, edit, import back, then
+open in KiCad. This avoids conflicts with KiCad's in-memory copy.
+
+**Q: What if I move a component off the board in the SVG?**
+A: The coordinates are preserved as-is. Just don't go too negative or the component
+will be off-canvas. Inkscape's bounds guides help prevent this.

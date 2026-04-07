@@ -113,6 +113,10 @@ def generate_artifacts(
     enrich_parts: bool = False,
     export_svg: bool = True,
     score: bool = False,
+    auto_source: bool = False,
+    update_spec: bool = False,
+    spec_path: Path | None = None,
+    svg_placement: bool = False,
 ) -> dict[str, Any]
 ```
 
@@ -129,6 +133,10 @@ Generate KiCad schematic files and reports from a validated design spec.
 | `enrich_parts` | bool | `False` | Enrich parts before generation |
 | `export_svg` | bool | `True` | Export SVG previews of schematics |
 | `score` | bool | `False` | Include electrical quality score |
+| `auto_source` | bool | `False` | Auto-discover blank MPNs via DigiKey/Mouser APIs |
+| `update_spec` | bool | `False` | Write discovered MPNs back to YAML spec |
+| `spec_path` | Path | `None` | Original spec file path (required if `update_spec=True`) |
+| `svg_placement` | bool | `False` | Export interactive SVG placement diagram |
 
 **Returns:** dict with keys:
 - `output_dir` (str) — path to output directory
@@ -139,6 +147,8 @@ Generate KiCad schematic files and reports from a validated design spec.
 - `design_ir` (DesignIR) — compiled design IR
 - `canonical_spec` (dict) — normalized spec
 - `valid` (bool) — whether validation passed
+- `auto_source_summary` (dict) — auto-source results (if `auto_source=True`)
+- `placement_svg` (str) — path to placement.svg (if `svg_placement=True`)
 
 ---
 
@@ -226,6 +236,97 @@ class ValidationCheckResult:
     status: str     # "PASS", "WARN", or "FAIL"
     issues: tuple[ValidationIssue, ...]
 ```
+
+---
+
+## SymbolResolver (symbol_resolver.py)
+
+```python
+from circuit_weaver.symbol_resolver import SymbolResolver
+
+resolver = SymbolResolver()
+comp_def, source = resolver.resolve("TPS61023DRLR")
+print(f"Found via {source}: {comp_def.description}")  # Output: "Found via digikey: ..."
+```
+
+Unified 6-tier symbol resolution chain:
+1. Custom registry
+2. KiCad library
+3. Symbol cache (30-day TTL)
+4. EasyEDA (via LCSC)
+5. DigiKey API
+6. Mouser API
+
+**Methods:**
+- `resolve(mpn) -> (ComponentDef | None, source_str)` — resolve single MPN
+- `resolve_batch(items) -> list[tuple[str, ComponentDef | None, str]]` — resolve multiple items
+
+---
+
+## SVG Placement Export/Import (svg_placement.py)
+
+```python
+from circuit_weaver.svg_placement import (
+    export_placement_svg,
+    import_placement_from_svg,
+    update_kicad_pcb_placements,
+    update_cpl_placements,
+)
+
+# Export to SVG
+svg_str = export_placement_svg(
+    components=[...],
+    placements={"U1": {"x": 50, "y": 40, "rotation": 0, "layer": "front"}, ...},
+    board_width_mm=100,
+    board_height_mm=80,
+    output_path="placement.svg"
+)
+
+# User edits placement.svg in Inkscape...
+
+# Import edited placements back
+placements = import_placement_from_svg("placement.svg")
+
+# Update KiCad files
+result = update_kicad_pcb_placements("design.kicad_pcb", placements, output_path="design.kicad_pcb")
+cpl_count = update_cpl_placements("design_cpl.csv", placements, output_path="design_cpl.csv")
+```
+
+**Functions:**
+- `export_placement_svg(components, placements, board_width_mm, board_height_mm, ...)` — generate SVG
+- `import_placement_from_svg(svg_path)` — parse edited SVG back to placement dict
+- `update_kicad_pcb_placements(kicad_pcb_path, placements, ...)` — update .kicad_pcb files
+- `update_cpl_placements(cpl_path, placements, ...)` — update CPL CSV files
+
+---
+
+## SymbolCache (symbol_cache.py)
+
+```python
+from circuit_weaver.symbol_cache import SymbolCache
+
+cache = SymbolCache()  # ~/.cache/circuit-weaver/symbols/
+
+# Get cached entry
+cached = cache.get("TPS61023DRLR")
+
+# Store entry (30-day TTL)
+cache.put("TPS61023DRLR", {
+    "source": "digikey",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "description": "Boost converter",
+    "manufacturer": "Texas Instruments",
+    "digikey_pn": "296-TPS61023DRLR-ND",
+})
+
+# Stats
+stats = cache.stats()  # {total, fresh, stale, size_bytes}
+
+# Clear cache
+cache.clear(stale_only=True)  # Remove entries older than 30 days
+```
+
+---
 
 ### ValidationIssue
 
