@@ -1627,6 +1627,24 @@ def main() -> None:
         help="Override the presentation profile (default | review)",
     )
     gen_p.add_argument("--score", action="store_true", default=False, help="Run aesthetics scorer on generated layouts")
+    gen_p.add_argument(
+        "--auto-source",
+        action="store_true",
+        default=False,
+        help="Auto-populate blank MPN/LCSC fields via DigiKey and Mouser lookups (Task 86)",
+    )
+    gen_p.add_argument(
+        "--update-spec",
+        action="store_true",
+        default=False,
+        help="Write discovered MPNs/LCSC back to YAML spec (requires --auto-source)",
+    )
+    gen_p.add_argument(
+        "--svg-placement",
+        action="store_true",
+        default=False,
+        help="Export SVG placement diagram after PCB generation (Task 93)",
+    )
     gen_p.set_defaults(require_valid=True, export_svg=True)
 
     diff_p = subparsers.add_parser("diff", help="Compare two design specs — structural diff + optional SVG visual")
@@ -1746,6 +1764,47 @@ def main() -> None:
         choices=["json", "yaml", "markdown"],
         default="json",
         help="Output format (default: json)",
+    )
+
+    # Sprint 15: Spec harvesting & datasheet automation
+    harvest_p = subparsers.add_parser(
+        "harvest-specs", help="Download datasheets and extract structured specs for all BOM components"
+    )
+    harvest_p.add_argument("spec", help="Design spec YAML file")
+    harvest_p.add_argument("--output", "-o", default=".", help="Project output directory (default: current dir)")
+    harvest_p.add_argument(
+        "--skip-download",
+        action="store_true",
+        default=False,
+        help="Extract specs from API data only, skip PDF downloads",
+    )
+    harvest_p.add_argument("--delay", type=float, default=0.5, help="Seconds between API calls (default: 0.5)")
+    harvest_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
+
+    extract_p = subparsers.add_parser(
+        "extract-specs", help="Parse downloaded PDF datasheets and extract structured metadata to JSON"
+    )
+    extract_p.add_argument("datasheets_dir", help="Directory containing PDF datasheets")
+    extract_p.add_argument("--output", "-o", default="specs", help="Output directory for spec JSON files")
+    extract_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
+
+    spice_p = subparsers.add_parser(
+        "fetch-spice", help="Download SPICE models and S-parameter files for analog/RF components"
+    )
+    spice_p.add_argument("spec", help="Design spec YAML file")
+    spice_p.add_argument("--output", "-o", default=".", help="Project output directory (default: current dir)")
+    spice_p.add_argument("--with-s-params", action="store_true", default=False, help="Also fetch S-parameter files")
+    spice_p.add_argument("--delay", type=float, default=0.5, help="Seconds between download attempts (default: 0.5)")
+    spice_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
+
+    # Task 85: Symbol cache management
+    cache_p = subparsers.add_parser("cache", help="Manage the symbol and parts cache")
+    cache_sub = cache_p.add_subparsers(dest="cache_action", required=True)
+    cache_stats_p = cache_sub.add_parser("stats", help="Show cache statistics")
+    cache_stats_p.add_argument("--json", dest="json_output", action="store_true", default=False)
+    cache_clear_p = cache_sub.add_parser("clear", help="Clear the symbol cache")
+    cache_clear_p.add_argument(
+        "--stale-only", action="store_true", default=False, help="Only remove entries older than 30 days"
     )
 
     args = parser.parse_args()
@@ -2071,6 +2130,126 @@ def main() -> None:
 
         _print_json(result)
         raise SystemExit(0 if result["status"] == "ok" else 1)
+
+    if args.command == "harvest-specs":
+        from .spec_harvester import harvest_specs
+
+        result = _run_with_stderr_capture(
+            lambda: harvest_specs(
+                _load_spec_file(args.spec),
+                output_dir=args.output,
+                skip_download=args.skip_download,
+                delay=args.delay,
+            )
+        )
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            status = result.get("status", "error")
+            if status == "ok":
+                print(f"Project: {result['project']}")
+                print(f"Components processed: {result['components_processed']}")
+                print(f"Datasheets downloaded: {result['datasheets_downloaded']}")
+                print(f"Datasheets skipped:    {result['datasheets_skipped']}")
+                print(f"Datasheets failed:     {result['datasheets_failed']}")
+                print(f"Specs extracted:       {result['specs_extracted']}")
+                print(f"Datasheets dir: {result['datasheets_dir']}")
+                print(f"Specs dir:      {result['specs_dir']}")
+                for w in result.get("warnings", []):
+                    print(f"  [!] {w}")
+            else:
+                print(f"[!] {result.get('message', 'Unknown error')}", file=sys.stderr)
+
+        raise SystemExit(0 if result.get("status") == "ok" else 1)
+
+    if args.command == "extract-specs":
+        from .datasheet_parser import extract_specs
+
+        result = _run_with_stderr_capture(
+            lambda: extract_specs(
+                args.datasheets_dir,
+                args.output,
+            )
+        )
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            status = result.get("status", "error")
+            if status == "ok":
+                print(f"PDFs processed: {result['processed']}")
+                print(f"Specs extracted: {result['extracted']}")
+                print(f"Failed:          {result['failed']}")
+                print(f"Skipped:         {result['skipped']}")
+                if result.get("output_file"):
+                    print(f"Output: {result['output_file']}")
+                for w in result.get("warnings", []):
+                    print(f"  [!] {w}")
+            else:
+                print(f"[!] {result.get('message', 'Unknown error')}", file=sys.stderr)
+
+        raise SystemExit(0 if result.get("status") == "ok" else 1)
+
+    if args.command == "fetch-spice":
+        from .spice_fetcher import fetch_spice_models
+
+        result = _run_with_stderr_capture(
+            lambda: fetch_spice_models(
+                _load_spec_file(args.spec),
+                output_dir=args.output,
+                include_s_params=args.with_s_params,
+                delay=args.delay,
+            )
+        )
+
+        if args.json_output:
+            _print_json(result)
+        else:
+            status = result.get("status", "error")
+            if status == "ok":
+                print(f"Project: {result['project']}")
+                print(f"Components checked:  {result['components_checked']}")
+                print(f"SPICE downloaded:    {result['spice_downloaded']}")
+                print(f"SPICE not found:     {result['spice_not_found']}")
+                if result.get("sparam_dir"):
+                    print(f"S-params downloaded: {result['sparam_downloaded']}")
+                    print(f"S-params not found:  {result['sparam_not_found']}")
+                print(f"SPICE dir: {result['spice_dir']}")
+                for w in result.get("warnings", []):
+                    print(f"  [!] {w}")
+            else:
+                print(f"[!] {result.get('message', 'Unknown error')}", file=sys.stderr)
+
+        raise SystemExit(0 if result.get("status") == "ok" else 1)
+
+    if args.command == "cache":
+        from .symbol_cache import SymbolCache
+
+        sc = SymbolCache()
+        if args.cache_action == "stats":
+            result = sc.stats()
+            if getattr(args, "json_output", False):
+                _print_json(result)
+            else:
+                if "error" in result:
+                    print(f"[!] Cache stats error: {result['error']}", file=sys.stderr)
+                else:
+                    total = result["total"]
+                    fresh = result["fresh"]
+                    stale = result["stale"]
+                    size_kb = result["size_bytes"] // 1024 if result["size_bytes"] else 0
+                    print(f"Symbol cache: {total} entries ({fresh} fresh, {stale} stale), {size_kb} KB")
+            raise SystemExit(0)
+
+        if args.cache_action == "clear":
+            stale_only = getattr(args, "stale_only", False)
+            n = sc.clear(stale_only=stale_only)
+            if stale_only:
+                print(f"Cleared {n} stale cache entries (older than 30 days).")
+            else:
+                print(f"Cleared {n} cache entries.")
+            raise SystemExit(0)
 
 
 def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:
