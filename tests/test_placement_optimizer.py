@@ -187,7 +187,7 @@ def test_viewer_empty_components():
 
 def test_cli_optimize_placement_help():
     result = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "optimize-placement", "--help"],
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "optimize-placement", "--help"],
         capture_output=True,
         text=True,
     )
@@ -197,7 +197,7 @@ def test_cli_optimize_placement_help():
 
 def test_cli_placement_viewer_help():
     result = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "placement-viewer", "--help"],
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "placement-viewer", "--help"],
         capture_output=True,
         text=True,
     )

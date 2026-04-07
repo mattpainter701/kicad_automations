@@ -233,7 +233,7 @@ def test_cli_harvest_specs_help():
     import sys
 
     result = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "harvest-specs", "--help"],
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "harvest-specs", "--help"],
         capture_output=True,
         text=True,
     )
@@ -246,7 +246,7 @@ def test_cli_extract_specs_help():
     import sys
 
     result = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "extract-specs", "--help"],
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "extract-specs", "--help"],
         capture_output=True,
         text=True,
     )
@@ -258,7 +258,7 @@ def test_cli_fetch_spice_help():
     import sys
 
     result = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "fetch-spice", "--help"],
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "fetch-spice", "--help"],
         capture_output=True,
         text=True,
     )

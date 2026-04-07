@@ -291,27 +291,27 @@ def test_panelize_tiny_board_warning():
 
 def test_cli_si_constraints_help():
     r = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "si-constraints", "--help"], capture_output=True, text=True
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "si-constraints", "--help"], capture_output=True, text=True
     )
     assert r.returncode == 0
 
 
 def test_cli_thermal_analysis_help():
     r = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "thermal-analysis", "--help"], capture_output=True, text=True
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "thermal-analysis", "--help"], capture_output=True, text=True
     )
     assert r.returncode == 0
 
 
 def test_cli_dual_cpl_help():
     r = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "export-dual-cpl", "--help"], capture_output=True, text=True
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "export-dual-cpl", "--help"], capture_output=True, text=True
     )
     assert r.returncode == 0
 
 
 def test_cli_panelize_help():
     r = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.mvp", "panelize", "--help"], capture_output=True, text=True
+        [sys.executable, "-m", "circuit_weaver.dispatcher", "panelize", "--help"], capture_output=True, text=True
     )
     assert r.returncode == 0
