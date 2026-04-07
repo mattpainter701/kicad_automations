@@ -393,7 +393,7 @@ def test_design_checklist_generation():
     from circuit_weaver.mvp import ValidationReport, generate_design_checklist
 
     report = ValidationReport(
-        profile="mvp_strict",
+        profile="standard",
         valid=True,
         categories={"structural": [], "electrical": [], "implementation": [], "presentation": []},
         summary={"structural": 0, "electrical": 0, "implementation": 0, "presentation": 0},

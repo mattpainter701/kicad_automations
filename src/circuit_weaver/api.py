@@ -431,7 +431,7 @@ def create_app() -> Any:
     @app.post("/mvp/validate")
     async def mvp_validate_spec(
         request: Request,
-        profile: str = Query("mvp_strict"),
+        profile: str = Query("standard"),
         enrich_parts: bool = Query(False),
     ):
         from .mvp import validate_design
@@ -449,7 +449,7 @@ def create_app() -> Any:
     @app.post("/mvp/apply-patch")
     async def mvp_apply_patch(
         request: Request,
-        profile: str = Query("mvp_strict"),
+        profile: str = Query("standard"),
         enrich_parts: bool = Query(False),
     ):
         import json
@@ -523,7 +523,7 @@ def create_app() -> Any:
     @app.post("/mvp/generate")
     async def mvp_generate(
         request: Request,
-        profile: str = Query("mvp_strict"),
+        profile: str = Query("standard"),
         require_valid: bool = Query(True),
         enrich_parts: bool = Query(False),
         export_svg: bool = Query(True),

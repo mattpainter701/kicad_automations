@@ -39,7 +39,7 @@ from .project_spec import _parse_yaml, _simple_yaml_parse, resolve_project_spec
 from .subcircuits.base import BoundaryPort, get_default_registry
 from .validator import run_validation_checks
 
-_MVP_PROFILE = "mvp_strict"
+_STANDARD_PROFILE = "standard"
 _POWER_NET_PREFIXES = ("GND", "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
 _PRESENTATION_SVG_MARGIN = 0.5
 
@@ -170,8 +170,8 @@ class CompiledDesign:
 
 
 def _ensure_profile(profile: str) -> str:
-    normalized = (profile or _MVP_PROFILE).strip().lower()
-    if normalized != _MVP_PROFILE:
+    normalized = (profile or _STANDARD_PROFILE).strip().lower()
+    if normalized != _STANDARD_PROFILE:
         raise ValueError(f"Unsupported MVP validation profile '{profile}'")
     return normalized
 
@@ -1031,7 +1031,7 @@ def _presentation_issues(output_dir: Path) -> list[ValidationMessage]:
 def validate_design(
     spec: dict[str, Any],
     *,
-    profile: str = _MVP_PROFILE,
+    profile: str = _STANDARD_PROFILE,
     enrich_parts: bool = False,
     strict: bool = False,
 ) -> ValidationReport:
@@ -1218,7 +1218,7 @@ def apply_design_patch(
     spec: dict[str, Any],
     patch: dict[str, Any],
     *,
-    profile: str = _MVP_PROFILE,
+    profile: str = _STANDARD_PROFILE,
     enrich_parts: bool = False,
 ) -> dict[str, Any]:
     """Apply a design patch transactionally and validate before acceptance."""
@@ -1443,7 +1443,7 @@ def generate_artifacts(
     spec: dict[str, Any],
     *,
     output_dir: str | Path,
-    profile: str = _MVP_PROFILE,
+    profile: str = _STANDARD_PROFILE,
     require_valid: bool = True,
     enrich_parts: bool = False,
     export_svg: bool = True,
@@ -1457,7 +1457,7 @@ def generate_artifacts(
     profile = _ensure_profile(profile)
     report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
     if require_valid and not report.valid:
-        raise ValueError("Design failed mvp_strict validation")
+        raise ValueError("Design failed standard validation")
 
     compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
     output_path = Path(output_dir)
