@@ -30,9 +30,8 @@ dependencies = []
 api = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.7"]
 yaml = ["PyYAML>=6.0"]
 lookup = ["requests>=2.31"]
-ui = ["questionary>=1.10.0"]
 dev = ["pytest>=8.0", "ruff>=0.4", "pre-commit>=3.7"]
-all = ["circuit-weaver[api,yaml,lookup,ui]"]
+all = ["circuit-weaver[api,yaml,lookup]"]
 
 [project.scripts]
 circuit-weaver = "circuit_weaver.__main__:main"

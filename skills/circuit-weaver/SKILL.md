@@ -13,33 +13,12 @@ The master entry point for circuit design workflows. This skill orchestrates:
 1. New design creation (wizard + requirements + research + IC selection + BOM + passive generation + schematic)
 2. Existing design loading and review
 
-## Quick Start
+This skill is **platform-aware**:
+- **Claude Code**: Uses native interactive buttons (AskUserQuestion tool) for all choices
+- **Codex/OpenCode**: Uses conversational prompting with numbered options
+- **CLI**: Uses `py -m circuit_weaver design-wizard` with `input()` for terminal mode
 
-**For a new design:**
-```
-/circuit-weaver
-→ [interactive choice: New or Existing Design]
-→ [collects requirements via design_wizard]
-→ [spawns research agent to find ICs]
-→ [generates passives, validates, creates schematic]
-```
-
-**For an existing design:**
-```
-/circuit-weaver
-→ [asks for design directory path]
-→ [loads design.yaml and reports current state]
-→ [interactive choice: validate, regenerate, modify, review]
-```
-
-### Platform Support
-
-This skill auto-detects your platform and uses the best UI:
-- **Claude Code users**: Interactive buttons/checkboxes (can click options, scroll to review)
-- **Codex/OpenCode users**: Conversational prompting (natural text, type response)
-- **CLI users**: Terminal UI with arrow keys + spacebar (questionary library)
-
-All platforms have the same design flow — just different UI for selections.
+All platforms follow the same design flow — just different UI for user input.
 
 ---
 
@@ -47,374 +26,347 @@ All platforms have the same design flow — just different UI for selections.
 
 ### Step 0 — Welcome & Route
 
-Display:
+Present a choice (platform-adapted):
+
+**Claude Code / Codex / OpenCode:**
 ```
 Welcome to Circuit Weaver
 
 What would you like to do?
-  [1] Design a new circuit (I'll guide you through the full workflow)
-  [2] Open an existing design (I'll load your project)
+  [1] Design a new circuit
+  [2] Open an existing design
 ```
 
-Ask user to choose. If [1], proceed to Step 1. If [2], jump to "Existing Design" section below.
+For Claude Code: Use AskUserQuestion with options `["Design a new circuit", "Open an existing design"]`
+For Codex/OpenCode: Present as numbered list, ask user to type [1] or [2]
+For CLI: User already running `design-wizard`, skip this step
+
+Based on choice:
+- **[1] New design** → Proceed to Step 1
+- **[2] Existing design** → Jump to "Workflow: Existing Design" section
 
 ### Step 1 — Requirements Capture
 
-Use the existing `design_wizard` skill logic (Steps 0-1a from `skills/design_wizard/SKILL.md`):
+Collect requirements through a structured conversation. Ask these questions in order:
 
-1. **Experience Level** — Ask beginner/intermediate/advanced/professional
-   - Calibrate explanation depth throughout
-2. **Purpose & Application** — What does this board do?
-   - Example: "WiFi environmental sensor, battery-powered, 50x30mm enclosure"
-3. **Features & Interfaces** — What external connections/sensors?
-   - Example: "USB for charging, I2C for sensor, WiFi via ESP32"
-4. **Power & Electrical** — Power source and rail requirements
-   - Example: "3.7V LiPo, needs 5V and 3.3V rails, ~500mA total"
+#### 1a. Experience Level
+Question: "What's your EE experience level?"
 
-**Sanity check:** Run a power budget estimate inline using the `ee` skill formulas. If the math doesn't work (e.g., demanding 5A from a USB 2.0 port), flag it and ask the user to revise.
+**Claude Code:** Use AskUserQuestion with options:
+- Beginner (I'm new to circuit design)
+- Intermediate (I've designed 1-2 circuits)
+- Advanced (I've designed 5+ circuits)
+- Professional (I design circuits for a living)
 
-**Summarize before proceeding:**
+**Codex/OpenCode:** Present as numbered list, ask user to select [1-4]
+
+**Reasoning:** Calibrate explanation depth and component complexity throughout the wizard.
+
+#### 1b. Purpose & Application
+Question: "What does this circuit do? (describe the end application)"
+
+Examples:
+- "WiFi environmental sensor, battery-powered, 50x30mm enclosure"
+- "Motor controller for robot arm, wall-powered"
+- "USB audio interface, desktop device"
+
+**All platforms:** Ask as open text input.
+
+#### 1c. Form Factor & Mechanical
+Question: "What are the size and component height constraints?"
+
+Examples:
+- "50×30mm enclosure, max component height 12mm"
+- "Credit-card sized (85×54mm), compact"
+- "No size constraint, but want to fit in existing housing"
+
+**All platforms:** Ask as open text input.
+
+#### 1d. Power Source & Rails
+Question: "What power source will you use, and what voltage rails do you need?"
+
+Examples:
+- "3.7V LiPo battery, needs 3.3V@500mA for MCU and 5V@100mA for USB"
+- "5V USB, only needs 3.3V rail"
+- "12V wall supply, needs 5V and 3.3V"
+
+**All platforms:** Ask as open text input.
+
+#### 1e. Interfaces & Sensors
+Question: "What interfaces and sensors does your circuit need?"
+
+Examples:
+- "USB charging, I2C for BME280 sensor, WiFi via ESP32"
+- "SPI for SD card, UART for debug, GPIO for button/LED"
+- "CAN bus, no sensors"
+
+**All platforms:** Ask as open text input.
+
+#### 1f. Confirm & Summarize
+Compile the answers and present a summary:
+
 ```
 === Requirements Summary ===
 
-Device:        WiFi Environmental Sensor (battery-powered)
-Enclosure:     50x30mm (SMD components only, <10mm height)
-Power source:  3.7V LiPo (500mAh nominal)
-Output rails:  5V @ 1A, 3.3V @ 0.5A
-Interfaces:    USB (charging), I2C (sensor)
-Sensors:       Temperature + humidity + pressure
-MCU:           WiFi capable (e.g., ESP32)
-
-Power budget:  1.5A avg draw @ 3.7V → needs efficient boost + buck
-Estimated BOM: 4-5 ICs (boost, buck, MCU, sensor, maybe charger)
+Application:    WiFi Environmental Sensor
+Form Factor:    50×30mm enclosure, SMD only, <12mm component height
+Power Source:   3.7V LiPo battery (500mAh nominal)
+Output Rails:   3.3V @ 500mA (MCU), 5V @ 100mA (USB charging circuit)
+Interfaces:     USB for charging, I2C for sensor (BME280)
+Experience:     Intermediate
 ```
 
-Ask: **"Does this look right? Any changes?"**
+Question: "Does this look right? Any changes?"
 
-### Step 2 — IC Research & Selection (Hybrid Query Strategy)
+**Claude Code / Codex / OpenCode:** Use yes/no question
+**All platforms:** Accept "yes", "no", or redirection to specific field
 
-**Phase 2a — Project Context** (one broad query)
+If user wants to change something, loop back to the relevant question.
 
-Run the research-analyst agent with a single project-level query to understand design context:
+### Step 2 — Project Folder Setup
+
+Create a folder structure and initialize the design:
 
 ```bash
-/research "Design a [user's application description with form factor, power constraints, interfaces].
-  Find similar existing products, reference designs, and IC families commonly used in [application category].
-  Return: 1-2 comparable designs, key IC families, typical topologies, power budgets."
+mkdir -p "${PROJECT_NAME}"
+cd "${PROJECT_NAME}"
 ```
 
-This grounds subsequent searches in project reality.
+Store the requirements temporarily (you'll pass them to Step 3).
 
-**Phase 2b — Targeted Function Queries** (parallel sub-queries)
+### Step 3 — IC Research & Selection
 
-Once you understand the design space, run **3-4 parallel targeted queries** for each functional block:
+Run `/research` agent with structured queries.
 
-```bash
-# These run in parallel:
-/research "Boost converter: [user's input voltage] to [output voltage] @ [current].
-  Find common ICs used in [application]. Return: 3 options with MPN, LCSC cost, typical application circuit."
+#### Phase 3a — Project Context
+Single broad query to understand the design space:
 
-/research "MCU for [specific features: WiFi, BLE, audio processing, etc.]. 
-  Find suitable processors with [required interfaces]. Return: 3 options with MPN, LCSC cost, peripheral support."
-
-/research "Audio codec and speaker driver for battery-powered [application].
-  Find low-power solutions. Return: 3 options with MPN, LCSC cost, power consumption."
-
-/research "Sensor/interface: [specific sensor type or interface bus].
-  Find components suitable for [application]. Return: 3 options with MPN, LCSC cost, pins/packages."
+```
+/research "Design a [application description]. 
+  Constraints: [form factor], [power source], [interfaces].
+  Find 1-2 existing reference designs, key IC families (MCU, power conversion, sensors), 
+  typical topologies, and estimated BOM size."
 ```
 
-Each narrow query (5-10 sec) is faster than one mega-query (15-60 sec).
+This grounds subsequent searches in reality.
 
-**Phase 2c — Merge & Present**
+#### Phase 3b — Targeted Function Queries
+For each major functional block, run targeted research in parallel:
 
-Consolidate findings from all queries:
-- Project context from 2a guides IC selection
-- Specific recommendations from 2b (no duplication)
-- Display as unified table with cross-references to project context
+Based on application type, run 3-5 of these (adapt to your design):
 
-**User confirmation:**
-
-Display research findings:
 ```
-=== IC Research Results ===
+/research "MCU for [interfaces: WiFi, BLE, Ethernet, etc.], 
+  [power constraint: battery, low-power, high-performance].
+  Return: Top 3 options with MPN, LCSC cost, key specs (flash, RAM, peripherals)."
 
-Boost Converter (3.7V → 5V @ 1A):
-  [1] TPS61230A (most common, $2.50)
-  [2] MT3608   (budget option, $1.00)
-  [3] LTC3105  (low-dropout, $4.20)
+/research "Power conversion: [input voltage] to [output voltage, current].
+  Application: [battery/USB/wall-powered, form factor constraints].
+  Return: Top 3 IC options (topology, MPN, LCSC cost, efficiency), required passives."
 
-Buck Converter (5V → 3.3V @ 0.5A):
-  [1] AP62300  (recommended, $1.20)
-  [2] LM3671   (lower noise, $2.80)
+/research "[Sensor type: environmental, motion, audio, etc.] for [application].
+  Interface: [I2C/SPI/analog], power constraint: [mA budget].
+  Return: Top 3 sensors with MPN, LCSC cost, typical application circuit."
 
-MCU (WiFi, 4MB flash):
-  [1] ESP32-WROOM-32E (widely used, $5.80)
-  [2] ESP32-S3        (newer, better performance, $6.50)
+/research "Connector/interface: [USB/Barrel Jack/JST-PH/etc.] for [application].
+  Return: Recommended part with MPN, LCSC cost, pin assignment, typical footprint."
+```
 
-Sensor (I2C, temp/humidity/pressure):
-  [1] BME280 (very common, $2.15)
-  [2] BME680 (gas sensor too, $3.50)
+Run these in parallel (spawn multiple `/research` calls).
 
-Charger (LiPo, optional):
+#### Phase 3c — Present & Confirm
+Consolidate findings into a table:
+
+```
+=== IC Selection Results ===
+
+MCU (WiFi, 4MB flash, 500mA):
+  [1] ESP32-S3-WROOM-1 (most common, $5.80)
+  [2] ESP32-C3 (smaller, $3.50)
+
+Power Conversion (3.7V → 3.3V @ 500mA):
+  [1] TPS62300 (buck, 95% eff, $1.20)
+  [2] LDO (simpler, lower noise, $0.50)
+
+Sensor (I2C, temp+humidity+pressure):
+  [1] BME280 (standard, $2.15)
+  [2] BME680 (with gas, $3.50)
+
+Charging Circuit (LiPo, USB 5V input):
   [1] TP5000 (simple, $1.80)
-  [2] BQ24075 (more features, $3.50)
+  [2] BQ24075 (feature-rich, $3.50)
 ```
 
-Ask: **"Do these IC choices look good? Any you'd like to swap?"**
+**Claude Code / Codex / OpenCode:**
+"Do these IC selections look good? Want to swap any?"
 
-If user wants to change any, re-run research for that block and re-confirm.
+### Step 4 — Generate Design Spec
 
-### Step 3 — Passive Generation & BOM Assembly
+Call Python to scaffold the design YAML with the selected ICs:
 
-Once ICs are locked:
+```bash
+python -m circuit_weaver scaffold \
+  --name "${PROJECT_NAME}" \
+  --mcu "${SELECTED_MCU_MPN}" \
+  --power-converter "${SELECTED_POWER_TOPOLOGY}" \
+  --output "${PROJECT_NAME}/design.yaml"
+```
 
-1. **Collect IC datasheets** — Extract from research findings
-2. **Generate passives** — For each IC, calculate:
-   - Input/output bulk caps (aluminum or ceramic, voltage rating, ESR)
-   - Decoupling caps (100nF per VCC pin + 10µF mid-range)
-   - Feedback divider resistors (voltage dividers for buck/boost feedback)
-   - RC/LC filters (input/output EMI filters, crystal load caps)
-   - Current-sense resistors (if any)
-3. **Build initial BOM** — Combine ICs + passives
-4. **Search LCSC for all parts** — Get live pricing and stock
+Example:
+```bash
+python -m circuit_weaver scaffold \
+  --name "WiFi_Sensor_v1" \
+  --mcu "ESP32-S3-WROOM-1-N16R8" \
+  --power-converter "buck:TPS62300" \
+  --output "WiFi_Sensor_v1/design.yaml"
+```
+
+**Output:** `design.yaml` with ICs, passives, and block structure.
+
+### Step 5 — Validate Design
+
+Run validation to catch errors before generation:
+
+```bash
+python -m circuit_weaver validate "${PROJECT_NAME}/design.yaml"
+```
+
+If validation passes:
+```
+[PASS] Design validated successfully.
+  - Electrical checks: OK
+  - Power domain consistency: OK
+  - Decoupling coverage: OK
+```
+
+If validation fails, display errors and ask user to refine the spec.
+
+### Step 6 — Generate Artifacts
+
+Generate the schematic and placement files:
+
+```bash
+python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
+  --output "${PROJECT_NAME}/output"
+```
+
+**Output files:**
+- `${PROJECT_NAME}/output/main.kicad_sch` — Schematic, ready to open in KiCad
+- `${PROJECT_NAME}/output/main_placement.kicad_pcb` — PCB placement hints
+- `${PROJECT_NAME}/output/main_report.md` — Design analysis and power budget
+
+### Step 7 — Design Review & Next Steps
 
 Display:
+
 ```
-=== Generated BOM ===
+=== Design Complete ===
 
-Reference | MPN              | Value         | Package  | LCSC       | Cost
-----------|------------------|---------------|----------|------------|--------
-U1        | TPS61230A        | Boost Conv.   | SOT-23-6 | C406093    | $2.50
-U2        | AP62300          | Buck Conv.    | SOT-23-6 | C460320    | $1.20
-U3        | ESP32-WROOM-32E  | WiFi MCU      | SMD-30   | C529676    | $5.80
-U4        | BME280           | Sensor        | LGA-8    | C91305     | $2.15
-C1-C8     | Passives (caps)  | Various       | 0402-1206| Various    | $0.60
-R1-R8     | Passives (R)     | Various       | 0402     | Various    | $0.15
-          |                  |               |          | TOTAL:     | $12.40
-```
-
-Ask: **"BOM looks good? Want to add/remove anything before we generate the schematic?"**
-
-### Step 4 — Schematic Generation & Validation
-
-Run the circuit-weaver CLI subcommands:
-
-```bash
-# Validate the design spec
-circuit-weaver validate design.yaml
-
-# Generate schematic, BOM, placement files, and design report
-circuit-weaver generate design.yaml --output ./output
-```
-
-Display results from validation:
-```
-=== Validation Report ===
-
-Structural checks:      PASS
-Electrical checks:      PASS
-  [✓] Power domain consistency (3 domains: VBAT, VBUS_5V, VDD_3P3)
-  [✓] Decoupling coverage (all ICs have 100nF + bulk caps)
-  [✓] Net connectivity (16 nets, no floating pins)
-  [✓] Component ratings (voltage/current within safe limits)
-  [✓] Feedback dividers (buck/boost feedback verified)
-  [✓] Filter cutoff frequencies (input/output EMI filters OK)
-  [✓] Crystal load caps (if applicable)
-  [✓] Inductor selection (saturation current sufficient)
-
-Implementation checks:   PASS
-Presentation checks:    PASS
-
-Overall: PASS (ready for schematic generation)
-```
-
-Display generated files:
-```
-=== Generated Artifacts ===
-
-Schematic:
-  ✓ output/main.kicad_sch (73 KB, 4 ICs + 16 passives, 16 nets)
-  ✓ KiCad-native format, ready to open in KiCad GUI
-
-PCB Placement:
-  ✓ output/WiFi_Sensor_v1_placement.kicad_pcb (footprints with hints)
-
-Design Documentation:
-  ✓ output/WiFi_Sensor_v1_report.md (design analysis, power budget, DFM notes)
-  ✓ output/design_ir.json (internal representation)
-  ✓ output/canonical_spec.yaml (final design definition)
-```
-
-### Step 5 — Design Review Checkpoint
-
-Parse the generated design report and present:
-```
-=== Design Review Checkpoint ===
-
-Schematic generated: 4 ICs + 16 passive components
-Nets: 16 unique signal/power networks
-Power budget: 1.5A @ 3.7V → 3.9W average load
-
-Warnings to review:
-  [!] UART0_RX/TX on ESP32 are unconnected (OK for WiFi-only, but flag for user review)
-  [!] I2C pull-ups on BME280 should be on parent board if shared bus
+Schematic:    ${PROJECT_NAME}/output/main.kicad_sch
+Placement:    ${PROJECT_NAME}/output/main_placement.kicad_pcb
+Report:       ${PROJECT_NAME}/output/main_report.md
 
 Next steps:
-  1. Open output/main.kicad_sch in KiCad to review layout
-  2. Add connectors, test points, mechanical holes
-  3. Run KiCad DRC/ERC
-  4. Generate gerbers and send to JLCPCB
+  1. Open main.kicad_sch in KiCad to review the layout
+  2. Add connectors, test points, and mechanical holes
+  3. Run KiCad DRC/ERC checks
+  4. Design the PCB layout
+  5. Export gerbers and order from JLCPCB or similar
 ```
 
-Ask: **"Does the design look correct? Any changes needed?"**
+Question: "Want to export a BOM for ordering, or make any changes?"
 
-If yes: ask what to change, loop back to Step 3.
-If no: proceed to Step 6.
-
-### Step 6 — PCB Layout Guidance & Export
-
-Display:
-```
-=== PCB Layout Guidance ===
-
-Board size: Recommend 60x40mm (fits your 50x30mm enclosure with margin)
-Layers: 2-layer sufficient (single-sided with via stitching)
-Component placement hints:
-  - Boost converter (U1) near input (LiPo connector)
-  - Buck converter (U2) near boost output
-  - MCU (U3) center with decoupling caps nearby
-  - Sensor (U4) on opposite edge (for airflow)
-  - Power planes recommended (5V and 3.3V)
-
-Manufacturing:
-  - SMD assembly ready (all 0402-1206 passives, no fine-pitch BGA)
-  - No thermal vias required for your power levels
-  - JLCPCB-compatible (basic parts only)
-
-Files ready to order:
-  ✓ Design spec: design.yaml
-  ✓ Schematic: output/main.kicad_sch
-  ✓ Placement hints: output/WiFi_Sensor_v1_placement.kicad_pcb
-  ✓ Design report: output/WiFi_Sensor_v1_report.md
-```
-
-Ask: **"Want to export manufacturing files (BOM + CPL for JLCPCB)?"**
-
-If yes, run:
-```bash
-circuit-weaver export-jlcpcb design.yaml --output ./jlcpcb_export
-```
-
-This generates:
-- `jlcpcb_export/bom_jlcpcb.csv` — LCSC part numbers for ordering
-- `jlcpcb_export/cpl_jlcpcb.csv` — Placement file for pick-and-place
-- `jlcpcb_export/README.txt` — Upload instructions for JLCPCB
+**Claude Code / Codex / OpenCode:** Present choices:
+- Export BOM & CPL for assembly
+- Make changes to the design (return to Step 3)
+- Done (exit)
 
 ---
 
 ## Workflow: Existing Design
 
-### Load & Route
+### Route to Existing Design
 
-Ask: **"Path to your design directory?"**
+Question: "Path to your design directory?"
 
-User provides path (e.g., `./my_wifi_sensor` or `~/projects/sensor_board/design`).
+**Claude Code / Codex / OpenCode:** Ask for text input (path to folder with `design.yaml`)
 
-Validate it contains `design.yaml`. Load it.
+Validate the path and load `design.yaml`.
 
-Display:
+### Display Current State
+
+```bash
+python -m circuit_weaver log-status "${DESIGN_PATH}"
 ```
-=== Loaded Design ===
 
-Project:  WiFi_Sensor_v1
-Modified: 2026-04-05
-ICs:      4 (TPS61230A, AP62300, ESP32-WROOM-32E, BME280)
-Status:   Schematic generated, ready for PCB layout
+Shows:
+```
+=== Design Status ===
 
+Project:      WiFi_Sensor_v1
+ICs:          4 (ESP32-S3, TPS62300, BME280, TP5000)
+Status:       Schematic generated, ready for PCB layout
+
+Last operation:   Generate artifacts (2026-04-07, 18:30)
+Next action:      Design PCB layout in KiCad
+```
+
+### Offer Actions
+
+**Claude Code / Codex / OpenCode:** Use AskUserQuestion / numbered options:
+
+```
 What would you like to do?
   [1] Validate design (check electrical rules)
-  [2] Regenerate schematic (after making edits to design.yaml)
-  [3] Review design report
-  [4] Export manufacturing files (BOM + CPL)
-  [5] Make design changes (IC swap, add/remove component, etc.)
-  [6] Export gerbers (requires PCB file)
+  [2] Regenerate schematic (after making edits)
+  [3] View design report
+  [4] Export BOM & CPL for ordering
+  [5] Make changes to the design
+  [6] Exit
 ```
 
-Route based on user's choice.
+Route based on selection:
+- **[1] Validate** → Run `validate` command
+- **[2] Regenerate** → Run `generate` command
+- **[3] Report** → Show `main_report.md`
+- **[4] Export** → Run `export-jlcpcb` command
+- **[5] Changes** → Return to Step 1 (requirements capture for edits)
+- **[6] Exit** → End the skill
 
 ---
 
-## Architecture: Skill vs CLI
+## Implementation Notes
 
-This design separates two paths:
+### For Claude Code
+The skill should emit AskUserQuestion tool calls during its response. Claude Code's TUI will render buttons/checkboxes, and the response comes back as the tool result.
 
-### `/circuit-weaver` Skill (Claude Code, Codex, OpenCode users)
-- **Triggers when:** user says "design a circuit", `/circuit-weaver`, etc.
-- **What it does:**
-  1. Routes new vs existing design
-  2. Runs interactive Q&A (steps 0-1)
-  3. Spawns research-analyst agent (uses Perplexity Sonar API)
-  4. Calls CLI subcommands: `circuit-weaver validate`, `circuit-weaver generate`, etc.
-  5. Displays results + next steps
-- **User experience:** Guided, mostly automatic, agent-driven IC research
+### For Codex/OpenCode
+Use conversational prompting with numbered options. The AI language model handles the input, and the user types their selection naturally.
 
-### `circuit-weaver` CLI Wizard (Python CLI, standalone users)
-When user runs:
+### For CLI Users
+They run:
 ```bash
-circuit-weaver design-wizard
+python -m circuit_weaver design-wizard
 ```
+This directly invokes the interactive wizard with `input()` prompts. No skill involved.
 
-The Python CLI should:
-1. Launch interactive wizard (same steps as skill)
-2. Handle all Q&A locally (no agent calls)
-3. Call internal functions from `mvp.py` (not subcommands)
-4. Generate outputs without spawning external agents
-5. Allow offline use (for environments without Perplexity API)
+### Python Subcommands
+All Python operations accept **command-line arguments only**, no interactive prompts:
+- `scaffold --name X --mcu Y --power-converter Z --output design.yaml`
+- `validate design.yaml`
+- `generate design.yaml --output ./out`
+- `export-jlcpcb design.yaml --output ./export`
+- `log-status project_dir`
 
-**Key difference:** Skill is agent-rich (research-driven), CLI is self-contained (no external APIs).
-
-The **design_wizard** skill remains a fallback for manual step-by-step guidance if the user wants more control or offline operation.
-
----
-
-## Files Generated
-
-All files go in `./output/` and `./jlcpcb_export/`:
-
-| File | Purpose |
-|------|---------|
-| `design.yaml` | Canonical circuit spec (YAML) |
-| `design_ir.json` | Internal design representation (JSON) |
-| `main.kicad_sch` | KiCad schematic (ready to open in KiCad GUI) |
-| `main_report.md` | Design analysis report (features, power budget, DFM notes) |
-| `main_placement.kicad_pcb` | PCB template with placement hints |
-| `jlcpcb_export/bom_jlcpcb.csv` | BOM for JLCPCB (LCSC part numbers) |
-| `jlcpcb_export/cpl_jlcpcb.csv` | Placement file for pick-and-place |
-
----
-
-## Implementation Status
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| CLI subcommands | ✅ Done | `validate`, `generate`, `export-jlcpcb`, etc. in `mvp.py` |
-| Passive generation | ✅ Done | Implemented in subcircuits (boost, buck, etc.) |
-| Research-analyst agent | ✅ Done | Uses Perplexity Sonar API via `PERPLEXITY_API_KEY` env var |
-| `/circuit-weaver` skill | 🔨 TODO | Routes new/existing, orchestrates CLI calls |
-| CLI wizard mode | 🔨 TODO | `circuit-weaver design-wizard` interactive workflow |
-| Research integration | 🔨 TODO | Skill spawns research agent after Step 1 |
+This ensures the skill can call them without dealing with subprocess stdin/stdout complexity.
 
 ---
 
 ## Related Skills
 
-- **design_wizard** — Detailed step-by-step guidance (manual control)
-- **research-analyst** — EE research agent (IC selection, reference designs)
-  - Uses Perplexity Sonar API (env var: `PERPLEXITY_API_KEY`)
-  - Access: `~/.claude/agents/research-analyst.md`
-- **ee** — Electrical engineering formulas (power budget, filter design)
+- **design_wizard** — Offline wizard variant (no research, no IC selection)
+- **research-analyst** — IC and design research agent
+- **ee** — Electrical engineering formulas and analysis
 - **bom** — BOM management and sourcing
-- **jlcpcb** — Manufacturing file export and quoting
 - **kicad** — Schematic and PCB analysis
-
+- **jlcpcb** — Manufacturing and ordering

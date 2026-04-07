@@ -35,7 +35,6 @@ from .design_ir import (
 )
 from .design_logger import DesignLogger
 from .generator import generate_from_components
-from .interactive_prompts import ask_form_section, ask_text, detect_platform
 from .project_spec import _parse_yaml, _simple_yaml_parse, resolve_project_spec
 from .subcircuits.base import BoundaryPort, get_default_registry
 from .validator import run_validation_checks
@@ -3052,10 +3051,8 @@ def _run_design_wizard(
 ) -> tuple[dict[str, Any] | None, DesignLogger | None]:
     """Interactive offline design wizard — capture requirements, scaffold spec (no hardcoded options).
 
-    Uses platform-aware interactive UI:
-    - Claude Code: clickable options (AskUserQuestion)
-    - Codex/OpenCode: conversational prompting
-    - CLI: terminal UI with arrow keys (questionary)
+    For interactive UI with buttons/checkboxes, use the /circuit-weaver skill in Claude Code.
+    This CLI mode uses plain input() for terminal compatibility.
 
     Args:
         project_dir: Directory to write design.log to
@@ -3068,95 +3065,62 @@ def _run_design_wizard(
     project_dir.mkdir(parents=True, exist_ok=True)
     logger = DesignLogger(project_dir)
 
-    platform = detect_platform()
-
     print("\n" + "=" * 80)
-    print("Circuit Weaver Design Wizard (Interactive Form)")
+    print("Circuit Weaver Design Wizard")
     print("=" * 80)
-    print(f"\n[Platform: {platform}]")
-    print("I'll scaffold a design spec from your requirements.")
-    print("Fill in each section below. Press Enter to skip (use defaults).\n")
+    print("\nI'll scaffold a design spec from your requirements.")
+    print("Press Enter to use defaults.\n")
 
     # Use provided project name or ask for it
     if project_name_override:
         project_name = project_name_override
-        print(f"[OK] Project: {project_name}\n")
+        print(f"Project: {project_name}\n")
     else:
-        project_name = ask_text("Project name", default="MyDesign_v1")
+        project_name = input("Project name [MyDesign_v1]: ").strip()
+        if not project_name:
+            project_name = "MyDesign_v1"
 
     # ===== BASIC SECTION =====
-    basic_answers = ask_form_section(
-        "SECTION 1: BASIC INFO",
-        [
-            {
-                "name": "purpose",
-                "question": "What is the purpose of this circuit?",
-                "type": "text",
-                "default": "Custom circuit",
-            },
-        ],
-    )
-    purpose = basic_answers.get("purpose", "Custom circuit")
+    print("\n" + "-" * 80)
+    print("SECTION 1: BASIC INFO")
+    print("-" * 80)
+    purpose = input("Purpose (e.g., WiFi sensor, motor controller) [Custom circuit]: ").strip()
+    if not purpose:
+        purpose = "Custom circuit"
 
     logger.log_step(1, "Requirements captured - basic info", {"project_name": project_name, "purpose": purpose})
 
     # ===== POWER SECTION =====
-    power_answers = ask_form_section(
-        "SECTION 2: POWER SUPPLY",
-        [
-            {
-                "name": "input_power",
-                "question": "Input power source",
-                "type": "text",
-                "default": "3.3V",
-            },
-            {
-                "name": "output_rails",
-                "question": "Output rails (e.g., '3.3V, 500mA; 5V, 100mA')",
-                "type": "text",
-                "default": "3.3V, 500mA",
-            },
-        ],
-    )
-    input_power = power_answers.get("input_power", "3.3V")
-    output_rails = power_answers.get("output_rails", "3.3V, 500mA")
+    print("\n" + "-" * 80)
+    print("SECTION 2: POWER SUPPLY")
+    print("-" * 80)
+    input_power = input("Input power source (e.g., 3.7V LiPo, 5V USB) [3.3V]: ").strip()
+    if not input_power:
+        input_power = "3.3V"
+
+    output_rails = input("Output rails (e.g., 3.3V, 500mA; 5V, 100mA) [3.3V, 500mA]: ").strip()
+    if not output_rails:
+        output_rails = "3.3V, 500mA"
 
     logger.log_step(2, "Power supply requirements captured", {"input_power": input_power, "output_rails": output_rails})
 
     # ===== COMPONENTS SECTION =====
-    component_answers = ask_form_section(
-        "SECTION 3: COMPONENTS & INTERFACES",
-        [
-            {
-                "name": "interfaces",
-                "question": "Interfaces (I2C, SPI, UART, USB, WiFi, etc.)",
-                "type": "text",
-                "default": "I2C, UART",
-            },
-            {
-                "name": "mcu",
-                "question": "Main processor/MCU (or 'none' if passive circuit)",
-                "type": "text",
-                "default": "to be selected",
-            },
-            {
-                "name": "components",
-                "question": "Key components (comma-separated)",
-                "type": "text",
-                "default": "to be added",
-            },
-            {
-                "name": "special_reqs",
-                "question": "Special requirements (low power, high speed, analog, RF, etc.)",
-                "type": "text",
-                "default": "",
-            },
-        ],
-    )
-    interfaces = component_answers.get("interfaces", "I2C, UART")
-    mcu = component_answers.get("mcu", "to be selected")
-    components = component_answers.get("components", "to be added")
-    special_reqs = component_answers.get("special_reqs", "")
+    print("\n" + "-" * 80)
+    print("SECTION 3: COMPONENTS & INTERFACES")
+    print("-" * 80)
+    interfaces = input("Interfaces (I2C, SPI, UART, USB, WiFi, etc.) [I2C, UART]: ").strip()
+    if not interfaces:
+        interfaces = "I2C, UART"
+
+    mcu = input("Main processor/MCU (e.g., ESP32, STM32L0) [to be selected]: ").strip()
+    if not mcu:
+        mcu = "to be selected"
+
+    components = input("Key components (comma-separated) [to be added]: ").strip()
+    if not components:
+        components = "to be added"
+
+    special_reqs = input("Special requirements (e.g., low power, high speed) []: ").strip()
 
     logger.log_step(
         3,
