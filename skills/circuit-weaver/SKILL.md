@@ -45,11 +45,32 @@ Based on choice:
 - **[1] New design** → Proceed to Step 1
 - **[2] Existing design** → Jump to "Workflow: Existing Design" section
 
-### Step 1 — Requirements Capture
+### Step 1 — Project Setup & Folder Creation
 
-Collect requirements through a structured conversation. Ask these questions in order:
+**This step must happen FIRST, before any other questions.**
 
-#### 1a. Experience Level
+#### 1a. Project Name (REQUIRED FIRST)
+
+Question: "What's the name of your project?"
+
+Examples:
+- "WiFi_Sensor_v1"
+- "Motor_Controller_2024"
+- "USB_Audio_Interface"
+
+**All platforms:** Ask as open text input.
+
+**Action:** 
+1. Take the project name
+2. Create folder: `${PROJECT_NAME}/`
+3. Create logfile: `${PROJECT_NAME}/design.log`
+4. Log: `[Step 1] Project created: {project_name}`
+5. Print to user: `✓ Project folder and logfile created`
+
+Continue immediately to Step 1b once folder + log are created.
+
+#### 1b. Experience Level
+
 Question: "What's your EE experience level?"
 
 **Claude Code:** Use AskUserQuestion with options:
@@ -62,7 +83,10 @@ Question: "What's your EE experience level?"
 
 **Reasoning:** Calibrate explanation depth and component complexity throughout the wizard.
 
-#### 1b. Purpose & Application
+**Log:** `[Step 1b] Experience level: {selected_level}`
+
+#### 1c. Purpose & Application
+
 Question: "What does this circuit do? (describe the end application)"
 
 Examples:
@@ -72,7 +96,10 @@ Examples:
 
 **All platforms:** Ask as open text input.
 
-#### 1c. Form Factor & Mechanical
+**Log:** `[Step 1c] Purpose: {user_input}`
+
+#### 1d. Form Factor & Mechanical
+
 Question: "What are the size and component height constraints?"
 
 Examples:
@@ -82,7 +109,10 @@ Examples:
 
 **All platforms:** Ask as open text input.
 
-#### 1d. Power Source & Rails
+**Log:** `[Step 1d] Form factor: {user_input}`
+
+#### 1e. Power Source & Rails
+
 Question: "What power source will you use, and what voltage rails do you need?"
 
 Examples:
@@ -92,7 +122,10 @@ Examples:
 
 **All platforms:** Ask as open text input.
 
-#### 1e. Interfaces & Sensors
+**Log:** `[Step 1e] Power rails: {user_input}`
+
+#### 1f. Interfaces & Sensors
+
 Question: "What interfaces and sensors does your circuit need?"
 
 Examples:
@@ -102,18 +135,22 @@ Examples:
 
 **All platforms:** Ask as open text input.
 
-#### 1f. Confirm & Summarize
+**Log:** `[Step 1f] Interfaces: {user_input}`
+
+#### 1g. Confirm & Summarize
+
 Compile the answers and present a summary:
 
 ```
 === Requirements Summary ===
 
+Project:        {project_name}
 Application:    WiFi Environmental Sensor
+Experience:     Intermediate
 Form Factor:    50×30mm enclosure, SMD only, <12mm component height
 Power Source:   3.7V LiPo battery (500mAh nominal)
 Output Rails:   3.3V @ 500mA (MCU), 5V @ 100mA (USB charging circuit)
 Interfaces:     USB for charging, I2C for sensor (BME280)
-Experience:     Intermediate
 ```
 
 Question: "Does this look right? Any changes?"
@@ -123,22 +160,14 @@ Question: "Does this look right? Any changes?"
 
 If user wants to change something, loop back to the relevant question.
 
-### Step 2 — Project Folder Setup
+**Log:** `[Step 1g] Requirements confirmed. Ready for IC research.`
 
-Create a folder structure and initialize the design:
+### Step 2 — IC Research & Selection
 
-```bash
-mkdir -p "${PROJECT_NAME}"
-cd "${PROJECT_NAME}"
-```
+Run `/research` agent with structured queries. **Log all research queries and results to design.log.**
 
-Store the requirements temporarily (you'll pass them to Step 3).
+#### Phase 2a — Project Context
 
-### Step 3 — IC Research & Selection
-
-Run `/research` agent with structured queries.
-
-#### Phase 3a — Project Context
 Single broad query to understand the design space:
 
 ```
@@ -150,7 +179,10 @@ Single broad query to understand the design space:
 
 This grounds subsequent searches in reality.
 
-#### Phase 3b — Targeted Function Queries
+**Log:** `[Step 2a] Started IC research for {application} | Query logged`
+
+#### Phase 2b — Targeted Function Queries
+
 For each major functional block, run targeted research in parallel:
 
 Based on application type, run 3-5 of these (adapt to your design):
@@ -174,7 +206,10 @@ Based on application type, run 3-5 of these (adapt to your design):
 
 Run these in parallel (spawn multiple `/research` calls).
 
-#### Phase 3c — Present & Confirm
+**Log:** `[Step 2b] Targeted research queries:` [list each query]
+
+#### Phase 2c — Present & Confirm
+
 Consolidate findings into a table:
 
 ```
@@ -200,7 +235,9 @@ Charging Circuit (LiPo, USB 5V input):
 **Claude Code / Codex / OpenCode:**
 "Do these IC selections look good? Want to swap any?"
 
-### Step 4 — Generate Design Spec
+**Log:** `[Step 2c] IC selections confirmed: {selected_ics_list}`
+
+### Step 3 — Generate Design Spec
 
 Call Python to scaffold the design YAML with the selected ICs:
 
@@ -223,7 +260,9 @@ python -m circuit_weaver scaffold \
 
 **Output:** `design.yaml` with ICs, passives, and block structure.
 
-### Step 5 — Validate Design
+**Log:** `[Step 3] Design spec generated: design.yaml`
+
+### Step 4 — Validate Design
 
 Run validation to catch errors before generation:
 
@@ -241,7 +280,9 @@ If validation passes:
 
 If validation fails, display errors and ask user to refine the spec.
 
-### Step 6 — Generate Artifacts
+**Log:** `[Step 4] Validation: {PASS|FAIL}. Errors: {error_list if any}`
+
+### Step 5 — Generate Artifacts
 
 Generate the schematic and placement files:
 
@@ -255,13 +296,17 @@ python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
 - `${PROJECT_NAME}/output/main_placement.kicad_pcb` — PCB placement hints
 - `${PROJECT_NAME}/output/main_report.md` — Design analysis and power budget
 
-### Step 7 — Design Review & Next Steps
+**Log:** `[Step 5] Artifacts generated in output/`
+
+### Step 6 — Design Review & Next Steps
 
 Display:
 
 ```
 === Design Complete ===
 
+Project:      ${PROJECT_NAME}
+Logfile:      ${PROJECT_NAME}/design.log
 Schematic:    ${PROJECT_NAME}/output/main.kicad_sch
 Placement:    ${PROJECT_NAME}/output/main_placement.kicad_pcb
 Report:       ${PROJECT_NAME}/output/main_report.md
@@ -278,8 +323,10 @@ Question: "Want to export a BOM for ordering, or make any changes?"
 
 **Claude Code / Codex / OpenCode:** Present choices:
 - Export BOM & CPL for assembly
-- Make changes to the design (return to Step 3)
+- Make changes to the design (return to Step 2)
 - Done (exit)
+
+**Log:** `[Step 6] Design review complete. User choice: {export|edit|done}`
 
 ---
 
@@ -337,26 +384,55 @@ Route based on selection:
 
 ## Implementation Notes
 
+### Project Logging (ALL PLATFORMS)
+
+**Critical:** Project folder + design.log must be created **immediately** after user enters project name (Step 1a), BEFORE any other questions.
+
+```bash
+# Step 1a action:
+mkdir -p "${PROJECT_NAME}"
+touch "${PROJECT_NAME}/design.log"
+# Log: [Step 1a] Project created: ${PROJECT_NAME}
+```
+
+Subsequent steps must write logs like:
+```
+[Step 1b] Experience level: Intermediate
+[Step 1c] Purpose: WiFi environmental sensor
+[Step 2a] Started IC research for WiFi environmental sensor
+[Step 2c] IC selections confirmed: [ESP32-S3, TPS62300, BME280]
+[Step 3] Design spec generated: design.yaml
+[Step 4] Validation: PASS
+[Step 5] Artifacts generated in output/
+[Step 6] Design review complete. User choice: export
+```
+
 ### For Claude Code
-The skill should emit AskUserQuestion tool calls during its response. Claude Code's TUI will render buttons/checkboxes, and the response comes back as the tool result.
+
+The skill emits AskUserQuestion tool calls. Claude Code's TUI renders buttons/checkboxes, responses come back as tool results. **Claude orchestrates project folder creation via instructions in Step 1a**, but the actual folder/log creation happens in Python (mvp.py `_run_design_wizard()` or skill must tell user to run the CLI to create it).
 
 ### For Codex/OpenCode
-Use conversational prompting with numbered options. The AI language model handles the input, and the user types their selection naturally.
+
+Use conversational prompting with numbered options. The AI model handles the input, user types their selection. Same logging behavior as Claude Code.
 
 ### For CLI Users
+
 They run:
 ```bash
 python -m circuit_weaver design-wizard
 ```
-This directly invokes the interactive wizard with `input()` prompts. No skill involved.
+
+This directly invokes `_run_design_wizard()` in Python with `input()` prompts. **The Python function handles folder + log creation immediately after getting project name.**
 
 ### Python Subcommands
+
 All Python operations accept **command-line arguments only**, no interactive prompts:
 - `scaffold --name X --mcu Y --power-converter Z --output design.yaml`
 - `validate design.yaml`
 - `generate design.yaml --output ./out`
 - `export-jlcpcb design.yaml --output ./export`
 - `log-status project_dir`
+- `log-view project_dir` (show recent log entries)
 
 This ensures the skill can call them without dealing with subprocess stdin/stdout complexity.
 

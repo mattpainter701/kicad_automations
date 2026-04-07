@@ -3071,7 +3071,11 @@ def _run_design_wizard(
     print("\nI'll scaffold a design spec from your requirements.")
     print("Press Enter to use defaults.\n")
 
-    # Use provided project name or ask for it
+    # ===== STEP 1a: PROJECT NAME (FIRST - creates folder + log immediately) =====
+    print("-" * 80)
+    print("STEP 1a: PROJECT NAME")
+    print("-" * 80)
+
     if project_name_override:
         project_name = project_name_override
         print(f"Project: {project_name}\n")
@@ -3080,19 +3084,48 @@ def _run_design_wizard(
         if not project_name:
             project_name = "MyDesign_v1"
 
-    # ===== BASIC SECTION =====
-    print("\n" + "-" * 80)
-    print("SECTION 1: BASIC INFO")
+    # Create project folder + initialize logger IMMEDIATELY
+    project_dir = Path(project_name)
+    project_dir.mkdir(parents=True, exist_ok=True)
+    logger = DesignLogger(project_dir)  # Re-initialize with actual project dir
+
+    print(f"✓ Project folder created: {project_dir.resolve()}")
+    print(f"✓ Logfile created: {project_dir / 'design.log'}\n")
+    logger.log_step(1, "Project created", {"project_name": project_name})
+
+    # ===== STEP 1b: BASIC INFO =====
+    print("-" * 80)
+    print("STEP 1b: BASIC INFO")
     print("-" * 80)
     purpose = input("Purpose (e.g., WiFi sensor, motor controller) [Custom circuit]: ").strip()
     if not purpose:
         purpose = "Custom circuit"
 
-    logger.log_step(1, "Requirements captured - basic info", {"project_name": project_name, "purpose": purpose})
+    logger.log_step(2, "Step 1b: Basic info captured", {"purpose": purpose})
 
-    # ===== POWER SECTION =====
+    # ===== STEP 1c: EXPERIENCE LEVEL =====
     print("\n" + "-" * 80)
-    print("SECTION 2: POWER SUPPLY")
+    print("STEP 1c: EXPERIENCE LEVEL")
+    print("-" * 80)
+    experience = input("Experience (Beginner/Intermediate/Advanced/Professional) [Intermediate]: ").strip()
+    if not experience:
+        experience = "Intermediate"
+
+    logger.log_step(3, "Step 1c: Experience level captured", {"experience": experience})
+
+    # ===== STEP 1d: FORM FACTOR =====
+    print("\n" + "-" * 80)
+    print("STEP 1d: FORM FACTOR & MECHANICAL")
+    print("-" * 80)
+    form_factor = input("Size/constraints (e.g., 50x30mm, SMD only) [No constraint]: ").strip()
+    if not form_factor:
+        form_factor = "No constraint"
+
+    logger.log_step(4, "Step 1d: Form factor captured", {"form_factor": form_factor})
+
+    # ===== STEP 1e: POWER SUPPLY =====
+    print("\n" + "-" * 80)
+    print("STEP 1e: POWER SUPPLY")
     print("-" * 80)
     input_power = input("Input power source (e.g., 3.7V LiPo, 5V USB) [3.3V]: ").strip()
     if not input_power:
@@ -3102,11 +3135,13 @@ def _run_design_wizard(
     if not output_rails:
         output_rails = "3.3V, 500mA"
 
-    logger.log_step(2, "Power supply requirements captured", {"input_power": input_power, "output_rails": output_rails})
+    logger.log_step(
+        5, "Step 1e: Power requirements captured", {"input_power": input_power, "output_rails": output_rails}
+    )
 
-    # ===== COMPONENTS SECTION =====
+    # ===== STEP 1f: INTERFACES & SENSORS =====
     print("\n" + "-" * 80)
-    print("SECTION 3: COMPONENTS & INTERFACES")
+    print("STEP 1f: INTERFACES & SENSORS")
     print("-" * 80)
     interfaces = input("Interfaces (I2C, SPI, UART, USB, WiFi, etc.) [I2C, UART]: ").strip()
     if not interfaces:
@@ -3123,8 +3158,8 @@ def _run_design_wizard(
     special_reqs = input("Special requirements (e.g., low power, high speed) []: ").strip()
 
     logger.log_step(
-        3,
-        "Components and interfaces specified",
+        6,
+        "Step 1f: Interfaces & components captured",
         {"interfaces": interfaces, "mcu": mcu, "components": components, "special_reqs": special_reqs},
     )
 
@@ -3162,9 +3197,14 @@ def _run_design_wizard(
     print("[DESIGN SPEC CAPTURED]")
     print("=" * 80)
 
+    print("\nPROJECT")
+    print(f"  Name:       {project_name}")
+    print(f"  Logfile:    {project_dir.resolve() / 'design.log'}")
+
     print("\nBASIC INFO")
-    print(f"  Project:    {project_name}")
     print(f"  Purpose:    {purpose}")
+    print(f"  Experience: {experience}")
+    print(f"  Form Factor:{form_factor}")
 
     print("\nPOWER SUPPLY")
     print(f"  Input:      {input_power}")
@@ -3176,6 +3216,23 @@ def _run_design_wizard(
     print(f"  Components: {components}")
     if special_reqs:
         print(f"  Special:    {special_reqs}")
+
+    logger.log_step(
+        7,
+        "Step 1g: Requirements summary confirmed",
+        {
+            "project_name": project_name,
+            "purpose": purpose,
+            "experience": experience,
+            "form_factor": form_factor,
+            "input_power": input_power,
+            "output_rails": output_rails,
+            "interfaces": interfaces,
+            "mcu": mcu,
+            "components": components,
+            "special_reqs": special_reqs,
+        },
+    )
 
     log_file = project_dir / "design.log"
     print("\n" + "-" * 80)
