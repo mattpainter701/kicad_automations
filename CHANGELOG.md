@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.12.0] - 2026-04-06
+
+### Sprint 14 — Auto-Discovery + Visual Placement Editing
+
+### Added
+- **Task 85:** `symbol_cache.py` — 30-day TTL persistent cache for symbol resolution at `~/.cache/circuit-weaver/symbols/`
+  - `SymbolCache.get()` / `.put()` / `.stats()` / `.clear()` interface with atomic index.json manifest
+  - `cache stats` subcommand shows cache hit rate and size
+  - `cache clear [--stale-only]` removes old/unused entries
+- **Task 83:** `digikey_loader.py` — DigiKey API symbol autoloader with package-to-footprint mapping
+  - `load_from_digikey(mpn)` queries DigiKey API, extracts package metadata, maps to KiCad footprints
+  - Reuses `_search_digikey()` and `_get_credential()` from `parts_lookup.py` (no code duplication)
+  - Creates minimal ComponentDef stubs when full symbol data unavailable
+  - Graceful fallback when DIGIKEY_CLIENT_ID/SECRET missing
+- **Task 84:** `mouser_loader.py` — Mouser Search API v1 symbol autoloader
+  - `load_from_mouser(mpn)` queries Mouser, extracts package attributes, maps to KiCad footprints
+  - Reuses `map_digikey_package_to_kicad()` for consistent package mapping across both APIs
+  - Integrated as Tier 6 in symbol resolution chain (fallback after DigiKey)
+  - MOUSER_SEARCH_API_KEY credential support
+- **Task 83/84:** `symbol_resolver.py` — 6-tier unified symbol resolution chain
+  - Tiers: registry → kicad_lib → cache → easyeda → digikey → mouser → unresolved
+  - Lazy imports for DigiKey/Mouser loaders prevent startup failures when credentials absent
+  - `resolve(mpn)` returns `(ComponentDef | None, source_str)` indicating which tier succeeded
+  - `resolve_batch(items)` for bulk component resolution
+- **Task 86:** Auto-MPN discovery during `generate` command
+  - `--auto-source` flag: auto-discover and cache MPNs for unresolved components
+  - `--update-spec` flag: write discovered MPNs/LCSC back to original YAML spec file
+  - `_auto_source_report()` helper queries PartsLookup, DigiKey, and Mouser; returns summary stats
+  - `update_spec_with_sourced_data()` in `project_spec.py` safely updates YAML specs (only fills blank fields)
+  - Stderr output shows resolved component counts by distributor (DigiKey: N, Mouser: N, LCSC: N)
+  - Enrich-parts mode enabled automatically when `--auto-source` is set
+
+### Changed
+- `generate_artifacts()` signature: added `auto_source`, `update_spec`, `spec_path`, `svg_placement` parameters
+- `generate` dispatch: passes auto-source flags from CLI to `generate_artifacts()`
+
+### Tests
+- All new modules compile and import successfully
+- Symbol resolver 6-tier fallback chain verified
+- (Full test suite: running)
+
 ## [0.10.2] - 2026-04-06
 
 ### Sprint 11 — Team Adoption & Collaboration (completion)

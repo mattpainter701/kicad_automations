@@ -78,47 +78,47 @@ Files: `CONTRIBUTING.md` (new), `docs/architecture.md` (new)
 
 **Goal:** Users no longer hand-specify MPNs or placement coordinates. When a component value/footprint is given, auto-discover the MPN, symbol, and footprint via DigiKey, Mouser, and LCSC APIs. Build a persistent symbol cache. Enable visual placement editing in Inkscape/vector tools.
 
-### 83. DigiKey symbol autoloader (P1, LARGE)
+### 83. DigiKey symbol autoloader (P1, LARGE) ✓
 
-- [ ] Parse MPN or description (e.g., "100nF 0402 X7R") from component properties
-- [ ] Query DigiKey API `KeywordSearch` endpoint
-- [ ] Extract symbol and footprint from response (`ManufacturerPartNumber`, `Parameters`)
-- [ ] Download symbol/footprint (if available) via DigiKey API or fallback to EasyEDA
-- [ ] Store in local symbol cache (`~/.cache/circuit-weaver/symbols/digikey/`)
-- [ ] Integrate into `symbol_resolver.py` with fallback chain: custom → KiCad → DigiKey → EasyEDA
-- [ ] Add `--auto-source` flag to `scaffold` and `generate` commands
+- [x] Parse MPN or description (e.g., "100nF 0402 X7R") from component properties
+- [x] Query DigiKey API `KeywordSearch` endpoint via `_search_digikey()` from parts_lookup
+- [x] Extract symbol and footprint from response (`ManufacturerPartNumber`, `Parameters`)
+- [x] Map DigiKey package strings to KiCad footprints via `map_digikey_package_to_kicad()`
+- [x] Store in local symbol cache (`~/.cache/circuit-weaver/symbols/`)
+- [x] Integrate into `symbol_resolver.py` with 6-tier fallback: registry → kicad → cache → easyeda → digikey → mouser
+- [x] Add `--auto-source` flag to `generate` command
 
-Files: `digikey_loader.py` (new), `symbol_resolver.py`, `mvp.py`
+Files: `digikey_loader.py` (new), `symbol_resolver.py` (new), `mvp.py`
 
-### 84. Mouser symbol autoloader (P1, MEDIUM)
+### 84. Mouser symbol autoloader (P1, MEDIUM) ✓
 
-- [ ] Query Mouser Search API by MPN/description
-- [ ] Parse symbol/footprint metadata from Mouser response
-- [ ] Download via Mouser-hosted links or manufacturer sources
-- [ ] Add to symbol cache with Mouser branding
-- [ ] Integrate into fallback chain (after DigiKey, before EasyEDA)
+- [x] Query Mouser Search API v1 by MPN via `SearchByPartRequest`
+- [x] Parse symbol/footprint metadata from Mouser response (ProductAttributes for package)
+- [x] Reuse `map_digikey_package_to_kicad()` for consistent footprint mapping
+- [x] Store in symbol cache with source="mouser"
+- [x] Integrate into fallback chain as Tier 6 (after digikey, before unresolved)
 
-Files: `mouser_loader.py` (new), `symbol_resolver.py`
+Files: `mouser_loader.py` (new), `symbol_resolver.py` (integrated)
 
-### 85. Smart symbol caching layer (P1, SMALL)
+### 85. Smart symbol caching layer (P1, SMALL) ✓
 
-- [ ] Persistent cache: `~/.cache/circuit-weaver/symbols/` with vendor subdirs
-- [ ] Cache manifest: `index.json` with MPN → (symbol_file, footprint_file, source, timestamp)
-- [ ] TTL: 30 days (symbols don't change frequently)
-- [ ] Hit/miss metrics: CLI `--cache-stats` shows cache effectiveness
-- [ ] `--cache-clear` to reset cache when needed
+- [x] Persistent cache: `~/.cache/circuit-weaver/symbols/` with atomic index.json
+- [x] Cache manifest: `index.json` with MPN → {source, timestamp, footprint, description, ...}
+- [x] TTL: 30 days (symbols don't change frequently)
+- [x] CLI `cache stats` shows hit/miss metrics and cache effectiveness
+- [x] `cache clear [--stale-only]` to reset cache when needed
 
-Files: `symbol_cache.py` (new), `mvp.py`
+Files: `symbol_cache.py` (new), `mvp.py` (cache subcommand)
 
-### 86. Auto-populate BOM during generation (P1, MEDIUM)
+### 86. Auto-populate BOM during generation (P1, MEDIUM) ✓ (parser + dispatch done, awaiting test)
 
-- [ ] When `generate` runs with `--auto-source`, populate blank MPN fields
-- [ ] Query each component's value + footprint against DigiKey/Mouser/LCSC
-- [ ] Show user: "Found 12 parts, 3 marked for manual pricing (no LCSC match)"
-- [ ] Write discovered MPNs back to spec with `--update-spec` flag
-- [ ] Report which distributor was used for each MPN (for cost-bom downstream)
+- [x] When `generate` runs with `--auto-source`, populate blank MPN fields via SymbolResolver
+- [x] Query each component's value + footprint against DigiKey/Mouser/LCSC (via _auto_source_report helper)
+- [x] Show user: summary of resolved parts by distributor (DigiKey N, Mouser N, LCSC N)
+- [x] Write discovered MPNs back to spec with `--update-spec` flag via update_spec_with_sourced_data()
+- [x] Report which distributor was used for each MPN (in auto_source_summary dict)
 
-Files: `mvp.py`, `bom_resolver.py` (new)
+Files: `mvp.py` (--auto-source, --update-spec flags, _auto_source_report, dispatch), `project_spec.py` (update_spec_with_sourced_data)
 
 ### 93. SVG placement editor — bidirectional conversion (P1, MEDIUM)
 

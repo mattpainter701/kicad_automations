@@ -614,3 +614,68 @@ def load_project(
 
     print(f"Project '{metadata['project']}': {len(components)} component(s) from {yaml_path}")
     return components, metadata
+
+
+def update_spec_with_sourced_data(spec_path: Path | str, sourced_data: dict[str, Any]) -> None:
+    """Update a YAML spec with auto-discovered MPN/LCSC data.
+
+    Fills in blank MPN and LCSC fields for components based on sourced_data dict.
+    Only updates blank fields — does not overwrite existing values.
+
+    Args:
+        spec_path: Path to the YAML spec file.
+        sourced_data: Dict mapping MPN → {mpn, lcsc_pn, digikey_pn, ...} from auto-source.
+    """
+    spec_path = Path(spec_path)
+    spec = _parse_yaml(spec_path)
+
+    # Track what we updated
+    updated_count = 0
+
+    # Iterate through all categories and components
+    for category in spec:
+        if not isinstance(spec[category], list):
+            continue
+        for comp in spec[category]:
+            if not isinstance(comp, dict):
+                continue
+
+            # Get the component's MPN (from ic, mpn, or value field)
+            comp_mpn = comp.get("ic") or comp.get("mpn") or comp.get("value", "")
+            if not comp_mpn:
+                continue
+
+            # Look up sourced data by MPN
+            if comp_mpn not in sourced_data:
+                continue
+
+            sourced = sourced_data[comp_mpn]
+
+            # Fill in blank LCSC field
+            if not comp.get("lcsc") and sourced.get("lcsc_pn"):
+                comp["lcsc"] = sourced["lcsc_pn"]
+                updated_count += 1
+
+            # Fill in blank MPN field (if source field missing)
+            if not comp.get("mpn") and sourced.get("mpn"):
+                comp["mpn"] = sourced["mpn"]
+
+            # Fill in blank DigiKey field if available
+            if not comp.get("digikey") and sourced.get("digikey_pn"):
+                comp["digikey"] = sourced["digikey_pn"]
+
+    # Write updated spec back to file
+    import sys
+
+    try:
+        import yaml
+
+        yaml_text = yaml.safe_dump(spec, sort_keys=False, allow_unicode=False)
+    except ImportError:
+        # Fallback: JSON dump if YAML unavailable
+        import json
+
+        yaml_text = json.dumps(spec, indent=2) + "\n"
+
+    spec_path.write_text(yaml_text, encoding="utf-8", newline="")
+    print(f"Updated {updated_count} component(s) in {spec_path}", file=sys.stderr)

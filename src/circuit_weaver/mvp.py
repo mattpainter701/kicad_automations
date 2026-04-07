@@ -1350,6 +1350,95 @@ def apply_design_patch(
     }
 
 
+def _auto_source_report(
+    components: list[Any],
+    spec: dict[str, Any],
+    spec_path: Path | None = None,
+    update_spec: bool = False,
+) -> dict[str, Any]:
+    """Auto-discover MPNs/LCSC for unresolved components via DigiKey/Mouser APIs.
+
+    Returns dict with resolution summary:
+    {
+        "resolved": count,
+        "total": count,
+        "by_source": {"digikey": N, "mouser": N, "lcsc": N},
+        "unresolved_count": N,
+        "unresolved": [{"mpn": "", "tried": [...], "suggestions": [...]}]
+    }
+    """
+    from .parts_lookup import PartsLookup
+    from .symbol_cache import SymbolCache
+    from .symbol_resolver import SymbolResolver
+
+    resolved = 0
+    unresolved = []
+    by_source = {"digikey": 0, "mouser": 0, "lcsc": 0}
+
+    # Initialize resolvers
+    cache = SymbolCache()
+    resolver = SymbolResolver(cache=cache, use_digikey=True, use_mouser=True, use_easyeda=True)
+    lookup = PartsLookup()
+
+    # Track which components need sourcing
+    sourced_data = {}
+
+    for comp in components:
+        mpn = comp.get("mpn", "") or comp.get("value", "")
+        if not mpn:
+            continue
+
+        # Skip if already has LCSC or DigiKey PN
+        if comp.get("lcsc_pn") or comp.get("digikey_pn"):
+            resolved += 1
+            continue
+
+        # Try PartsLookup first (existing local database)
+        lookup_result = lookup.lookup(mpn)
+        if lookup_result:
+            sourced_data[mpn] = lookup_result
+            resolved += 1
+            by_source["lcsc"] += 1
+            continue
+
+        # Try SymbolResolver (DigiKey → Mouser tiers)
+        comp_def, source = resolver.resolve(mpn)
+        if comp_def and source != "unresolved":
+            sourced_data[mpn] = {
+                "mpn": mpn,
+                "source": source,
+                "footprint": comp_def.footprint,
+                "description": comp_def.description,
+                "digikey_pn": comp_def.digikey_pn,
+                "lcsc_pn": comp_def.lcsc_pn,
+            }
+            resolved += 1
+            if source in by_source:
+                by_source[source] += 1
+        else:
+            unresolved.append(
+                {
+                    "mpn": mpn,
+                    "tried": ["PartsLookup", "DigiKey", "Mouser"],
+                    "suggestions": [],
+                }
+            )
+
+    # Write back to spec if requested
+    if update_spec and spec_path and sourced_data:
+        from .project_spec import update_spec_with_sourced_data
+
+        update_spec_with_sourced_data(spec_path, sourced_data)
+
+    return {
+        "resolved": resolved,
+        "total": len(components),
+        "by_source": by_source,
+        "unresolved_count": len(unresolved),
+        "unresolved": unresolved,
+    }
+
+
 def generate_artifacts(
     spec: dict[str, Any],
     *,
@@ -1359,6 +1448,10 @@ def generate_artifacts(
     enrich_parts: bool = False,
     export_svg: bool = True,
     score: bool = False,
+    auto_source: bool = False,
+    update_spec: bool = False,
+    spec_path: Path | None = None,
+    svg_placement: bool = False,
 ) -> dict[str, Any]:
     """Generate derived artifacts from a validated design spec."""
     profile = _ensure_profile(profile)
@@ -1370,23 +1463,35 @@ def generate_artifacts(
     output_path = Path(output_dir)
     files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg, score=score)
 
-    spec_path = output_path / "canonical_spec.yaml"
-    spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")
+    canonical_spec_path = output_path / "canonical_spec.yaml"
+    canonical_spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")
     ir_path = output_path / "design_ir.json"
     ir_path.write_text(json.dumps(compiled.ir.to_dict(), indent=2), encoding="utf-8", newline="")
     report_path = output_path / "validation_report.json"
     report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="")
 
-    return {
+    result = {
         "output_dir": str(output_path),
         "project": compiled.metadata.get("project", "project"),
         "root_schematic": str(root) if root else "",
         "files": [str(path) for path in files],
         "validation_report": str(report_path),
         "design_ir": str(ir_path),
-        "canonical_spec": str(spec_path),
+        "canonical_spec": str(canonical_spec_path),
         "valid": report.valid,
     }
+
+    # Task 86: Auto-source MPNs/LCSC for unresolved components
+    if auto_source:
+        auto_source_result = _auto_source_report(
+            compiled.components,
+            spec,
+            spec_path=spec_path if update_spec else None,
+            update_spec=update_spec,
+        )
+        result["auto_source_summary"] = auto_source_result
+
+    return result
 
 
 def ingest_pcb_feedback(
@@ -1845,16 +1950,35 @@ def main() -> None:
         spec = _load_spec_file(args.spec)
         if args.presentation_profile:
             spec["presentation_profile"] = args.presentation_profile
+        auto_source = getattr(args, "auto_source", False)
+        update_spec = getattr(args, "update_spec", False)
+        svg_placement = getattr(args, "svg_placement", False)
+        spec_path = Path(args.spec) if update_spec else None
         result = _run_with_stderr_capture(
             lambda: generate_artifacts(
                 spec,
                 output_dir=args.output,
                 require_valid=args.require_valid,
-                enrich_parts=args.enrich_parts,
+                enrich_parts=args.enrich_parts or auto_source,
                 export_svg=args.export_svg,
                 score=args.score,
+                auto_source=auto_source,
+                update_spec=update_spec,
+                spec_path=spec_path,
+                svg_placement=svg_placement,
             )
         )
+        if auto_source and "auto_source_summary" in result:
+            s = result["auto_source_summary"]
+            print(
+                f"Auto-sourced {s['resolved']}/{s['total']} parts "
+                f"(DigiKey: {s['by_source']['digikey']}, "
+                f"Mouser: {s['by_source']['mouser']}, "
+                f"LCSC: {s['by_source']['lcsc']})",
+                file=sys.stderr,
+            )
+            if s["unresolved_count"] > 0:
+                print(f"Warning: {s['unresolved_count']} parts could not be auto-sourced", file=sys.stderr)
         _print_json(result)
         raise SystemExit(0)
 
