@@ -2,6 +2,70 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 20 — Design Review Completion & Production Assembly (v0.17.0)
+
+**Goal:** Complete Sprint 19 backlog (dispatcher refactor, sourcing audit), then enable production assembly workflows. Users can now design → validate → review → estimate costs → order assembled boards from JLCPCB.
+
+### 109. Rename mvp.py to dispatcher.py (P1, SMALL)
+
+- [ ] Rename `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py`
+- [ ] Update all imports across codebase (cli.py, __init__.py, tests/)
+- [ ] Update docstrings and comments
+- [ ] Update CLI help text and error messages if needed
+- [ ] Update test references and CI/CD configs
+- [ ] Verify all tests still pass after rename
+- [ ] Update CONTRIBUTING.md and architecture docs
+
+**Rationale**: "mvp" is outdated naming (no longer a minimum viable product, it's the full CLI dispatcher). "dispatcher.py" accurately reflects its role: routing subcommands to handlers.
+
+Files: `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py` (rename), all imports, docs
+
+### 107. Component Sourcing Risk Audit (P2, SMALL)
+
+- [ ] Create `sourcing_auditor.py` — queries distributor APIs for component health
+- [ ] For each BOM component:
+  - [ ] Query DigiKey (via existing `_search_digikey()`) for lifecycle status: Active / NRND / Obsolete / EOL
+  - [ ] Query LCSC (via existing jlcsearch) for stock levels + lead time
+  - [ ] Detect: out-of-stock, <100 units in stock, >12 week lead time
+  - [ ] Flag: parts with no distributor PN (unpriced)
+- [ ] Output: audit report with risk levels
+  - [ ] **CRITICAL:** obsolete parts, zero stock, >16 week lead time
+  - [ ] **WARNING:** low stock (<100), long lead (>8 weeks), single-source only
+  - [ ] Suggest alternates (pin-compatible parts) from LCSC for at-risk parts
+- [ ] CLI: `circuit-weaver audit-bom <design.yaml> [--lcsc-only]`
+- [ ] Integrate into review workflow: call after `cost-bom`
+- [ ] 10 unit tests in `test_sourcing_auditor.py`
+
+Files: `src/circuit_weaver/sourcing_auditor.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_sourcing_auditor.py` (new)
+
+### 110. JLCPCB Assembly Integration (P1, MEDIUM)
+
+- [ ] Auto-generate **CPL (component placement list)** + **BOM CSV** in JLCPCB format
+- [ ] Map components to LCSC part numbers (fallback to MPN if LCSC missing)
+- [ ] Flag extended parts (cost warning: $3 each setup fee)
+- [ ] Detect PCB assembly constraints: top/bottom/both sides, SMD/THT/mixed
+- [ ] Output format validation against JLCPCB upload spec (column headers, encoding, etc.)
+- [ ] CLI: `circuit-weaver export-jlcpcb-assembly <design.yaml> [--output asm/]`
+- [ ] Output: `asm/bom.csv`, `asm/placement.csv` ready to upload to JLCPCB cart
+- [ ] Integration: call after `cost-bom`, report extended parts count + setup cost
+- [ ] 12 unit tests in `test_jlcpcb_assembly.py` covering BOM format, CPL generation, extended parts flagging
+
+Files: `src/circuit_weaver/jlcpcb_assembly.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_jlcpcb_assembly.py` (new)
+
+### 111. BOM Cost Estimation & Price Breaks (P2, SMALL)
+
+- [ ] Query DigiKey + Mouser pricing at multiple quantities (1, 5, 10, 25, 50, 100)
+- [ ] Detect price breaks and alert: "Resistor R5: $0.01 @ 1, $0.005 @ 100 (50% savings for qty 100+)"
+- [ ] Aggregate: total BOM cost at 1 qty vs 5 qty vs 10 qty
+- [ ] Output: cost summary table + recommended order quantity
+- [ ] CLI: `circuit-weaver cost-bom <design.yaml> --quantities 1,5,10,50,100`
+- [ ] Integration: show cost vs price break breakeven point for bulk orders
+- [ ] 8 unit tests in `test_cost_estimation.py` covering price break detection, quantity optimization
+
+Files: `src/circuit_weaver/cost_estimation.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_cost_estimation.py` (new)
+
+---
+
 ## Sprint 19 — Design Review & Quality Assurance (v0.16.0)
 
 **Goal:** Improve design review workflows, add design-time quality checks, and expand documentation for users starting their first designs. Focus on DFM validation, design scoring, and design documentation generation.

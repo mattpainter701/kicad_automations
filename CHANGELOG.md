@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.17.0] - (In Progress)
+
+### Sprint 20 — Design Review Completion & Production Assembly
+
+### Added
+- (to be filled during sprint)
+
+### Changed
+- (to be filled during sprint)
+
+### Fixed
+- (to be filled during sprint)
+
+### Tests
+- (to be filled during sprint)
+
+---
+
 ## [0.16.0] - (In Progress)
 
 ### Sprint 19 — Design Review & Quality Assurance
