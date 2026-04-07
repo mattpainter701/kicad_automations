@@ -2404,7 +2404,11 @@ def main() -> None:
                 raise SystemExit(1)
         elif fmt == "markdown":
             # Convert schema to markdown table
-            md = "# Design IR Schema\n\n| Field | Type | Required | Description |\n|-------|------|----------|-------------|\n"
+            md = (
+                "# Design IR Schema\n\n"
+                "| Field | Type | Required | Description |\n"
+                "|-------|------|----------|-------------|\n"
+            )
             props = schema.get("properties", {})
             required = schema.get("required", [])
             for field_name, field_schema in props.items():
@@ -2681,9 +2685,13 @@ def main() -> None:
             print(result["summary"])
             for c in result["components"]:
                 status_icon = {"ok": "  ", "warning": "! ", "critical": "!!"}[c["status"]]
-                print(
-                    f"  {status_icon}{c['ref']:6s} {c['pdiss_w']:6.3f}W  Tj={c['tj_calculated']:.0f}°C  max={c['tj_max']:.0f}°C  margin={c['margin_c']:.0f}°C"
+                tj_line = (
+                    f"  {status_icon}{c['ref']:6s} {c['pdiss_w']:6.3f}W  "
+                    f"Tj={c['tj_calculated']:.0f}°C  "
+                    f"max={c['tj_max']:.0f}°C  "
+                    f"margin={c['margin_c']:.0f}°C"
                 )
+                print(tj_line)
                 if c["suggestion"]:
                     print(f"         {c['suggestion']}")
             for w in result["proximity_warnings"]:
