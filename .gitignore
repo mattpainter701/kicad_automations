@@ -21,16 +21,22 @@ ffmpeg.exe
 *.mp4
 *.gif
 *.cast
+*.svg.bak
 auto_record*.py
 encode_frames*.py
 demo/
 demo_live/
 demo_server.py
 auto_record_demo.py
+scripts/record_demo.py
+docs/DEMO_COMMANDS.md
+docs/DEMO_HUMIDISTAT.md
+assets/demo_humidistat.svg
 
 # Demo generated outputs (regenerable)
 samples/*/output/
 samples/*/validate_stderr.txt
+samples/*/samples/
 .claude/
 
 # Generated project artifacts (re-downloadable / regenerated)
