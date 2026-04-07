@@ -2990,52 +2990,65 @@ def _run_design_wizard(
     project_dir.mkdir(parents=True, exist_ok=True)
     logger = DesignLogger(project_dir)
 
-    print("\n" + "=" * 72)
-    print("Circuit Weaver Design Wizard (Offline)")
-    print("=" * 72)
+    print("\n" + "=" * 80)
+    print("Circuit Weaver Design Wizard (Interactive Form)")
+    print("=" * 80)
     print("\nI'll scaffold a design spec from your requirements.")
-    print("This wizard captures YOUR specifics — no hardcoded choices.\n")
+    print("Fill in each section below. Press Enter to skip (use defaults).\n")
 
     # Use provided project name or ask for it
     if project_name_override:
         project_name = project_name_override
-        print(f"Project: {project_name}\n")
+        print(f"✓ Project: {project_name}\n")
     else:
-        project_name = input("Project name: ").strip()
+        project_name = input("📋 Project name: ").strip()
         if not project_name:
             project_name = "MyDesign_v1"
 
-    purpose = input("What does this circuit do? (e.g., 'WiFi sensor', 'motor controller'): ").strip()
+    # ===== BASIC SECTION =====
+    print("\n" + "-" * 80)
+    print("SECTION 1: BASIC INFO")
+    print("-" * 80)
+
+    purpose = input("  Purpose (e.g., 'WiFi sensor', 'motor controller'): ").strip()
     if not purpose:
         purpose = "Custom circuit"
 
     logger.log_step(1, "Requirements captured - basic info", {"project_name": project_name, "purpose": purpose})
 
-    print("\n--- Power Supply ---")
-    input_power = input("Input power source (e.g., '3.7V LiPo', '5V USB', '12V supply'): ").strip()
+    # ===== POWER SECTION =====
+    print("\n" + "-" * 80)
+    print("SECTION 2: POWER SUPPLY")
+    print("-" * 80)
+
+    input_power = input("  Input power source (e.g., '3.7V LiPo', '5V USB', '12V supply'): ").strip()
     if not input_power:
         input_power = "3.3V"
 
-    output_rails = input("Output voltage rails needed (e.g., '3.3V, 500mA; 5V, 100mA'): ").strip()
+    output_rails = input("  Output rails (e.g., '3.3V, 500mA; 5V, 100mA'): ").strip()
     if not output_rails:
         output_rails = "3.3V, 500mA"
 
     logger.log_step(2, "Power supply requirements captured", {"input_power": input_power, "output_rails": output_rails})
 
-    print("\n--- Components & Interfaces ---")
-    interfaces = input("Interfaces/buses (e.g., 'I2C, SPI, UART, USB, WiFi'): ").strip()
+    # ===== COMPONENTS SECTION =====
+    print("\n" + "-" * 80)
+    print("SECTION 3: COMPONENTS & INTERFACES")
+    print("-" * 80)
+
+    interfaces = input("  Interfaces (e.g., 'I2C, SPI, UART, USB, WiFi'): ").strip()
     if not interfaces:
         interfaces = "I2C, UART"
 
-    mcu = input("Main processor/MCU (e.g., 'ESP32', 'STM32L0', 'RP2040', 'none'): ").strip()
+    mcu = input("  Main processor/MCU (e.g., 'ESP32', 'STM32L0', 'RP2040', 'none'): ").strip()
     if not mcu:
         mcu = "to be selected"
 
-    components = input("Other key components (e.g., 'BME280 sensor, DRV8833 H-bridge'): ").strip()
+    components = input("  Key components (e.g., 'BME280 sensor, DRV8833 H-bridge'): ").strip()
     if not components:
         components = "to be added"
 
-    special_reqs = input("Special requirements (e.g., 'low power', 'high speed', 'analog frontend'): ").strip()
+    special_reqs = input("  Special requirements (e.g., 'low power', 'high speed', 'analog'): ").strip()
 
     logger.log_step(
         3,
@@ -3072,29 +3085,36 @@ def _run_design_wizard(
         },
     }
 
-    # Print summary
-    print("\n" + "=" * 72)
-    print("Design Spec Scaffold Created")
-    print("=" * 72)
-    print(f"\nProject: {project_name}")
-    print(f"Purpose: {purpose}")
-    print(f"Input: {input_power}")
-    print(f"Output Rails: {output_rails}")
-    print(f"Interfaces: {interfaces}")
-    print(f"MCU: {mcu}")
-    print(f"Components: {components}")
-    if special_reqs:
-        print(f"Special: {special_reqs}")
+    # Print summary in form-like table
+    print("\n" + "=" * 80)
+    print("✓ DESIGN SPEC CAPTURED")
+    print("=" * 80)
 
-    print("\n" + "-" * 72)
-    print("Next steps:")
+    print("\n📋 BASIC INFO")
+    print(f"  Project:    {project_name}")
+    print(f"  Purpose:    {purpose}")
+
+    print("\n⚡ POWER SUPPLY")
+    print(f"  Input:      {input_power}")
+    print(f"  Output:     {output_rails}")
+
+    print("\n🔧 COMPONENTS & INTERFACES")
+    print(f"  Interfaces: {interfaces}")
+    print(f"  MCU:        {mcu}")
+    print(f"  Components: {components}")
+    if special_reqs:
+        print(f"  Special:    {special_reqs}")
+
+    print("\n" + "-" * 80)
+    print("📝 NEXT STEPS")
+    print("-" * 80)
     print("  1. Edit the YAML file to add your components and customize the power supply")
     print("  2. Use 'circuit-weaver list-templates' to see available circuit templates")
     print("  3. Use 'circuit-weaver scaffold --template <name>' to add templates")
     print("  4. Validate: circuit-weaver validate <file>")
     print("  5. Generate: circuit-weaver generate <file> -o ./output")
-    print("\nFor automatic IC research and selection, use the /circuit-weaver skill in Claude Code.")
-    print("=" * 72 + "\n")
+    print("\n  💡 Tip: Use the /circuit-weaver skill in Claude Code for automatic IC research")
+    print("=" * 80 + "\n")
 
     return spec, logger
 
