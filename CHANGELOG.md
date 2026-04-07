@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.14.0] - 2026-04-06
+## [0.14.0] - 2026-04-07
 
 ### Sprint 16 — Advanced PCB Placement & Dual-Sided Assembly (complete)
 
