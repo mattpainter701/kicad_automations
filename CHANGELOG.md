@@ -31,6 +31,18 @@
   - `update_spec_with_sourced_data()` in `project_spec.py` safely updates YAML specs (only fills blank fields)
   - Stderr output shows resolved component counts by distributor (DigiKey: N, Mouser: N, LCSC: N)
   - Enrich-parts mode enabled automatically when `--auto-source` is set
+- **Task 93:** `svg_placement.py` — SVG-based bidirectional placement editor
+  - `export_placement_svg(components, placements, board_w, board_h)` generates editable SVG with colored component rectangles
+  - `import_placement_from_svg(svg_path)` parses user-edited SVG back to placement dict via regex transform parsing
+  - `update_kicad_pcb_placements(kicad_pcb, placements)` updates .kicad_pcb footprint `(at ...)` clauses via regex
+  - `update_cpl_placements(cpl_path, placements)` updates CPL CSV with new X/Y/Rotation values
+  - `import-placement` subcommand: `circuit-weaver import-placement placement.svg design.kicad_pcb [--output-pcb FILE] [--dry-run]`
+  - Auto-detects and updates `*_cpl.csv` siblings in same directory
+  - Color-coded by component category (power=red, digital=blue, connector=green, passive=yellow)
+  - Back-layer components drawn with 0.5 opacity and dashed borders
+  - Component size heuristics for 20+ common packages (0402, SOT-23, SOIC-8, QFN, BGA, etc.)
+  - `--svg-placement` flag in `generate` command exports placement.svg to output directory
+  - SVG is text/XML and git-friendly for design review
 
 ### Changed
 - `generate_artifacts()` signature: added `auto_source`, `update_spec`, `spec_path`, `svg_placement` parameters

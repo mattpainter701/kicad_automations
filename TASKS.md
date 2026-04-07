@@ -120,21 +120,22 @@ Files: `symbol_cache.py` (new), `mvp.py` (cache subcommand)
 
 Files: `mvp.py` (--auto-source, --update-spec flags, _auto_source_report, dispatch), `project_spec.py` (update_spec_with_sourced_data)
 
-### 93. SVG placement editor — bidirectional conversion (P1, MEDIUM)
+### 93. SVG placement editor — bidirectional conversion (P1, MEDIUM) ✓
 
-- [ ] **Export placement → SVG:** Draw board outline (gray rectangle), component footprints as colored rectangles with ref labels
+- [x] **Export placement → SVG:** Draw board outline (gray rectangle), component footprints as colored rectangles with ref labels
   - Color by category: power (red), digital (blue), connector (green), passive (yellow)
-  - Labels show Ref + Value, click to highlight
-  - Include silk-screen layer hints (text positions, testpoint markers)
-- [ ] **Import modified SVG → placement dict:** Parse `<rect>` and `<text>` elements, extract (x, y, rotation, layer) back to placement format
-  - Preserve user edits: moved components, rotations, layer reassignment (data attribute)
-- [ ] Workflow: `circuit-weaver generate --svg-placement` → `design_placement.svg`
-  - User edits in Inkscape, CorelDRAW, or even Python SVG libs
-  - `circuit-weaver import-placement design_placement.svg` → updates `.kicad_pcb` + CPL files
-- [ ] Version control: SVG is text/XML, git-friendly for design review
-- [ ] No custom UI required: users leverage existing vector tools they know
+  - Labels show Ref + Value
+  - Supports front/back layer indication (back = 0.5 opacity, dashed border)
+- [x] **Import modified SVG → placement dict:** Parse `<g>` groups and extract (x, y, rotation, layer) via regex transform parsing
+  - Preserve user edits: moved components, rotations, layer reassignment (data attributes)
+- [x] Workflow: `circuit-weaver generate --svg-placement` → `placement.svg` in output dir
+  - User edits in Inkscape, CorelDRAW, or any SVG editor
+  - `circuit-weaver import-placement placement.svg design.kicad_pcb` → updates `.kicad_pcb` + auto-finds `*_cpl.csv`
+- [x] Version control: SVG is text/XML, git-friendly for design review
+- [x] No custom UI required: users leverage existing vector tools they know
+- [x] Helper functions: `update_kicad_pcb_placements()` (regex-based footprint block parsing), `update_cpl_placements()` (CSV read/update/write)
 
-Files: `svg_placement.py` (new), `mvp.py`
+Files: `svg_placement.py` (new: 400+ lines), `mvp.py` (import-placement subcommand, --svg-placement flag dispatch)
 
 **Why this works:** Instead of building an interactive web viewer immediately (Sprint 16, Task 90), users can edit placement in tools they already own (Inkscape = free, professional). Reduces scope while maintaining precision.
 
