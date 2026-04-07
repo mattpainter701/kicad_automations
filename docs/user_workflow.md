@@ -350,6 +350,37 @@ chosen manufacturer:
   [ ] Board dimensions verified against enclosure
 ```
 
+#### Prototype Enclosure Design
+
+After you have a finalized PCB layout, you can generate a parametric OpenSCAD enclosure:
+
+```bash
+circuit-weaver design-enclosure \
+  --board-width 100 \
+  --board-height 80 \
+  --component-height 15 \
+  --wall-thickness 2.5 \
+  --clearance 2 \
+  -o enclosure.scad
+```
+
+The generator creates:
+- **Parametric OpenSCAD code** — adjust dimensions by editing the top of the file, re-render instantly
+- **Main body & lid** — snap-fit or screw-down assembly (customize in OpenSCAD)
+- **Port cutouts** — USB, barrel jack, circular, or rectangular ports (add manually in OpenSCAD)
+- **Mounting holes** — M3 screw bosses for PCB standoffs (configure as needed)
+- **Optional vents** — for thermal management in enclosures with power dissipation
+
+To render to STL for 3D printing:
+
+```bash
+circuit-weaver design-enclosure \
+  --board-width 100 --board-height 80 \
+  --render-stl --stl-output enclosure.stl
+```
+
+The OpenSCAD code is **fully parametric** — all dimensions are variables at the top of the file. Change `wall = 2.5` to `wall = 4.0`, re-render, and test fit in your slicer. See the [OpenSCAD skill](../skills/openscad/SKILL.md) for advanced customization (BOSL2 library, MOLLE mounting, heat-set inserts, etc.).
+
 #### Revision planning
 
 The wizard helps you prepare for the next revision:
@@ -453,6 +484,7 @@ on any topic.
 | `kicad` | Schematic and PCB analysis | Validation, design review |
 | `jlcpcb` | JLCPCB DFM rules | Manufacturing prep |
 | `pcbway` | PCBWay DFM rules | Manufacturing prep |
+| `openscad` | Parametric 3D modeling | Enclosure design, mechanical parts, mounts |
 | `autoroute` | Freerouting PCB router | Automatic signal routing (optional; user installs JAR separately) |
 
 ---

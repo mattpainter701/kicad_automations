@@ -1987,6 +1987,28 @@ def main() -> None:
     )
     panel_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
 
+    enclosure_p = subparsers.add_parser(
+        "design-enclosure", help="Generate parametric OpenSCAD enclosure from PCB dimensions"
+    )
+    enclosure_p.add_argument("--board-width", type=float, required=True, help="PCB width in mm")
+    enclosure_p.add_argument("--board-height", type=float, required=True, help="PCB height in mm")
+    enclosure_p.add_argument("--board-thickness", type=float, default=1.6, help="PCB thickness in mm (default: 1.6)")
+    enclosure_p.add_argument(
+        "--component-height", type=float, default=12, help="Max component height above PCB in mm (default: 12)"
+    )
+    enclosure_p.add_argument(
+        "--wall-thickness", type=float, default=2.5, help="Enclosure wall thickness in mm (default: 2.5)"
+    )
+    enclosure_p.add_argument("--clearance", type=float, default=2, help="Clearance around PCB in mm (default: 2)")
+    enclosure_p.add_argument(
+        "-o", "--output", type=str, default="enclosure.scad", help="Output OpenSCAD file (default: enclosure.scad)"
+    )
+    enclosure_p.add_argument(
+        "--render-stl", action="store_true", default=False, help="Render STL file (requires OpenSCAD CLI)"
+    )
+    enclosure_p.add_argument("--stl-output", type=str, help="Output STL file path (default: enclosure.stl)")
+    enclosure_p.add_argument("--vents", action="store_true", default=False, help="Include vent holes in lid")
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -2719,6 +2741,33 @@ def main() -> None:
                 print(f"  [!] {w}")
             for rule in result["design_rules"]:
                 print(f"  Rule: {rule}")
+
+        raise SystemExit(0)
+
+    if args.command == "design-enclosure":
+        from .enclosure_designer import generate_enclosure_scad, render_enclosure_stl
+
+        scad_code = generate_enclosure_scad(
+            board_width_mm=args.board_width,
+            board_height_mm=args.board_height,
+            board_thickness_mm=args.board_thickness,
+            component_height_mm=args.component_height,
+            wall_thickness_mm=args.wall_thickness,
+            clearance_mm=args.clearance,
+            vents=args.vents,
+        )
+
+        output_path = Path(args.output)
+        output_path.write_text(scad_code, encoding="utf-8")
+        print(f"OpenSCAD enclosure written to {output_path}")
+
+        if args.render_stl:
+            stl_path = Path(args.stl_output) if args.stl_output else output_path.with_suffix(".stl")
+            result = render_enclosure_stl(output_path, output_path=stl_path)
+            if result:
+                print(f"STL rendered to {result}")
+            else:
+                print("STL rendering skipped (OpenSCAD CLI not available)")
 
         raise SystemExit(0)
 
