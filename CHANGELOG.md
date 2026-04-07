@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.15.0] - 2026-04-07
+
+### Platform-Aware Interactive Prompts
+
+### Added
+- **Interactive prompts system** (`interactive_prompts.py`):
+  - Auto-detects execution platform (Claude Code, Codex, OpenCode, CLI)
+  - Uses native UI for each platform:
+    - **Claude Code**: AskUserQuestion tool (interactive buttons/checkboxes, scrollable)
+    - **Codex/OpenCode**: Conversational prompting (natural text responses)
+    - **CLI**: Terminal UI with questionary (arrow keys, spacebar, Enter)
+  - Graceful fallback across platforms
+
+- **Refactored design-wizard**:
+  - Uses `ask_form_section()` for grouped form sections
+  - Uses `ask_multiple_choice()` for option selection
+  - Uses `ask_text()` for free-form input
+  - Better UX with section grouping (BASIC INFO, POWER SUPPLY, COMPONENTS & INTERFACES)
+
+### Dependencies
+- Added `questionary>=1.10.0` to optional `[ui]` dependencies
+
+### Documentation
+- Updated `/circuit-weaver` skill docs with platform support notes
+- Documented fallback behavior and feature parity across platforms
+
+### Tests
+- All 42 CLI tests passing
+- Full test suite: 299+ tests passing
+
+---
+
 ## [0.14.2] - 2026-04-07 (Hotfix)
 
 ### Design Wizard & Logging Enhancements
