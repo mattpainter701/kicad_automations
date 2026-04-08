@@ -18,6 +18,21 @@
 ### Tests
 - Added `tests/test_validator.py` with 7 unit tests: stub IC fails, explicit IC passes, `pinout_verified=True` suppresses error, passives skipped, mixed design, multiple stubs, check registration in `_VALIDATION_CHECKS`.
 
+### Sprint 23 — Post-Generation ERC
+
+### Added
+- **`src/circuit_weaver/erc_runner.py`** (new): `run_erc(schematic)` invokes `kicad-cli sch erc --format json`, parses violation array into `ErcResult` / `ErcViolation` dataclasses. `_classify_severity()` promotes 13 known error types regardless of kicad-cli's own severity field. Degrades gracefully: returns `status="skipped"` when KiCad CLI absent, `status="failed"` on timeout or parse error.
+- **`erc` subcommand**: `circuit-weaver erc <schematic> [--json]` — runs ERC and prints human-readable or JSON output; exits 1 if any errors found.
+- **`_generate_erc_section()`** in `review_report.py`: green badge when clean, red badge + violation table when errors, neutral notice when skipped or not run. Accepts both `ErcResult` objects and plain dicts.
+
+### Changed
+- `generate_artifacts()` now auto-runs ERC after schematic generation when the root schematic is available; adds `"erc"` key to the result dict.
+- `generate_review_report_html()` gains optional `erc_result` parameter; ERC section rendered above DFM section.
+
+### Tests
+- Added `tests/test_erc_runner.py` with 12 unit tests: mock kicad-cli success, timeout, absent CLI, JSON parsing, severity classification/promotion, `to_dict` roundtrip, missing schematic.
+- Added `tests/test_review_report_erc.py` with 6 unit tests: clean badge, error badge + table, skipped, failed, None input, dict input.
+
 ---
 
 ## [0.17.0] - 2026-04-07

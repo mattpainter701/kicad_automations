@@ -1504,6 +1504,13 @@ def generate_artifacts(
         "valid": report.valid,
     }
 
+    # Task 118: Auto-run ERC if KiCad CLI is present and a root schematic was generated
+    if root is not None:
+        from .erc_runner import run_erc
+
+        erc_result = run_erc(root)
+        result["erc"] = erc_result.to_dict()
+
     # Task 86: Auto-source MPNs/LCSC for unresolved components
     if auto_source:
         auto_source_result = _auto_source_report(
@@ -2083,6 +2090,10 @@ def main() -> None:
         default=None,
         help="Optional directory with downloaded datasheets for datasheet index",
     )
+
+    erc_p = subparsers.add_parser("erc", help="Run ERC on a generated .kicad_sch file via kicad-cli")
+    erc_p.add_argument("schematic", type=str, help="Path to .kicad_sch file")
+    erc_p.add_argument("--json", dest="json_output", action="store_true", help="Output results as JSON")
 
     args = parser.parse_args()
 
@@ -3009,6 +3020,32 @@ def main() -> None:
             }
         )
         raise SystemExit(0)
+
+    if args.command == "erc":
+        from .erc_runner import run_erc
+
+        erc_result = run_erc(args.schematic)
+        payload = erc_result.to_dict()
+
+        if getattr(args, "json_output", False):
+            _print_json(payload)
+        else:
+            status = erc_result.status
+            if status == "skipped":
+                print(f"ERC: skipped — {erc_result.skip_reason}", file=sys.stderr)
+            elif status == "failed":
+                print(f"ERC: failed — {erc_result.skip_reason}", file=sys.stderr)
+                raise SystemExit(1)
+            else:
+                if erc_result.errors == 0 and erc_result.warnings == 0:
+                    print("ERC: ✓ 0 errors, 0 warnings")
+                else:
+                    print(f"ERC: {erc_result.errors} error(s), {erc_result.warnings} warning(s)")
+                    for v in erc_result.violations:
+                        prefix = "ERROR" if v.severity == "error" else "WARN "
+                        print(f"  [{prefix}] {v.type}: {v.description}")
+
+        raise SystemExit(1 if erc_result.errors > 0 else 0)
 
 
 def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:

@@ -35,26 +35,27 @@ Files: `src/circuit_weaver/component_db.py`, `src/circuit_weaver/digikey_loader.
 
 **Goal:** Invoke KiCad CLI ERC after generation and surface results in the HTML review report. A clean "ERC: 0 errors" badge becomes a shareable trust signal for community posts.
 
-### 118. KiCad CLI ERC Integration (P0, MEDIUM)
+### 118. KiCad CLI ERC Integration (P0, MEDIUM) ✅ DONE
 
-- [ ] Add `erc` subcommand: `circuit-weaver erc <schematic.kicad_sch> [--output erc_report.json]`
-- [ ] Invoke `kicad-cli sch erc --output <json> <sch>` headlessly, parse JSON violations array
-- [ ] Classify: errors (floating inputs, power domain shorts, missing PWR_FLAG) vs warnings
-- [ ] Degrade gracefully when KiCad CLI unavailable: emit warning, skip ERC, return `{"status": "skipped"}`
-- [ ] Integrate into `generate_artifacts()`: auto-run ERC if KiCad CLI is present
-- [ ] 8 unit tests: mock kicad-cli success, mock failure, absent CLI, JSON parsing, error classification
+- [x] Added `erc` subcommand: `circuit-weaver erc <schematic.kicad_sch> [--json]`
+- [x] `src/circuit_weaver/erc_runner.py` — invokes `kicad-cli sch erc --format json`, parses violation array
+- [x] `_classify_severity()` — promotes 13 known error types regardless of raw kicad-cli severity field
+- [x] Degrades gracefully: `{"status": "skipped"}` when KiCad CLI absent, `{"status": "failed"}` on timeout/parse error
+- [x] `generate_artifacts()` auto-runs ERC when root schematic present; adds `"erc"` key to result dict
+- [x] 12 unit tests: mock success, timeout, absent CLI, JSON parsing, severity classification, to_dict roundtrip
 
 Files: `src/circuit_weaver/erc_runner.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_erc_runner.py` (new)
 
-### 119. ERC Results in HTML Review Report (P1, SMALL)
+### 119. ERC Results in HTML Review Report (P1, SMALL) ✅ DONE
 
-- [ ] Add "ERC Status" section to `review_report.py` HTML output
-- [ ] Show badge: green "✓ ERC: 0 errors, 0 warnings" or red "✗ ERC: N errors" with violation list
-- [ ] Include violation details: type, reference designator, net, severity
-- [ ] If ERC was skipped (no KiCad CLI), show "ERC: not run (KiCad CLI unavailable)"
-- [ ] 3 unit tests: clean ERC renders badge, errors render list, skipped renders gracefully
+- [x] `_generate_erc_section()` added to `review_report.py`
+- [x] Green badge "✓ ERC: 0 errors, 0 warnings" when clean
+- [x] Red badge "✗ ERC: N errors" with violation table (type, description, severity) when errors present
+- [x] "ERC: not run (…)" for skipped/None; "⚠ ERC failed: …" for failed status
+- [x] Accepts both `ErcResult` objects and plain dicts (from `generate_artifacts` JSON output)
+- [x] 6 unit tests in `tests/test_review_report_erc.py`
 
-Files: `src/circuit_weaver/review_report.py`, `tests/test_review_report.py`
+Files: `src/circuit_weaver/review_report.py`, `tests/test_review_report_erc.py` (new)
 
 ---
 

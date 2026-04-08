@@ -48,6 +48,7 @@ def generate_review_report_html(
     design_ir: DesignIR,
     output_path: str | Path,
     kicad_pcb_path: str | Path | None = None,
+    erc_result: Any = None,
 ) -> Path:
     """Generate comprehensive HTML design review report.
 
@@ -109,6 +110,7 @@ def generate_review_report_html(
         _generate_summary_card(project_name, version, score_result),
         _generate_checklist(),
         _generate_scoring_breakdown(score_result),
+        _generate_erc_section(erc_result),
         _generate_dfm_section(dfm_violations),
         _generate_bom_section(bom_table),
         _generate_power_tree_section(power_budget),
@@ -470,6 +472,83 @@ def _generate_scoring_breakdown(score_result: Any) -> str:
   </section>"""
 
     return html
+
+
+def _generate_erc_section(erc_result: Any) -> str:
+    """Generate ERC status section.
+
+    Shows a green badge when ERC is clean, a red error list when violations
+    exist, and a neutral notice when ERC was skipped or not run.
+    """
+    if erc_result is None:
+        return """  <section>
+    <h2>ERC Status</h2>
+    <p style="color: gray;">ERC: not run (no schematic path provided)</p>
+  </section>"""
+
+    # Accept both ErcResult objects and plain dicts (from generate_artifacts JSON)
+    if isinstance(erc_result, dict):
+        status = erc_result.get("status", "skipped")
+        errors = erc_result.get("errors", 0)
+        warnings = erc_result.get("warnings", 0)
+        skip_reason = erc_result.get("skip_reason", "")
+        violations = erc_result.get("violations", [])
+    else:
+        status = erc_result.status
+        errors = erc_result.errors
+        warnings = erc_result.warnings
+        skip_reason = erc_result.skip_reason
+        violations = [
+            {"type": v.type, "description": v.description, "severity": v.severity} for v in erc_result.violations
+        ]
+
+    if status == "skipped":
+        reason_html = _html_escape(skip_reason) if skip_reason else "KiCad CLI unavailable"
+        return f"""  <section>
+    <h2>ERC Status</h2>
+    <p style="color: gray;">ERC: not run ({reason_html})</p>
+  </section>"""
+
+    if status == "failed":
+        reason_html = _html_escape(skip_reason) if skip_reason else "unknown error"
+        return f"""  <section>
+    <h2>ERC Status</h2>
+    <p style="color: orange; font-weight: bold;">⚠ ERC failed: {reason_html}</p>
+  </section>"""
+
+    # status == "ok"
+    if errors == 0 and warnings == 0:
+        return """  <section>
+    <h2>ERC Status</h2>
+    <p style="color: green; font-weight: bold;">✓ ERC: 0 errors, 0 warnings</p>
+  </section>"""
+
+    badge_color = "red" if errors > 0 else "orange"
+    badge_text = f"✗ ERC: {errors} error(s), {warnings} warning(s)"
+    rows = ""
+    for v in violations:
+        sev = v.get("severity", "warning") if isinstance(v, dict) else v.severity
+        vtype = v.get("type", "") if isinstance(v, dict) else v.type
+        desc = v.get("description", "") if isinstance(v, dict) else v.description
+        row_class = "severity-critical" if sev == "error" else "severity-warning"
+        rows += f"""        <tr>
+          <td class="{row_class}">{sev.upper()}</td>
+          <td>{_html_escape(vtype)}</td>
+          <td>{_html_escape(desc)}</td>
+        </tr>
+"""
+
+    return f"""  <section>
+    <h2>ERC Status</h2>
+    <p style="color: {badge_color}; font-weight: bold;">{badge_text}</p>
+    <table>
+      <thead>
+        <tr><th>Severity</th><th>Type</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+{rows}      </tbody>
+    </table>
+  </section>"""
 
 
 def _generate_dfm_section(dfm_violations: list) -> str:
