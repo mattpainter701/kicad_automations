@@ -1455,6 +1455,7 @@ def generate_artifacts(
     update_spec: bool = False,
     spec_path: Path | None = None,
     svg_placement: bool = False,
+    export_pinout: bool = False,
 ) -> dict[str, Any]:
     """Generate derived artifacts from a validated design spec."""
     profile = _ensure_profile(profile)
@@ -1510,6 +1511,30 @@ def generate_artifacts(
 
         erc_result = run_erc(root)
         result["erc"] = erc_result.to_dict()
+
+    # Task 120: Emit pinout CSV for MCU components (auto when MCUs present, or forced via flag)
+    from .firmware_export import export_esp32_sdkconfig, export_pinout_csv, export_stm32_ioc, is_mcu
+
+    project_name = compiled.metadata.get("project", "project")
+    has_mcu = any(is_mcu(c) for c in compiled.components)
+    if export_pinout or has_mcu:
+        pinout_path = output_path / f"{project_name}_pinout.csv"
+        written = export_pinout_csv(compiled.components, pinout_path, mcu_only=not export_pinout)
+        if written:
+            result["pinout_csv"] = str(written)
+
+    # Tasks 121 + 122: MCU-specific config stubs
+    for comp in compiled.components:
+        if comp.mpn.upper().startswith("STM32"):
+            ioc_path = output_path / f"{project_name}.ioc"
+            written_ioc = export_stm32_ioc(comp, project_name, ioc_path)
+            if written_ioc:
+                result["stm32_ioc"] = str(written_ioc)
+        if comp.mpn.upper().startswith("ESP32"):
+            sdk_path = output_path / "sdkconfig.defaults"
+            written_sdk = export_esp32_sdkconfig(comp, project_name, sdk_path)
+            if written_sdk:
+                result["esp32_sdkconfig"] = str(written_sdk)
 
     # Task 86: Auto-source MPNs/LCSC for unresolved components
     if auto_source:
@@ -1761,6 +1786,13 @@ def main() -> None:
     gen_p.add_argument("--no-require-valid", dest="require_valid", action="store_false")
     gen_p.add_argument("--no-svg", dest="export_svg", action="store_false")
     gen_p.add_argument("--enrich-parts", action="store_true", default=False)
+    gen_p.add_argument(
+        "--pinout",
+        dest="export_pinout",
+        action="store_true",
+        default=False,
+        help="Emit pinout CSV (and MCU-specific stubs) even for non-MCU designs",
+    )
     gen_p.add_argument(
         "--presentation-profile",
         choices=["default", "review"],
@@ -2162,6 +2194,7 @@ def main() -> None:
                 update_spec=update_spec,
                 spec_path=spec_path,
                 svg_placement=svg_placement,
+                export_pinout=getattr(args, "export_pinout", False),
             )
         )
         if auto_source and "auto_source_summary" in result:

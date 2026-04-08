@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from circuit_weaver.component_db import ComponentDef, PinDef
+from circuit_weaver.component_db import ComponentDef, ComponentRegistry, PinDef
+from circuit_weaver.project_spec import resolve_project_spec
 from circuit_weaver.validator import run_validation_checks, validate_circuit
 
 # ---------------------------------------------------------------------------
@@ -66,6 +67,33 @@ def _passive_resistor(ref: str = "R1") -> ComponentDef:
     )
 
 
+def _stub_diode(ref: str = "D1") -> ComponentDef:
+    return ComponentDef(
+        mpn="SMBJ5.0A",
+        ref_prefix="D",
+        source_ref=ref,
+        value="SMBJ5.0A",
+        description="TVS diode",
+        pinout_source="stub",
+        pins=[PinDef("1", "~", "passive", "L"), PinDef("2", "~", "passive", "R")],
+    )
+
+
+def _stub_registry_component(mpn: str = "UNKNOWN_IC", ref_prefix: str = "U") -> ComponentRegistry:
+    registry = ComponentRegistry()
+    registry.register(
+        ComponentDef(
+            mpn=mpn,
+            ref_prefix=ref_prefix,
+            value=mpn,
+            description="Distributor-derived stub",
+            pinout_source="stub",
+            pins=[PinDef("1", "~", "passive", "L"), PinDef("2", "~", "passive", "R")],
+        )
+    )
+    return registry
+
+
 # ---------------------------------------------------------------------------
 # Task 116 — pinout-source validation
 # ---------------------------------------------------------------------------
@@ -100,6 +128,13 @@ def test_passive_stub_not_flagged():
     assert not pinout_errors, "Passives should never trigger unverified-pinout"
 
 
+def test_diode_stub_is_flagged():
+    """Polarized two-pin parts like diodes still need verified pin assignments."""
+    issues = validate_circuit([_stub_diode()])
+    pinout_errors = [i for i in issues if i.code == "unverified-pinout"]
+    assert pinout_errors, "Diode stubs should not bypass pinout verification"
+
+
 def test_mixed_design_only_stubs_fail():
     """In a mixed design only unverified stub ICs emit errors; others are clean."""
     components = [_stub_ic("U1"), _explicit_ic("U2"), _verified_stub("U3"), _passive_resistor("R1")]
@@ -126,3 +161,37 @@ def test_run_validation_checks_includes_pinout_check():
     assert pinout_result is not None, "pinout-source check not registered in _VALIDATION_CHECKS"
     assert pinout_result.status == "FAIL"
     assert any(i.code == "unverified-pinout" for i in pinout_result.issues)
+
+
+def test_pinout_verified_flag_from_spec_suppresses_error():
+    """Spec-level pinout_verified must flow through project resolution."""
+    spec = {
+        "project": "pinout_override",
+        "digital": [{"ic": "UNKNOWN_IC", "ref": "U1", "pinout_verified": True}],
+    }
+    components, _metadata = resolve_project_spec(spec, component_reg=_stub_registry_component())
+    assert components[0].pinout_verified is True
+    pinout_errors = [i for i in validate_circuit(components) if i.code == "unverified-pinout"]
+    assert not pinout_errors
+
+
+def test_explicit_pin_map_from_spec_marks_component_trusted():
+    """Spec-level pin_map must replace stub placeholder pins and clear the gate."""
+    spec = {
+        "project": "pin_map_override",
+        "digital": [
+            {
+                "ic": "UNKNOWN_IC",
+                "ref": "U1",
+                "pin_map": {"1": "RF_IN", "2": "GND", "3": "VDD_3P3"},
+            }
+        ],
+    }
+    components, _metadata = resolve_project_spec(spec, component_reg=_stub_registry_component())
+    comp = components[0]
+    assert comp.pinout_source == "explicit"
+    assert {pin.number for pin in comp.pins} == {"1", "2", "3"}
+    assert comp.pin_nets == {"1": "RF_IN"}
+    assert comp.power_pins == {"2": "GND", "3": "VDD_3P3"}
+    pinout_errors = [i for i in validate_circuit([comp]) if i.code == "unverified-pinout"]
+    assert not pinout_errors

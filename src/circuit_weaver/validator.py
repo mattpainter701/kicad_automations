@@ -695,7 +695,7 @@ def _validate_pin_type_conflicts(components: list[ComponentDef]) -> list[Validat
     return issues
 
 
-_PASSIVE_PREFIXES = frozenset(("R", "C", "L", "D", "F", "FB", "TP", "Y", "X"))
+_PINOUT_IRRELEVANT_PREFIXES = frozenset(("R", "C", "L", "F", "FB", "TP"))
 
 
 def _validate_pinout_sources(components: list[ComponentDef]) -> list[ValidationIssue]:
@@ -711,8 +711,9 @@ def _validate_pinout_sources(components: list[ComponentDef]) -> list[ValidationI
     """
     issues = []
     for comp in components:
-        # Passives (R/C/L/D…) don't have meaningful pin assignments — skip them.
-        if comp.ref_prefix in _PASSIVE_PREFIXES:
+        # Skip truly pinout-irrelevant passives only; polarized and clocked parts
+        # such as diodes and oscillators still have meaningful pin assignments.
+        if comp.ref_prefix in _PINOUT_IRRELEVANT_PREFIXES:
             continue
         if comp.pinout_source == "stub" and not comp.pinout_verified:
             issues.append(

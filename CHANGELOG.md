@@ -18,6 +18,16 @@
 ### Tests
 - Added `tests/test_validator.py` with 7 unit tests: stub IC fails, explicit IC passes, `pinout_verified=True` suppresses error, passives skipped, mixed design, multiple stubs, check registration in `_VALIDATION_CHECKS`.
 
+### Sprint 24 — Firmware Co-Design Export
+
+### Added
+- **`src/circuit_weaver/firmware_export.py`** (new): `export_pinout_csv()`, `export_stm32_ioc()`, `export_esp32_sdkconfig()`. MCU detection via MPN prefix (STM32*, ESP32*, RP2040, ATmega*, etc.). `infer_peripheral()` maps net names to peripheral types; `infer_direction()` maps PinDef electrical type to IN/OUT/IO/PWR.
+- **`generate_artifacts()` auto-emits firmware stubs**: when MCU components are present, `{project}_pinout.csv`, `{project}.ioc` (STM32), and `sdkconfig.defaults` (ESP32) are written to the output directory. Result dict gains `"pinout_csv"`, `"stm32_ioc"`, `"esp32_sdkconfig"` keys.
+- **`generate --pinout` flag**: forces pinout CSV emission for non-MCU designs.
+
+### Tests
+- Added `tests/test_firmware_export.py` with 22 unit tests covering Tasks 120–122.
+
 ### Sprint 23 — Post-Generation ERC
 
 ### Added

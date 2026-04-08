@@ -63,31 +63,33 @@ Files: `src/circuit_weaver/review_report.py`, `tests/test_review_report_erc.py` 
 
 **Goal:** For MCU-based designs, emit a `pinout.csv` alongside the schematic. For STM32 and ESP32 targets, also emit target-specific config stubs. Closes the hardware/firmware contract gap.
 
-### 120. Pinout CSV Export (P0, SMALL)
+### 120. Pinout CSV Export (P0, SMALL) ✅ DONE
 
-- [ ] After schematic generation, emit `{project_name}_pinout.csv` with columns: `Ref, Pin, Net, Peripheral, Direction`
-- [ ] Inferred from `ComponentDef.pin_nets` + `ComponentDef.power_pins` for all ICs with MCU type
-- [ ] Add to `generate_artifacts()` result dict as `"pinout_csv": str(path)`
-- [ ] CLI: `circuit-weaver generate --pinout` flag to emit even for non-MCU designs
-- [ ] 4 unit tests: MCU design emits csv, correct columns, power pins included, non-MCU skipped by default
+- [x] `export_pinout_csv()` in `firmware_export.py` — writes `{project}_pinout.csv` with columns Ref, Pin, PinName, Net, Peripheral, Direction
+- [x] Inferred from `pin_nets` + `power_pins` for all MCU-type components (detected by MPN prefix)
+- [x] `generate_artifacts()` auto-runs for designs with MCUs; adds `"pinout_csv"` key to result dict
+- [x] `--pinout` flag on `generate` subcommand forces emission for all components
+- [x] 5 unit tests: MCU emits csv, correct columns, signal rows present, power pins included, non-MCU skipped
 
 Files: `src/circuit_weaver/firmware_export.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_firmware_export.py` (new)
 
-### 121. STM32 .ioc Skeleton Export (P1, SMALL)
+### 121. STM32 .ioc Skeleton Export (P1, SMALL) ✅ DONE
 
-- [ ] Detect STM32 MCU by MPN prefix (`STM32*`)
-- [ ] Emit `{project_name}.ioc` skeleton with `[PinoutTool.PinMappings]` section populated from `pin_nets`
-- [ ] Map common peripheral prefixes: `I2C*`, `SPI*`, `UART*`, `TIM*`, `ADC*` from net names
-- [ ] 3 unit tests: STM32 design emits .ioc, correct pin mapping, non-STM32 skipped
+- [x] `export_stm32_ioc()` detects STM32 by MPN prefix, returns None for non-STM32
+- [x] Emits `{project}.ioc` with `[PinoutTool.PinMappings]` populated from `pin_nets`
+- [x] `_stm32_port_label()` extracts PA13 from "PA13/SWDIO"; `_stm32_signal_from_net()` maps nets to CubeMX signal names
+- [x] `generate_artifacts()` auto-emits `.ioc` for any STM32 component; adds `"stm32_ioc"` key
+- [x] 3 unit tests: creates file, contains pin mappings, skips non-STM32
 
 Files: `src/circuit_weaver/firmware_export.py`, `tests/test_firmware_export.py`
 
-### 122. ESP32 sdkconfig Fragment Export (P2, SMALL)
+### 122. ESP32 sdkconfig Fragment Export (P2, SMALL) ✅ DONE
 
-- [ ] Detect ESP32 MCU by MPN prefix (`ESP32*`)
-- [ ] Emit `sdkconfig.defaults` with `CONFIG_*_GPIO_NUM=<pin>` defines inferred from net names
-- [ ] Map common net prefixes: `SDA*`→I2C_SDA, `SCL*`→I2C_SCL, `MOSI*`→SPI_MOSI, etc.
-- [ ] 3 unit tests: ESP32 design emits sdkconfig, correct GPIO mapping, non-ESP32 skipped
+- [x] `export_esp32_sdkconfig()` detects ESP32 by MPN prefix, returns None for non-ESP32
+- [x] Emits `sdkconfig.defaults` with `CONFIG_*_GPIO_NUM=<N>` from IO<N> pin names + net-based key mapping
+- [x] `_esp32_gpio_number()` extracts GPIO from "IO21" → 21; `_esp32_config_key()` maps net→CONFIG prefix
+- [x] `generate_artifacts()` auto-emits for any ESP32 component; adds `"esp32_sdkconfig"` key
+- [x] 3 unit tests: creates file, correct GPIO mapping (IO21→I2C_SDA=21), skips non-ESP32
 
 Files: `src/circuit_weaver/firmware_export.py`, `tests/test_firmware_export.py`
 
