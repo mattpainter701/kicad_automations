@@ -52,6 +52,8 @@ _ANSI = {
     "reset": "\x1b[0m",
 }
 
+_logger = logging.getLogger(__name__)
+
 
 def _color_support(mode: str) -> bool:
     """Check if ANSI color output is supported.
@@ -1456,11 +1458,6 @@ def generate_artifacts(
 ) -> dict[str, Any]:
     """Generate derived artifacts from a validated design spec."""
     profile = _ensure_profile(profile)
-    report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
-    if require_valid and not report.valid:
-        raise ValueError("Design failed standard validation")
-
-    compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -1474,7 +1471,16 @@ def generate_artifacts(
     _cw_logger.setLevel(logging.DEBUG)
     _cw_logger.addHandler(_file_handler)
     try:
+        report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
+        if require_valid and not report.valid:
+            _logger.error("Design failed standard validation: %s", report.summary)
+            raise ValueError("Design failed standard validation")
+
+        compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
         files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg, score=score)
+    except Exception:
+        _logger.exception("Artifact generation failed for output directory %s", output_path)
+        raise
     finally:
         _cw_logger.removeHandler(_file_handler)
         _file_handler.close()

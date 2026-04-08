@@ -1323,9 +1323,12 @@ def generate_from_components(
         for sheet_alloc in sheets:
             layout = layout_sheet(sheet_alloc, presentation_wiring_policy=resolved_presentation_wiring_policy)
             layouts.append(layout)
-            print(
-                f"  {sheet_alloc.name}: {len(layout.placed_ics)} ICs, "
-                f"{len(layout.placed_passives)} passives on {layout.paper}"
+            _logger.info(
+                "  %s: %d ICs, %d passives on %s",
+                sheet_alloc.name,
+                len(layout.placed_ics),
+                len(layout.placed_passives),
+                layout.paper,
             )
 
         # 1b'. Optional aesthetics scoring
@@ -1344,7 +1347,11 @@ def generate_from_components(
         if use_hierarchy:
             boundary_nets = _compute_boundary_nets(layouts, resolved_interface_policy)
             if boundary_nets:
-                print(f"  Hierarchical mode: {len(boundary_nets)} boundary nets ({resolved_interface_policy})")
+                _logger.info(
+                    "  Hierarchical mode: %d boundary nets (%s)",
+                    len(boundary_nets),
+                    resolved_interface_policy,
+                )
 
         # 2. Generate each sub-sheet, collecting label info
         sheet_infos = []  # (alloc, uuid, filepath, labels_set)
@@ -1925,7 +1932,7 @@ def _should_render_bus_group(group_name: str, nets_in_group: list[str]) -> bool:
     return len(nets_in_group) >= 4 and group_name != "_misc"
 
 
-def _validate_sexpr_balance(content: str, filename: str) -> None:
+def _validate_sexpr_balance(content: str, filename: str) -> bool:
     """Warn if parentheses are unbalanced in a generated S-expression file.
 
     Counts only parens outside of string literals.  Issues a _logger.warning
@@ -1933,6 +1940,7 @@ def _validate_sexpr_balance(content: str, filename: str) -> None:
     in the log file while stdout keeps working as before.
     """
     depth = 0
+    min_depth = 0
     in_string = False
     escape_next = False
     for ch in content:
@@ -1951,12 +1959,18 @@ def _validate_sexpr_balance(content: str, filename: str) -> None:
             depth += 1
         elif ch == ")":
             depth -= 1
-    if depth != 0:
+            min_depth = min(min_depth, depth)
+
+    valid = depth == 0 and min_depth >= 0 and not in_string
+    if not valid:
         _logger.warning(
-            "S-expression balance check FAILED for %s: depth=%d (positive=unclosed, negative=extra-close)",
+            "S-expression balance check FAILED for %s: depth=%d, min_depth=%d, in_string=%s",
             filename,
             depth,
+            min_depth,
+            in_string,
         )
+    return valid
 
 
 def _render_sheet(

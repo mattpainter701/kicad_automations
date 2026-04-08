@@ -2,6 +2,122 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 22 — Pinout Verification Gate (v0.18.0)
+
+**Goal:** Before emitting any schematic, verify every IC pinout has a confirmed source. Replace silent STUB annotations with hard validation failures. This is the #1 community trust blocker — a swapped pin is invisible to DRC/ERC and kills the board.
+
+### 116. Pinout Source Validation (P0, MEDIUM)
+
+Add a `validate_pinout_sources()` check to `validator.py` that fails validation for any IC whose pin map is derived from a STUB (unverified) source. Users must supply an explicit `pin_map` in their YAML spec, or confirm pins via `pinout_verified: true`, or use a component with a KiCad-library-backed pinout.
+
+- [ ] Add `PinoutSourceCheck` to `validator.py` — scans components for `STUB:` in annotations
+- [ ] Emit `ValidationIssue(level="error", code="unverified-pinout", ref=..., message=...)` for each STUB IC
+- [ ] Surface in `validate` CLI output: "U1 (BGB707): pinout not verified — add explicit pin_map or set pinout_verified: true"
+- [ ] Add `pinout_verified: true` flag to `ComponentDef` (opt-in override for user-confirmed parts)
+- [ ] 6 unit tests in `test_validator.py` covering: STUB IC fails, explicit pin_map passes, pinout_verified passes, mixed design
+
+Files: `src/circuit_weaver/validator.py`, `src/circuit_weaver/component_db.py`, `tests/test_validator.py`
+
+### 117. Remove STUB Annotations from DigiKey/Mouser Loaders (P0, SMALL)
+
+Replace the silent "STUB: verify pinmap" annotations in `digikey_loader.py` and `mouser_loader.py` with a structured `pinout_source` field. When source is `"stub"`, Task 116's validator catches it and fails cleanly.
+
+- [ ] Add `pinout_source: str` field to `ComponentDef` — values: `"explicit"` | `"kicad_library"` | `"stub"`
+- [ ] Set `pinout_source = "stub"` in `digikey_loader.py` (lines 164, 205) and `mouser_loader.py` (lines 162, 197) instead of STUB annotation
+- [ ] Set `pinout_source = "explicit"` when `pin_map` is provided in YAML spec
+- [ ] 3 unit tests: loader sets stub source, explicit pin_map overrides to explicit, validator integration
+
+Files: `src/circuit_weaver/component_db.py`, `src/circuit_weaver/digikey_loader.py`, `src/circuit_weaver/mouser_loader.py`, `tests/test_validator.py`
+
+---
+
+## Sprint 23 — Post-Generation ERC (v0.19.0)
+
+**Goal:** Invoke KiCad CLI ERC after generation and surface results in the HTML review report. A clean "ERC: 0 errors" badge becomes a shareable trust signal for community posts.
+
+### 118. KiCad CLI ERC Integration (P0, MEDIUM)
+
+- [ ] Add `erc` subcommand: `circuit-weaver erc <schematic.kicad_sch> [--output erc_report.json]`
+- [ ] Invoke `kicad-cli sch erc --output <json> <sch>` headlessly, parse JSON violations array
+- [ ] Classify: errors (floating inputs, power domain shorts, missing PWR_FLAG) vs warnings
+- [ ] Degrade gracefully when KiCad CLI unavailable: emit warning, skip ERC, return `{"status": "skipped"}`
+- [ ] Integrate into `generate_artifacts()`: auto-run ERC if KiCad CLI is present
+- [ ] 8 unit tests: mock kicad-cli success, mock failure, absent CLI, JSON parsing, error classification
+
+Files: `src/circuit_weaver/erc_runner.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_erc_runner.py` (new)
+
+### 119. ERC Results in HTML Review Report (P1, SMALL)
+
+- [ ] Add "ERC Status" section to `review_report.py` HTML output
+- [ ] Show badge: green "✓ ERC: 0 errors, 0 warnings" or red "✗ ERC: N errors" with violation list
+- [ ] Include violation details: type, reference designator, net, severity
+- [ ] If ERC was skipped (no KiCad CLI), show "ERC: not run (KiCad CLI unavailable)"
+- [ ] 3 unit tests: clean ERC renders badge, errors render list, skipped renders gracefully
+
+Files: `src/circuit_weaver/review_report.py`, `tests/test_review_report.py`
+
+---
+
+## Sprint 24 — Firmware Co-Design Export (v0.20.0)
+
+**Goal:** For MCU-based designs, emit a `pinout.csv` alongside the schematic. For STM32 and ESP32 targets, also emit target-specific config stubs. Closes the hardware/firmware contract gap.
+
+### 120. Pinout CSV Export (P0, SMALL)
+
+- [ ] After schematic generation, emit `{project_name}_pinout.csv` with columns: `Ref, Pin, Net, Peripheral, Direction`
+- [ ] Inferred from `ComponentDef.pin_nets` + `ComponentDef.power_pins` for all ICs with MCU type
+- [ ] Add to `generate_artifacts()` result dict as `"pinout_csv": str(path)`
+- [ ] CLI: `circuit-weaver generate --pinout` flag to emit even for non-MCU designs
+- [ ] 4 unit tests: MCU design emits csv, correct columns, power pins included, non-MCU skipped by default
+
+Files: `src/circuit_weaver/firmware_export.py` (new), `src/circuit_weaver/dispatcher.py`, `tests/test_firmware_export.py` (new)
+
+### 121. STM32 .ioc Skeleton Export (P1, SMALL)
+
+- [ ] Detect STM32 MCU by MPN prefix (`STM32*`)
+- [ ] Emit `{project_name}.ioc` skeleton with `[PinoutTool.PinMappings]` section populated from `pin_nets`
+- [ ] Map common peripheral prefixes: `I2C*`, `SPI*`, `UART*`, `TIM*`, `ADC*` from net names
+- [ ] 3 unit tests: STM32 design emits .ioc, correct pin mapping, non-STM32 skipped
+
+Files: `src/circuit_weaver/firmware_export.py`, `tests/test_firmware_export.py`
+
+### 122. ESP32 sdkconfig Fragment Export (P2, SMALL)
+
+- [ ] Detect ESP32 MCU by MPN prefix (`ESP32*`)
+- [ ] Emit `sdkconfig.defaults` with `CONFIG_*_GPIO_NUM=<pin>` defines inferred from net names
+- [ ] Map common net prefixes: `SDA*`→I2C_SDA, `SCL*`→I2C_SCL, `MOSI*`→SPI_MOSI, etc.
+- [ ] 3 unit tests: ESP32 design emits sdkconfig, correct GPIO mapping, non-ESP32 skipped
+
+Files: `src/circuit_weaver/firmware_export.py`, `tests/test_firmware_export.py`
+
+---
+
+## Sprint 25 — Explainability & Test Points (v0.21.0)
+
+**Goal:** Surface design rationale in the review report so community reviewers can audit component selection. Auto-generate test points for power rails and critical signals.
+
+### 123. Design Rationale in HTML Review Report (P0, MEDIUM)
+
+- [ ] Add "Component Selection Rationale" section to `review_report.py` per IC
+- [ ] Source: wizard choices from `design.log`, research queries, template selection reason
+- [ ] For each IC show: why selected (voltage/current match), reference design cited (if any), key specs used
+- [ ] If no rationale available, show: "Selected via component registry — verify against datasheet"
+- [ ] 4 unit tests: rationale renders per IC, missing rationale shows fallback, HTML escaping correct
+
+Files: `src/circuit_weaver/review_report.py`, `src/circuit_weaver/design_logger.py`, `tests/test_review_report.py`
+
+### 124. Automatic Test Point Generation (P1, MEDIUM)
+
+- [ ] Identify key nets: all power rails (`VDD_*`, `VCC*`, `VBUS*`, `GND`), differential pairs, high-speed signals
+- [ ] Emit `{project_name}_test_points.csv` with columns: `TestPoint, Net, Type, Priority`
+- [ ] Types: `power_rail`, `differential`, `clock`, `data_bus`, `ground`
+- [ ] Add test point annotation labels to generated schematic at rail connection sites
+- [ ] 5 unit tests: power rails detected, differential pairs detected, CSV format correct, schematic annotation added, empty design handled
+
+Files: `src/circuit_weaver/test_point_gen.py` (new), `src/circuit_weaver/generator.py`, `tests/test_test_point_gen.py` (new)
+
+---
+
 ## Sprint 20 — Design Review Completion & Production Assembly (v0.17.0)
 
 **Goal:** Complete Sprint 19 backlog (dispatcher refactor, sourcing audit), then enable production assembly workflows. Users can now design → validate → review → estimate costs → order assembled boards from JLCPCB.

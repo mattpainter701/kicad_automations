@@ -18,12 +18,13 @@ _SAMPLE_SPEC = Path(__file__).resolve().parent.parent / "samples" / "iot_sensor_
 _EXAMPLE_SPEC = Path(__file__).resolve().parent.parent / "src" / "circuit_weaver" / "examples" / "iot_sensor.yaml"
 
 
-def _run(args: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess:
+def _run(args: list[str], *, timeout: int = 60, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "circuit_weaver.dispatcher"] + args,
         capture_output=True,
         text=True,
         timeout=timeout,
+        cwd=str(cwd) if cwd is not None else None,
     )
 
 
@@ -129,10 +130,15 @@ def test_generate_example(tmp_path):
 
 def test_generate_no_py_artifacts(tmp_path):
     """generate must not write any .py files to the output directory (Task 113)."""
-    out = tmp_path / "gen_out"
-    result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
+    project_root = tmp_path / "project_root"
+    project_root.mkdir()
+    out = project_root / "gen_out"
+    result = _run(
+        ["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"],
+        cwd=project_root,
+    )
     assert result.returncode == 0, f"generate failed: {result.stderr[:300]}"
-    py_files = list(out.glob("*.py"))
+    py_files = sorted(path.relative_to(project_root) for path in project_root.rglob("*.py"))
     assert py_files == [], f"Unexpected .py files in output: {py_files}"
 
 
@@ -145,6 +151,7 @@ def test_generate_log_file(tmp_path):
     assert log.exists(), "circuit-weaver.log not created"
     content = log.read_text(encoding="utf-8")
     assert "Allocated" in content, "log missing component allocation entry"
+    assert "main: " in content, "log missing per-sheet allocation summary"
     assert "IoT_Sensor.kicad_sch" in content, "log missing generated file path"
 
 
@@ -156,6 +163,7 @@ def test_generate_schematic_paren_balance(tmp_path):
     for sch in out.glob("*.kicad_sch"):
         content = sch.read_text(encoding="utf-8")
         depth = 0
+        min_depth = 0
         in_string = False
         escape_next = False
         for ch in content:
@@ -174,7 +182,9 @@ def test_generate_schematic_paren_balance(tmp_path):
                 depth += 1
             elif ch == ")":
                 depth -= 1
+                min_depth = min(min_depth, depth)
         assert depth == 0, f"{sch.name}: unbalanced S-expression (depth={depth})"
+        assert min_depth >= 0, f"{sch.name}: encountered unmatched closing paren"
 
 
 def test_cost_bom_sample():

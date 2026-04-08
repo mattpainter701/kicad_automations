@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.18.0] - 2026-04-08
+
+### Sprint 22 — Pinout Verification Gate
+
+### Added
+- (to be filled during sprint)
+
+### Changed
+
+### Fixed
+
+### Tests
+
+---
+
 ## [0.17.0] - 2026-04-07
 
 ### Sprint 20 — Design Review Completion & Sourcing Audit
