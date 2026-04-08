@@ -70,6 +70,56 @@ Files: `src/circuit_weaver/cost_estimation.py` (new), `src/circuit_weaver/dispat
 
 ---
 
+## Sprint 21 — v0.17.0 Bug Fixes & Generator Hardening
+
+**Goal:** Fix production bugs found in v0.17.0 release testing, stabilize schematic generation, clean up intermediate artifacts.
+
+### 112. Fix Schematic Naming (P0, SMALL)
+
+Generated schematic named `untitled.kicad_sch` instead of `{project_name}.kicad_sch`.
+
+- [ ] Trace project name extraction in `compile_design_ir()` → `_generate_compiled_artifacts()`
+- [ ] Verify `design.yaml` project field is properly passed to `generate_from_components()`
+- [ ] Test with SDR 4-Channel LNA design (should produce `sdr_lna_4ch.kicad_sch`)
+- [ ] Add regression test: assert root schematic filename matches project name
+
+Files: `src/circuit_weaver/dispatcher.py`, `tests/test_bootstrap.py`
+
+### 113. Remove generate_schematic.py from Output (P0, SMALL)
+
+`generate_schematic.py` (33KB) should not be written to user's project directory.
+
+- [ ] Identify where intermediate Python code is being generated/written
+- [ ] Remove or keep it in temp directory only, not in user's output dir
+- [ ] Verify no user-facing files leaked to output/ except schematics, JSON, YAML, SVG
+- [ ] Test: only .kicad_sch, .json, .yaml, .svg files in output/
+
+Files: `src/circuit_weaver/generator.py` or relevant module
+
+### 114. Add Logging to Output Directory (P0, SMALL)
+
+No log file created in output/ — no visibility into generation process.
+
+- [ ] Configure logging to write to `output/circuit-weaver.log`
+- [ ] Log: component count, sheets generated, validation warnings, file paths
+- [ ] Preserve log file after generation completes
+- [ ] Test: verify log exists and contains expected messages
+
+Files: `src/circuit_weaver/dispatcher.py`, logging config
+
+### 115. Fix S-Expression Syntax Error (P0, SMALL)
+
+Stray `)` on line 273 of generated schematic.
+
+- [ ] Reproduce: generate SDR 4-Channel LNA schematic
+- [ ] Identify which component/section produces the malformed S-expression
+- [ ] Fix parenthesis balancing in `primitives.py` or relevant module
+- [ ] Validate KiCad can load the generated schematic without errors
+
+Files: `src/circuit_weaver/primitives.py`, `src/circuit_weaver/generator.py`
+
+---
+
 ## Sprint 19 — Design Review & Quality Assurance (v0.16.0)
 
 **Goal:** Improve design review workflows, add design-time quality checks, and expand documentation for users starting their first designs. Focus on DFM validation, design scoring, and design documentation generation.
