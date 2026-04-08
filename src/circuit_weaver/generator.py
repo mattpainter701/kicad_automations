@@ -1385,7 +1385,7 @@ def generate_from_components(
                 )
             layout = trial_layout
 
-            filename = f"{sheet_alloc.name}.kicad_sch"
+            filename = f"{project_name}.kicad_sch" if len(sheets) == 1 else f"{sheet_alloc.name}.kicad_sch"
             filepath = output_path / filename
             filepath.write_text(content, encoding="utf-8", newline="")
 

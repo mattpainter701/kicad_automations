@@ -74,18 +74,17 @@ Files: `src/circuit_weaver/cost_estimation.py` (new), `src/circuit_weaver/dispat
 
 **Goal:** Fix production bugs found in v0.17.0 release testing, stabilize schematic generation, clean up intermediate artifacts.
 
-### 112. Fix Schematic Naming (P0, SMALL)
+### 112. Fix Schematic Naming (P0, SMALL) — DONE ✅
 
-**INVESTIGATION NOTES:**
-- Schematic IS correctly named `sdr_lna_4ch.kicad_sch` (not "untitled")
-- Project name is properly passed: `compile_design_ir()` → `_generate_compiled_artifacts()` → `generate_from_components(project_name=...)`
-- Single-sheet designs use `sheet_alloc.name` from `allocate_sheets()` → correctly uses project-derived sheet names
-- Root schematic correctly named at `generator.py:1600` as `f"{project_name}.kicad_sch"`
-- **POSSIBLY CLOSED** — either user misread filename or bug only occurs in specific configuration
+**RESOLUTION NOTES:**
+- Multi-sheet root schematics were already named correctly as `{project_name}.kicad_sch`
+- Single-sheet generation still wrote `{sheet_alloc.name}.kicad_sch`, which defaulted to `main.kicad_sch`
+- Reproduced with `src/circuit_weaver/examples/iot_sensor.yaml` (`project: IoT_Sensor`)
+- Fixed single-sheet output naming to use `project_name` instead of generic sheet names
 
-- [ ] Re-test with user's SDR project to confirm filename is correct
-- [ ] If issue persists: trace sheet allocation in multi-sheet designs
-- [ ] Add regression test: assert schematic filename uses project_name, not generic names
+- [x] Reproduce the bug on a single-sheet design (`IoT_Sensor` generated `main.kicad_sch`)
+- [x] Update single-sheet file writes to use `project_name`
+- [x] Add regression coverage in bootstrap and CLI generate tests
 
 Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/generator.py`, `tests/test_bootstrap.py`
 

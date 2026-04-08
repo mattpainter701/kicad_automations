@@ -62,7 +62,8 @@ def test_generate_command_writes_example_artifacts(tmp_path: Path):
     )
 
     # Generate should produce artifacts even when KiCad CLI is unavailable
-    assert (output_dir / "main.kicad_sch").exists(), f"No schematic generated. stderr: {result.stderr[:500]}"
+    assert (output_dir / "IoT_Sensor.kicad_sch").exists(), f"No schematic generated. stderr: {result.stderr[:500]}"
+    assert not (output_dir / "main.kicad_sch").exists()
     assert (output_dir / "canonical_spec.yaml").exists()
     assert (output_dir / "design_ir.json").exists()
 

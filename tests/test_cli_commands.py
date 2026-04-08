@@ -123,7 +123,8 @@ def test_generate_example(tmp_path):
     out = tmp_path / "gen_out"
     result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
     assert result.returncode == 0, f"generate failed: {result.stderr[:500]}"
-    assert (out / "main.kicad_sch").exists()
+    assert (out / "IoT_Sensor.kicad_sch").exists()
+    assert not (out / "main.kicad_sch").exists()
 
 
 def test_cost_bom_sample():

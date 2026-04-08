@@ -23,7 +23,10 @@
   - All tests pass with new module name
 
 ### Fixed
-- (to be filled during sprint)
+- **Task 112 — Single-sheet schematic naming**:
+  - Fixed single-sheet generation to write `{project_name}.kicad_sch` instead of generic `main.kicad_sch`
+  - Preserved existing multi-sheet root naming behavior
+  - Added bootstrap and CLI regression coverage for example-project artifact names
 
 ### Tests
 - All 60+ existing tests pass with dispatcher.py module name
