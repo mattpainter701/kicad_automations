@@ -169,6 +169,18 @@ class ComponentDef:
     # When set, the engine embeds this instead of generating a generic box symbol.
     lib_symbol_sexpr: str = ""
 
+    # Pinout provenance — used by the validator to gate schematic output.
+    # "explicit"      — pin_map supplied in YAML spec or from KiCad library (trusted)
+    # "kicad_library" — symbol resolved from installed KiCad symbol library (trusted)
+    # "stub"          — generated from distributor package data only; pin assignments
+    #                   are 1=pin1 … N=pinN placeholders and MUST NOT be routed.
+    pinout_source: str = "explicit"
+
+    # Set to True in YAML (pinout_verified: true) to acknowledge a stub pinout
+    # has been manually confirmed against the datasheet.  Suppresses the
+    # unverified-pinout validator error without requiring a full pin_map entry.
+    pinout_verified: bool = False
+
     def pin_tuples(self):
         """Return pins as list of (number, name, type, side) tuples for create_generic_symbol."""
         return [p.as_tuple() for p in self.pins]

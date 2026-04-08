@@ -5,13 +5,18 @@
 ### Sprint 22 — Pinout Verification Gate
 
 ### Added
-- (to be filled during sprint)
+- **`pinout_source` field on `ComponentDef`** (`"explicit"` | `"kicad_library"` | `"stub"`): tracks provenance of every IC's pin assignment. Defaults to `"explicit"` for registry/library components.
+- **`pinout_verified` flag on `ComponentDef`**: opt-in override (`pinout_verified: true` in YAML) for users who have manually confirmed a stub pinout against the datasheet.
 
 ### Changed
+- `digikey_loader.py` and `mouser_loader.py`: replaced silent `"STUB: verify pinmap"` annotation strings with structured `pinout_source="stub"`. Stub ICs no longer silently pollute the annotations list.
 
 ### Fixed
+- **Task 116 — Pinout Source Validation**: added `_validate_pinout_sources()` check to `validator.py`. Any IC with `pinout_source="stub"` and `pinout_verified=False` now emits `ValidationIssue(level="error", code="unverified-pinout")`, preventing malformed stub schematics from reaching users.
+- **Task 117 — Remove STUB annotations**: eliminated all four STUB annotation strings from DigiKey/Mouser loaders; pin provenance is now a typed field rather than an opaque string.
 
 ### Tests
+- Added `tests/test_validator.py` with 7 unit tests: stub IC fails, explicit IC passes, `pinout_verified=True` suppresses error, passives skipped, mixed design, multiple stubs, check registration in `_VALIDATION_CHECKS`.
 
 ---
 

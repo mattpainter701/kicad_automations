@@ -695,7 +695,47 @@ def _validate_pin_type_conflicts(components: list[ComponentDef]) -> list[Validat
     return issues
 
 
+_PASSIVE_PREFIXES = frozenset(("R", "C", "L", "D", "F", "FB", "TP", "Y", "X"))
+
+
+def _validate_pinout_sources(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Fail on any IC whose pinout is derived from distributor package data only.
+
+    Components with ``pinout_source == "stub"`` have placeholder pin numbers
+    (1 … N) not backed by a datasheet.  Routing such a component to real nets
+    produces a physically incorrect schematic.  Users must either:
+
+    * Supply an explicit ``pin_map`` in their YAML spec (sets pinout_source="explicit"), or
+    * Add ``pinout_verified: true`` to acknowledge they have manually confirmed
+      the pin assignments against the datasheet.
+    """
+    issues = []
+    for comp in components:
+        # Passives (R/C/L/D…) don't have meaningful pin assignments — skip them.
+        if comp.ref_prefix in _PASSIVE_PREFIXES:
+            continue
+        if comp.pinout_source == "stub" and not comp.pinout_verified:
+            issues.append(
+                _issue(
+                    comp,
+                    "unverified-pinout",
+                    (
+                        f"{comp.source_ref or comp.ref_prefix} ({comp.mpn}): pinout not verified — "
+                        "add explicit pin_map or set pinout_verified: true"
+                    ),
+                    level="error",
+                    suggestion=(
+                        "Either supply a pin_map in your YAML spec mapping pin numbers to net names, "
+                        "or add 'pinout_verified: true' after manually confirming the pinout against "
+                        "the datasheet."
+                    ),
+                )
+            )
+    return issues
+
+
 _VALIDATION_CHECKS = (
+    ("pinout-source", "Pinout verification", _validate_pinout_sources),
     ("feedback-divider", "Feedback dividers", _validate_feedback_dividers),
     ("rc-lc-filter", "RC/LC filters", _validate_filter_cutoffs),
     ("crystal-load", "Crystal load caps", _validate_crystal_caps),

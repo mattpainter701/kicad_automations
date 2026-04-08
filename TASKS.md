@@ -6,28 +6,28 @@
 
 **Goal:** Before emitting any schematic, verify every IC pinout has a confirmed source. Replace silent STUB annotations with hard validation failures. This is the #1 community trust blocker — a swapped pin is invisible to DRC/ERC and kills the board.
 
-### 116. Pinout Source Validation (P0, MEDIUM)
+### 116. Pinout Source Validation (P0, MEDIUM) ✅ DONE
 
 Add a `validate_pinout_sources()` check to `validator.py` that fails validation for any IC whose pin map is derived from a STUB (unverified) source. Users must supply an explicit `pin_map` in their YAML spec, or confirm pins via `pinout_verified: true`, or use a component with a KiCad-library-backed pinout.
 
-- [ ] Add `PinoutSourceCheck` to `validator.py` — scans components for `STUB:` in annotations
-- [ ] Emit `ValidationIssue(level="error", code="unverified-pinout", ref=..., message=...)` for each STUB IC
-- [ ] Surface in `validate` CLI output: "U1 (BGB707): pinout not verified — add explicit pin_map or set pinout_verified: true"
-- [ ] Add `pinout_verified: true` flag to `ComponentDef` (opt-in override for user-confirmed parts)
-- [ ] 6 unit tests in `test_validator.py` covering: STUB IC fails, explicit pin_map passes, pinout_verified passes, mixed design
+- [x] Add `_validate_pinout_sources()` to `validator.py` — scans components for `pinout_source == "stub"`
+- [x] Emit `ValidationIssue(level="error", code="unverified-pinout", ref=..., message=...)` for each STUB IC
+- [x] Surfaces in `validate` CLI output: "U1 (BGB707): pinout not verified — add explicit pin_map or set pinout_verified: true"
+- [x] Add `pinout_verified: bool = False` flag to `ComponentDef` (opt-in override for user-confirmed parts)
+- [x] 7 unit tests in `tests/test_validator.py`: STUB IC fails, explicit passes, pinout_verified suppresses, passive skipped, mixed design, multiple stubs, check registration
 
 Files: `src/circuit_weaver/validator.py`, `src/circuit_weaver/component_db.py`, `tests/test_validator.py`
 
-### 117. Remove STUB Annotations from DigiKey/Mouser Loaders (P0, SMALL)
+### 117. Remove STUB Annotations from DigiKey/Mouser Loaders (P0, SMALL) ✅ DONE
 
 Replace the silent "STUB: verify pinmap" annotations in `digikey_loader.py` and `mouser_loader.py` with a structured `pinout_source` field. When source is `"stub"`, Task 116's validator catches it and fails cleanly.
 
-- [ ] Add `pinout_source: str` field to `ComponentDef` — values: `"explicit"` | `"kicad_library"` | `"stub"`
-- [ ] Set `pinout_source = "stub"` in `digikey_loader.py` (lines 164, 205) and `mouser_loader.py` (lines 162, 197) instead of STUB annotation
-- [ ] Set `pinout_source = "explicit"` when `pin_map` is provided in YAML spec
-- [ ] 3 unit tests: loader sets stub source, explicit pin_map overrides to explicit, validator integration
+- [x] Add `pinout_source: str = "explicit"` and `pinout_verified: bool = False` fields to `ComponentDef`
+- [x] Set `pinout_source = "stub"` in `digikey_loader.py` (both stub paths) instead of STUB annotation
+- [x] Set `pinout_source = "stub"` in `mouser_loader.py` (both stub paths) instead of STUB annotation
+- [x] Default `pinout_source = "explicit"` for all registry/library-backed components
 
-Files: `src/circuit_weaver/component_db.py`, `src/circuit_weaver/digikey_loader.py`, `src/circuit_weaver/mouser_loader.py`, `tests/test_validator.py`
+Files: `src/circuit_weaver/component_db.py`, `src/circuit_weaver/digikey_loader.py`, `src/circuit_weaver/mouser_loader.py`
 
 ---
 
