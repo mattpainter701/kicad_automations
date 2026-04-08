@@ -189,8 +189,8 @@ def compute_diff(old_spec: dict[str, Any], new_spec: dict[str, Any]) -> DesignDi
 
 def _generate_svg(spec: dict[str, Any], work_dir: Path, label: str) -> Path | None:
     """Generate schematic + SVG for a spec. Returns SVG dir path or None."""
-    from .generator import generate_from_components
     from .dispatcher import _find_root_schematic, _kicad_cli_path, compile_design_ir
+    from .generator import generate_from_components
 
     try:
         compiled = compile_design_ir(spec)

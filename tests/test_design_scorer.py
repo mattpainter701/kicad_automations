@@ -320,7 +320,6 @@ class TestThermalScoring:
     def test_thermal_score_with_operating_range(self, detailed_design_ir):
         """Score rewards specified operating temperature."""
         score_result = score_design_comprehensive(detailed_design_ir)
-        thermal_details = score_result.section_details["thermal"]
         # Should get bonus points for operating_temp in metadata
         assert score_result.thermal >= 70
 

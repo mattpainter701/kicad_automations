@@ -47,11 +47,11 @@ class DetailedElectricalQualityScore:
             f"Design Score: {self.overall:.1f} ({self.grade})",
             "",
             "Section Breakdown:",
-            f"  Power Integrity:     {self.power_integrity:>6.1f} {'✓' if self.power_integrity >= 75 else '⚠ BELOW TARGET'}",
-            f"  Signal Integrity:    {self.signal_integrity:>6.1f} {'✓' if self.signal_integrity >= 75 else '⚠ BELOW TARGET'}",
-            f"  Placement Quality:   {self.placement_quality:>6.1f} {'✓' if self.placement_quality >= 75 else '⚠ BELOW TARGET'}",
-            f"  Thermal:             {self.thermal:>6.1f} {'✓' if self.thermal >= 75 else '⚠ BELOW TARGET'}",
-            f"  Manufacturing:       {self.manufacturing:>6.1f} {'✓' if self.manufacturing >= 75 else '⚠ BELOW TARGET'}",
+            f"  Power Integrity:     {self.power_integrity:>6.1f} {'✓' if self.power_integrity >= 75 else '⚠'}",
+            f"  Signal Integrity:    {self.signal_integrity:>6.1f} {'✓' if self.signal_integrity >= 75 else '⚠'}",
+            f"  Placement Quality:   {self.placement_quality:>6.1f} {'✓' if self.placement_quality >= 75 else '⚠'}",
+            f"  Thermal:             {self.thermal:>6.1f} {'✓' if self.thermal >= 75 else '⚠'}",
+            f"  Manufacturing:       {self.manufacturing:>6.1f} {'✓' if self.manufacturing >= 75 else '⚠'}",
         ]
 
         gaps = []

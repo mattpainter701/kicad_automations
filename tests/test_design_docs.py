@@ -214,7 +214,7 @@ class TestDatasheetIndex:
         output = tmp_path / "datasheet_index.md"
 
         # Should return empty index or note missing dir
-        result = generate_datasheet_index(datasheets_dir, output)
+        generate_datasheet_index(datasheets_dir, output)
         # May or may not succeed depending on implementation
 
 

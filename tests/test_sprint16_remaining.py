@@ -298,7 +298,15 @@ def test_cli_si_constraints_help():
 
 def test_cli_thermal_analysis_help():
     r = subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.dispatcher", "thermal-analysis", "--help"], capture_output=True, text=True
+        [
+            sys.executable,
+            "-m",
+            "circuit_weaver.dispatcher",
+            "thermal-analysis",
+            "--help",
+        ],
+        capture_output=True,
+        text=True,
     )
     assert r.returncode == 0
 
