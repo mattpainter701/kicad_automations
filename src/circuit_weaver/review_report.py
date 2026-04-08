@@ -49,6 +49,7 @@ def generate_review_report_html(
     output_path: str | Path,
     kicad_pcb_path: str | Path | None = None,
     erc_result: Any = None,
+    log_entries: list[dict] | None = None,
 ) -> Path:
     """Generate comprehensive HTML design review report.
 
@@ -111,6 +112,7 @@ def generate_review_report_html(
         _generate_checklist(),
         _generate_scoring_breakdown(score_result),
         _generate_erc_section(erc_result),
+        _generate_rationale_section(design_ir, log_entries),
         _generate_dfm_section(dfm_violations),
         _generate_bom_section(bom_table),
         _generate_power_tree_section(power_budget),
@@ -731,6 +733,107 @@ def _generate_recommendations(score_result: Any, dfm_violations: list) -> str:
     html += """  </section>"""
 
     return html
+
+
+def _extract_component_rationale(block: DesignBlock, log_entries: list[dict] | None = None) -> dict:
+    """Extract selection rationale for a single design block.
+
+    Returns a dict with keys: ref, ic, why_selected, reference_design, key_specs, fallback.
+    """
+    rationale: dict = {
+        "ref": block.ref or block.id,
+        "ic": block.ic or block.mpn or "",
+        "why_selected": block.description or "",
+        "reference_design": str(block.params.get("reference_design", "")) if block.params else "",
+        "key_specs": [],
+        "fallback": False,
+    }
+
+    # Pull key electrical specs from params
+    _SPEC_KEYS = ("voltage", "vin", "vout", "current", "iout", "power", "frequency", "speed")
+    for key in _SPEC_KEYS:
+        if block.params and key in block.params:
+            rationale["key_specs"].append(f"{key}: {block.params[key]}")
+
+    # Supplement from design.log entries when available
+    if log_entries:
+        for entry in log_entries:
+            etype = entry.get("type", "")
+            if etype == "wizard_step" and not rationale["why_selected"]:
+                desc = entry.get("description", "")
+                user_input = entry.get("user_input") or {}
+                ref_lower = (block.ref or "").lower()
+                if ref_lower and any(ref_lower in str(v).lower() for v in user_input.values()):
+                    rationale["why_selected"] = f"Wizard step {entry.get('step', '?')}: {desc}"
+            elif etype == "research" and block.ic:
+                phase = entry.get("phase", "")
+                if block.ic.lower() in phase.lower() and not rationale["why_selected"]:
+                    rationale["why_selected"] = f"Research-selected ({phase})"
+
+    if not rationale["why_selected"] and not rationale["key_specs"]:
+        rationale["fallback"] = True
+
+    return rationale
+
+
+def _generate_rationale_section(design_ir: DesignIR, log_entries: list[dict] | None = None) -> str:
+    """Generate the Component Selection Rationale HTML section.
+
+    Shows, per IC/component block: why the component was selected, any reference
+    design cited, and key electrical specs used in selection. Falls back to a
+    "verify against datasheet" notice when no rationale is recorded.
+    """
+    ic_blocks = [b for b in design_ir.blocks if b.ic or b.template_type or b.kind == "component"]
+
+    if not ic_blocks:
+        return """  <section>
+    <h2>Component Selection Rationale</h2>
+    <p>No components found in this design.</p>
+  </section>"""
+
+    rows = ""
+    for block in ic_blocks:
+        r = _extract_component_rationale(block, log_entries)
+
+        ref_html = _html_escape(r["ref"])
+        ic_html = _html_escape(r["ic"])
+        ref_design_html = _html_escape(r["reference_design"]) if r["reference_design"] else "—"
+        specs_html = ", ".join(_html_escape(s) for s in r["key_specs"]) or "—"
+
+        if r["fallback"]:
+            why_html = (
+                '<span style="color: gray; font-style: italic;">'
+                "Selected via component registry — verify against datasheet"
+                "</span>"
+            )
+        else:
+            why_html = _html_escape(r["why_selected"])
+
+        rows += f"""        <tr>
+          <td><strong>{ref_html}</strong></td>
+          <td><code>{ic_html}</code></td>
+          <td>{why_html}</td>
+          <td>{ref_design_html}</td>
+          <td>{specs_html}</td>
+        </tr>
+"""
+
+    return f"""  <section>
+    <h2>Component Selection Rationale</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Reference</th>
+          <th>Component</th>
+          <th>Why Selected</th>
+          <th>Reference Design</th>
+          <th>Key Specs</th>
+        </tr>
+      </thead>
+      <tbody>
+{rows}      </tbody>
+    </table>
+  </section>"""
 
 
 def _generate_footer() -> str:

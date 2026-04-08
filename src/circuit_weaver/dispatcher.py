@@ -1512,6 +1512,17 @@ def generate_artifacts(
         erc_result = run_erc(root)
         result["erc"] = erc_result.to_dict()
 
+    # Task 124: Auto-generate test point CSV and annotate schematic
+    from .test_point_gen import generate_test_point_artifacts
+
+    tp_result = generate_test_point_artifacts(
+        compiled.ir,
+        output_path,
+        project_name=compiled.metadata.get("project", "project"),
+        schematic_path=root,
+    )
+    result["test_points"] = tp_result
+
     # Task 120: Emit pinout CSV for MCU components (auto when MCUs present, or forced via flag)
     from .firmware_export import export_esp32_sdkconfig, export_pinout_csv, export_stm32_ioc, is_mcu
 

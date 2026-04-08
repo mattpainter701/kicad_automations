@@ -14,7 +14,10 @@ Add a `validate_pinout_sources()` check to `validator.py` that fails validation 
 - [x] Emit `ValidationIssue(level="error", code="unverified-pinout", ref=..., message=...)` for each STUB IC
 - [x] Surfaces in `validate` CLI output: "U1 (BGB707): pinout not verified — add explicit pin_map or set pinout_verified: true"
 - [x] Add `pinout_verified: bool = False` flag to `ComponentDef` (opt-in override for user-confirmed parts)
-- [x] 7 unit tests in `tests/test_validator.py`: STUB IC fails, explicit passes, pinout_verified suppresses, passive skipped, mixed design, multiple stubs, check registration
+- [x] Wire `pinout_verified: true` through standalone YAML/project-spec resolution
+- [x] Support explicit YAML `pin_map` overrides for standalone components, promoting distributor stubs to explicit pinout provenance
+- [x] Narrow pass-through exemptions to true pinout-irrelevant passives only; diode/crystal/oscillator-style stubs still fail validation
+- [x] 10 unit tests in `tests/test_validator.py`: STUB IC fails, explicit passes, spec-level `pinout_verified` and `pin_map` overrides work, passive skipped, diode stub fails, mixed design, multiple stubs, check registration
 
 Files: `src/circuit_weaver/validator.py`, `src/circuit_weaver/component_db.py`, `tests/test_validator.py`
 
@@ -99,23 +102,23 @@ Files: `src/circuit_weaver/firmware_export.py`, `tests/test_firmware_export.py`
 
 **Goal:** Surface design rationale in the review report so community reviewers can audit component selection. Auto-generate test points for power rails and critical signals.
 
-### 123. Design Rationale in HTML Review Report (P0, MEDIUM)
+### 123. Design Rationale in HTML Review Report (P0, MEDIUM) ✅ DONE
 
-- [ ] Add "Component Selection Rationale" section to `review_report.py` per IC
-- [ ] Source: wizard choices from `design.log`, research queries, template selection reason
-- [ ] For each IC show: why selected (voltage/current match), reference design cited (if any), key specs used
-- [ ] If no rationale available, show: "Selected via component registry — verify against datasheet"
-- [ ] 4 unit tests: rationale renders per IC, missing rationale shows fallback, HTML escaping correct
+- [x] Add "Component Selection Rationale" section to `review_report.py` per IC
+- [x] Source: wizard choices from `design.log`, research queries, template selection reason
+- [x] For each IC show: why selected (voltage/current match), reference design cited (if any), key specs used
+- [x] If no rationale available, show: "Selected via component registry — verify against datasheet"
+- [x] 4 unit tests: rationale renders per IC, missing rationale shows fallback, HTML escaping correct, key specs from params appear
 
 Files: `src/circuit_weaver/review_report.py`, `src/circuit_weaver/design_logger.py`, `tests/test_review_report.py`
 
-### 124. Automatic Test Point Generation (P1, MEDIUM)
+### 124. Automatic Test Point Generation (P1, MEDIUM) ✅ DONE
 
-- [ ] Identify key nets: all power rails (`VDD_*`, `VCC*`, `VBUS*`, `GND`), differential pairs, high-speed signals
-- [ ] Emit `{project_name}_test_points.csv` with columns: `TestPoint, Net, Type, Priority`
-- [ ] Types: `power_rail`, `differential`, `clock`, `data_bus`, `ground`
-- [ ] Add test point annotation labels to generated schematic at rail connection sites
-- [ ] 5 unit tests: power rails detected, differential pairs detected, CSV format correct, schematic annotation added, empty design handled
+- [x] Identify key nets: all power rails (`VDD_*`, `VCC*`, `VBUS*`, `GND`), differential pairs, high-speed signals
+- [x] Emit `{project_name}_test_points.csv` with columns: `TestPoint, Net, Type, Priority`
+- [x] Types: `power_rail`, `differential`, `clock`, `data_bus`, `ground`
+- [x] Add test point annotation labels to generated schematic at rail connection sites
+- [x] 6 unit tests: power rails detected, differential pairs detected (from names + pcb_constraints), CSV format correct, schematic annotation added, empty design handled
 
 Files: `src/circuit_weaver/test_point_gen.py` (new), `src/circuit_weaver/generator.py`, `tests/test_test_point_gen.py` (new)
 

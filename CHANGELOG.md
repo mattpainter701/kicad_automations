@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.21.0] - 2026-04-08
+
+### Sprint 25 — Explainability & Test Points
+
+### Added
+- **`_generate_rationale_section(design_ir, log_entries)`** in `review_report.py`: new "Component Selection Rationale" section in the HTML review report. Per-IC table shows why each component was selected (description, key specs from params, wizard/research log entries). Falls back to "Selected via component registry — verify against datasheet" when no rationale is recorded.
+- **`_extract_component_rationale(block, log_entries)`** helper: extracts rationale from `DesignBlock.description`, `params` (vin/vout/current/frequency etc.), and optional `design.log` entries.
+- **`generate_review_report_html(..., log_entries=...)`**: new optional `log_entries` param threads design.log data into the rationale section.
+- **`src/circuit_weaver/test_point_gen.py`** (new module): automatic test point generation from DesignIR.
+  - `generate_test_points(design_ir)` — classifies nets as `power_rail`, `ground`, `clock`, `data_bus`, or `differential`; names them TP1, TP2, …
+  - `write_test_points_csv(test_points, path)` — emits `{project_name}_test_points.csv` with columns `TestPoint, Net, Type, Priority`
+  - `annotate_schematic(content, test_points)` — inserts `(text …)` labels into `.kicad_sch` content
+  - `generate_test_point_artifacts(design_ir, output_dir, project_name, schematic_path)` — orchestrates CSV + schematic annotation
+- **`generate_artifacts()`** in `dispatcher.py` auto-calls `generate_test_point_artifacts` after schematic generation; result stored under `result["test_points"]`.
+
+### Tests
+- `tests/test_review_report.py`: 4 tests — rationale renders per IC, missing rationale shows fallback, HTML escaping correct, key specs from params appear.
+- `tests/test_test_point_gen.py`: 6 tests — power rails detected, differential pairs from net names, differential pairs from pcb_constraints, CSV format correct, schematic annotation added, empty design handled.
+
 ## [0.18.0] - 2026-04-08
 
 ### Sprint 22 — Pinout Verification Gate
@@ -14,9 +33,13 @@
 ### Fixed
 - **Task 116 — Pinout Source Validation**: added `_validate_pinout_sources()` check to `validator.py`. Any IC with `pinout_source="stub"` and `pinout_verified=False` now emits `ValidationIssue(level="error", code="unverified-pinout")`, preventing malformed stub schematics from reaching users.
 - **Task 117 — Remove STUB annotations**: eliminated all four STUB annotation strings from DigiKey/Mouser loaders; pin provenance is now a typed field rather than an opaque string.
+- **Sprint 22 follow-up hardening**:
+  - `pinout_verified: true` now flows through standalone YAML/project-spec resolution instead of only direct `ComponentDef` construction
+  - explicit YAML `pin_map` now upgrades distributor stubs to `pinout_source="explicit"` and rebuilds concrete pins/nets for generation
+  - pinout-source validation now skips only truly pinout-irrelevant passives; diode-style stubs no longer bypass the gate
 
 ### Tests
-- Added `tests/test_validator.py` with 7 unit tests: stub IC fails, explicit IC passes, `pinout_verified=True` suppresses error, passives skipped, mixed design, multiple stubs, check registration in `_VALIDATION_CHECKS`.
+- Added `tests/test_validator.py` with 10 unit tests: stub IC fails, explicit IC passes, spec-level `pinout_verified` and `pin_map` overrides work, passive skipped, diode stub fails, mixed design, multiple stubs, check registration in `_VALIDATION_CHECKS`.
 
 ### Sprint 24 — Firmware Co-Design Export
 
