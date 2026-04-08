@@ -12,6 +12,7 @@ import contextlib
 import copy
 import io
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -1461,7 +1462,23 @@ def generate_artifacts(
 
     compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
     output_path = Path(output_dir)
-    files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg, score=score)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Task 114: write circuit-weaver.log into the output directory
+    log_path = output_path / "circuit-weaver.log"
+    _file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _cw_logger = logging.getLogger("circuit_weaver")
+    _prev_level = _cw_logger.level
+    _cw_logger.setLevel(logging.DEBUG)
+    _cw_logger.addHandler(_file_handler)
+    try:
+        files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg, score=score)
+    finally:
+        _cw_logger.removeHandler(_file_handler)
+        _file_handler.close()
+        _cw_logger.setLevel(_prev_level)
 
     canonical_spec_path = output_path / "canonical_spec.yaml"
     canonical_spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")

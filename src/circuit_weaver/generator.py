@@ -1316,7 +1316,7 @@ def generate_from_components(
                 sheet_alloc.presentation_wiring_policy = resolved_presentation_wiring_policy
         if post_allocate:
             post_allocate(sheets)
-        print(f"Allocated {len(components)} components to {len(sheets)} sheet(s)")
+        _logger.info("Allocated %d components to %d sheet(s)", len(components), len(sheets))
 
         # 1b. Layout all sheets first (needed for boundary net computation)
         layouts = []
@@ -1387,6 +1387,9 @@ def generate_from_components(
 
             filename = f"{project_name}.kicad_sch" if len(sheets) == 1 else f"{sheet_alloc.name}.kicad_sch"
             filepath = output_path / filename
+            # Validate S-expression parenthesis balance before writing
+            _validate_sexpr_balance(content, filename)
+
             filepath.write_text(content, encoding="utf-8", newline="")
 
             # Collect all label names on this sheet (global + hierarchical)
@@ -1407,7 +1410,7 @@ def generate_from_components(
                 }
             )
             label_count = len(label_names) + len(hier_labels)
-            print(f"  -> {filepath} ({label_count} labels)")
+            _logger.info("  -> %s (%d labels)", filepath, label_count)
 
         generated_files = [str(si["filepath"]) for si in sheet_infos]
 
@@ -1423,7 +1426,7 @@ def generate_from_components(
                 hierarchical=use_hierarchy,
             )
             generated_files.insert(0, str(root_file))
-            print(f"  -> {root_file} (root schematic)")
+            _logger.info("  -> %s (root schematic)", root_file)
 
         # 4. Generate design report
         if validate:
@@ -1437,7 +1440,7 @@ def generate_from_components(
                 metadata={"project": project_name, "company": company},
             )
             generated_files.append(str(report_path))
-            print(f"  -> {report_path} (design report)")
+            _logger.info("  -> %s (design report)", report_path)
 
         # 5. Generate PCB placement hints (optional)
         if pcb:
@@ -1920,6 +1923,40 @@ def _bus_entry_angle_for_side(side: str) -> int:
 def _should_render_bus_group(group_name: str, nets_in_group: list[str]) -> bool:
     """Return True when a classified net group should render as a bus."""
     return len(nets_in_group) >= 4 and group_name != "_misc"
+
+
+def _validate_sexpr_balance(content: str, filename: str) -> None:
+    """Warn if parentheses are unbalanced in a generated S-expression file.
+
+    Counts only parens outside of string literals.  Issues a _logger.warning
+    rather than raising so generation still proceeds — a warning is captured
+    in the log file while stdout keeps working as before.
+    """
+    depth = 0
+    in_string = False
+    escape_next = False
+    for ch in content:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+    if depth != 0:
+        _logger.warning(
+            "S-expression balance check FAILED for %s: depth=%d (positive=unclosed, negative=extra-close)",
+            filename,
+            depth,
+        )
 
 
 def _render_sheet(

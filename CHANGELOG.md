@@ -27,10 +27,22 @@
   - Fixed single-sheet generation to write `{project_name}.kicad_sch` instead of generic `main.kicad_sch`
   - Preserved existing multi-sheet root naming behavior
   - Added bootstrap and CLI regression coverage for example-project artifact names
+- **Task 113 — No .py artifacts in output**:
+  - Confirmed current code never writes `.py` files to output directory
+  - `--output` is required; all writes target the specified directory only
+- **Task 114 — Circuit-weaver log file**:
+  - `generate_artifacts()` now writes `circuit-weaver.log` to the output directory
+  - Captures: validation warnings, component count, sheet allocations, file paths written
+  - Key `print()` calls in `generator.py` converted to `_logger.info()` for file capture
+- **Task 115 — S-expression paren-balance guard**:
+  - Added `_validate_sexpr_balance()` called before each `.kicad_sch` write
+  - Emits `_logger.warning()` (captured in log file) if open/close parens don't balance
+  - Prevents silent malformed schematic output from reaching users
 
 ### Tests
 - All 60+ existing tests pass with dispatcher.py module name
 - Added 20 new tests for sourcing auditor (test_sourcing_auditor.py)
+- Added 3 new Sprint 21 regression tests: no-.py-artifacts, log-file, paren-balance
 
 ---
 

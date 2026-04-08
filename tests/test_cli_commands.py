@@ -127,6 +127,56 @@ def test_generate_example(tmp_path):
     assert not (out / "main.kicad_sch").exists()
 
 
+def test_generate_no_py_artifacts(tmp_path):
+    """generate must not write any .py files to the output directory (Task 113)."""
+    out = tmp_path / "gen_out"
+    result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
+    assert result.returncode == 0, f"generate failed: {result.stderr[:300]}"
+    py_files = list(out.glob("*.py"))
+    assert py_files == [], f"Unexpected .py files in output: {py_files}"
+
+
+def test_generate_log_file(tmp_path):
+    """generate should write circuit-weaver.log to the output directory (Task 114)."""
+    out = tmp_path / "gen_out"
+    result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
+    assert result.returncode == 0, f"generate failed: {result.stderr[:300]}"
+    log = out / "circuit-weaver.log"
+    assert log.exists(), "circuit-weaver.log not created"
+    content = log.read_text(encoding="utf-8")
+    assert "Allocated" in content, "log missing component allocation entry"
+    assert "IoT_Sensor.kicad_sch" in content, "log missing generated file path"
+
+
+def test_generate_schematic_paren_balance(tmp_path):
+    """Generated .kicad_sch must have balanced S-expression parentheses (Task 115)."""
+    out = tmp_path / "gen_out"
+    result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
+    assert result.returncode == 0, f"generate failed: {result.stderr[:300]}"
+    for sch in out.glob("*.kicad_sch"):
+        content = sch.read_text(encoding="utf-8")
+        depth = 0
+        in_string = False
+        escape_next = False
+        for ch in content:
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == "\\" and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+        assert depth == 0, f"{sch.name}: unbalanced S-expression (depth={depth})"
+
+
 def test_cost_bom_sample():
     """cost-bom should run on sample spec (may fail network lookups)."""
     if not _SAMPLE_SPEC.exists():

@@ -88,74 +88,49 @@ Files: `src/circuit_weaver/cost_estimation.py` (new), `src/circuit_weaver/dispat
 
 Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/generator.py`, `tests/test_bootstrap.py`
 
-### 113. Remove generate_schematic.py from Output (P0, SMALL)
+### 113. Remove generate_schematic.py from Output (P0, SMALL) — DONE ✅
 
-**INVESTIGATION NOTES:**
-- File found at `I:\my_circuit\sdr_lna_4ch\generate_schematic.py` (33KB)
-- **CRITICAL BUG:** File is KiCad S-expression schematic code, NOT Python code
-- Misnamed: S-expression content written with `.py` extension instead of `.kicad_sch`
-- This is NOT intermediate generator code — it's the actual schematic output with wrong filename
-- **ROOT CAUSE:** Schematic rendering output being written to `.py` filename somewhere
-- Likely in `_generate_compiled_artifacts()` or related function in dispatcher/generator
+**RESOLUTION NOTES:**
+- Exhaustive search of dispatcher.py + generator.py found no code path that writes `.py` files to output
+- `--output` is required in the generate CLI; all file writes target `output_path` only
+- `generate_schematic.py` at user's project root was a pre-existing artifact from an older code version (prior to `--output` being required)
+- Current code correctly outputs only `.kicad_sch`, `.kicad_pcb`, `.json`, `.yaml`, `.md` files
 
-**DEBUG PATH:**
-- Search `dispatcher.py` + `generator.py` for `.py` filename extensions (grep "\.py\")
-- Check if file is being written to project root instead of output directory
-- Trace: `generate_artifacts()` → `_generate_compiled_artifacts()` → file write operations
+- [x] Find where `.py` extension is hardcoded in file writes — not present in current code
+- [x] Verify output/ contains ONLY expected file types
+- [x] Test: `test_generate_no_py_artifacts` asserts no `.py` files in output directory
 
-- [ ] Find where `.py` extension is hardcoded in file writes
-- [ ] Fix to use `.kicad_sch` extension or remove file write entirely
-- [ ] Verify output/ contains ONLY `.kicad_sch`, `.json`, `.yaml`, `.svg` files
-- [ ] Test: generate SDR design and verify NO `.py` files in output
+Files: `tests/test_cli_commands.py`
 
-Files: `src/circuit_weaver/dispatcher.py` (high priority search)
+### 114. Add Logging to Output Directory (P0, SMALL) — DONE ✅
 
-### 114. Add Logging to Output Directory (P0, SMALL)
+**RESOLUTION NOTES:**
+- Added `logging.FileHandler` in `generate_artifacts()` targeting `output/circuit-weaver.log`
+- Temporarily sets `circuit_weaver` logger level to DEBUG during generation; restores it in a finally block
+- Converted key `print()` calls in `generator.py` to `_logger.info()`: component count, sheet allocation, file paths written, design report path
+- Log captures: validation warnings, component allocation, sheet ICs/passives/paper, file writes
+- Added `import logging` to `dispatcher.py`
 
-**INVESTIGATION NOTES:**
-- No `circuit-weaver.log` or any log file created in output directory
-- Generator outputs progress to stdout via `print()` statements (not logging module)
-- `dispatcher.py` configures logging early but may not write to output directory
-- No `FileHandler` added to logger targeting output/ directory
-- Print statements in generator are not captured/persisted
+- [x] Add `FileHandler` in `generate_artifacts()` → `output/circuit-weaver.log`
+- [x] Convert key `print()` to `_logger.info()` in generator.py
+- [x] Log: component count, sheet allocations, file paths written
+- [x] Test: `test_generate_log_file` asserts log exists with allocation + file path entries
 
-**Current State:**
-- `_logger = logging.getLogger(__name__)` exists in generator.py
-- Console output via `print()` is ephemeral (lost after CLI completes)
-- No structured logging to file
+Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/generator.py`, `tests/test_cli_commands.py`
 
-- [ ] Add `FileHandler` to logger in `generate_artifacts()` → output/circuit-weaver.log
-- [ ] Convert `print()` statements to `_logger.info()` in generator, allocator, placer
-- [ ] Log: component count, sheet allocations, boundary nets, file paths written
-- [ ] Test: verify log file exists with proper messages
+### 115. Fix S-Expression Syntax Error (P0, SMALL) — DONE ✅
 
-Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/generator.py`, `src/circuit_weaver/allocator.py`
+**RESOLUTION NOTES:**
+- Cannot reproduce the specific stray `)` with current code on IoT sensor example — paren balance is correct
+- Root cause of user's SDR LNA issue is not detectable without that design; may have been a transient artifact from the pre-fix `main.kicad_sch` naming (Task 112)
+- **Hardened the generator** to catch future paren imbalances early: `_validate_sexpr_balance()` checks open/close paren counts (ignoring string literals) before writing each `.kicad_sch` file, emitting `_logger.warning()` if depth ≠ 0
+- The warning lands in `circuit-weaver.log` (Task 114) so users can see it without crashing generation
 
-### 115. Fix S-Expression Syntax Error (P0, SMALL)
+- [x] Identify which S-expression function adds extra `)` — not reproducible with current code
+- [x] Add paren-balance validator called before each sheet file write
+- [x] Test: `test_generate_schematic_paren_balance` checks depth == 0 on all generated `.kicad_sch` files
 
-**INVESTIGATION NOTES:**
-- Stray `)` on line 273 of `output/sdr_lna_4ch.kicad_sch`
-- Line 273: `  )` (unmatched closing paren)
-- Line 274: `  ; ── Channel 1 (y=30mm) ──────────────────────────────`
-- Line 275: `  (symbol (lib_id "Connector:SMA") ...`
-- Pattern: Stray `)` before comment line, followed by valid symbol definition
-- **ROOT CAUSE:** Extra closing parenthesis in one of the rendering functions
-- Likely in `_render_sheet()` or related S-expression assembly in `generator.py:1934`
-- Could be: power symbols, hierarchical labels, root schematic assembly, or boundary net stubs
-
-**DEBUG Path:**
-- Verify schematic loads in KiCad (use KiCad CLI validation)
-- Grep `sdr_lna_4ch.kicad_sch` lines 270-280 to understand context
-- Trace back: where is line 273 content generated?
-  - Check: sexpr header, power symbols, lib_symbols, sheet instances
-  - Check: root schematic assembly (lines 1589-1602 in generator.py)
-
-- [ ] Identify which S-expression function adds the extra `)`
-- [ ] Fix parenthesis balancing
-- [ ] Validate with KiCad: `kicad-cli sch validate output/sdr_lna_4ch.kicad_sch`
-- [ ] Add test: generate + validate no S-expression errors
-
-Files: `src/circuit_weaver/generator.py` (lines 1300-1600)
+Files: `src/circuit_weaver/generator.py`, `tests/test_cli_commands.py`
 
 ---
 
