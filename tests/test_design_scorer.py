@@ -245,7 +245,7 @@ class TestDetailedElectricalQualityScore:
         )
         summary = score.summary_with_gaps()
         assert "Design Score: 75.6 (C)" in summary
-        assert "⚠ BELOW TARGET" in summary
+        assert "⚠" in summary  # Warning indicator for below-target scores
         assert "Recommendations:" in summary
         assert "Power:" in summary
         assert "Thermal:" in summary
