@@ -37,16 +37,36 @@ def _generate_bom_table(design_ir: DesignIR) -> list[dict[str, Any]]:
     Returns list of dicts: {reference, value, footprint, mpn, manufacturer, category}
     """
     bom = []
-    for comp_id, comp in design_ir.components.items():
+    components = getattr(design_ir, "components", None)
+    if isinstance(components, dict):
+        for comp_id, comp in components.items():
+            bom.append(
+                {
+                    "reference": comp_id,
+                    "value": comp.value or comp.mpn or "N/A",
+                    "footprint": comp.footprint or "N/A",
+                    "mpn": comp.mpn or "UNRESOLVED",
+                    "manufacturer": comp.source_manufacturer or "Unknown",
+                    "category": comp.category or "Miscellaneous",
+                    "quantity": 1,  # Simplified; would need BOM grouping
+                }
+            )
+        return sorted(bom, key=lambda x: (x["category"], x["reference"]))
+
+    for block in getattr(design_ir, "blocks", []):
+        part_bindings = block.part_bindings or {}
+        mpn = str(part_bindings.get("mpn") or block.mpn or block.ic or "").strip()
+        if not (block.ref or mpn or block.value):
+            continue
         bom.append(
             {
-                "reference": comp_id,
-                "value": comp.value or comp.mpn or "N/A",
-                "footprint": comp.footprint or "N/A",
-                "mpn": comp.mpn or "UNRESOLVED",
-                "manufacturer": comp.source_manufacturer or "Unknown",
-                "category": comp.category or "Miscellaneous",
-                "quantity": 1,  # Simplified; would need BOM grouping
+                "reference": block.ref or block.id,
+                "value": block.value or mpn or "N/A",
+                "footprint": str(part_bindings.get("footprint") or "").strip() or "N/A",
+                "mpn": mpn or "UNRESOLVED",
+                "manufacturer": str(part_bindings.get("manufacturer") or "").strip() or "Unknown",
+                "category": block.section or "Miscellaneous",
+                "quantity": 1,
             }
         )
     return sorted(bom, key=lambda x: (x["category"], x["reference"]))
@@ -70,10 +90,37 @@ def _generate_power_budget(design_ir: DesignIR) -> list[dict[str, Any]]:
     }
 
     rail_power = {}
-    for comp_id, comp in design_ir.components.items():
-        # Try to map component to a power rail and estimate current
-        if comp.category in power_map:
-            power_w = power_map[comp.category]
+    components = getattr(design_ir, "components", None)
+    if isinstance(components, dict):
+        iterable = [(comp.category or "").lower() for comp in components.values()]
+    else:
+        iterable = []
+        for block in getattr(design_ir, "blocks", []):
+            descriptor = " ".join(
+                [
+                    str(block.section or ""),
+                    str(block.template_type or ""),
+                    str(block.ic or ""),
+                    str(block.mpn or ""),
+                    str(block.description or ""),
+                ]
+            ).lower()
+            if "stm32" in descriptor or "esp32" in descriptor or "mcu" in descriptor:
+                iterable.append("mcu")
+            elif "fpga" in descriptor or "zynq" in descriptor:
+                iterable.append("fpga")
+            elif "wifi" in descriptor:
+                iterable.append("wifi")
+            elif "bluetooth" in descriptor or "ble" in descriptor:
+                iterable.append("bluetooth")
+            elif "sensor" in descriptor:
+                iterable.append("sensor")
+            elif "regulator" in descriptor or "buck" in descriptor or "boost" in descriptor or "ldo" in descriptor:
+                iterable.append("regulator")
+
+    for category in iterable:
+        if category in power_map:
+            power_w = power_map[category]
             # Estimate current at 3.3V (would need actual rail voltage)
             current_ma = (power_w / 3.3) * 1000 if power_w > 0 else 0
             rail = "VDD_3V3"  # Simplified assumption

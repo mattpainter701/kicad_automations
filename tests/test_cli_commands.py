@@ -187,6 +187,36 @@ def test_generate_schematic_paren_balance(tmp_path):
         assert min_depth >= 0, f"{sch.name}: encountered unmatched closing paren"
 
 
+def test_review_report_schematic_surfaces_erc_failure(tmp_path):
+    """review-report should pass an explicit schematic through to the ERC HTML section."""
+    report = tmp_path / "review.html"
+    missing_schematic = tmp_path / "missing.kicad_sch"
+    result = _run(
+        [
+            "review-report",
+            str(_EXAMPLE_SPEC),
+            "--output",
+            str(report),
+            "--schematic",
+            str(missing_schematic),
+        ]
+    )
+    assert result.returncode == 0, f"review-report failed: {result.stderr[:500]}"
+    content = report.read_text(encoding="utf-8")
+    assert "ERC failed" in content
+    assert "Schematic not found" in content
+
+
+def test_erc_json_failed_exit_code(tmp_path):
+    """erc --json must return a failing exit code when ERC could not run."""
+    missing_schematic = tmp_path / "missing.kicad_sch"
+    result = _run(["erc", str(missing_schematic), "--json"])
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "failed"
+    assert "not found" in payload["skip_reason"].lower()
+
+
 def test_cost_bom_sample():
     """cost-bom should run on sample spec (may fail network lookups)."""
     if not _SAMPLE_SPEC.exists():

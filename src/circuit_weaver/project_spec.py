@@ -37,6 +37,7 @@ Usage:
 from __future__ import annotations
 
 import copy
+import re
 from pathlib import Path
 from typing import Any
 
@@ -229,6 +230,8 @@ _DEFAULT_POWER_MAP = {
     "VSSA": "GND",
 }
 
+_POWER_NET_PREFIXES = ("GND", "AGND", "DGND", "PGND", "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
+
 # Signal pin names that should remain global (shared across instances)
 _GLOBAL_SIGNAL_NAMES = frozenset(
     {
@@ -336,6 +339,105 @@ def _apply_net_prefix(item: dict, comp: ComponentDef) -> None:
         else:
             updated[pin_num] = net
     comp.pin_nets = updated
+
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Return a boolean from YAML-ish input while tolerating strings."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("true", "yes", "1", "on"):
+            return True
+        if lowered in ("false", "no", "0", "off"):
+            return False
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _is_power_net_name(net_name: str) -> bool:
+    """Return True when *net_name* should be treated as a power rail."""
+    normalized = str(net_name or "").strip().upper()
+    return any(normalized == prefix or normalized.startswith(f"{prefix}_") for prefix in _POWER_NET_PREFIXES)
+
+
+def _pin_sort_key(pin_number: str) -> tuple[int, int, str]:
+    """Sort pin identifiers numerically when possible, then lexically."""
+    raw = str(pin_number or "").strip()
+    match = re.fullmatch(r"(\d+)", raw)
+    if match:
+        return (0, int(match.group(1)), "")
+    alpha_num = re.fullmatch(r"([A-Za-z]+)(\d+)", raw)
+    if alpha_num:
+        prefix, suffix = alpha_num.groups()
+        return (1, int(suffix), prefix.upper())
+    return (2, 0, raw.upper())
+
+
+def _apply_pinout_overrides(item: dict, comp: ComponentDef) -> None:
+    """Apply YAML-level pinout overrides for a standalone component instance."""
+    if "pinout_verified" in item:
+        comp.pinout_verified = _coerce_bool(item.get("pinout_verified"), comp.pinout_verified)
+
+    raw_pin_map = item.get("pin_map") or {}
+    if not isinstance(raw_pin_map, dict) or not raw_pin_map:
+        return
+
+    normalized_pin_map = {
+        str(pin_num).strip(): str(net_name).strip()
+        for pin_num, net_name in raw_pin_map.items()
+        if str(pin_num).strip() and str(net_name).strip()
+    }
+    if not normalized_pin_map:
+        return
+
+    ordered_pin_numbers = sorted(normalized_pin_map, key=_pin_sort_key)
+    existing_by_number = {str(pin.number).strip(): copy.deepcopy(pin) for pin in comp.pins if str(pin.number).strip()}
+
+    # Distributor stubs only carry two placeholder "~" pins; replace those
+    # with a deterministic generic symbol derived from the explicit YAML map.
+    placeholder_only = bool(existing_by_number) and all((pin.name or "~") == "~" for pin in existing_by_number.values())
+    if placeholder_only or not existing_by_number:
+        split_index = max(1, (len(ordered_pin_numbers) + 1) // 2)
+        rebuilt_pins: list[PinDef] = []
+        for idx, pin_num in enumerate(ordered_pin_numbers):
+            existing = existing_by_number.get(pin_num)
+            if existing and existing.name != "~":
+                pin = existing
+            else:
+                pin = PinDef(
+                    pin_num,
+                    f"PIN{pin_num}",
+                    "power_in" if _is_power_net_name(normalized_pin_map[pin_num]) else "passive",
+                    "L" if idx < split_index else "R",
+                )
+            rebuilt_pins.append(pin)
+        comp.pins = rebuilt_pins
+    else:
+        missing = [pin_num for pin_num in ordered_pin_numbers if pin_num not in existing_by_number]
+        if missing:
+            split_index = max(1, (len(ordered_pin_numbers) + 1) // 2)
+            for pin_num in missing:
+                idx = ordered_pin_numbers.index(pin_num)
+                comp.pins.append(
+                    PinDef(
+                        pin_num,
+                        f"PIN{pin_num}",
+                        "power_in" if _is_power_net_name(normalized_pin_map[pin_num]) else "passive",
+                        "L" if idx < split_index else "R",
+                    )
+                )
+
+    comp.pinout_source = "explicit"
+    comp.pin_nets = {}
+    comp.power_pins = {}
+    for pin_num in ordered_pin_numbers:
+        net_name = normalized_pin_map[pin_num]
+        if _is_power_net_name(net_name):
+            comp.power_pins[pin_num] = net_name
+        else:
+            comp.pin_nets[pin_num] = net_name
 
 
 def _try_easyeda_resolve(item: dict, ic_name: str, parts_lookup=None) -> ComponentDef | None:
@@ -481,6 +583,7 @@ def _resolve_component(
         instance.description = item["description"]
     if item.get("mpn"):
         instance.source_mpn = str(item["mpn"])
+    _apply_pinout_overrides(item, instance)
     _apply_power_map(item, instance)
     _apply_net_prefix(item, instance)
     _maybe_enrich_component(item, instance, parts_lookup)

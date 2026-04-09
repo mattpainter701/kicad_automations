@@ -1835,6 +1835,7 @@ def main() -> None:
     review_p.add_argument("spec", help="Path to YAML/JSON design spec")
     review_p.add_argument("--output", "-o", required=True, help="Path to write HTML report")
     review_p.add_argument("--kicad-pcb", help="Optional path to .kicad_pcb file for DFM analysis")
+    review_p.add_argument("--schematic", help="Optional path to generated .kicad_sch file for ERC status")
     review_p.add_argument("--enrich-parts", action="store_true", default=False)
 
     diff_p = subparsers.add_parser("diff", help="Compare two design specs — structural diff + optional SVG visual")
@@ -2257,17 +2258,21 @@ def main() -> None:
         raise SystemExit(0)
 
     if args.command == "review-report":
+        from .erc_runner import run_erc
         from .review_report import generate_review_report_html
 
         spec = _load_spec_file(args.spec)
         compiled = compile_design_ir(spec, enrich_parts=args.enrich_parts)
         kicad_pcb_path = getattr(args, "kicad_pcb", None)
+        schematic_path = getattr(args, "schematic", None)
+        erc_result = run_erc(schematic_path) if schematic_path else None
 
         report_path = _run_with_stderr_capture(
             lambda: generate_review_report_html(
                 compiled.ir,
                 args.output,
                 kicad_pcb_path=kicad_pcb_path,
+                erc_result=erc_result,
             )
         )
         print(f"Design review report generated: {report_path}", file=sys.stderr)
@@ -3070,6 +3075,7 @@ def main() -> None:
 
         erc_result = run_erc(args.schematic)
         payload = erc_result.to_dict()
+        exit_code = 1 if erc_result.status == "failed" or erc_result.errors > 0 else 0
 
         if getattr(args, "json_output", False):
             _print_json(payload)
@@ -3079,7 +3085,6 @@ def main() -> None:
                 print(f"ERC: skipped — {erc_result.skip_reason}", file=sys.stderr)
             elif status == "failed":
                 print(f"ERC: failed — {erc_result.skip_reason}", file=sys.stderr)
-                raise SystemExit(1)
             else:
                 if erc_result.errors == 0 and erc_result.warnings == 0:
                     print("ERC: ✓ 0 errors, 0 warnings")
@@ -3089,7 +3094,7 @@ def main() -> None:
                         prefix = "ERROR" if v.severity == "error" else "WARN "
                         print(f"  [{prefix}] {v.type}: {v.description}")
 
-        raise SystemExit(1 if erc_result.errors > 0 else 0)
+        raise SystemExit(exit_code)
 
 
 def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:
