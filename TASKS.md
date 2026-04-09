@@ -280,22 +280,6 @@ Files: `src/circuit_weaver/generator.py`, `tests/test_cli_commands.py`
 
 Files: `src/circuit_weaver/dfm_checker.py` (new), `src/circuit_weaver/mvp.py`, `tests/test_dfm_checker.py` (new)
 
-### 109. Rename mvp.py to dispatcher.py (P1, SMALL)
-
-- [ ] Rename `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py`
-- [ ] Update all imports across codebase
-- [ ] Update docstrings and comments
-- [ ] Update CLI help text and error messages if needed
-- [ ] Update test references and CI/CD configs
-- [ ] Verify all tests still pass after rename
-- [ ] Update CONTRIBUTING.md and architecture docs
-
-**Rationale**: "mvp" is outdated naming (no longer a minimum viable product, it's the full CLI dispatcher). "dispatcher.py" accurately reflects its role: routing subcommands to handlers.
-
-Files: `src/circuit_weaver/mvp.py` → `src/circuit_weaver/dispatcher.py` (rename), all imports, docs
-
----
-
 ### 105. Enhanced Design Scoring (P1, MEDIUM) — DONE
 
 - [x] Extend current `score_electrical_quality()` with per-section metrics
@@ -328,23 +312,6 @@ Files: `src/circuit_weaver/design_scorer.py` (new), `src/circuit_weaver/mvp.py`,
 - [x] Data embedding: all data embedded in HTML (no external dependencies)
 
 Files: `src/circuit_weaver/review_report.py` (new, 650 LOC), `src/circuit_weaver/mvp.py`
-
-### 107. Component Sourcing Risk Audit (P2, SMALL)
-
-- [ ] Create `sourcing_auditor.py` — queries distributor APIs for component health
-- [ ] For each BOM component:
-  - [ ] Query DigiKey (via existing `_search_digikey()`) for lifecycle status: Active / NRND / Obsolete / EOL
-  - [ ] Query LCSC (via existing jlcsearch) for stock levels + lead time
-  - [ ] Detect: out-of-stock, <100 units in stock, >12 week lead time
-  - [ ] Flag: parts with no distributor PN (unpriced)
-- [ ] Output: audit report with risk levels
-  - [ ] **CRITICAL:** obsolete parts, zero stock, >16 week lead time
-  - [ ] **WARNING:** low stock (<100), long lead (>8 weeks), single-source only
-  - [ ] Suggest alternates (pin-compatible parts) from LCSC for at-risk parts
-- [ ] CLI: `circuit-weaver audit-bom <design.yaml> [--lcsc-only]`
-- [ ] Integrate into review workflow: call after `cost-bom`
-
-Files: `src/circuit_weaver/sourcing_auditor.py` (new), `src/circuit_weaver/mvp.py`
 
 ### 108. Design Documentation Generator (P2, MEDIUM) — DONE
 

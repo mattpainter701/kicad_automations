@@ -23,6 +23,18 @@
 
 ---
 
+## What's New in v0.21.0
+
+| Sprint | Feature | Details |
+|-|-|-|
+| 25 | **Component Selection Rationale** | HTML review report now includes a "Component Selection Rationale" section — per-IC table showing why each part was chosen, key electrical specs, and any reference design cited. Falls back to "verify against datasheet" notice when no rationale is recorded. |
+| 25 | **Automatic Test Point Generation** | `generate_artifacts()` now emits `{project}_test_points.csv` (columns: TestPoint, Net, Type, Priority) and annotates the root `.kicad_sch` with test-point labels. Detects power rails, ground, clock, data-bus, and differential-pair nets automatically. |
+| 24 | **Firmware Co-Design Export** | Auto-generates `{project}_pinout.csv`, STM32 `.ioc` skeleton, and ESP32 `sdkconfig.defaults` alongside schematics when MCU components are present. |
+| 23 | **KiCad CLI ERC Integration** | `circuit-weaver erc <schematic.kicad_sch>` runs KiCad's built-in ERC and surfaces results in the HTML review report with a green "ERC: 0 errors" badge. |
+| 22 | **Pinout Verification Gate** | Any IC whose pin map comes from an unverified stub now fails validation (`unverified-pinout` error) before a schematic is emitted. Add `pinout_verified: true` or an explicit `pin_map` to pass. |
+
+---
+
 ## What It Is
 
 Circuit Weaver has two layers that work together:
@@ -204,7 +216,7 @@ Generated files (schematic, BOM, CPL, design report) ready for review or orderin
 ### Use the Python API
 
 ```python
-from circuit_weaver.mvp import (
+from circuit_weaver.dispatcher import (
     validate_design,
     apply_design_patch,
     generate_artifacts,
@@ -286,7 +298,7 @@ kicad_automations/
 ├─ .opencode/agents/          # OpenCode/Kilo subagent definitions
 ├─ src/circuit_weaver/        # Core engine: IR, MVP, validators, exporters, helpers
 │   ├─ api.py                 # FastAPI HTTP server
-│   ├─ mvp.py                 # Public-facing workflow functions
+│   ├─ dispatcher.py          # Public-facing workflow functions (CLI + API entrypoint)
 │   ├─ design_ir.py           # Canonical design intermediate representation
 │   ├─ generator.py           # KiCad schematic generator
 │   ├─ validator.py           # Validation check runner
