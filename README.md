@@ -71,38 +71,122 @@ Every `generate` run produces a complete artifact bundle:
 | JLCPCB BOM + CPL | `bom.csv`, `cpl.csv` | Upload-ready assembly files |
 | Firmware stubs | `{project}_pinout.csv`, `.ioc`, `sdkconfig` | MCU pin map + STM32/ESP32 co-design files |
 | Enclosure model | `enclosure.scad` | Parametric OpenSCAD model sized to the PCB |
+| Placement SVG | `placement.svg` | Editable SVG of component placements — import back after editing in Inkscape |
+| PCB file | `design.kicad_pcb` | Initial PCB with zone-based component placement |
+
+---
+
+## PCB Placement Workflow
+
+Circuit Weaver has a complete placement pipeline — from automatic initial placement through optimization, interactive review, and write-back to KiCad.
+
+### 1 — Generate initial placement
+
+`generate` produces an initial `.kicad_pcb` with topology-aware placement (power zone, digital zone, RF zone, connector zone, passive banks) and exports a `placement.svg` for editing:
+
+```bash
+circuit-weaver generate design.yaml -o ./output
+# → output/design.kicad_pcb   (zone-based initial placement)
+# → output/placement.svg       (editable placement diagram)
+```
+
+### 2 — Optimize with simulated annealing
+
+```bash
+# Basic optimization (5 000 iterations, reproducible with seed)
+circuit-weaver optimize-placement design.yaml --iterations 5000 --seed 42
+
+# Thermal-aware strategy (minimizes hotspot proximity)
+circuit-weaver optimize-placement design.yaml --strategy thermal --iterations 10000
+
+# Read component thermal/SI specs from YAML files
+circuit-weaver optimize-placement design.yaml --specs-dir ./specs/
+```
+
+The optimizer minimizes: overlap, boundary violations, thermal clustering, and DFM zone penalties via simulated annealing. Returns a placement JSON with x/y/rotation/layer per component.
+
+### 3 — Review in the interactive viewer
+
+```bash
+circuit-weaver placement-viewer design.yaml -o output/viewer.html
+```
+
+Opens a self-contained HTML file with:
+- Click-to-highlight nets
+- Component hover tooltips (value, footprint, MPN)
+- Thermal heatmap overlay (blue → red gradient by power dissipation)
+- CSV export button for placement data
+
+### 4 — Edit in Inkscape → import back
+
+```bash
+# Export editable SVG
+circuit-weaver generate design.yaml --svg-placement -o ./output
+# → output/placement.svg
+
+# Edit in Inkscape (drag components, adjust positions)…
+
+# Import edits back to .kicad_pcb and CPL
+circuit-weaver import-placement output/placement.svg \
+    output/design.kicad_pcb \
+    output/design_updated.kicad_pcb \
+    --output-cpl output/cpl_updated.csv
+```
+
+### 5 — Write directly via KiCad API
+
+If KiCad 6+ is installed, write placements directly without SVG round-trip:
+
+```python
+from circuit_weaver import check_kicad_available, update_board_placements
+
+if check_kicad_available():
+    update_board_placements("design.kicad_pcb", placements)
+```
+
+### 6 — DFM check and panelization
+
+```bash
+# Check clearances, pad sizes, and DFM rules
+circuit-weaver check-dfm design.yaml
+
+# Get panel layout suggestions for small boards
+circuit-weaver panelize design.yaml
+
+# Export dual-sided CPL (top + bottom)
+circuit-weaver export-dual-cpl design.yaml -o ./jlcpcb
+```
 
 ---
 
 ## CLI Reference
 
 ```bash
-# Validate a design spec (no output files generated)
-circuit-weaver validate design.yaml
+# ── Design lifecycle ──────────────────────────────────────────────────────────
+circuit-weaver validate design.yaml               # Validate spec (no files written)
+circuit-weaver generate design.yaml -o ./output  # Full artifact bundle
+circuit-weaver erc output/design.kicad_sch        # KiCad built-in ERC
+circuit-weaver diff old.yaml new.yaml             # Semantic diff + optional SVG
 
-# Generate the full artifact bundle
-circuit-weaver generate design.yaml -o ./output
+# ── Placement ─────────────────────────────────────────────────────────────────
+circuit-weaver optimize-placement design.yaml --iterations 5000 --seed 42
+circuit-weaver placement-viewer design.yaml -o output/viewer.html
+circuit-weaver import-placement placement.svg board.kicad_pcb out.kicad_pcb
+circuit-weaver check-dfm design.yaml
+circuit-weaver panelize design.yaml
+circuit-weaver export-dual-cpl design.yaml -o ./jlcpcb
 
-# Run KiCad's built-in ERC on a schematic
-circuit-weaver erc output/design.kicad_sch
-
-# Generate costed BOM at volume breaks
+# ── BOM and manufacturing ─────────────────────────────────────────────────────
 circuit-weaver cost-bom design.yaml --qty 1,10,100
-
-# Export JLCPCB-ready BOM + CPL + Gerbers
 circuit-weaver export-jlcpcb design.yaml -o ./jlcpcb
+circuit-weaver export-gerbers design.yaml -o ./gerbers
 
-# Run simulated-annealing placement optimizer
-circuit-weaver optimize-placement design.yaml --iterations 1000
-
-# Generate a parametric enclosure model
+# ── Design tools ──────────────────────────────────────────────────────────────
+circuit-weaver scaffold --template buck --ref U1   # New spec from template
+circuit-weaver list-templates --verbose             # Browse 30 subcircuit templates
 circuit-weaver design-enclosure --board-width 50 --board-height 40 -o enclosure.scad
-
-# Scaffold a new YAML spec from a subcircuit template
-circuit-weaver scaffold --template buck --ref U1
-
-# List all available subcircuit templates
-circuit-weaver list-templates --verbose
+circuit-weaver harvest-specs design.yaml           # Download datasheets + extract specs
+circuit-weaver fetch-spice design.yaml             # Fetch SPICE models (TI, ADI, Microchip…)
 ```
 
 Run `circuit-weaver --help` or `circuit-weaver <subcommand> --help` for full flag reference.
@@ -182,18 +266,25 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 ```
 kicad_automations/
 ├── src/circuit_weaver/      # Core engine
-│   ├── dispatcher.py        # Public API: validate, patch, generate, diff, pcb-feedback
-│   ├── design_ir.py         # Canonical design intermediate representation (DesignIR)
-│   ├── generator.py         # .kicad_sch file emitter
-│   ├── validator.py         # Four-group validation pipeline
-│   ├── review_report.py     # HTML review report generator
-│   ├── test_point_gen.py    # Auto test-point classification and CSV export
-│   ├── firmware_export.py   # MCU co-design stubs (pinout CSV, .ioc, sdkconfig)
-│   ├── sourcing_auditor.py  # BOM sourcing audit
-│   ├── design_scorer.py     # Electrical quality score (0–100, A–F)
-│   ├── dfm_checker.py       # DFM rule checks
-│   ├── api.py               # FastAPI HTTP server
-│   └── subcircuits/         # Reusable circuit template library (30 templates)
+│   ├── dispatcher.py           # Public API: validate, patch, generate, diff, pcb-feedback
+│   ├── design_ir.py            # Canonical design intermediate representation (DesignIR)
+│   ├── generator.py            # .kicad_sch file emitter
+│   ├── validator.py            # Four-group validation pipeline
+│   ├── review_report.py        # HTML review report generator
+│   ├── test_point_gen.py       # Auto test-point classification and CSV export
+│   ├── firmware_export.py      # MCU co-design stubs (pinout CSV, .ioc, sdkconfig)
+│   ├── placer.py               # Topology-aware schematic placement engine
+│   ├── placement_optimizer.py  # Simulated annealing PCB placement optimizer
+│   ├── placement_viewer.py     # Interactive HTML viewer (net highlight, thermal heatmap)
+│   ├── svg_placement.py        # Bidirectional SVG placement editor (export + import)
+│   ├── kicad_placement_api.py  # KiCad 6+ pcbnew API integration
+│   ├── pcb_export.py           # Initial .kicad_pcb generation with zone-based layout
+│   ├── sourcing_auditor.py     # BOM sourcing audit
+│   ├── design_scorer.py        # Electrical quality score (0–100, A–F)
+│   ├── dfm_checker.py          # DFM rule checks
+│   ├── api.py                  # FastAPI HTTP server
+│   ├── helpers/placement.py    # KiCad API abstraction, footprint matching utilities
+│   └── subcircuits/            # Reusable circuit template library (30 templates)
 ├── tests/                   # Regression test suite (430+ tests)
 ├── skills/                  # Global workflow skills: kicad, bom, digikey, lcsc, ee…
 ├── project-skills/          # Per-project templates: kicad_gen, autoroute, sim…
