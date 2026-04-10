@@ -350,10 +350,22 @@ Question: "Want to export a BOM for ordering, or make any changes?"
 
 **Claude Code / Codex / OpenCode:** Present choices:
 - Export BOM & CPL for assembly
+- Run confidence report (design readiness check)
 - Make changes to the design (return to Step 2)
 - Done (exit)
 
-**Log:** `[Step 6] Design review complete. User choice: {export|edit|done}`
+If user selects **confidence report**, run:
+
+```bash
+python -m circuit_weaver confidence "${PROJECT_NAME}/design.yaml" --run-sims -o "${PROJECT_NAME}/output/confidence_report.html"
+```
+
+This aggregates validation, simulation, thermal, DFM, ERC, and cross-reference
+checks into a single 0-100 confidence score with readiness classification
+(ready_for_fab / needs_review / not_ready). Present the terminal output to the
+user and mention the HTML report for detailed review.
+
+**Log:** `[Step 6] Design review complete. User choice: {export|confidence|edit|done}`
 
 ---
 
@@ -403,18 +415,22 @@ What would you like to do?
   [1] Validate design (check electrical rules)
   [2] Regenerate schematic (after making edits)
   [3] View design report
-  [4] Export BOM & CPL for ordering
-  [5] Make changes to the design
-  [6] Exit
+  [4] Run confidence report (design readiness check)
+  [5] Run simulations
+  [6] Export BOM & CPL for ordering
+  [7] Make changes to the design
+  [8] Exit
 ```
 
 Route based on selection:
-- **[1] Validate** → Run `validate` command
-- **[2] Regenerate** → Run `generate` command
+- **[1] Validate** → `python -m circuit_weaver validate ${DESIGN_PATH}/design.yaml --enhanced --verbose`
+- **[2] Regenerate** → `python -m circuit_weaver generate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
 - **[3] Report** → Show `main_report.md`
-- **[4] Export** → Run `export-jlcpcb` command
-- **[5] Changes** → Return to Step 1 (requirements capture for edits)
-- **[6] Exit** → End the skill
+- **[4] Confidence** → `python -m circuit_weaver confidence ${DESIGN_PATH}/design.yaml --run-sims -o ${DESIGN_PATH}/output/confidence_report.html`
+- **[5] Simulate** → `python -m circuit_weaver simulate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/sims`
+- **[6] Export** → Run `export-jlcpcb` command
+- **[7] Changes** → Return to Step 1 (requirements capture for edits)
+- **[8] Exit** → End the skill
 
 ---
 
@@ -464,9 +480,13 @@ This directly invokes `_run_design_wizard()` in Python with `input()` prompts. *
 
 All Python operations accept **command-line arguments only**, no interactive prompts:
 - `scaffold --name X --mcu Y --power-converter Z --output design.yaml`
-- `validate design.yaml`
+- `validate design.yaml [--enhanced] [--verbose] [--detailed-score]`
 - `generate design.yaml --output ./out`
 - `export-jlcpcb design.yaml --output ./export`
+- `confidence design.yaml [--run-sims] [--pcb file.kicad_pcb] [-o report.html] [--json]`
+- `simulate design.yaml [-o ./sims] [--type power|signal|thermal|all] [--json]`
+- `discover [--root .] [--depth 2] [--json]`
+- `log-event project_dir --type <type> --message <msg> [--data <json>]`
 - `log-status project_dir`
 - `log-view project_dir` (show recent log entries)
 

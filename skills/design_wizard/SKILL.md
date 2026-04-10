@@ -700,8 +700,16 @@ Run the generated schematic through the validation tools:
 
 ```bash
 # Full schematic validation
-circuit-weaver validate [spec.yaml]
+circuit-weaver validate [spec.yaml] --enhanced --verbose
+
+# Full confidence report (validation + simulation + thermal + DFM + cross-reference)
+circuit-weaver confidence [spec.yaml] --run-sims -o [output_dir]/confidence_report.html
 ```
+
+**Confidence Report:** The `confidence` command aggregates all available checks
+into a single 0-100 score with a readiness classification (ready_for_fab /
+needs_review / not_ready). Present the terminal output to the user. If an HTML
+output path was given, mention the HTML file for detailed review in a browser.
 
 Parse the validation report (categories level=error or level=warning) and present a structured review summary:
 

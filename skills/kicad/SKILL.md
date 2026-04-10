@@ -18,6 +18,12 @@ description: Analyze KiCad EDA projects and PDF schematics — schematics, PCB l
 
 **Handoff guidance:** Use this skill to parse schematics/PCBs and extract structured data. Hand off to `bom` for BOM enrichment, pricing, and ordering. Hand off to `digikey`/`mouser`/`lcsc` for part searches and datasheet fetching. Hand off to `jlcpcb`/`pcbway` for fabrication ordering and DFM rule validation.
 
+**Design readiness check:** When a user asks "is this ready to order", "check my design", or wants a pre-fab review, run the confidence dashboard:
+```bash
+python -m circuit_weaver confidence design.yaml --run-sims -o confidence_report.html
+```
+This aggregates validation, simulation, thermal, DFM, ERC, and cross-reference checks into a single 0-100 readiness score.
+
 ## PDF Schematic Analysis
 
 This skill also handles **PDF schematics** — reference designs, dev board schematics, eval board docs, application notes, and datasheet typical-application circuits. Common use cases:
