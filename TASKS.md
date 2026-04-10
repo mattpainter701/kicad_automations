@@ -2,6 +2,58 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 31 — Bug Fixes & Error Handling (v0.23.0) ✅ DONE
+
+**Goal:** Fix confirmed bugs from code review, add error handling to all new CLI handlers.
+
+### 131. Fix _score_from_issues() (P0, SMALL) ✅ DONE
+- [x] Fix zero-checks-with-errors returning 100; add tests
+Files: `src/circuit_weaver/confidence_dashboard.py`, `tests/test_confidence_dashboard.py`
+
+### 132. Logging bridge thread safety (P0, MEDIUM) ✅ DONE
+- [x] Add threading.Lock, try/finally cleanup
+Files: `src/circuit_weaver/logging_bridge.py`
+
+### 133. Connector MPN validation (P1, SMALL) ✅ DONE
+- [x] Remove "J" from passive prefixes; add test
+Files: `src/circuit_weaver/cross_reference_validator.py`, `tests/test_enhanced_validation.py`
+
+### 134. CLI error handling (P0, LARGE) ✅ DONE
+- [x] Wrap confidence, simulate, discover, log-event in try/except with user-friendly messages
+Files: `src/circuit_weaver/dispatcher.py`
+
+### 135. SPICE value parser edge cases (P2, SMALL) ✅ DONE
+- [x] Handle picohenry, spaces, standalone F/H; add tests
+Files: `src/circuit_weaver/spice_netlist.py`, `tests/test_spice_netlist.py`
+
+## Sprint 32 — CLI Integration Tests (v0.23.0) ✅ DONE
+
+**Goal:** Add integration tests for all untested CLI commands. Standardize output.
+
+### 136. CLI integration tests (P0, LARGE) ✅ DONE
+- [x] 24 tests: discover, simulate, confidence, log-event, log-status, log-view
+Files: `tests/test_cli_new_commands.py`
+
+### 137. Output standardization (P1, MEDIUM) ✅ DONE
+- [x] Move informational messages to stderr
+Files: `src/circuit_weaver/dispatcher.py`
+
+## Sprint 33 — Platform Compatibility & Skill UX (v0.23.0) ✅ DONE
+
+**Goal:** Ensure all features work on Claude Code, Codex, and OpenCode.
+
+### 139. OpenCode/Kilo shims (P0, MEDIUM) ✅ DONE
+- [x] Create sim shim, update circuit-weaver shim with full CLI list
+Files: `.agents/skills/sim/SKILL.md`, `.agents/skills/circuit-weaver/SKILL.md`
+
+### 140. Platform guidance for all skills (P1, MEDIUM) ✅ DONE
+- [x] Add Platform Guidance section to 9 skills
+Files: `skills/{bom,digikey,mouser,lcsc,jlcpcb,pcbway,ee,vivado,kicad}/SKILL.md`
+
+### 141. Skill trigger disambiguation (P1, MEDIUM) ✅ DONE
+- [x] Add disambiguation notes to bom, design_wizard, kicad, sim skills
+Files: `skills/bom/SKILL.md`, `skills/kicad/SKILL.md`, `skills/design_wizard/SKILL.md`, `project-skills/sim/SKILL.md`
+
 ## Sprint 26 — Logging Overhaul (v0.22.0) ✅ DONE
 
 **Goal:** Make DesignLogger the single authoritative logging system. Instrument all major operations. Give skills a callable logging interface.

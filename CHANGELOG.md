@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.23.0] - 2026-04-10
+
+### Sprint 31 — Bug Fixes & Error Handling Hardening
+
+### Fixed
+- **`_score_from_issues()`** in `confidence_dashboard.py`: returned 100.0 when `total_checks=0` even with errors > 0
+- **Logging bridge thread safety**: added `threading.Lock` for `_current_logger` and `_file_handler`; `cleanup_logging()` now uses try/finally
+- **Connector MPN validation**: connectors ("J" prefix) no longer exempt from MPN checks in cross-reference validator
+- **SPICE value parser**: handles `100pH` (picohenry), values with spaces, standalone F/H units
+- **CLI error handling**: confidence, simulate, discover, log-event handlers wrapped in try/except with user-friendly messages
+
+### Sprint 32 — CLI Integration Tests & Output Standardization
+
+### Added
+- **24 CLI integration tests** in `tests/test_cli_new_commands.py`: end-to-end tests for discover, simulate, confidence, log-event, log-status, log-view
+- Informational messages moved to stderr (HTML report path, simulation output path, log-event confirmation)
+
+### Sprint 33 — Platform Compatibility & Skill UX
+
+### Added
+- **OpenCode/Kilo sim shim**: `.agents/skills/sim/SKILL.md` with trigger phrases and CLI commands
+- **Updated circuit-weaver shim** with full CLI command reference (discover, validate --enhanced, simulate, confidence, log-event)
+- **Platform Guidance** section added to all 9 remaining skills (bom, digikey, mouser, lcsc, jlcpcb, pcbway, ee, vivado, kicad)
+- **Skill trigger disambiguation**: bom, design_wizard, kicad, sim skills now have explicit "use X instead for Y" guidance
+
 ## [0.22.0] - 2026-04-10
 
 ### Sprint 26 — Logging Overhaul
