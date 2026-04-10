@@ -325,7 +325,60 @@ python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
 
 **Log:** `[Step 5] Artifacts generated in output/`
 
-### Step 6 — Design Review & Next Steps
+### Step 6 — Confidence & Simulation Check
+
+**This step runs automatically after artifact generation. Do not skip it.**
+
+Run the confidence dashboard to get a unified design readiness score:
+
+```bash
+python -m circuit_weaver confidence "${PROJECT_NAME}/design.yaml" \
+  --run-sims \
+  -o "${PROJECT_NAME}/output/confidence_report.html"
+```
+
+This runs **all available checks** in one pass:
+- Electrical validation (14 checks: decoupling, enable pins, power budget, thermal, SI, etc.)
+- Circuit simulation via ngspice (power supply transient/AC, filter response)
+- Thermal analysis (junction temperature vs Tj_max)
+- Cross-reference audit (spec vs schematic, BOM completeness, duplicate refs)
+- ERC (if KiCad CLI available)
+
+Present the result to the user:
+
+```
+=== Design Confidence Report ===
+
+Score:      82/100 (B)
+Readiness:  NEEDS REVIEW
+
+Sections:
+  [OK] Electrical Validation     90/100 (A)
+  [OK] Simulation                75/100 (C)
+  [OK] Thermal Analysis         100/100 (A)
+  [--] Signal Integrity            N/A (skipped)
+  [--] Manufacturing (DFM)         N/A (skipped)
+  [OK] Cross-Reference Audit     85/100 (B)
+  [--] ERC/DRC                     N/A (skipped)
+
+Action Items (2):
+  - [high] U1: Ripple 62 mV exceeds target 50 mV
+  - [medium] Install ngspice to enable full simulation
+
+HTML report: output/confidence_report.html
+```
+
+**Interpretation guidance for user:**
+- **ready_for_fab** (80+, no blockers): Design is ready to order
+- **needs_review** (60-80): Design works but has issues worth addressing
+- **not_ready** (<60 or has blockers): Must fix blockers before ordering
+
+If score is below 80, ask the user if they want to address the action items
+before proceeding. Offer to loop back to the relevant step.
+
+**Log:** `[Step 6] Confidence: {score}/100 ({grade}), readiness: {readiness}`
+
+### Step 7 — Design Review & Next Steps
 
 Display:
 
@@ -337,6 +390,7 @@ Logfile:      ${PROJECT_NAME}/design.log
 Schematic:    ${PROJECT_NAME}/output/main.kicad_sch
 Placement:    ${PROJECT_NAME}/output/main_placement.kicad_pcb
 Report:       ${PROJECT_NAME}/output/main_report.md
+Confidence:   ${PROJECT_NAME}/output/confidence_report.html
 
 Next steps:
   1. Open main.kicad_sch in KiCad to review the layout
@@ -350,22 +404,11 @@ Question: "Want to export a BOM for ordering, or make any changes?"
 
 **Claude Code / Codex / OpenCode:** Present choices:
 - Export BOM & CPL for assembly
-- Run confidence report (design readiness check)
+- Re-run confidence report (after making changes)
 - Make changes to the design (return to Step 2)
 - Done (exit)
 
-If user selects **confidence report**, run:
-
-```bash
-python -m circuit_weaver confidence "${PROJECT_NAME}/design.yaml" --run-sims -o "${PROJECT_NAME}/output/confidence_report.html"
-```
-
-This aggregates validation, simulation, thermal, DFM, ERC, and cross-reference
-checks into a single 0-100 confidence score with readiness classification
-(ready_for_fab / needs_review / not_ready). Present the terminal output to the
-user and mention the HTML report for detailed review.
-
-**Log:** `[Step 6] Design review complete. User choice: {export|confidence|edit|done}`
+**Log:** `[Step 7] Design review complete. User choice: {export|confidence|edit|done}`
 
 ---
 
@@ -456,7 +499,8 @@ Subsequent steps must write logs like:
 [Step 3] Design spec generated: design.yaml
 [Step 4] Validation: PASS
 [Step 5] Artifacts generated in output/
-[Step 6] Design review complete. User choice: export
+[Step 6] Confidence: 82/100 (B), readiness: needs_review
+[Step 7] Design review complete. User choice: export
 ```
 
 ### For Claude Code

@@ -75,7 +75,8 @@ I'll walk you through building a new circuit design from scratch:
   Step 3  BOM assembly & sourcing preferences
   Step 4  Schematic generation
   Step 5  Design review checkpoint
-  Step 6  PCB layout guidance & next steps
+  Step 6  Confidence & simulation check
+  Step 7  PCB layout guidance & next steps
 
 You can pause, go back, or skip any step. Let's start.
 ```
@@ -140,7 +141,7 @@ If the user mentioned an enclosure or physical constraints, dig deeper:
 For beginners: explain that connector placement and mounting holes are best
 decided now — moving them after PCB layout is expensive rework.
 
-Record all mechanical constraints — they feed directly into Step 6 (PCB layout)
+Record all mechanical constraints — they feed directly into Step 7 (PCB layout)
 for board outline and keep-out zone generation.
 
 ### 1b. Features & Interfaces
@@ -766,7 +767,7 @@ review the schematic before proceeding to layout.
 Ask: **Have you reviewed the schematic and are you satisfied with it?**
 
 - If issues found → help fix them, re-generate if needed, re-validate
-- If satisfied → proceed to PCB layout (Step 6)
+- If satisfied → proceed to confidence check (Step 6)
 - If they want peer review → suggest they share the .kicad_sch and come back
 
 Do not let beginners skip this step. For advanced users, a quick "looks good,
@@ -774,7 +775,74 @@ moving on" is fine.
 
 ---
 
-## Step 6 — PCB Layout Guidance & Next Steps
+## Step 6 — Confidence & Simulation Check
+
+**Goal:** Run all available checks in one pass to produce a single readiness
+score before the user invests time in PCB layout.
+
+### 6a. Run Confidence Dashboard
+
+**This step runs automatically after the review gate passes. Do not skip it.**
+
+```bash
+# Run confidence report with simulations
+circuit-weaver confidence [spec.yaml] --run-sims -o [output_dir]/confidence_report.html
+
+# For enhanced validation (includes cross-reference audit)
+circuit-weaver validate [spec.yaml] --enhanced --verbose
+```
+
+The confidence dashboard aggregates:
+1. **Electrical validation** — all 14 checks (decoupling, enable pins, power budget, thermal, SI)
+2. **Circuit simulation** — power supply transient/AC analysis via ngspice
+3. **Thermal analysis** — junction temperature vs Tj_max for all power ICs
+4. **Cross-reference audit** — spec vs schematic, BOM completeness, duplicate refs
+5. **ERC** — KiCad electrical rule check (if KiCad CLI installed)
+
+### 6b. Present Results
+
+Show the confidence score and readiness to the user:
+
+```
+Score:      82/100 (B)
+Readiness:  NEEDS REVIEW
+
+Sections:
+  [OK] Electrical Validation     90/100 (A)
+  [OK] Simulation                75/100 (C)
+  [OK] Thermal Analysis         100/100 (A)
+  [--] Signal Integrity            N/A (skipped)
+  [--] Manufacturing (DFM)         N/A (skipped)
+  [OK] Cross-Reference Audit     85/100 (B)
+  [--] ERC/DRC                     N/A (skipped)
+```
+
+**Interpretation guidance:**
+- **ready_for_fab** (80+, no blockers): "Your design looks solid. Proceed to PCB layout."
+- **needs_review** (60-80): "Design works but has issues worth addressing first."
+- **not_ready** (<60 or blockers): "Fix the blockers before investing in PCB layout."
+
+For beginners: explain what each section means and why the score matters.
+"This score tells you how confident we are that the circuit will work correctly
+when you build it. A higher score means fewer surprises when the board arrives."
+
+### 6c. Address Action Items
+
+If blockers or high-priority action items exist, walk through each one:
+
+1. Present the action item with context
+2. Offer to fix it (loop back to the relevant step: Step 2 for IC changes, Step 3 for passives)
+3. Re-run confidence after fixes to verify improvement
+
+Ask: **Want to address any of these items before moving to PCB layout?**
+
+If the user wants to proceed despite issues, note the decision in the log.
+
+**Log:** `[Step 6] Confidence: {score}/100 ({grade}), readiness: {readiness}`
+
+---
+
+## Step 7 — PCB Layout Guidance & Next Steps
 
 **Goal:** Guide the user into the PCB phase with clear expectations about
 what can be scripted vs. what requires manual KiCad work.
@@ -939,5 +1007,6 @@ If the user returns and says "continue my design" or "where were we":
    - Has ICs but no sourcing data → resume at Step 3
    - Has full spec but no generated files → resume at Step 4
    - Has generated schematics but no review → resume at Step 5
-   - Has reviewed schematics → resume at Step 6
+   - Has reviewed schematics → resume at Step 6 (confidence check)
+   - Has confidence report → resume at Step 7 (PCB layout)
 3. Summarize the current state and confirm with the user before proceeding
