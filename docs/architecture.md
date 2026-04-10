@@ -275,6 +275,41 @@ Main CLI dispatcher and validation pipeline orchestrator.
 
 Used for IDE autocomplete (VS Code, PyCharm) and API documentation.
 
+### `logging_bridge.py` — Unified Logging (Sprint 26)
+
+**Exports:**
+- `DesignLogHandler` — Python `logging.Handler` that routes records to `DesignLogger`
+- `get_design_logger()` / `set_design_logger()` — Context-based singleton accessor
+- `init_logging(project_dir)` — Creates both `design.log` (JSON Lines) and `circuit-weaver.log` (text)
+
+### `project_discovery.py` — Project Auto-Detection (Sprint 27)
+
+**Exports:**
+- `DiscoveredProject` — Dataclass with project metadata (type, status, files)
+- `discover_projects(root_dir, max_depth)` — Scan directories for circuit projects
+- `detect_project_type(dir)` — Classify as `circuit_weaver`, `kicad_native`, or `mixed`
+
+### `simulation.py` — Simulation Orchestrator (Sprint 28)
+
+**Exports:**
+- `plan_simulations(components)` — Auto-detect which simulations are needed
+- `run_design_simulations(components, plan)` — Execute all planned simulations
+- `score_simulation_confidence(results)` — Score 0-100 from simulation outcomes
+
+**Dependencies:** `spice_netlist.py` (netlist generation), `spice_runner.py` (ngspice execution)
+
+### `cross_reference_validator.py` — Design Audit (Sprint 29)
+
+**Exports:**
+- `run_cross_reference_audit(components, spec)` — 3-pass audit (spec vs schematic, BOM, consistency)
+- `CrossReferenceResult` — Per-pass result with issues and checked item count
+
+### `confidence_dashboard.py` — Design Readiness (Sprint 30)
+
+**Exports:**
+- `generate_confidence_report(...)` — Aggregate 7 data sources into weighted 0-100 score
+- `DesignConfidenceReport` — Report with sections, blockers, action items, HTML/terminal output
+
 ## Design Patterns
 
 ### Immutability

@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.22.0] - 2026-04-10
+
+### Sprint 26 — Logging Overhaul
+
+### Added
+- **9 new DesignLogger event types** in `design_logger.py`: `part_lookup`, `symbol_resolution`, `simulation`, `thermal`, `erc_drc`, `scoring`, `sourcing`, `generation`, `error` — each with structured JSON fields
+- **`logging_bridge.py`** (new module): `DesignLogHandler` bridges Python's `logging` module to `DesignLogger`; `init_logging()` creates both `design.log` (JSON Lines) and `circuit-weaver.log` (text) from workflow start
+- **`log-event` CLI subcommand**: skills can call `circuit-weaver log-event <dir> --type <type> --message <msg>` for structured logging
+- **Instrumented 7 modules**: `erc_runner`, `dfm_checker`, `validator`, `design_scorer`, `thermal_analysis`, `exporters`, `spice_fetcher` now log to `design.log` via bridge
+
+### Tests
+- `tests/test_design_logger_extended.py`: 33 tests — all new event types, bridge routing, singleton accessors, CLI subcommand, extended summary
+
+### Sprint 27 — Project Discovery & Skill Auto-Detection
+
+### Added
+- **`project_discovery.py`** (new module): `discover_projects()` scans CWD for `design.yaml`, `.kicad_pro`, and `.kicad_sch` projects with status/type inference and depth control
+- **`discover` CLI subcommand**: `circuit-weaver discover [--root .] [--depth 2] [--json]` for project auto-detection
+- **Skill auto-detection**: `circuit-weaver`, `design_wizard`, `kicad_validate`, and `sim` skills now run `discover --json` before asking for paths
+
+### Changed
+- **`_find_existing_circuits()`** in `dispatcher.py` refactored to use `discover_projects()` from the new module
+
+### Tests
+- `tests/test_project_discovery.py`: 20 tests — discovery by type, depth limiting, status inference, CLI output
+
+### Sprint 28 — Circuit Simulation Engine
+
+### Added
+- **`spice_netlist.py`** (new module): generates SPICE `.cir` netlists from `ComponentDef` lists with R/C/L primitives, subcircuit instances, and `.tran`/`.ac`/`.dc`/`.op` analysis cards
+- **`spice_runner.py`** (new module): ngspice subprocess runner with graceful degradation (`status="skipped"` when not installed), `.raw` file parser, metric extraction (ripple, phase margin, operating points)
+- **`simulation.py`** (new module): orchestrator with `plan_simulations()` (auto-detects power/signal/thermal targets), `run_design_simulations()`, and `score_simulation_confidence()` (0-100 scoring)
+- **`resolve_spice_models()`** in `spice_fetcher.py`: reads manifest.json to link downloaded models for simulation
+- **`simulate` CLI subcommand**: `circuit-weaver simulate design.yaml [-o ./sims] [--type power|signal|thermal|all]`
+
+### Tests
+- `tests/test_spice_netlist.py`: 15 tests — netlist generation, passive conversion, analysis cards
+- `tests/test_spice_runner.py`: 10 tests — graceful degradation, raw parsing, metric extraction
+- `tests/test_simulation.py`: 11 tests — plan detection, confidence scoring, orchestrator integration
+
+### Sprint 29 — Enhanced Validations & Cross-Reference
+
+### Added
+- **3 new validation checks** in `validator.py`: `power-budget`, `thermal-limits`, `signal-integrity` (total now 14 checks)
+- **`cross_reference_validator.py`** (new module): 3 audit passes — spec vs schematic, schematic vs BOM, component consistency (duplicate refs, floating power pins)
+- **`--enhanced` flag** on `validate` CLI: runs cross-reference audit alongside standard validation
+- Updated `kicad_validate` skill with new CLI commands
+
+### Tests
+- `tests/test_enhanced_validation.py`: 16 tests — all new checks and cross-reference passes
+
+### Sprint 30 — Confidence Dashboard & Workflow Integration
+
+### Added
+- **`confidence_dashboard.py`** (new module): aggregates 7 data sources (electrical, simulation, thermal, SI, DFM, cross-reference, ERC/DRC) into weighted 0-100 confidence score with HTML/terminal/JSON output and readiness classification (`ready_for_fab`/`needs_review`/`not_ready`)
+- **`confidence` CLI subcommand**: `circuit-weaver confidence design.yaml [--run-sims] [-o report.html] [--pcb file]`
+
+### Changed
+- **Wizard workflow restructured** (both `circuit-weaver` and `design_wizard` skills):
+  - Step 6 is now **Confidence & Simulation Check** (runs automatically after generation)
+  - Step 7 is now **PCB Layout Preparation** with placement optimizer, interactive viewer, SVG export/import, autorouting, and DFM check
+  - Step 8 is now **Design Review** with 13-option action menu organized by category
+  - All project-skills (`kicad_pcb_place`, `autoroute`, `kicad_gen`, `kicad_hierarchy`, `kicad_pinmap`) are now cross-referenced from main skills
+- **Existing Design menu** expanded from 8 to 13 categorized options (Verify / Generate & Layout / Export / Other)
+
+### Tests
+- `tests/test_confidence_dashboard.py`: 23 tests — scoring, weight redistribution, readiness, HTML/terminal output, CLI
+
 ## [0.21.0] - 2026-04-08
 
 ### Sprint 25 — Explainability & Test Points

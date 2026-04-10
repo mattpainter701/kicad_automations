@@ -21,7 +21,12 @@ Installers do not assume a default platform. Always pass an explicit platform fl
 - Lint: `python -m ruff check src tests`
 - Test: `python -m pytest tests -q`
 - Validate example design: `circuit-weaver validate src/circuit_weaver/examples/iot_sensor.yaml`
+- Enhanced validation: `circuit-weaver validate design.yaml --enhanced --verbose`
 - Generate example artifacts: `circuit-weaver generate src/circuit_weaver/examples/iot_sensor.yaml --output out/iot_sensor`
+- Confidence report: `circuit-weaver confidence design.yaml --run-sims -o report.html`
+- Simulate: `circuit-weaver simulate design.yaml -o ./sims`
+- Discover projects: `circuit-weaver discover --json`
+- Log event: `circuit-weaver log-event ./project --type scoring --message "Review done"`
 
 ## Workflow Assets
 

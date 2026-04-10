@@ -176,10 +176,20 @@ circuit-weaver check-dfm design.yaml
 circuit-weaver panelize design.yaml
 circuit-weaver export-dual-cpl design.yaml -o ./jlcpcb
 
+# ── Simulation & confidence ──────────────────────────────────────────────────
+circuit-weaver simulate design.yaml -o ./sims      # Run SPICE simulations (ngspice)
+circuit-weaver confidence design.yaml --run-sims   # Full design readiness score (0-100)
+circuit-weaver confidence design.yaml -o report.html --pcb board.kicad_pcb
+
 # ── BOM and manufacturing ─────────────────────────────────────────────────────
 circuit-weaver cost-bom design.yaml --qty 1,10,100
 circuit-weaver export-jlcpcb design.yaml -o ./jlcpcb
 circuit-weaver export-gerbers design.yaml -o ./gerbers
+
+# ── Project management ───────────────────────────────────────────────────────
+circuit-weaver discover                             # Auto-detect projects in CWD
+circuit-weaver discover --json --depth 2            # JSON output, search 2 levels deep
+circuit-weaver log-event ./project --type scoring --message "Review done"
 
 # ── Design tools ──────────────────────────────────────────────────────────────
 circuit-weaver scaffold --template buck --ref U1   # New spec from template
@@ -249,7 +259,18 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.21.0
+## What's New in v0.22.0
+
+| Sprint | Feature |
+|-|-|
+| 30 | **Confidence Dashboard** — `circuit-weaver confidence` aggregates 7 data sources into a 0-100 readiness score with HTML report; now a mandatory step in the wizard flow |
+| 30 | **Workflow Overhaul** — wizard now 9 steps: added auto-detection, confidence check, and PCB layout preparation (placement optimizer, SVG editor, autoroute, DFM check) |
+| 29 | **Enhanced Validations** — 3 new checks (power budget, thermal limits, signal integrity); cross-reference auditor validates spec-vs-schematic-vs-BOM consistency |
+| 28 | **Circuit Simulation Engine** — SPICE netlist generation, ngspice runner with graceful degradation, simulation orchestrator with auto-planning and confidence scoring |
+| 27 | **Project Discovery** — `circuit-weaver discover` auto-detects projects in CWD; all skills now pre-check before asking for paths |
+| 26 | **Logging Overhaul** — 13 structured event types in `design.log`, Python logging bridge, `log-event` CLI for skill-callable logging, 7 modules instrumented |
+
+<details><summary>v0.21.0</summary>
 
 | Sprint | Feature |
 |-|-|
@@ -258,6 +279,8 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 | 24 | **Firmware Co-Design Export** — Auto-generates `{project}_pinout.csv`, STM32 `.ioc` skeleton, and ESP32 `sdkconfig.defaults` when MCU blocks are present |
 | 23 | **KiCad CLI ERC Integration** — `circuit-weaver erc` runs KiCad's built-in ERC and surfaces results in the HTML report with a pass/fail badge |
 | 22 | **Pinout Verification Gate** — ICs using unverified stub pinouts now fail validation before any schematic is emitted |
+
+</details>
 
 ---
 
@@ -269,7 +292,15 @@ kicad_automations/
 │   ├── dispatcher.py           # Public API: validate, patch, generate, diff, pcb-feedback
 │   ├── design_ir.py            # Canonical design intermediate representation (DesignIR)
 │   ├── generator.py            # .kicad_sch file emitter
-│   ├── validator.py            # Four-group validation pipeline
+│   ├── validator.py            # 14-check validation pipeline (electrical + thermal + SI)
+│   ├── cross_reference_validator.py  # Spec vs schematic vs BOM audit
+│   ├── confidence_dashboard.py # Design readiness scoring (0–100) + HTML dashboard
+│   ├── simulation.py           # Simulation orchestrator (plan → run → score)
+│   ├── spice_netlist.py        # SPICE .cir netlist generator
+│   ├── spice_runner.py         # ngspice subprocess runner with graceful degradation
+│   ├── logging_bridge.py       # Unified logging: Python logging ↔ DesignLogger bridge
+│   ├── design_logger.py        # Structured JSON Lines workflow logging (13 event types)
+│   ├── project_discovery.py    # Auto-detect circuit projects in directories
 │   ├── review_report.py        # HTML review report generator
 │   ├── test_point_gen.py       # Auto test-point classification and CSV export
 │   ├── firmware_export.py      # MCU co-design stubs (pinout CSV, .ioc, sdkconfig)
@@ -277,15 +308,15 @@ kicad_automations/
 │   ├── placement_optimizer.py  # Simulated annealing PCB placement optimizer
 │   ├── placement_viewer.py     # Interactive HTML viewer (net highlight, thermal heatmap)
 │   ├── svg_placement.py        # Bidirectional SVG placement editor (export + import)
-│   ├── kicad_placement_api.py  # KiCad 6+ pcbnew API integration
 │   ├── pcb_export.py           # Initial .kicad_pcb generation with zone-based layout
-│   ├── sourcing_auditor.py     # BOM sourcing audit
 │   ├── design_scorer.py        # Electrical quality score (0–100, A–F)
 │   ├── dfm_checker.py          # DFM rule checks
+│   ├── thermal_analysis.py     # Thermal modeling and junction temp analysis
+│   ├── si_constraints.py       # Signal integrity constraint solver
 │   ├── api.py                  # FastAPI HTTP server
 │   ├── helpers/placement.py    # KiCad API abstraction, footprint matching utilities
 │   └── subcircuits/            # Reusable circuit template library (30 templates)
-├── tests/                   # Regression test suite (430+ tests)
+├── tests/                   # Regression test suite (450+ tests)
 ├── skills/                  # Global workflow skills: kicad, bom, digikey, lcsc, ee…
 ├── project-skills/          # Per-project templates: kicad_gen, autoroute, sim…
 ├── agents/                  # Hardware reviewer AI agent definitions
