@@ -188,6 +188,18 @@ def fetch_spice_models(
 
         manifest[mpn] = entry
 
+        # Log each lookup to design.log
+        from .logging_bridge import get_design_logger
+
+        dl = get_design_logger()
+        if dl:
+            dl.log_part_lookup(
+                mpn=mpn,
+                source="spice_model",
+                status=entry.get("spice_status", "unknown"),
+                details={"manufacturer": entry.get("manufacturer", "")},
+            )
+
     spice_dir.mkdir(parents=True, exist_ok=True)
     (spice_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
     if sparam_dir:
@@ -206,3 +218,34 @@ def fetch_spice_models(
         "manifest": manifest,
         "warnings": warnings,
     }
+
+
+def resolve_spice_models(manifest_path: Path) -> dict[str, str]:
+    """Read manifest.json and return {mpn: model_file_path} for available models.
+
+    Args:
+        manifest_path: Path to spice_models/manifest.json
+
+    Returns:
+        Dict mapping MPN to absolute model file path for components with
+        successfully downloaded SPICE models.
+    """
+    manifest_path = Path(manifest_path)
+    if not manifest_path.exists():
+        return {}
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    result: dict[str, str] = {}
+    model_dir = manifest_path.parent
+
+    for mpn, entry in manifest.items():
+        if entry.get("spice_status") == "ok" and entry.get("spice_file"):
+            model_file = model_dir / entry["spice_file"]
+            if model_file.exists():
+                result[mpn] = str(model_file)
+
+    return result

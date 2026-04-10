@@ -482,7 +482,7 @@ def score_design_comprehensive(design_ir: DesignIR) -> DetailedElectricalQuality
         "mfg": mfg_details,
     }
 
-    return DetailedElectricalQualityScore(
+    result = DetailedElectricalQualityScore(
         power_integrity=power_score,
         signal_integrity=signal_score,
         placement_quality=placement_score,
@@ -492,3 +492,20 @@ def score_design_comprehensive(design_ir: DesignIR) -> DetailedElectricalQuality
         grade=_grade(overall),
         section_details=section_details,
     )
+
+    # Log scoring results to design.log
+    from .logging_bridge import get_design_logger
+
+    dl = get_design_logger()
+    if dl:
+        dl.log_scoring(dimension="overall", score=overall, grade=result.grade)
+        for dim, score_val in [
+            ("power", power_score),
+            ("signal", signal_score),
+            ("placement", placement_score),
+            ("thermal", thermal_score),
+            ("manufacturing", mfg_score),
+        ]:
+            dl.log_scoring(dimension=dim, score=score_val, grade=_grade(score_val))
+
+    return result

@@ -6,6 +6,20 @@ description: >
   Run after any significant design change.
 ---
 
+## Auto-Detection
+
+Before running validation, discover existing projects in the current directory:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, use the detected paths for schematic and PCB files
+instead of asking the user for paths. Select the most recently modified project
+by default, or ask the user to choose if multiple projects exist.
+
+---
+
 ## Audit Passes
 
 Run all passes after any significant design change.
@@ -60,12 +74,19 @@ For each IC with an MPN:
 
 ## Running Validation
 
+### Quick (standard validation only)
 ```bash
-python3 scripts/validate_design.py \
-  hardware/<project>/kicad/<project>.kicad_sch \
-  hardware/<project>/kicad/<project>.kicad_pcb \
-  --pin-maps scripts/pin_maps.py \
-  --spec docs/SPEC.md
+python -m circuit_weaver validate design.yaml
+```
+
+### Enhanced (with cross-reference audit, thermal, SI, power budget)
+```bash
+python -m circuit_weaver validate design.yaml --enhanced --verbose
+```
+
+### Full audit with scoring
+```bash
+python -m circuit_weaver validate design.yaml --enhanced --detailed-score --verbose
 ```
 
 ## Reporting

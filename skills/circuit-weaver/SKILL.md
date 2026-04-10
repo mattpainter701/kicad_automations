@@ -24,6 +24,33 @@ All platforms follow the same design flow — just different UI for user input.
 
 ## Workflow: New Design
 
+### Step -1 — Auto-Detection (ALWAYS RUN FIRST)
+
+Before presenting any choices, **automatically scan the current directory for existing projects**:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, present them to the user:
+
+```
+Found 2 existing circuit project(s):
+
+  #  Project                  Type            Status       Files
+  -  -------                  ----            ------       -----
+  1  WiFi_Sensor_v1           circuit_weaver  validated    yaml, sch, pcb, log
+  2  Motor_Controller         kicad_native    generated    sch, pcb, pro
+
+What would you like to do?
+  [1] Open an existing project (select from above)
+  [2] Design a new circuit
+```
+
+If no projects are found, skip directly to Step 0 with only the "Design a new circuit" option.
+
+**Log:** `python -m circuit_weaver log-event <project_dir> --type wizard_step --message "Auto-detection: N projects found"`
+
 ### Step 0 — Welcome & Route
 
 Present a choice (platform-adapted):
@@ -334,9 +361,18 @@ Question: "Want to export a BOM for ordering, or make any changes?"
 
 ### Route to Existing Design
 
-Question: "Path to your design directory?"
+If Step -1 already discovered projects, use the user's selection from there.
 
-**Claude Code / Codex / OpenCode:** Ask for text input (path to folder with `design.yaml`)
+Otherwise, run auto-detection first:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, present the list and let the user select one by number.
+If no projects are found, ask: "Path to your design directory?"
+
+**Claude Code / Codex / OpenCode:** Ask for text input only as fallback (path to folder with `design.yaml`)
 
 Validate the path and load `design.yaml`.
 

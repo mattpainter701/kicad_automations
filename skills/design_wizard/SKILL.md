@@ -45,6 +45,22 @@ Never output raw JSON unless the user explicitly requests `--json` flag. Present
 
 ---
 
+## Step -1 — Auto-Detection (ALWAYS RUN FIRST)
+
+Before starting, scan the current directory for existing projects:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, present them and ask whether the user wants to:
+1. Continue/modify an existing project (load its design.yaml and skip to the relevant step)
+2. Start a fresh design (proceed to Step 0)
+
+If no projects are found, proceed directly to Step 0.
+
+---
+
 ## Step 0 — Welcome & Orientation
 
 Greet the user and explain what the wizard will cover:

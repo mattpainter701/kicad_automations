@@ -155,11 +155,248 @@ class DesignLogger:
         }
         self._append_entry(entry)
 
+    def log_part_lookup(
+        self,
+        mpn: str,
+        source: str,
+        status: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Log a part/model lookup attempt.
+
+        Args:
+            mpn: Manufacturer part number being looked up
+            source: Lookup source (digikey, mouser, lcsc, spice_model, etc.)
+            status: ok, not_found, timeout, error
+            details: Additional info (price, stock, model_path, etc.)
+        """
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "part_lookup",
+            "mpn": mpn,
+            "source": source,
+            "status": status,
+            "details": details or {},
+        }
+        self._append_entry(entry)
+
+    def log_symbol_resolution(
+        self,
+        ref: str,
+        mpn: str,
+        status: str,
+        pinout_source: str = "",
+    ) -> None:
+        """Log a symbol/pinout resolution attempt.
+
+        Args:
+            ref: Component reference designator (U1, R3, etc.)
+            mpn: Manufacturer part number
+            status: ok, stub, not_found, error
+            pinout_source: How pinout was resolved (datasheet, library, stub, etc.)
+        """
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "symbol_resolution",
+            "ref": ref,
+            "mpn": mpn,
+            "status": status,
+            "pinout_source": pinout_source,
+        }
+        self._append_entry(entry)
+
+    def log_simulation(
+        self,
+        sim_type: str,
+        target: str,
+        status: str,
+        metrics: dict[str, Any] | None = None,
+        duration_sec: float = 0.0,
+    ) -> None:
+        """Log a circuit simulation result.
+
+        Args:
+            sim_type: Simulation type (tran, ac, dc, op)
+            target: What was simulated (buck_U1, filter_C3_R5, etc.)
+            status: ok, failed, skipped, timeout
+            metrics: Extracted metrics (ripple_mv, phase_margin_deg, etc.)
+            duration_sec: Simulation wall-clock time
+        """
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "simulation",
+            "sim_type": sim_type,
+            "target": target,
+            "status": status,
+            "metrics": metrics or {},
+            "duration_sec": round(duration_sec, 2),
+        }
+        self._append_entry(entry)
+
+    def log_thermal(
+        self,
+        ref: str,
+        tj_calc: float,
+        tj_max: float,
+        status: str,
+    ) -> None:
+        """Log a thermal analysis result for a component.
+
+        Args:
+            ref: Component reference designator
+            tj_calc: Calculated junction temperature (degrees C)
+            tj_max: Maximum junction temperature rating (degrees C)
+            status: ok, warning, critical
+        """
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "thermal",
+            "ref": ref,
+            "tj_calc": round(tj_calc, 1),
+            "tj_max": round(tj_max, 1),
+            "margin_deg": round(tj_max - tj_calc, 1),
+            "status": status,
+        }
+        self._append_entry(entry)
+
+    def log_erc_drc(
+        self,
+        check_type: str,
+        file: str,
+        errors: int,
+        warnings: int,
+        details: list[str] | None = None,
+    ) -> None:
+        """Log an ERC or DRC check result.
+
+        Args:
+            check_type: Check type (erc, drc, dfm)
+            file: File that was checked
+            errors: Number of errors found
+            warnings: Number of warnings found
+            details: First few violation descriptions
+        """
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "erc_drc",
+            "check_type": check_type,
+            "file": file,
+            "errors": errors,
+            "warnings": warnings,
+            "passed": errors == 0,
+            "details": (details or [])[:5],
+        }
+        self._append_entry(entry)
+
+    def log_scoring(
+        self,
+        dimension: str,
+        score: float,
+        grade: str,
+        gaps: list[str] | None = None,
+    ) -> None:
+        """Log a design scoring result.
+
+        Args:
+            dimension: Scoring dimension (power, signal, thermal, overall, etc.)
+            score: Numeric score (0-100)
+            grade: Letter grade (A-F)
+            gaps: List of gaps or improvement areas
+        """
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "scoring",
+            "dimension": dimension,
+            "score": round(score, 1),
+            "grade": grade,
+            "gaps": (gaps or [])[:5],
+        }
+        self._append_entry(entry)
+
+    def log_sourcing(
+        self,
+        mpn: str,
+        supplier: str,
+        status: str,
+        price: float | None = None,
+        stock: int | None = None,
+    ) -> None:
+        """Log a sourcing/availability check.
+
+        Args:
+            mpn: Manufacturer part number
+            supplier: Supplier name (digikey, mouser, lcsc, etc.)
+            status: ok, out_of_stock, not_found, error
+            price: Unit price if available
+            stock: Stock quantity if available
+        """
+        entry: dict[str, Any] = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "sourcing",
+            "mpn": mpn,
+            "supplier": supplier,
+            "status": status,
+        }
+        if price is not None:
+            entry["price"] = round(price, 4)
+        if stock is not None:
+            entry["stock"] = stock
+        self._append_entry(entry)
+
+    def log_generation(
+        self,
+        artifact_type: str,
+        path: str,
+        status: str,
+        duration_sec: float = 0.0,
+    ) -> None:
+        """Log an artifact generation event.
+
+        Args:
+            artifact_type: Type of artifact (schematic, pcb, bom, report, netlist, etc.)
+            path: Output file path
+            status: ok, failed, skipped
+            duration_sec: Generation time
+        """
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "generation",
+            "artifact_type": artifact_type,
+            "path": path,
+            "status": status,
+            "duration_sec": round(duration_sec, 2),
+        }
+        self._append_entry(entry)
+
+    def log_error(
+        self,
+        operation: str,
+        error: str,
+        traceback: str = "",
+    ) -> None:
+        """Log a structured error.
+
+        Args:
+            operation: Operation that failed (validate, generate, simulate, etc.)
+            error: Error message
+            traceback: Optional traceback string
+        """
+        entry: dict[str, Any] = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "error",
+            "operation": operation,
+            "error": error[:500],
+        }
+        if traceback:
+            entry["traceback"] = traceback[:1000]
+        self._append_entry(entry)
+
     def get_summary(self) -> dict[str, Any]:
         """Get a summary of the design workflow so far.
 
         Returns:
-            Dict with: current_step, files_generated, validation_status, errors, warnings, timeline
+            Dict with workflow state, files, validation, simulation, thermal,
+            scoring, ERC/DRC, errors, and warnings aggregated from all event types.
         """
         if not self.entries:
             return {"status": "empty", "entries": 0}
@@ -167,35 +404,95 @@ class DesignLogger:
         last_step = 0
         files = set()
         validation_passed = None
-        errors = []
-        warnings = []
+        errors: list[str] = []
+        warnings: list[str] = []
+        sim_count = 0
+        sim_passed = 0
+        sim_skipped = 0
+        thermal_warnings = 0
+        thermal_critical = 0
+        erc_errors = 0
+        erc_warnings = 0
+        scoring: dict[str, Any] = {}
+        part_lookups = 0
+        part_failures = 0
 
         for entry in self.entries:
-            if entry.get("type") == "wizard_step":
+            etype = entry.get("type")
+
+            if etype == "wizard_step":
                 last_step = max(last_step, entry.get("step", 0))
 
-            if entry.get("type") == "cli_call":
+            elif etype == "cli_call":
                 files.update(entry.get("generated_files", []))
                 if not entry.get("success"):
                     errors.append(f"{entry.get('command')}: {entry.get('stderr', 'unknown error')}")
 
-            if entry.get("type") == "validation":
+            elif etype == "validation":
                 validation_passed = entry.get("passed")
                 errors.extend(entry.get("errors", []))
                 warnings.extend(entry.get("warnings", []))
 
-            if entry.get("type") == "research":
+            elif etype == "research":
                 if entry.get("status") != "ok":
                     warnings.append(f"Research phase '{entry.get('phase')}': {entry.get('status')}")
+
+            elif etype == "simulation":
+                sim_count += 1
+                if entry.get("status") == "ok":
+                    sim_passed += 1
+                elif entry.get("status") == "skipped":
+                    sim_skipped += 1
+
+            elif etype == "thermal":
+                if entry.get("status") == "warning":
+                    thermal_warnings += 1
+                elif entry.get("status") == "critical":
+                    thermal_critical += 1
+
+            elif etype == "erc_drc":
+                erc_errors += entry.get("errors", 0)
+                erc_warnings += entry.get("warnings", 0)
+
+            elif etype == "scoring":
+                scoring[entry.get("dimension", "unknown")] = {
+                    "score": entry.get("score"),
+                    "grade": entry.get("grade"),
+                }
+
+            elif etype == "part_lookup":
+                part_lookups += 1
+                if entry.get("status") not in ("ok",):
+                    part_failures += 1
+
+            elif etype == "generation":
+                if entry.get("status") == "ok":
+                    files.add(entry.get("path", ""))
+
+            elif etype == "error":
+                errors.append(f"{entry.get('operation')}: {entry.get('error', 'unknown')}")
 
         return {
             "status": "in_progress" if last_step > 0 else "empty",
             "last_step": last_step,
             "entries": len(self.entries),
-            "files_generated": sorted(list(files)),
+            "files_generated": sorted(f for f in files if f),
             "validation_passed": validation_passed,
-            "errors": errors[:5],  # Last 5 errors
-            "warnings": warnings[:5],  # Last 5 warnings
+            "simulation": {"total": sim_count, "passed": sim_passed, "skipped": sim_skipped}
+            if sim_count
+            else None,
+            "thermal": {"warnings": thermal_warnings, "critical": thermal_critical}
+            if (thermal_warnings or thermal_critical)
+            else None,
+            "erc_drc": {"errors": erc_errors, "warnings": erc_warnings}
+            if (erc_errors or erc_warnings)
+            else None,
+            "scoring": scoring or None,
+            "part_lookups": {"total": part_lookups, "failures": part_failures}
+            if part_lookups
+            else None,
+            "errors": errors[:10],
+            "warnings": warnings[:10],
             "log_path": str(self.log_path),
         }
 
@@ -216,8 +513,36 @@ class DesignLogger:
         print(f"Files:       {len(summary['files_generated'])} generated")
 
         if summary["validation_passed"] is not None:
-            status = "✓ PASSED" if summary["validation_passed"] else "✗ FAILED"
+            status = "PASSED" if summary["validation_passed"] else "FAILED"
             print(f"Validation:  {status}")
+
+        sim = summary.get("simulation")
+        if sim:
+            print(f"Simulation:  {sim['passed']}/{sim['total']} passed"
+                  + (f", {sim['skipped']} skipped" if sim["skipped"] else ""))
+
+        thermal = summary.get("thermal")
+        if thermal:
+            parts = []
+            if thermal["warnings"]:
+                parts.append(f"{thermal['warnings']} warnings")
+            if thermal["critical"]:
+                parts.append(f"{thermal['critical']} critical")
+            print(f"Thermal:     {', '.join(parts)}")
+
+        erc = summary.get("erc_drc")
+        if erc:
+            print(f"ERC/DRC:     {erc['errors']} errors, {erc['warnings']} warnings")
+
+        scoring = summary.get("scoring")
+        if scoring:
+            overall = scoring.get("overall")
+            if overall:
+                print(f"Score:       {overall['score']}/100 ({overall['grade']})")
+
+        parts = summary.get("part_lookups")
+        if parts:
+            print(f"Parts:       {parts['total']} lookups, {parts['failures']} failures")
 
         if summary["errors"]:
             print(f"\nErrors ({len(summary['errors'])} total):")
