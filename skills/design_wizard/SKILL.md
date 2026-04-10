@@ -847,32 +847,46 @@ If the user wants to proceed despite issues, note the decision in the log.
 **Goal:** Guide the user into the PCB phase with clear expectations about
 what can be scripted vs. what requires manual KiCad work.
 
-### 6a. PCB Kickoff
+### 7a. PCB Kickoff — Automated Layout Assistance
 
-Explain the PCB workflow:
+The generated PCB file has initial component positions. Before manual routing,
+run the automated layout tools:
+
+```bash
+# 1. Optimize placement (simulated annealing for thermal/SI/DFM)
+circuit-weaver optimize-placement [spec.yaml] -o [output_dir]
+
+# 2. Generate interactive placement viewer (HTML with thermal heatmap)
+circuit-weaver placement-viewer [spec.yaml] -o [output_dir]/placement.html
+
+# 3. Optional: Export editable SVG placement (for Inkscape/CorelDRAW editing)
+circuit-weaver generate [spec.yaml] -o [output_dir] --svg-placement
+```
+
+Present results:
 
 ```
-=== PCB Layout — What Comes Next ===
+=== PCB Layout Preparation ===
 
-The generated schematic is ready for PCB layout. You now have:
-  - Schematic with all symbols placed and nets labeled
-  - Placer hints (JSON) with component grouping suggestions
-  - Design report with power budgets and DFM recommendations
+Automated steps completed:
+  [x] Placement optimized (thermal + SI + DFM scoring)
+  [x] Interactive viewer: output/placement.html
+  [x] Placement PCB: output/main_placement.kicad_pcb
 
-WHAT REQUIRES MANUAL KICAD WORK:
+Open placement.html in a browser to review component positions,
+net connections, and thermal heatmap before routing.
+
+WHAT YOU'LL DO IN KICAD:
   - Board outline and edge cuts
-  - Component placement and fine-tuning for routing
-  - Trace routing (power first, then signal traces)
-  - Critical routing for high-speed or sensitive signals
-  - Silkscreen labels and polarity markers
+  - Fine-tune placement for routing convenience
+  - Route traces (power first, then signals)
   - Ground/power planes and zone fills
-  - Design review and DFM verification
+  - Silkscreen labels and polarity markers
 
 WHAT WE CAN HELP WITH:
-  - Provide layout guidelines based on power budget and signal integrity
-  - Suggest trace widths for power vs. signal nets (using ee skill)
-  - Recommend layer stackup if 4-layer board needed
-  - Identify candidates for autorouting (non-critical signal nets)
+  - Trace width suggestions (use /ee skill)
+  - Layer stackup recommendation (2-layer vs 4-layer)
+  - Autorouting of non-critical nets (see 7c below)
 ```
 
 If mechanical constraints were captured in Step 1a-mech, incorporate them now:
@@ -881,7 +895,24 @@ If mechanical constraints were captured in Step 1a-mech, incorporate them now:
 - Connectors placed on specified edges
 - Height-restricted zones marked as keep-outs
 
-### 6c. Routing Guidance
+### 7b. SVG Placement Editor (Optional)
+
+For users who want to visually drag components in an editor before routing:
+
+```bash
+# Export placement as editable SVG
+circuit-weaver generate [spec.yaml] -o [output_dir] --svg-placement
+
+# User edits output/placement.svg in Inkscape...
+
+# Import edited positions back into KiCad PCB
+circuit-weaver import-placement output/main_placement.kicad_pcb --svg output/placement.svg
+```
+
+For beginners: "This lets you drag components around in a drawing program and
+we'll update the PCB file automatically."
+
+### 7c. Routing Guidance
 
 Based on the design:
 
@@ -890,24 +921,51 @@ Based on the design:
 - Recommend layer stackup if 4-layer
 - Identify candidates for autorouting (non-critical signal nets)
 
-**Optional: Freerouting Autorouting**
+**Autorouting with Freerouting (Optional)**
 
-If the user has Freerouting installed, offer to autoroute the PCB:
+If the user has Freerouting installed, offer to auto-route the PCB:
 
 ```bash
-# Export to PCB layout file, then route
-circuit-weaver autoroute output/[project].kicad_pcb -o routed.kicad_pcb
+circuit-weaver autoroute output/[project].kicad_pcb -o output/routed.kicad_pcb
 ```
 
-**Note:** Freerouting must be installed separately. If not available, the user can route manually in KiCad using the placer hints as guidance.
+**Note:** Freerouting must be installed separately. Best for non-critical signal
+nets — power and high-speed traces should be routed manually. For detailed
+autorouting workflow options, see the `/autoroute` project-skill.
 
-### 6d. Manufacturing Checklist
+### 7d. DFM Check (Recommended Before Ordering)
+
+Run DFM checks against the target manufacturer:
+
+```bash
+# Check against JLCPCB rules (default)
+circuit-weaver check-dfm output/main_placement.kicad_pcb
+
+# Check against PCBWay rules
+circuit-weaver check-dfm output/main_placement.kicad_pcb --profile pcbway
+```
+
+If DFM issues are found, present them and offer to fix (adjust trace widths,
+via sizes, clearances).
+
+#### Related Project-Skills
+
+For advanced PCB workflows beyond what the wizard covers:
+- `/kicad_pcb_place` — constraint-based placement with pcbnew API integration
+- `/autoroute` — detailed Freerouting workflow with DSN/SES file management
+- `/kicad_pinmap` — pin-to-net audit and verification
+- `/kicad_hierarchy` — hierarchical schematic sheet management
+- `/kicad_gen` — programmatic schematic generation for large ICs (BGAs)
+
+### 7e. Manufacturing Checklist
 
 Based on Step 3 manufacturer choice, present the final checklist:
 
 ```
 === Pre-Order Checklist ===
 
+  [ ] Confidence score >= 80 (circuit-weaver confidence design.yaml --run-sims)
+  [ ] DFM check clean (circuit-weaver check-dfm board.kicad_pcb)
   [ ] ERC clean in KiCad
   [ ] DRC clean in KiCad
   [ ] BOM exported (use /bom skill)
@@ -921,7 +979,7 @@ Based on Step 3 manufacturer choice, present the final checklist:
 
 Reference the `jlcpcb` or `pcbway` skill for manufacturer-specific DFM rules.
 
-### 6e. Revision Planning & Future-Proofing
+### 7f. Revision Planning & Future-Proofing
 
 Before the user commits to fabrication, help them think about the next revision.
 This is especially valuable for beginners who don't realize rev1 is almost never
@@ -986,14 +1044,19 @@ Throughout the wizard, follow these principles:
 
 | Skill | Used in step | Purpose |
 |-------|-------------|---------|
-| `ee` | 1, 2 | Calculations: power budget, filter values, thermal |
+| `ee` | 1, 2, 7 | Calculations: power budget, filter values, thermal, trace widths |
 | `digikey` | 2, 3 | Part search, stock check, datasheets |
 | `mouser` | 2, 3 | Alternative sourcing |
 | `lcsc` | 2, 3 | Production sourcing, JLCPCB parts |
 | `bom` | 3 | BOM export and order file generation |
 | `kicad` | 4, 5 | Schematic analysis, validation, and design review |
-| `jlcpcb` | 3, 6 | DFM rules, assembly ordering |
-| `pcbway` | 3, 6 | Alternative fab DFM rules |
+| `jlcpcb` | 3, 7 | DFM rules, assembly ordering |
+| `pcbway` | 3, 7 | Alternative fab DFM rules |
+| `sim` | 6 | Circuit simulation (SPICE power/signal analysis) |
+| `kicad_pcb_place` | 7 | Advanced constraint-based PCB placement |
+| `autoroute` | 7 | Freerouting PCB autorouting workflow |
+| `kicad_validate` | 5, 6 | Cross-reference validation audit |
+| `kicad_pinmap` | 5 | Pin-to-net audit and verification |
 
 ---
 

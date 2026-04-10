@@ -378,7 +378,88 @@ before proceeding. Offer to loop back to the relevant step.
 
 **Log:** `[Step 6] Confidence: {score}/100 ({grade}), readiness: {readiness}`
 
-### Step 7 — Design Review & Next Steps
+### Step 7 — PCB Layout Preparation
+
+**Goal:** Prepare the PCB for routing. This step optimizes component placement,
+generates visual layout guides, and optionally auto-routes non-critical nets.
+
+#### 7a. Placement Optimization
+
+Run the simulated annealing placement optimizer on the generated PCB:
+
+```bash
+python -m circuit_weaver optimize-placement "${PROJECT_NAME}/design.yaml" \
+  -o "${PROJECT_NAME}/output" --json
+```
+
+This optimizes component positions for:
+- Thermal spacing (power ICs separated, copper pour areas)
+- Signal integrity (high-speed pairs close, short traces)
+- Manufacturing (courtyard clearances, assembly accessibility)
+
+#### 7b. Interactive Placement Viewer
+
+Generate an interactive HTML placement diagram:
+
+```bash
+python -m circuit_weaver placement-viewer "${PROJECT_NAME}/design.yaml" \
+  -o "${PROJECT_NAME}/output/placement.html"
+```
+
+Present to user: "Open `placement.html` in a browser to see component positions,
+net connections, and thermal heatmap. You can review before committing to routing."
+
+#### 7c. SVG Placement Export (Optional)
+
+For users who want to fine-tune placement visually in an editor:
+
+```bash
+python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
+  -o "${PROJECT_NAME}/output" --svg-placement
+```
+
+This exports an editable SVG that can be modified in Inkscape/CorelDRAW and
+imported back:
+
+```bash
+python -m circuit_weaver import-placement "${PROJECT_NAME}/output/main_placement.kicad_pcb" \
+  --svg "${PROJECT_NAME}/output/placement.svg"
+```
+
+#### 7d. Autorouting (Optional)
+
+If the user has Freerouting installed, offer to auto-route the PCB:
+
+```bash
+python -m circuit_weaver autoroute "${PROJECT_NAME}/output/main_placement.kicad_pcb" \
+  -o "${PROJECT_NAME}/output/main_routed.kicad_pcb"
+```
+
+**Note:** Freerouting must be installed separately. If not available, the user
+routes manually in KiCad. Autorouting works best for non-critical signal nets;
+power and high-speed traces should be routed manually.
+
+**Claude Code / Codex / OpenCode:** Present choices:
+- **[1] Optimize placement** (recommended)
+- **[2] View placement** (generate interactive HTML)
+- **[3] Export SVG for manual editing**
+- **[4] Autoroute** (requires Freerouting)
+- **[5] Skip to review** (route manually in KiCad)
+
+Run whichever the user selects. After each action, offer to run another or proceed.
+
+**Log:** `[Step 7] PCB layout: {actions_taken}`
+
+#### Related Project-Skills
+
+For advanced PCB workflows, these project-skills provide deeper functionality:
+- `/kicad_pcb_place` — constraint-based placement with pcbnew API
+- `/autoroute` — detailed Freerouting workflow with DSN/SES conversion
+- `/kicad_pinmap` — pin-to-net audit and verification
+- `/kicad_hierarchy` — hierarchical schematic sheet management
+- `/kicad_gen` — programmatic schematic generation for large ICs (BGAs)
+
+### Step 8 — Design Review & Next Steps
 
 Display:
 
@@ -389,26 +470,29 @@ Project:      ${PROJECT_NAME}
 Logfile:      ${PROJECT_NAME}/design.log
 Schematic:    ${PROJECT_NAME}/output/main.kicad_sch
 Placement:    ${PROJECT_NAME}/output/main_placement.kicad_pcb
+Placement:    ${PROJECT_NAME}/output/placement.html (interactive)
 Report:       ${PROJECT_NAME}/output/main_report.md
 Confidence:   ${PROJECT_NAME}/output/confidence_report.html
 
 Next steps:
-  1. Open main.kicad_sch in KiCad to review the layout
-  2. Add connectors, test points, and mechanical holes
-  3. Run KiCad DRC/ERC checks
-  4. Design the PCB layout
+  1. Open main.kicad_sch in KiCad to review the schematic
+  2. Open main_placement.kicad_pcb in KiCad for PCB layout
+  3. Route remaining traces (power first, then signals)
+  4. Run KiCad DRC/ERC checks
   5. Export gerbers and order from JLCPCB or similar
 ```
 
-Question: "Want to export a BOM for ordering, or make any changes?"
+Question: "What would you like to do next?"
 
 **Claude Code / Codex / OpenCode:** Present choices:
 - Export BOM & CPL for assembly
 - Re-run confidence report (after making changes)
+- Re-optimize placement
+- Run DFM check on PCB (`python -m circuit_weaver check-dfm <pcb>`)
 - Make changes to the design (return to Step 2)
 - Done (exit)
 
-**Log:** `[Step 7] Design review complete. User choice: {export|confidence|edit|done}`
+**Log:** `[Step 8] Design review complete. User choice: {export|confidence|placement|dfm|edit|done}`
 
 ---
 
@@ -455,25 +539,43 @@ Next action:      Design PCB layout in KiCad
 
 ```
 What would you like to do?
-  [1] Validate design (check electrical rules)
-  [2] Regenerate schematic (after making edits)
-  [3] View design report
-  [4] Run confidence report (design readiness check)
-  [5] Run simulations
-  [6] Export BOM & CPL for ordering
-  [7] Make changes to the design
-  [8] Exit
+
+  --- Verify ---
+  [1] Validate design (electrical rules + cross-reference audit)
+  [2] Run confidence report (full design readiness check)
+  [3] Run simulations (SPICE power/signal analysis)
+
+  --- Generate & Layout ---
+  [4] Regenerate schematic (after making edits)
+  [5] Optimize PCB placement (simulated annealing)
+  [6] View interactive placement (HTML thermal/net viewer)
+  [7] Autoroute PCB (requires Freerouting)
+
+  --- Export ---
+  [8] Export BOM & CPL for ordering
+  [9] Export Gerbers for fabrication
+  [10] Run DFM check on PCB
+
+  --- Other ---
+  [11] View design report
+  [12] Make changes to the design
+  [13] Exit
 ```
 
 Route based on selection:
 - **[1] Validate** → `python -m circuit_weaver validate ${DESIGN_PATH}/design.yaml --enhanced --verbose`
-- **[2] Regenerate** → `python -m circuit_weaver generate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
-- **[3] Report** → Show `main_report.md`
-- **[4] Confidence** → `python -m circuit_weaver confidence ${DESIGN_PATH}/design.yaml --run-sims -o ${DESIGN_PATH}/output/confidence_report.html`
-- **[5] Simulate** → `python -m circuit_weaver simulate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/sims`
-- **[6] Export** → Run `export-jlcpcb` command
-- **[7] Changes** → Return to Step 1 (requirements capture for edits)
-- **[8] Exit** → End the skill
+- **[2] Confidence** → `python -m circuit_weaver confidence ${DESIGN_PATH}/design.yaml --run-sims -o ${DESIGN_PATH}/output/confidence_report.html`
+- **[3] Simulate** → `python -m circuit_weaver simulate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/sims`
+- **[4] Regenerate** → `python -m circuit_weaver generate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
+- **[5] Optimize placement** → `python -m circuit_weaver optimize-placement ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
+- **[6] Placement viewer** → `python -m circuit_weaver placement-viewer ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output/placement.html`
+- **[7] Autoroute** → `python -m circuit_weaver autoroute ${DESIGN_PATH}/output/main_placement.kicad_pcb -o ${DESIGN_PATH}/output/main_routed.kicad_pcb`
+- **[8] Export BOM** → `python -m circuit_weaver export-jlcpcb ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/export`
+- **[9] Export Gerbers** → `python -m circuit_weaver export-gerbers ${DESIGN_PATH}/output/main_placement.kicad_pcb -o ${DESIGN_PATH}/gerbers`
+- **[10] DFM check** → `python -m circuit_weaver check-dfm ${DESIGN_PATH}/output/main_placement.kicad_pcb`
+- **[11] Report** → Show `main_report.md`
+- **[12] Changes** → Return to Step 1 (requirements capture for edits)
+- **[13] Exit** → End the skill
 
 ---
 
@@ -500,7 +602,8 @@ Subsequent steps must write logs like:
 [Step 4] Validation: PASS
 [Step 5] Artifacts generated in output/
 [Step 6] Confidence: 82/100 (B), readiness: needs_review
-[Step 7] Design review complete. User choice: export
+[Step 7] PCB layout: optimize-placement, placement-viewer
+[Step 8] Design review complete. User choice: export
 ```
 
 ### For Claude Code
