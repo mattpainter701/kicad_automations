@@ -31,12 +31,14 @@ def _normalize_node(net_name: str) -> str:
 def _parse_value(value: str) -> str:
     """Parse a component value string to SPICE-compatible format.
 
-    Handles: 10k -> 10k, 100nF -> 100n, 4.7uH -> 4.7u, 10R -> 10, etc.
+    Handles: 10k -> 10k, 100nF -> 100n, 4.7uH -> 4.7u, 10R -> 10,
+    100pH -> 100p, 100 ohms -> 100, etc.
     """
     if not value:
         return "0"
 
-    value = value.strip()
+    # Strip whitespace and collapse internal spaces
+    value = value.strip().replace(" ", "")
 
     # Handle special R notation first: 10R -> 10, 4R7 -> 4.7
     m = re.match(r"^(\d+)R(\d+)$", value, re.IGNORECASE)
@@ -46,13 +48,16 @@ def _parse_value(value: str) -> str:
     if m:
         return m.group(1)
 
-    # Already numeric (possibly with SPICE suffix like k, M, u, n, p)
-    if re.match(r"^[\d.]+[a-zA-Z]?$", value):
-        return value
-
-    # Remove units: ohm, F, H (SPICE doesn't need them with SI prefix)
+    # Remove units: ohm, F, H (strip multi-char units first, then single-char)
     val = re.sub(r"(?i)(ohm|ohms|Ω)$", "", value).strip()
-    val = re.sub(r"(?i)[FH]$", "", val).strip()
+    # Strip trailing F or H ONLY after an SI prefix (100nF -> 100n, 4.7uH -> 4.7u)
+    val = re.sub(r"(?i)([munpfkMG])[FH]$", r"\1", val)
+    # Strip standalone F or H at end (100F -> 100, but keep SI suffixes like 10k)
+    val = re.sub(r"(?i)^([\d.]+)[FH]$", r"\1", val)
+
+    # Already numeric (possibly with SPICE suffix like k, M, u, n, p)
+    if re.match(r"^[\d.]+[a-zA-Z]?$", val):
+        return val
 
     return val
 

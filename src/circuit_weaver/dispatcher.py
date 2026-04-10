@@ -3187,256 +3187,258 @@ def main() -> None:
         raise SystemExit(exit_code)
 
     if args.command == "confidence":
-        from .confidence_dashboard import generate_confidence_report
-        from .cross_reference_validator import run_cross_reference_audit
+        try:
+            from .confidence_dashboard import generate_confidence_report
+            from .cross_reference_validator import run_cross_reference_audit
 
-        spec = _load_spec_file(args.spec)
-        compiled = _run_with_stderr_capture(
-            lambda: compile_design_ir(spec, enrich_parts=getattr(args, "enrich_parts", False))
-        )
+            spec = _load_spec_file(args.spec)
+            compiled = _run_with_stderr_capture(
+                lambda: compile_design_ir(spec, enrich_parts=getattr(args, "enrich_parts", False))
+            )
 
-        # Run validation
-        report = _run_with_stderr_capture(
-            lambda: validate_design(spec, enrich_parts=getattr(args, "enrich_parts", False))
-        )
+            # Run validation
+            report = _run_with_stderr_capture(
+                lambda: validate_design(spec, enrich_parts=getattr(args, "enrich_parts", False))
+            )
 
-        # Run cross-reference audit
-        xref_results = run_cross_reference_audit(compiled.components, spec=spec)
+            # Run cross-reference audit
+            xref_results = run_cross_reference_audit(compiled.components, spec=spec)
 
-        # Optional: run simulations
-        sim_report = None
-        if getattr(args, "run_sims", False):
-            from .simulation import run_design_simulations
+            # Optional: run simulations
+            sim_report = None
+            if getattr(args, "run_sims", False):
+                from .simulation import run_design_simulations
 
-            sim_report = run_design_simulations(
-                compiled.components,
-                output_dir=Path(args.spec).parent / "sims",
+                sim_report = run_design_simulations(
+                    compiled.components,
+                    output_dir=Path(args.spec).parent / "sims",
+                    spec=spec,
+                )
+
+            # Optional: DFM check
+            dfm_violations = None
+            pcb_path = getattr(args, "pcb", None)
+            if pcb_path:
+                from .dfm_checker import check_dfm
+
+                dfm_violations = check_dfm(pcb_path)
+
+            # Optional: ERC
+            erc_result = None
+            output_dir = Path(args.spec).parent / "output"
+            sch_files = list(output_dir.glob("*.kicad_sch")) if output_dir.exists() else []
+            if sch_files:
+                from .erc_runner import run_erc
+
+                erc_result = run_erc(sch_files[0])
+
+            # Optional: thermal
+            thermal_result = None
+            try:
+                from .thermal_analysis import analyze_thermal
+
+                thermal_result = analyze_thermal(compiled.components)
+            except Exception as thermal_exc:
+                print(f"  Thermal analysis skipped: {thermal_exc}", file=sys.stderr)
+
+            confidence = generate_confidence_report(
+                components=compiled.components,
+                project=spec.get("project", "Unknown"),
+                validation_report=report,
+                sim_report=sim_report,
+                thermal_result=thermal_result,
+                dfm_violations=dfm_violations,
+                erc_result=erc_result,
+                xref_results=xref_results,
                 spec=spec,
             )
 
-        # Optional: DFM check
-        dfm_violations = None
-        pcb_path = getattr(args, "pcb", None)
-        if pcb_path:
-            from .dfm_checker import check_dfm
+            if getattr(args, "json_output", False):
+                _print_json(confidence.to_dict())
+            else:
+                print(confidence.to_terminal())
 
-            dfm_violations = check_dfm(pcb_path)
+            # Write HTML if requested
+            output_path = getattr(args, "output", None)
+            if output_path:
+                Path(output_path).write_text(confidence.to_html(), encoding="utf-8")
+                print(f"\nHTML report written to: {output_path}", file=sys.stderr)
 
-        # Optional: ERC
-        erc_result = None
-        output_dir = Path(args.spec).parent / "output"
-        sch_files = list(output_dir.glob("*.kicad_sch")) if output_dir.exists() else []
-        if sch_files:
-            from .erc_runner import run_erc
-
-            erc_result = run_erc(sch_files[0])
-
-        # Optional: thermal
-        thermal_result = None
-        try:
-            from .thermal_analysis import analyze_thermal
-
-            thermal_result = analyze_thermal(compiled.components)
-        except Exception:
-            pass
-
-        confidence = generate_confidence_report(
-            components=compiled.components,
-            project=spec.get("project", "Unknown"),
-            validation_report=report,
-            sim_report=sim_report,
-            thermal_result=thermal_result,
-            dfm_violations=dfm_violations,
-            erc_result=erc_result,
-            xref_results=xref_results,
-            spec=spec,
-        )
-
-        if getattr(args, "json_output", False):
-            _print_json(confidence.to_dict())
-        else:
-            print(confidence.to_terminal())
-
-        # Write HTML if requested
-        output_path = getattr(args, "output", None)
-        if output_path:
-            Path(output_path).write_text(confidence.to_html(), encoding="utf-8")
-            print(f"\nHTML report written to: {output_path}")
-
-        raise SystemExit(0)
+            raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"Error running confidence report: {exc}", file=sys.stderr)
+            print("  Hint: Ensure the spec file is valid YAML and can be compiled.", file=sys.stderr)
+            raise SystemExit(1)
 
     if args.command == "simulate":
-        from .simulation import plan_simulations, run_design_simulations
+        try:
+            from .simulation import plan_simulations, run_design_simulations
 
-        spec = _load_spec_file(args.spec)
-        compiled = compile_design_ir(spec)
-        plan = plan_simulations(compiled.components, spec=spec)
+            spec = _load_spec_file(args.spec)
+            compiled = _run_with_stderr_capture(lambda: compile_design_ir(spec))
+            plan = plan_simulations(compiled.components, spec=spec)
 
-        # Filter plan by scope
-        sim_scope = getattr(args, "sim_scope", "all")
-        if sim_scope == "power":
-            plan.signal_sims = []
-            plan.thermal_sims = []
-        elif sim_scope == "signal":
-            plan.power_sims = []
-            plan.thermal_sims = []
-        elif sim_scope == "thermal":
-            plan.power_sims = []
-            plan.signal_sims = []
+            # Filter plan by scope
+            sim_scope = getattr(args, "sim_scope", "all")
+            if sim_scope == "power":
+                plan.signal_sims = []
+                plan.thermal_sims = []
+            elif sim_scope == "signal":
+                plan.power_sims = []
+                plan.thermal_sims = []
+            elif sim_scope == "thermal":
+                plan.power_sims = []
+                plan.signal_sims = []
 
-        model_dir = getattr(args, "model_dir", None)
-        if model_dir is None:
-            # Auto-detect: look for spice_models/ in spec directory
-            spec_dir = Path(args.spec).parent
-            candidate = spec_dir / "spice_models"
-            if candidate.exists():
-                model_dir = str(candidate)
+            model_dir = getattr(args, "model_dir", None)
+            if model_dir is None:
+                # Auto-detect: look for spice_models/ in spec directory
+                spec_dir = Path(args.spec).parent
+                candidate = spec_dir / "spice_models"
+                if candidate.exists():
+                    model_dir = str(candidate)
 
-        report = run_design_simulations(
-            compiled.components,
-            plan=plan,
-            output_dir=args.output,
-            model_dir=model_dir,
-            spec=spec,
-        )
+            report = run_design_simulations(
+                compiled.components,
+                plan=plan,
+                output_dir=args.output,
+                model_dir=model_dir,
+                spec=spec,
+            )
 
-        if getattr(args, "json_output", False):
-            _print_json(report.to_dict())
-        else:
-            print(f"\n{report.summary}")
-            if report.recommendations:
-                print("\nRecommendations:")
-                for rec in report.recommendations:
-                    print(f"  - {rec}")
-            print(f"\nSimulation output: {args.output}")
-        raise SystemExit(0)
+            if getattr(args, "json_output", False):
+                _print_json(report.to_dict())
+            else:
+                print(f"\n{report.summary}")
+                if report.recommendations:
+                    print("\nRecommendations:")
+                    for rec in report.recommendations:
+                        print(f"  - {rec}")
+                print(f"\nSimulation output: {args.output}", file=sys.stderr)
+            raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"Error running simulations: {exc}", file=sys.stderr)
+            print("  Hint: Ensure the spec file is valid and can be compiled.", file=sys.stderr)
+            raise SystemExit(1)
 
     if args.command == "discover":
-        from .project_discovery import discover_projects, format_project_table
+        try:
+            from .project_discovery import discover_projects, format_project_table
 
-        root = Path(getattr(args, "root", "."))
-        depth = getattr(args, "depth", 2)
-        projects = discover_projects(root, max_depth=depth)
+            root = Path(getattr(args, "root", "."))
+            depth = getattr(args, "depth", 2)
+            projects = discover_projects(root, max_depth=depth)
 
-        if getattr(args, "json_output", False):
-            _print_json([p.to_dict() for p in projects])
-        else:
-            if projects:
-                print(f"\nFound {len(projects)} circuit project(s):\n")
-                print(format_project_table(projects))
-                print()
+            if getattr(args, "json_output", False):
+                _print_json([p.to_dict() for p in projects])
             else:
-                print("\nNo circuit projects found in this directory.\n")
-        raise SystemExit(0)
+                if projects:
+                    print(f"\nFound {len(projects)} circuit project(s):\n")
+                    print(format_project_table(projects))
+                    print()
+                else:
+                    print("\nNo circuit projects found in this directory.\n")
+            raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"Error discovering projects: {exc}", file=sys.stderr)
+            raise SystemExit(1)
 
     if args.command == "log-event":
-        project_dir = Path(args.project_dir)
-        if not project_dir.exists():
-            project_dir.mkdir(parents=True, exist_ok=True)
-        dl = DesignLogger(project_dir)
-        event_type = args.type
-        message = args.message
-        data: dict[str, Any] = {}
-        if args.data:
-            try:
-                data = json.loads(args.data)
-            except json.JSONDecodeError as exc:
-                print(f"Error: --data must be valid JSON: {exc}", file=sys.stderr)
-                raise SystemExit(1)
+        try:
+            project_dir = Path(args.project_dir)
+            if not project_dir.exists():
+                project_dir.mkdir(parents=True, exist_ok=True)
+            dl = DesignLogger(project_dir)
+            event_type = args.type
+            message = args.message
+            data: dict[str, Any] = {}
+            if args.data:
+                try:
+                    data = json.loads(args.data)
+                except json.JSONDecodeError as exc:
+                    print(f"Error: --data must be valid JSON: {exc}", file=sys.stderr)
+                    raise SystemExit(1)
 
-        if event_type == "wizard_step":
-            dl.log_step(step=data.get("step", 0), description=message, user_input=data.get("user_input"))
-        elif event_type == "cli_call":
-            dl.log_cli_call(
-                command=data.get("command", "unknown"),
-                args=data.get("args", []),
-                return_code=data.get("return_code", 0),
-                stdout=data.get("stdout", ""),
-                stderr=data.get("stderr", ""),
-                duration_sec=data.get("duration_sec", 0.0),
-                generated_files=data.get("generated_files"),
-            )
-        elif event_type == "validation":
-            dl.log_validation(
-                spec_file=data.get("spec_file", ""),
-                passed=data.get("passed", True),
-                errors=data.get("errors"),
-                warnings=data.get("warnings"),
-            )
-        elif event_type == "research":
-            dl.log_research(
-                query_phase=data.get("phase", ""),
-                query=message,
-                status=data.get("status", "ok"),
-                result_count=data.get("result_count", 0),
-            )
-        elif event_type == "part_lookup":
-            dl.log_part_lookup(
-                mpn=data.get("mpn", ""),
-                source=data.get("source", ""),
-                status=data.get("status", "ok"),
-                details=data.get("details"),
-            )
-        elif event_type == "symbol_resolution":
-            dl.log_symbol_resolution(
-                ref=data.get("ref", ""),
-                mpn=data.get("mpn", ""),
-                status=data.get("status", "ok"),
-                pinout_source=data.get("pinout_source", ""),
-            )
-        elif event_type == "simulation":
-            dl.log_simulation(
-                sim_type=data.get("sim_type", ""),
-                target=data.get("target", ""),
-                status=data.get("status", "ok"),
-                metrics=data.get("metrics"),
-                duration_sec=data.get("duration_sec", 0.0),
-            )
-        elif event_type == "thermal":
-            dl.log_thermal(
-                ref=data.get("ref", ""),
-                tj_calc=data.get("tj_calc", 0.0),
-                tj_max=data.get("tj_max", 0.0),
-                status=data.get("status", "ok"),
-            )
-        elif event_type == "erc_drc":
-            dl.log_erc_drc(
-                check_type=data.get("check_type", ""),
-                file=data.get("file", ""),
-                errors=data.get("errors", 0),
-                warnings=data.get("warnings", 0),
-                details=data.get("details"),
-            )
-        elif event_type == "scoring":
-            dl.log_scoring(
-                dimension=data.get("dimension", ""),
-                score=data.get("score", 0.0),
-                grade=data.get("grade", ""),
-                gaps=data.get("gaps"),
-            )
-        elif event_type == "sourcing":
-            dl.log_sourcing(
-                mpn=data.get("mpn", ""),
-                supplier=data.get("supplier", ""),
-                status=data.get("status", "ok"),
-                price=data.get("price"),
-                stock=data.get("stock"),
-            )
-        elif event_type == "generation":
-            dl.log_generation(
-                artifact_type=data.get("artifact_type", ""),
-                path=data.get("path", ""),
-                status=data.get("status", "ok"),
-                duration_sec=data.get("duration_sec", 0.0),
-            )
-        elif event_type == "error":
-            dl.log_error(
-                operation=data.get("operation", "unknown"),
-                error=message,
-                traceback=data.get("traceback", ""),
-            )
-        print(f"Logged {event_type} event to {dl.log_path}")
-        raise SystemExit(0)
+            if event_type == "wizard_step":
+                dl.log_step(step=data.get("step", 0), description=message, user_input=data.get("user_input"))
+            elif event_type == "cli_call":
+                dl.log_cli_call(
+                    command=data.get("command", "unknown"), args=data.get("args", []),
+                    return_code=data.get("return_code", 0), stdout=data.get("stdout", ""),
+                    stderr=data.get("stderr", ""), duration_sec=data.get("duration_sec", 0.0),
+                    generated_files=data.get("generated_files"),
+                )
+            elif event_type == "validation":
+                dl.log_validation(
+                    spec_file=data.get("spec_file", ""), passed=data.get("passed", True),
+                    errors=data.get("errors"), warnings=data.get("warnings"),
+                )
+            elif event_type == "research":
+                dl.log_research(
+                    query_phase=data.get("phase", ""), query=message,
+                    status=data.get("status", "ok"), result_count=data.get("result_count", 0),
+                )
+            elif event_type == "part_lookup":
+                dl.log_part_lookup(
+                    mpn=data.get("mpn", ""), source=data.get("source", ""),
+                    status=data.get("status", "ok"), details=data.get("details"),
+                )
+            elif event_type == "symbol_resolution":
+                dl.log_symbol_resolution(
+                    ref=data.get("ref", ""), mpn=data.get("mpn", ""),
+                    status=data.get("status", "ok"), pinout_source=data.get("pinout_source", ""),
+                )
+            elif event_type == "simulation":
+                dl.log_simulation(
+                    sim_type=data.get("sim_type", ""), target=data.get("target", ""),
+                    status=data.get("status", "ok"), metrics=data.get("metrics"),
+                    duration_sec=data.get("duration_sec", 0.0),
+                )
+            elif event_type == "thermal":
+                dl.log_thermal(
+                    ref=data.get("ref", ""), tj_calc=data.get("tj_calc", 0.0),
+                    tj_max=data.get("tj_max", 0.0), status=data.get("status", "ok"),
+                )
+            elif event_type == "erc_drc":
+                dl.log_erc_drc(
+                    check_type=data.get("check_type", ""), file=data.get("file", ""),
+                    errors=data.get("errors", 0), warnings=data.get("warnings", 0),
+                    details=data.get("details"),
+                )
+            elif event_type == "scoring":
+                dl.log_scoring(
+                    dimension=data.get("dimension", ""), score=data.get("score", 0.0),
+                    grade=data.get("grade", ""), gaps=data.get("gaps"),
+                )
+            elif event_type == "sourcing":
+                dl.log_sourcing(
+                    mpn=data.get("mpn", ""), supplier=data.get("supplier", ""),
+                    status=data.get("status", "ok"), price=data.get("price"),
+                    stock=data.get("stock"),
+                )
+            elif event_type == "generation":
+                dl.log_generation(
+                    artifact_type=data.get("artifact_type", ""), path=data.get("path", ""),
+                    status=data.get("status", "ok"), duration_sec=data.get("duration_sec", 0.0),
+                )
+            elif event_type == "error":
+                dl.log_error(
+                    operation=data.get("operation", "unknown"), error=message,
+                    traceback=data.get("traceback", ""),
+                )
+            print(f"Logged {event_type} event to {dl.log_path}", file=sys.stderr)
+            raise SystemExit(0)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"Error logging event: {exc}", file=sys.stderr)
+            raise SystemExit(1)
 
 
 def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:

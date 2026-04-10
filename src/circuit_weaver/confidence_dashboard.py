@@ -196,7 +196,7 @@ def _score_from_issues(
     warnings: int,
 ) -> float:
     """Compute a 0-100 score from check/issue counts."""
-    if total_checks == 0:
+    if total_checks == 0 and errors == 0 and warnings == 0:
         return 100.0
     # Errors cost 20 points each, warnings cost 5
     penalty = errors * 20 + warnings * 5

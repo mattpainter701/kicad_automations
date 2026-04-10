@@ -89,6 +89,16 @@ class TestScoreFromIssues:
     def test_zero_checks(self):
         assert _score_from_issues(0, 0, 0) == 100.0
 
+    def test_zero_checks_with_errors_not_100(self):
+        """Bug fix: _score_from_issues(0, 3, 0) must NOT return 100."""
+        score = _score_from_issues(0, 3, 0)
+        assert score < 100.0
+        assert score == 40.0  # 100 - 3*20
+
+    def test_zero_checks_with_warnings_not_100(self):
+        score = _score_from_issues(0, 0, 5)
+        assert score == 75.0  # 100 - 5*5
+
 
 class TestGenerateConfidenceReport:
     def test_all_data_sources(self):

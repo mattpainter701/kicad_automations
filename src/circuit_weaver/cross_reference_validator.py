@@ -93,7 +93,7 @@ def validate_schematic_vs_bom(
     """
     issues: list[ValidationIssue] = []
     checked = 0
-    _passive_prefixes = {"R", "C", "L", "F", "FB", "TP", "J", "D"}
+    _passive_prefixes = {"R", "C", "L", "F", "FB", "TP", "D"}
 
     for comp in components:
         ref = comp.source_ref or ""

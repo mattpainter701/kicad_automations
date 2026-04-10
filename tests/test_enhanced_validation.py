@@ -113,6 +113,12 @@ class TestSchematicVsBom:
         # R is in passive prefixes, so no MPN warning
         assert not any(i.code == "xref-missing-mpn" for i in result.issues)
 
+    def test_flags_connector_without_mpn(self):
+        """Connectors (J prefix) should warn when MPN is missing."""
+        components = [_make_component("J1", mpn="", footprint="USB-C")]
+        result = validate_schematic_vs_bom(components)
+        assert any(i.code == "xref-missing-mpn" for i in result.issues)
+
     def test_flags_missing_footprint(self):
         components = [_make_component("U1", mpn="ESP32", footprint="")]
         result = validate_schematic_vs_bom(components)

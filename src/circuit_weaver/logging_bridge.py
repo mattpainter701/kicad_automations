@@ -12,13 +12,16 @@ Provides a unified logging interface so that:
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .design_logger import DesignLogger
 
+_lock = threading.Lock()
 _current_logger: DesignLogger | None = None
+_file_handler: logging.FileHandler | None = None
 
 
 def get_design_logger() -> DesignLogger | None:
@@ -27,13 +30,15 @@ def get_design_logger() -> DesignLogger | None:
     Returns None if no logger has been set (e.g. running outside a project).
     Callers should guard: ``dl = get_design_logger(); if dl: dl.log_...()``.
     """
-    return _current_logger
+    with _lock:
+        return _current_logger
 
 
 def set_design_logger(logger: DesignLogger | None) -> None:
     """Set the active DesignLogger (called at workflow start)."""
     global _current_logger
-    _current_logger = logger
+    with _lock:
+        _current_logger = logger
 
 
 class DesignLogHandler(logging.Handler):
@@ -107,9 +112,6 @@ class DesignLogHandler(logging.Handler):
             self.handleError(record)
 
 
-_file_handler: logging.FileHandler | None = None
-
-
 def init_logging(
     project_dir: str | Path,
 ) -> tuple[DesignLogger, DesignLogHandler]:
@@ -161,9 +163,10 @@ def init_logging(
 
     # Also set up circuit-weaver.log text file
     log_path = project_path / "circuit-weaver.log"
-    _file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
-    _file_handler.setLevel(logging.DEBUG)
-    _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    with _lock:
+        _file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        _file_handler.setLevel(logging.DEBUG)
+        _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     cw_logger.addHandler(_file_handler)
     if cw_logger.level == logging.NOTSET or cw_logger.level > logging.DEBUG:
         cw_logger.setLevel(logging.DEBUG)
@@ -175,17 +178,22 @@ def cleanup_logging() -> None:
     """Remove handlers added by init_logging(). Call at end of workflow."""
     global _file_handler
 
-    cw_logger = logging.getLogger("circuit_weaver")
+    try:
+        cw_logger = logging.getLogger("circuit_weaver")
 
-    # Remove DesignLogHandler instances
-    for handler in cw_logger.handlers[:]:
-        if isinstance(handler, DesignLogHandler):
-            cw_logger.removeHandler(handler)
+        # Remove DesignLogHandler instances
+        for handler in cw_logger.handlers[:]:
+            if isinstance(handler, DesignLogHandler):
+                cw_logger.removeHandler(handler)
 
-    # Remove file handler
-    if _file_handler is not None:
-        cw_logger.removeHandler(_file_handler)
-        _file_handler.close()
-        _file_handler = None
-
-    set_design_logger(None)
+        # Remove file handler
+        with _lock:
+            if _file_handler is not None:
+                cw_logger.removeHandler(_file_handler)
+                try:
+                    _file_handler.close()
+                except Exception:
+                    pass
+                _file_handler = None
+    finally:
+        set_design_logger(None)

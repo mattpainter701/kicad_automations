@@ -69,6 +69,16 @@ class TestParseValue:
         assert _parse_value("4R7") == "4.7"
         assert _parse_value("10R") == "10"
 
+    def test_picohenry(self):
+        assert _parse_value("100pH") == "100p"
+
+    def test_value_with_spaces(self):
+        assert _parse_value("100 ohms") == "100"
+        assert _parse_value("4.7 uH") == "4.7u"
+
+    def test_standalone_farad(self):
+        assert _parse_value("100F") == "100"
+
     def test_empty(self):
         assert _parse_value("") == "0"
 
