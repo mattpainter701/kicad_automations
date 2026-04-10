@@ -199,3 +199,9 @@ When an MPN has no exact LCSC match:
 - Check stock per warehouse (`whs-js`, `whs-zh`, `whs-hk`) — availability varies
 - `moq` and `order_multiple` — many parts require minimum quantities or specific multiples
 - Datasheet quality varies for Chinese manufacturers — cross-reference MPN on DigiKey for better docs
+
+## Platform Guidance
+
+- **Claude Code**: Present part search results as tables. Use AskUserQuestion to confirm part selection before adding to BOM.
+- **Codex/OpenCode**: Present results as numbered options. Ask user to type selection number.
+- **CLI**: All part search and sourcing operations available via `circuit-weaver` subcommands.

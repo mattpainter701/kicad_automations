@@ -230,3 +230,9 @@ Include key parameters in the query:
 - `SurchargeMessages` may include US tariff percentages — factor into cost estimates
 - `AvailabilityOnOrder` shows incoming stock with expected dates
 - Check `IsDiscontinued` and `LifecycleStatus` before selecting parts
+
+## Platform Guidance
+
+- **Claude Code**: Present part search results as tables. Use AskUserQuestion to confirm part selection before adding to BOM.
+- **Codex/OpenCode**: Present results as numbered options. Ask user to type selection number.
+- **CLI**: All part search and sourcing operations available via `circuit-weaver` subcommands.

@@ -5,6 +5,8 @@ description: "BOM (Bill of Materials) management for electronics projects — th
 
 # BOM Management
 
+> **Disambiguation:** This skill handles BOM sourcing, pricing, and ordering. For *schematic analysis* (tracing nets, reviewing designs, checking ERC), use `/kicad`. For *creating new designs from scratch*, use `/circuit-weaver`.
+
 BOM data lives in **KiCad schematic symbol properties** as the single source of truth. This skill orchestrates the full lifecycle: analyze the schematic, search distributors, validate parts, write properties back, export tracking CSVs, and generate order files.
 
 ## Related Skills
@@ -294,3 +296,9 @@ Keep `bom/bom.csv` tracked — it contains user-curated data (Chosen_Distributor
 - **DigiKey token reuse** — cached to temp file with 9-minute TTL; no need to re-auth per call
 - **Second source** — use `AltMPN` field for critical parts
 - **Price at target qty** — prototype pricing != production pricing
+
+## Platform Guidance
+
+- **Claude Code**: Present BOM tables inline with pricing. Use AskUserQuestion for sourcing preferences.
+- **Codex/OpenCode**: Present BOM as formatted table, ask user to confirm or modify.
+- **CLI**: `circuit-weaver cost-bom design.yaml --qty 1,10,100` for pricing, `circuit-weaver export-jlcpcb` for assembly export.

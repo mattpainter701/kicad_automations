@@ -258,3 +258,9 @@ write_bitstream -force system_top.bit
 - [ ] Pin assignments: all I/O assigned in XDC, no unplaced ports
 - [ ] Bitstream: generated without errors
 - [ ] XSA exported for SDK/Vitis/PetaLinux
+
+## Platform Guidance
+
+- **Claude Code**: Present synthesis results inline. Use AskUserQuestion for constraint decisions.
+- **Codex/OpenCode**: Present results as text. Ask user for confirmation on timing constraints.
+- **CLI**: Vivado operations run via Xilinx Vivado CLI tools, not circuit-weaver.

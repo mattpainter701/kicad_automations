@@ -492,3 +492,9 @@ This skill feeds the rest of the EDA workflow:
 | Signal trace impedance | `analyze_pcb.py` trace width + stackup |
 | Thermal check | `kicad_validate`: flag missing thermal vias |
 | EMC filter values | `sim/SKILL.md` Layer 1 RF chain |
+
+## Platform Guidance
+
+- **Claude Code**: Present calculation results inline with units. Use AskUserQuestion when multiple approaches exist.
+- **Codex/OpenCode**: Present formulas and results as text. Ask user for missing parameters.
+- **CLI**: Reference calculations available via the `ee` skill. No dedicated CLI subcommand.

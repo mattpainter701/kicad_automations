@@ -5,6 +5,8 @@ description: Analyze KiCad EDA projects and PDF schematics — schematics, PCB l
 
 # KiCad Project Analysis Skill
 
+> **Disambiguation:** This skill analyzes **existing** KiCad files (.kicad_sch, .kicad_pcb). For *creating new designs from scratch*, use `/circuit-weaver` or `/design_wizard`. For *BOM sourcing and ordering*, use `/bom`. For *circuit simulation*, use `/sim`.
+
 ## Related Skills
 
 | Skill | Purpose |
@@ -321,3 +323,9 @@ When producing a design review report, read `references/report-generation.md` fo
 
 ### Design Comparison
 When comparing two designs, diff: component counts/types, net classes/design rules, track widths/via sizes, board dimensions/layer count, power supply topology, KiCad version differences.
+
+## Platform Guidance
+
+- **Claude Code**: Present analysis results inline. Use AskUserQuestion for review decisions. For design readiness checks, run `circuit-weaver confidence design.yaml --run-sims`.
+- **Codex/OpenCode**: Present analysis as structured text. Ask user to confirm findings.
+- **CLI**: `circuit-weaver validate`, `circuit-weaver erc`, `circuit-weaver check-dfm`, `circuit-weaver confidence` for analysis operations.

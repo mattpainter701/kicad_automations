@@ -267,3 +267,9 @@ To fix rotation issues:
 - **V-cuts and mouse bites** — supported for panel separation
 - **Silkscreen minimum** — 0.8mm height, 0.15mm line width for readable text
 - **Edge clearance** — keep copper >=0.3mm from board edge (0.5mm recommended)
+
+## Platform Guidance
+
+- **Claude Code**: Present DFM results and pricing inline. Use AskUserQuestion for assembly options.
+- **Codex/OpenCode**: Present options as numbered lists. Ask user to confirm choices.
+- **CLI**: Export operations available via `circuit-weaver export-jlcpcb` and `circuit-weaver check-dfm`.

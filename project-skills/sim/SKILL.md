@@ -1,8 +1,11 @@
 ---
 name: sim
 description: >
-  Pre-fabrication simulation -- three-layer simulation stack for RF-capable PCBs:
-  RF chain (scikit-rf), power/clock (LTspice/PyLTSpice), PCB EM (openEMS FDTD).
+  Circuit simulation and pre-fabrication validation. Trigger on: "simulate",
+  "run simulation", "spice", "check stability", "ripple analysis", "phase margin",
+  "power supply simulation", "AC analysis", "transient analysis".
+  Includes automated SPICE simulation via ngspice, RF chain analysis (scikit-rf),
+  power/clock analysis (PyLTSpice), and PCB EM (openEMS FDTD).
   Run before ordering to validate performance before spending on prototypes.
 ---
 

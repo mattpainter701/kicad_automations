@@ -16,6 +16,8 @@ An interactive, console-level question-and-answer workflow that hand-holds
 users through the full Circuit Weaver pipeline — from vague idea to
 quote-ready KiCad outputs.
 
+> **Disambiguation:** This is the **step-by-step guided** wizard with human-in-the-loop control at every step. For **automatic agent-driven** design (faster, spawns research agents), use `/circuit-weaver`. For **analyzing existing KiCad files**, use `/kicad`.
+
 **About this skill:** This is the **manual, step-by-step guide** with human-in-the-loop control. Compare with:
 - **`/circuit-weaver` skill** — Automatic, agent-driven (spawns research-analyst for IC research; fast; requires Perplexity API key)
 - **`circuit-weaver design-wizard` CLI** — Offline interactive wizard (no agents, works standalone, good for learning)

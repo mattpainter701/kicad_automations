@@ -341,3 +341,9 @@ When analyzing a datasheet for a KiCad design review (see `kicad` skill):
 - Use `ExcludeMarketPlace` filter to avoid third-party seller listings
 - Price breaks in `ProductVariations[].StandardPricing[]` — check `BreakQuantity` thresholds
 - Check `ProductStatus` and `Discontinued`/`EndOfLife` before selecting parts
+
+## Platform Guidance
+
+- **Claude Code**: Present part search results as tables. Use AskUserQuestion to confirm part selection before adding to BOM.
+- **Codex/OpenCode**: Present results as numbered options. Ask user to type selection number.
+- **CLI**: All part search and sourcing operations available via `circuit-weaver` subcommands.

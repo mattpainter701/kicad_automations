@@ -171,3 +171,9 @@ Documentation: `https://api-partner.pcbway.com/Help`
 - **Rotation offsets** — PCBWay may have different rotation conventions than KiCad; verify with assembly drawings
 - **Solder mask colors** — more options than JLCPCB (includes purple, matt variants)
 - **Edge clearance** — keep copper >=0.3mm from board edge
+
+## Platform Guidance
+
+- **Claude Code**: Present DFM results and pricing inline. Use AskUserQuestion for assembly options.
+- **Codex/OpenCode**: Present options as numbered lists. Ask user to confirm choices.
+- **CLI**: Export operations available via `circuit-weaver export-jlcpcb` and `circuit-weaver check-dfm`.
