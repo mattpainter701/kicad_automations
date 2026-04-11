@@ -2152,6 +2152,9 @@ def main() -> None:
     erc_p.add_argument("schematic", type=str, help="Path to .kicad_sch file")
     erc_p.add_argument("--json", dest="json_output", action="store_true", help="Output results as JSON")
 
+    doctor_p = subparsers.add_parser("doctor", help="Check environment: installed tools, dependencies, versions")
+    doctor_p.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
+
     conf_p = subparsers.add_parser("confidence", help="Generate design confidence report")
     conf_p.add_argument("spec", help="Path to YAML/JSON design spec")
     conf_p.add_argument("--output", "-o", default=None, help="Write HTML dashboard to file")
@@ -3185,6 +3188,16 @@ def main() -> None:
                         print(f"  [{prefix}] {v.type}: {v.description}")
 
         raise SystemExit(exit_code)
+
+    if args.command == "doctor":
+        from .doctor import run_doctor
+
+        report = run_doctor()
+        if getattr(args, "json_output", False):
+            _print_json(report.to_dict())
+        else:
+            print(report.to_terminal())
+        raise SystemExit(0 if report.all_ok else 1)
 
     if args.command == "confidence":
         try:
