@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .design_docs import _generate_bom_table, _generate_power_budget
-from .design_ir import DesignIR
+from .design_ir import DesignBlock, DesignIR
 from .design_scorer import score_design_comprehensive
 from .dfm_checker import check_dfm
 

@@ -1,6 +1,5 @@
 """Tests for enhanced validation checks and cross-reference validator."""
 
-import pytest
 
 from circuit_weaver.component_db import ComponentDef
 from circuit_weaver.cross_reference_validator import (

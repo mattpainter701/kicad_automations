@@ -1,9 +1,6 @@
 """Tests for SPICE simulation runner."""
 
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from circuit_weaver.spice_runner import (
     SimulationResult,

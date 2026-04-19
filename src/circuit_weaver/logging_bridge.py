@@ -138,21 +138,32 @@ def init_logging(
     dl = DesignLogger(project_path)
     set_design_logger(dl)
 
+    cw_logger = logging.getLogger("circuit_weaver")
+
+    # Remove any prior handlers we attached before re-attaching. Calling
+    # init_logging twice in one process (e.g. two wizard invocations) used
+    # to stack handlers and double-log every record.
+    for existing in list(cw_logger.handlers):
+        if isinstance(existing, DesignLogHandler):
+            cw_logger.removeHandler(existing)
+    if _file_handler is not None:
+        cw_logger.removeHandler(_file_handler)
+        try:
+            _file_handler.close()
+        except Exception:
+            pass
+        _file_handler = None
+
     # Create bridge handler
     bridge = DesignLogHandler(dl)
     bridge.setLevel(logging.DEBUG)
-
-    # Attach to circuit_weaver root logger
-    cw_logger = logging.getLogger("circuit_weaver")
     cw_logger.addHandler(bridge)
 
     # Also set up circuit-weaver.log text file
     log_path = project_path / "circuit-weaver.log"
     _file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
     _file_handler.setLevel(logging.DEBUG)
-    _file_handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
+    _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     cw_logger.addHandler(_file_handler)
     if cw_logger.level == logging.NOTSET or cw_logger.level > logging.DEBUG:
         cw_logger.setLevel(logging.DEBUG)

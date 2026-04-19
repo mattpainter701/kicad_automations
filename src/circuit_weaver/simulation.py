@@ -7,12 +7,21 @@ into a DesignSimulationReport with a confidence score.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .component_db import ComponentDef
 from .spice_runner import SimulationResult
+
+
+def _safe_filename_part(ref: str) -> str:
+    # A reference designator authored in user YAML can contain path separators
+    # or "..". Strip everything that isn't a safe filename character before we
+    # use it in output paths.
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "_", ref or "")
+    return cleaned or "unnamed"
 
 
 @dataclass
@@ -87,42 +96,50 @@ def plan_simulations(
         if category in _POWER_CATEGORIES or any(
             kw in description for kw in ("regulator", "converter", "buck", "boost", "ldo")
         ):
-            plan.power_sims.append({
-                "ref": ref,
-                "mpn": mpn,
-                "category": category or "power",
-                "analyses": ["tran", "ac"],
-                "target_metrics": {
-                    "ripple_mv": 50.0,  # Max acceptable ripple
-                    "phase_margin_deg": 45.0,  # Min phase margin
-                },
-            })
-            plan.thermal_sims.append({
-                "ref": ref,
-                "mpn": mpn,
-                "analysis": "op",
-                "purpose": "thermal_operating_point",
-            })
+            plan.power_sims.append(
+                {
+                    "ref": ref,
+                    "mpn": mpn,
+                    "category": category or "power",
+                    "analyses": ["tran", "ac"],
+                    "target_metrics": {
+                        "ripple_mv": 50.0,  # Max acceptable ripple
+                        "phase_margin_deg": 45.0,  # Min phase margin
+                    },
+                }
+            )
+            plan.thermal_sims.append(
+                {
+                    "ref": ref,
+                    "mpn": mpn,
+                    "analysis": "op",
+                    "purpose": "thermal_operating_point",
+                }
+            )
 
         # Detect filters
         elif category in _FILTER_CATEGORIES or "filter" in description:
-            plan.signal_sims.append({
-                "ref": ref,
-                "mpn": mpn,
-                "category": "filter",
-                "analyses": ["ac"],
-                "target_metrics": {},
-            })
+            plan.signal_sims.append(
+                {
+                    "ref": ref,
+                    "mpn": mpn,
+                    "category": "filter",
+                    "analyses": ["ac"],
+                    "target_metrics": {},
+                }
+            )
 
         # Detect op-amps
         elif any(kw in description for kw in ("op-amp", "opamp", "operational amplifier")):
-            plan.signal_sims.append({
-                "ref": ref,
-                "mpn": mpn,
-                "category": "opamp",
-                "analyses": ["ac", "tran"],
-                "target_metrics": {},
-            })
+            plan.signal_sims.append(
+                {
+                    "ref": ref,
+                    "mpn": mpn,
+                    "category": "opamp",
+                    "analyses": ["ac", "tran"],
+                    "target_metrics": {},
+                }
+            )
 
     return plan
 
@@ -218,8 +235,9 @@ def run_design_simulations(
     # Run power simulations
     for sim_def in plan.power_sims:
         ref = sim_def["ref"]
+        safe_ref = _safe_filename_part(ref)
         for analysis in sim_def.get("analyses", ["tran"]):
-            netlist_path = output_path / f"{ref}_{analysis}.cir"
+            netlist_path = output_path / f"{safe_ref}_{analysis}.cir"
             export_spice_netlist(
                 components,
                 netlist_path,
@@ -237,9 +255,7 @@ def run_design_simulations(
                     for rk, rv in result.metrics.items():
                         if metric_key in rk:
                             if "ripple" in metric_key and rv > target_val:
-                                recommendations.append(
-                                    f"{ref}: Ripple {rv:.1f} mV exceeds target {target_val:.0f} mV"
-                                )
+                                recommendations.append(f"{ref}: Ripple {rv:.1f} mV exceeds target {target_val:.0f} mV")
                             elif "phase_margin" in metric_key and rv < target_val:
                                 recommendations.append(
                                     f"{ref}: Phase margin {rv:.1f} deg below minimum {target_val:.0f} deg"
@@ -248,8 +264,9 @@ def run_design_simulations(
     # Run signal simulations
     for sim_def in plan.signal_sims:
         ref = sim_def["ref"]
+        safe_ref = _safe_filename_part(ref)
         for analysis in sim_def.get("analyses", ["ac"]):
-            netlist_path = output_path / f"{ref}_{analysis}.cir"
+            netlist_path = output_path / f"{safe_ref}_{analysis}.cir"
             export_spice_netlist(
                 components,
                 netlist_path,
@@ -263,7 +280,8 @@ def run_design_simulations(
     # Run thermal operating point simulations
     for sim_def in plan.thermal_sims:
         ref = sim_def["ref"]
-        netlist_path = output_path / f"{ref}_op.cir"
+        safe_ref = _safe_filename_part(ref)
+        netlist_path = output_path / f"{safe_ref}_op.cir"
         export_spice_netlist(
             components,
             netlist_path,

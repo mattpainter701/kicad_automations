@@ -1,9 +1,6 @@
 """Tests for the simulation orchestrator."""
 
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from circuit_weaver.component_db import ComponentDef
 from circuit_weaver.simulation import (
@@ -121,8 +118,11 @@ class TestScoreSimulationConfidence:
     def test_to_dict(self):
         plan = SimulationPlan()
         report = DesignSimulationReport(
-            plan=plan, confidence_score=75.0, grade="C",
-            summary="test", recommendations=["fix something"],
+            plan=plan,
+            confidence_score=75.0,
+            grade="C",
+            summary="test",
+            recommendations=["fix something"],
         )
         d = report.to_dict()
         assert d["confidence_score"] == 75.0
@@ -151,7 +151,7 @@ class TestRunDesignSimulations:
         ]
         output = tmp_path / "sims"
         with patch("circuit_weaver.spice_runner._find_ngspice", return_value=None):
-            report = run_design_simulations(components, output_dir=output)
+            run_design_simulations(components, output_dir=output)
         # Netlists should have been generated even if sim was skipped
         cir_files = list(output.glob("*.cir"))
         assert len(cir_files) > 0

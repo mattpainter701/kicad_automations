@@ -1,12 +1,10 @@
 """Tests for project discovery and auto-detection."""
 
 import json
-from pathlib import Path
 
 import pytest
 
 from circuit_weaver.project_discovery import (
-    DiscoveredProject,
     detect_project_type,
     discover_projects,
     format_project_table,

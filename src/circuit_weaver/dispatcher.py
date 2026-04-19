@@ -1463,7 +1463,7 @@ def generate_artifacts(
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Set up logging: use unified bridge if not already initialized, else fallback
-    from .logging_bridge import get_design_logger, init_logging, cleanup_logging
+    from .logging_bridge import cleanup_logging, get_design_logger, init_logging
 
     _owned_logging = False
     if get_design_logger() is None:
@@ -2156,7 +2156,12 @@ def main() -> None:
     conf_p.add_argument("spec", help="Path to YAML/JSON design spec")
     conf_p.add_argument("--output", "-o", default=None, help="Write HTML dashboard to file")
     conf_p.add_argument("--pcb", default=None, help="Path to .kicad_pcb for DFM analysis")
-    conf_p.add_argument("--run-sims", action="store_true", default=False, help="Run simulations as part of confidence check")
+    conf_p.add_argument(
+        "--run-sims",
+        action="store_true",
+        default=False,
+        help="Run simulations as part of confidence check",
+    )
     conf_p.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
     conf_p.add_argument("--enrich-parts", action="store_true", default=False)
 
@@ -2184,9 +2189,19 @@ def main() -> None:
         "--type",
         required=True,
         choices=[
-            "wizard_step", "cli_call", "validation", "research",
-            "part_lookup", "symbol_resolution", "simulation", "thermal",
-            "erc_drc", "scoring", "sourcing", "generation", "error",
+            "wizard_step",
+            "cli_call",
+            "validation",
+            "research",
+            "part_lookup",
+            "symbol_resolution",
+            "simulation",
+            "thermal",
+            "erc_drc",
+            "scoring",
+            "sourcing",
+            "generation",
+            "error",
         ],
         help="Event type to log",
     )
@@ -2244,9 +2259,7 @@ def main() -> None:
             print("=" * 60)
 
             # Factor cross-reference errors into exit code
-            xref_errors = sum(
-                sum(1 for i in xr.issues if i.level == "error") for xr in xref_results
-            )
+            xref_errors = sum(sum(1 for i in xr.issues if i.level == "error") for xr in xref_results)
             if xref_errors > 0:
                 raise SystemExit(2)
 

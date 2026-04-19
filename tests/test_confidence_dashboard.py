@@ -2,18 +2,13 @@
 
 from dataclasses import dataclass, field
 
-import pytest
-
 from circuit_weaver.confidence_dashboard import (
     ConfidenceSection,
-    DesignConfidenceReport,
-    generate_confidence_report,
     _grade,
     _score_from_issues,
+    generate_confidence_report,
 )
 from circuit_weaver.cross_reference_validator import CrossReferenceResult
-from circuit_weaver.validator import ValidationIssue
-
 
 # Mock objects for testing
 

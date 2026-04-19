@@ -9,9 +9,13 @@ Log location: <project_root>/design.log
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class DesignLogger:
@@ -32,15 +36,28 @@ class DesignLogger:
             self._load_existing_log()
 
     def _load_existing_log(self) -> None:
-        """Load existing design log entries."""
+        """Load existing design log entries.
+
+        Per-line parsing so one malformed entry (e.g. a partial line from a
+        prior crash) doesn't drop every subsequent entry from memory.
+        """
         try:
-            with open(self.log_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        self.entries.append(json.loads(line))
-        except Exception as e:
-            print(f"Warning: Could not load existing log: {e}", file=sys.stderr)
+            fh = open(self.log_path, "r", encoding="utf-8")
+        except OSError as e:
+            print(f"Warning: Could not open existing log: {e}", file=sys.stderr)
+            return
+        with fh as f:
+            for lineno, raw in enumerate(f, start=1):
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    self.entries.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    print(
+                        f"Warning: skipping malformed design.log line {lineno}: {e}",
+                        file=sys.stderr,
+                    )
 
     def _append_entry(self, entry: dict[str, Any]) -> None:
         """Append a single entry to the log file."""
@@ -61,7 +78,7 @@ class DesignLogger:
             user_input: Dict of user responses captured in this step
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "wizard_step",
             "step": step,
             "description": description,
@@ -91,7 +108,7 @@ class DesignLogger:
             generated_files: List of files created/modified
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "cli_call",
             "command": command,
             "args": args,
@@ -125,7 +142,7 @@ class DesignLogger:
             warnings: List of warning messages
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "validation",
             "spec_file": spec_file,
             "passed": passed,
@@ -146,7 +163,7 @@ class DesignLogger:
             result_count: Number of results returned
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "research",
             "phase": query_phase,
             "status": status,
@@ -171,7 +188,7 @@ class DesignLogger:
             details: Additional info (price, stock, model_path, etc.)
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "part_lookup",
             "mpn": mpn,
             "source": source,
@@ -196,7 +213,7 @@ class DesignLogger:
             pinout_source: How pinout was resolved (datasheet, library, stub, etc.)
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "symbol_resolution",
             "ref": ref,
             "mpn": mpn,
@@ -223,7 +240,7 @@ class DesignLogger:
             duration_sec: Simulation wall-clock time
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "simulation",
             "sim_type": sim_type,
             "target": target,
@@ -249,7 +266,7 @@ class DesignLogger:
             status: ok, warning, critical
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "thermal",
             "ref": ref,
             "tj_calc": round(tj_calc, 1),
@@ -277,7 +294,7 @@ class DesignLogger:
             details: First few violation descriptions
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "erc_drc",
             "check_type": check_type,
             "file": file,
@@ -304,7 +321,7 @@ class DesignLogger:
             gaps: List of gaps or improvement areas
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "scoring",
             "dimension": dimension,
             "score": round(score, 1),
@@ -331,7 +348,7 @@ class DesignLogger:
             stock: Stock quantity if available
         """
         entry: dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "sourcing",
             "mpn": mpn,
             "supplier": supplier,
@@ -359,7 +376,7 @@ class DesignLogger:
             duration_sec: Generation time
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "generation",
             "artifact_type": artifact_type,
             "path": path,
@@ -382,7 +399,7 @@ class DesignLogger:
             traceback: Optional traceback string
         """
         entry: dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _now_iso(),
             "type": "error",
             "operation": operation,
             "error": error[:500],
@@ -478,19 +495,13 @@ class DesignLogger:
             "entries": len(self.entries),
             "files_generated": sorted(f for f in files if f),
             "validation_passed": validation_passed,
-            "simulation": {"total": sim_count, "passed": sim_passed, "skipped": sim_skipped}
-            if sim_count
-            else None,
+            "simulation": {"total": sim_count, "passed": sim_passed, "skipped": sim_skipped} if sim_count else None,
             "thermal": {"warnings": thermal_warnings, "critical": thermal_critical}
             if (thermal_warnings or thermal_critical)
             else None,
-            "erc_drc": {"errors": erc_errors, "warnings": erc_warnings}
-            if (erc_errors or erc_warnings)
-            else None,
+            "erc_drc": {"errors": erc_errors, "warnings": erc_warnings} if (erc_errors or erc_warnings) else None,
             "scoring": scoring or None,
-            "part_lookups": {"total": part_lookups, "failures": part_failures}
-            if part_lookups
-            else None,
+            "part_lookups": {"total": part_lookups, "failures": part_failures} if part_lookups else None,
             "errors": errors[:10],
             "warnings": warnings[:10],
             "log_path": str(self.log_path),
@@ -518,8 +529,10 @@ class DesignLogger:
 
         sim = summary.get("simulation")
         if sim:
-            print(f"Simulation:  {sim['passed']}/{sim['total']} passed"
-                  + (f", {sim['skipped']} skipped" if sim["skipped"] else ""))
+            print(
+                f"Simulation:  {sim['passed']}/{sim['total']} passed"
+                + (f", {sim['skipped']} skipped" if sim["skipped"] else "")
+            )
 
         thermal = summary.get("thermal")
         if thermal:

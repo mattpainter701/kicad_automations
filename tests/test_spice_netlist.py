@@ -1,8 +1,6 @@
 """Tests for SPICE netlist generation."""
 
-from pathlib import Path
 
-import pytest
 
 from circuit_weaver.component_db import ComponentDef
 from circuit_weaver.spice_netlist import (

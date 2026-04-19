@@ -7,8 +7,9 @@ with actionable recommendations.
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -78,9 +79,7 @@ class DesignConfidenceReport:
                 "partial": "[!!]",
                 "skipped": "[--]",
             }.get(section.status, "[??]")
-            lines.append(
-                f"  {status_icon} {section.name:<25} {section.score:5.0f}/100 ({section.grade})"
-            )
+            lines.append(f"  {status_icon} {section.name:<25} {section.score:5.0f}/100 ({section.grade})")
 
         if self.blockers:
             lines.append("")
@@ -100,32 +99,41 @@ class DesignConfidenceReport:
 
     def to_html(self) -> str:
         """Generate self-contained HTML dashboard."""
+        # User-controlled strings (project name, validation messages, YAML
+        # fragments) flow into this template. Escape everything before
+        # interpolating so a component ref like "<script>" can't break the
+        # page.
+        esc = html.escape
+        project_esc = esc(self.project)
+        timestamp_esc = esc(self.timestamp)
+        grade_esc = esc(self.overall_grade)
+        readiness_label = esc(self.readiness.replace("_", " ").upper())
+
         sections_html = ""
-        for name, section in self.sections.items():
-            color = (
-                "#22c55e" if section.score >= 80
-                else "#eab308" if section.score >= 60
-                else "#ef4444"
-            )
+        for _, section in self.sections.items():
+            color = "#22c55e" if section.score >= 80 else "#eab308" if section.score >= 60 else "#ef4444"
+            name_esc = esc(section.name)
+            grade_section_esc = esc(section.grade)
+            status_esc = esc(section.status)
             sections_html += f"""
             <div style="margin:8px 0;padding:8px 12px;background:#f8f9fa;border-radius:6px;
                         border-left:4px solid {color}">
-                <strong>{section.name}</strong>
+                <strong>{name_esc}</strong>
                 <span style="float:right;color:{color};font-weight:bold">
-                    {section.score:.0f}/100 ({section.grade})
+                    {section.score:.0f}/100 ({grade_section_esc})
                 </span>
-                <div style="font-size:0.85em;color:#666">{section.status}</div>
+                <div style="font-size:0.85em;color:#666">{status_esc}</div>
             </div>"""
 
         blockers_html = ""
         if self.blockers:
-            items = "".join(f"<li style='color:#ef4444'>{b}</li>" for b in self.blockers)
+            items = "".join(f"<li style='color:#ef4444'>{esc(b)}</li>" for b in self.blockers)
             blockers_html = f"<h3>Blockers</h3><ul>{items}</ul>"
 
         actions_html = ""
         if self.action_items:
             items = "".join(
-                f"<li>[{a.get('priority', '?')}] {a.get('description', '')}</li>"
+                f"<li>[{esc(str(a.get('priority', '?')))}] {esc(str(a.get('description', '')))}</li>"
                 for a in self.action_items[:10]
             )
             actions_html = f"<h3>Action Items</h3><ul>{items}</ul>"
@@ -137,7 +145,7 @@ class DesignConfidenceReport:
         }.get(self.readiness, "#666")
 
         return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Design Confidence: {self.project}</title>
+<html><head><meta charset="utf-8"><title>Design Confidence: {project_esc}</title>
 <style>
 body {{ font-family: -apple-system, system-ui, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }}
 h1 {{ border-bottom: 2px solid #333; padding-bottom: 8px; }}
@@ -148,14 +156,14 @@ h1 {{ border-bottom: 2px solid #333; padding-bottom: 8px; }}
 .center {{ text-align: center; margin: 16px 0; }}
 </style></head>
 <body>
-<h1>Design Confidence: {self.project}</h1>
-<div class="score">{self.overall_score:.0f}/100 ({self.overall_grade})</div>
-<div class="center"><span class="readiness">{self.readiness.replace('_', ' ').upper()}</span></div>
+<h1>Design Confidence: {project_esc}</h1>
+<div class="score">{self.overall_score:.0f}/100 ({grade_esc})</div>
+<div class="center"><span class="readiness">{readiness_label}</span></div>
 <h3>Sections</h3>
 {sections_html}
 {blockers_html}
 {actions_html}
-<p style="color:#999;font-size:0.8em">Generated {self.timestamp} by circuit-weaver</p>
+<p style="color:#999;font-size:0.8em">Generated {timestamp_esc} by circuit-weaver</p>
 </body></html>"""
 
 
@@ -220,14 +228,10 @@ def generate_confidence_report(
     if validation_report is not None:
         report_dict = validation_report.to_dict() if hasattr(validation_report, "to_dict") else {}
         errors = sum(
-            1 for cat in report_dict.get("categories", {}).values()
-            for msg in cat
-            if msg.get("level") == "error"
+            1 for cat in report_dict.get("categories", {}).values() for msg in cat if msg.get("level") == "error"
         )
         warnings = sum(
-            1 for cat in report_dict.get("categories", {}).values()
-            for msg in cat
-            if msg.get("level") == "warning"
+            1 for cat in report_dict.get("categories", {}).values() for msg in cat if msg.get("level") == "warning"
         )
         total = sum(len(cat) for cat in report_dict.get("categories", {}).values()) + 1
         score = _score_from_issues(total, errors, warnings)
@@ -242,7 +246,10 @@ def generate_confidence_report(
             blockers.append(f"Electrical validation: {errors} error(s)")
     else:
         sections["electrical"] = ConfidenceSection(
-            name="Electrical Validation", score=0, grade="N/A", status="skipped",
+            name="Electrical Validation",
+            score=0,
+            grade="N/A",
+            status="skipped",
         )
 
     # 2. Simulation
@@ -258,7 +265,10 @@ def generate_confidence_report(
         )
     else:
         sections["simulation"] = ConfidenceSection(
-            name="Simulation", score=0, grade="N/A", status="skipped",
+            name="Simulation",
+            score=0,
+            grade="N/A",
+            status="skipped",
             recommendations=["Run simulations: circuit-weaver simulate design.yaml"],
         )
 
@@ -279,13 +289,19 @@ def generate_confidence_report(
             blockers.append(f"Thermal: {critical} component(s) exceed Tj_max")
     else:
         sections["thermal"] = ConfidenceSection(
-            name="Thermal Analysis", score=0, grade="N/A", status="skipped",
+            name="Thermal Analysis",
+            score=0,
+            grade="N/A",
+            status="skipped",
         )
 
     # 4. Signal Integrity
     # Placeholder: use SI constraints if available
     sections["signal_integrity"] = ConfidenceSection(
-        name="Signal Integrity", score=0, grade="N/A", status="skipped",
+        name="Signal Integrity",
+        score=0,
+        grade="N/A",
+        status="skipped",
     )
 
     # 5. Manufacturing/DFM
@@ -303,19 +319,16 @@ def generate_confidence_report(
             blockers.append(f"DFM: {critical} critical violation(s)")
     else:
         sections["manufacturing"] = ConfidenceSection(
-            name="Manufacturing (DFM)", score=0, grade="N/A", status="skipped",
+            name="Manufacturing (DFM)",
+            score=0,
+            grade="N/A",
+            status="skipped",
         )
 
     # 6. Cross-Reference
     if xref_results is not None:
-        xr_errors = sum(
-            sum(1 for i in xr.issues if i.level == "error")
-            for xr in xref_results
-        )
-        xr_warnings = sum(
-            sum(1 for i in xr.issues if i.level == "warning")
-            for xr in xref_results
-        )
+        xr_errors = sum(sum(1 for i in xr.issues if i.level == "error") for xr in xref_results)
+        xr_warnings = sum(sum(1 for i in xr.issues if i.level == "warning") for xr in xref_results)
         xr_checked = sum(xr.checked_items for xr in xref_results)
         score = _score_from_issues(xr_checked, xr_errors, xr_warnings)
         sections["cross_reference"] = ConfidenceSection(
@@ -328,7 +341,10 @@ def generate_confidence_report(
             blockers.append(f"Cross-reference: {xr_errors} error(s)")
     else:
         sections["cross_reference"] = ConfidenceSection(
-            name="Cross-Reference Audit", score=0, grade="N/A", status="skipped",
+            name="Cross-Reference Audit",
+            score=0,
+            grade="N/A",
+            status="skipped",
         )
 
     # 7. ERC/DRC
@@ -347,7 +363,10 @@ def generate_confidence_report(
             blockers.append(f"ERC: {erc_errs} error(s)")
     else:
         sections["erc_drc"] = ConfidenceSection(
-            name="ERC/DRC", score=0, grade="N/A", status="skipped",
+            name="ERC/DRC",
+            score=0,
+            grade="N/A",
+            status="skipped",
         )
 
     # Compute weighted overall score
@@ -361,10 +380,7 @@ def generate_confidence_report(
     if active_total > 0:
         # Redistribute skipped weights proportionally
         scale = 1.0 / active_total
-        overall = sum(
-            sections[key].score * weight * scale
-            for key, weight in active_weights.items()
-        )
+        overall = sum(sections[key].score * weight * scale for key, weight in active_weights.items())
     else:
         overall = 0.0
 
@@ -381,15 +397,17 @@ def generate_confidence_report(
     # Action items from sections
     for section in sections.values():
         for rec in section.recommendations:
-            action_items.append({
-                "priority": "high" if section.score < 60 else "medium",
-                "description": rec,
-                "section": section.name,
-            })
+            action_items.append(
+                {
+                    "priority": "high" if section.score < 60 else "medium",
+                    "description": rec,
+                    "section": section.name,
+                }
+            )
 
     report = DesignConfidenceReport(
         project=project,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         overall_score=overall,
         overall_grade=overall_grade,
         readiness=readiness,
