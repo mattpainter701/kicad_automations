@@ -24,6 +24,33 @@ All platforms follow the same design flow — just different UI for user input.
 
 ## Workflow: New Design
 
+### Step -1 — Auto-Detection (ALWAYS RUN FIRST)
+
+Before presenting any choices, **automatically scan the current directory for existing projects**:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, present them to the user:
+
+```
+Found 2 existing circuit project(s):
+
+  #  Project                  Type            Status       Files
+  -  -------                  ----            ------       -----
+  1  WiFi_Sensor_v1           circuit_weaver  validated    yaml, sch, pcb, log
+  2  Motor_Controller         kicad_native    generated    sch, pcb, pro
+
+What would you like to do?
+  [1] Open an existing project (select from above)
+  [2] Design a new circuit
+```
+
+If no projects are found, skip directly to Step 0 with only the "Design a new circuit" option.
+
+**Log:** `python -m circuit_weaver log-event <project_dir> --type wizard_step --message "Auto-detection: N projects found"`
+
 ### Step 0 — Welcome & Route
 
 Present a choice (platform-adapted):
@@ -298,7 +325,141 @@ python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
 
 **Log:** `[Step 5] Artifacts generated in output/`
 
-### Step 6 — Design Review & Next Steps
+### Step 6 — Confidence & Simulation Check
+
+**This step runs automatically after artifact generation. Do not skip it.**
+
+Run the confidence dashboard to get a unified design readiness score:
+
+```bash
+python -m circuit_weaver confidence "${PROJECT_NAME}/design.yaml" \
+  --run-sims \
+  -o "${PROJECT_NAME}/output/confidence_report.html"
+```
+
+This runs **all available checks** in one pass:
+- Electrical validation (14 checks: decoupling, enable pins, power budget, thermal, SI, etc.)
+- Circuit simulation via ngspice (power supply transient/AC, filter response)
+- Thermal analysis (junction temperature vs Tj_max)
+- Cross-reference audit (spec vs schematic, BOM completeness, duplicate refs)
+- ERC (if KiCad CLI available)
+
+Present the result to the user:
+
+```
+=== Design Confidence Report ===
+
+Score:      82/100 (B)
+Readiness:  NEEDS REVIEW
+
+Sections:
+  [OK] Electrical Validation     90/100 (A)
+  [OK] Simulation                75/100 (C)
+  [OK] Thermal Analysis         100/100 (A)
+  [--] Signal Integrity            N/A (skipped)
+  [--] Manufacturing (DFM)         N/A (skipped)
+  [OK] Cross-Reference Audit     85/100 (B)
+  [--] ERC/DRC                     N/A (skipped)
+
+Action Items (2):
+  - [high] U1: Ripple 62 mV exceeds target 50 mV
+  - [medium] Install ngspice to enable full simulation
+
+HTML report: output/confidence_report.html
+```
+
+**Interpretation guidance for user:**
+- **ready_for_fab** (80+, no blockers): Design is ready to order
+- **needs_review** (60-80): Design works but has issues worth addressing
+- **not_ready** (<60 or has blockers): Must fix blockers before ordering
+
+If score is below 80, ask the user if they want to address the action items
+before proceeding. Offer to loop back to the relevant step.
+
+**Log:** `[Step 6] Confidence: {score}/100 ({grade}), readiness: {readiness}`
+
+### Step 7 — PCB Layout Preparation
+
+**Goal:** Prepare the PCB for routing. This step optimizes component placement,
+generates visual layout guides, and optionally auto-routes non-critical nets.
+
+#### 7a. Placement Optimization
+
+Run the simulated annealing placement optimizer on the generated PCB:
+
+```bash
+python -m circuit_weaver optimize-placement "${PROJECT_NAME}/design.yaml" \
+  -o "${PROJECT_NAME}/output" --json
+```
+
+This optimizes component positions for:
+- Thermal spacing (power ICs separated, copper pour areas)
+- Signal integrity (high-speed pairs close, short traces)
+- Manufacturing (courtyard clearances, assembly accessibility)
+
+#### 7b. Interactive Placement Viewer
+
+Generate an interactive HTML placement diagram:
+
+```bash
+python -m circuit_weaver placement-viewer "${PROJECT_NAME}/design.yaml" \
+  -o "${PROJECT_NAME}/output/placement.html"
+```
+
+Present to user: "Open `placement.html` in a browser to see component positions,
+net connections, and thermal heatmap. You can review before committing to routing."
+
+#### 7c. SVG Placement Export (Optional)
+
+For users who want to fine-tune placement visually in an editor:
+
+```bash
+python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
+  -o "${PROJECT_NAME}/output" --svg-placement
+```
+
+This exports an editable SVG that can be modified in Inkscape/CorelDRAW and
+imported back:
+
+```bash
+python -m circuit_weaver import-placement "${PROJECT_NAME}/output/main_placement.kicad_pcb" \
+  --svg "${PROJECT_NAME}/output/placement.svg"
+```
+
+#### 7d. Autorouting (Optional)
+
+If the user has Freerouting installed, offer to auto-route the PCB:
+
+```bash
+python -m circuit_weaver autoroute "${PROJECT_NAME}/output/main_placement.kicad_pcb" \
+  -o "${PROJECT_NAME}/output/main_routed.kicad_pcb"
+```
+
+**Note:** Freerouting must be installed separately. If not available, the user
+routes manually in KiCad. Autorouting works best for non-critical signal nets;
+power and high-speed traces should be routed manually.
+
+**Claude Code / Codex / OpenCode:** Present choices:
+- **[1] Optimize placement** (recommended)
+- **[2] View placement** (generate interactive HTML)
+- **[3] Export SVG for manual editing**
+- **[4] Autoroute** (requires Freerouting)
+- **[5] Skip to review** (route manually in KiCad)
+
+Run whichever the user selects. After each action, offer to run another or proceed.
+
+**Log:** `[Step 7] PCB layout: {actions_taken}`
+
+#### Related Project-Skills
+
+For advanced PCB workflows, these project-skills provide deeper functionality:
+- `/kicad_pcb_place` — constraint-based placement with pcbnew API
+- `/autoroute` — detailed Freerouting workflow with DSN/SES conversion
+- `/kicad_pinmap` — pin-to-net audit and verification
+- `/kicad_hierarchy` — hierarchical schematic sheet management
+- `/kicad_gen` — programmatic schematic generation for large ICs (BGAs)
+
+### Step 8 — Design Review & Next Steps
 
 Display:
 
@@ -309,24 +470,29 @@ Project:      ${PROJECT_NAME}
 Logfile:      ${PROJECT_NAME}/design.log
 Schematic:    ${PROJECT_NAME}/output/main.kicad_sch
 Placement:    ${PROJECT_NAME}/output/main_placement.kicad_pcb
+Placement:    ${PROJECT_NAME}/output/placement.html (interactive)
 Report:       ${PROJECT_NAME}/output/main_report.md
+Confidence:   ${PROJECT_NAME}/output/confidence_report.html
 
 Next steps:
-  1. Open main.kicad_sch in KiCad to review the layout
-  2. Add connectors, test points, and mechanical holes
-  3. Run KiCad DRC/ERC checks
-  4. Design the PCB layout
+  1. Open main.kicad_sch in KiCad to review the schematic
+  2. Open main_placement.kicad_pcb in KiCad for PCB layout
+  3. Route remaining traces (power first, then signals)
+  4. Run KiCad DRC/ERC checks
   5. Export gerbers and order from JLCPCB or similar
 ```
 
-Question: "Want to export a BOM for ordering, or make any changes?"
+Question: "What would you like to do next?"
 
 **Claude Code / Codex / OpenCode:** Present choices:
 - Export BOM & CPL for assembly
+- Re-run confidence report (after making changes)
+- Re-optimize placement
+- Run DFM check on PCB (`python -m circuit_weaver check-dfm <pcb>`)
 - Make changes to the design (return to Step 2)
 - Done (exit)
 
-**Log:** `[Step 6] Design review complete. User choice: {export|edit|done}`
+**Log:** `[Step 8] Design review complete. User choice: {export|confidence|placement|dfm|edit|done}`
 
 ---
 
@@ -334,9 +500,18 @@ Question: "Want to export a BOM for ordering, or make any changes?"
 
 ### Route to Existing Design
 
-Question: "Path to your design directory?"
+If Step -1 already discovered projects, use the user's selection from there.
 
-**Claude Code / Codex / OpenCode:** Ask for text input (path to folder with `design.yaml`)
+Otherwise, run auto-detection first:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, present the list and let the user select one by number.
+If no projects are found, ask: "Path to your design directory?"
+
+**Claude Code / Codex / OpenCode:** Ask for text input only as fallback (path to folder with `design.yaml`)
 
 Validate the path and load `design.yaml`.
 
@@ -364,21 +539,43 @@ Next action:      Design PCB layout in KiCad
 
 ```
 What would you like to do?
-  [1] Validate design (check electrical rules)
-  [2] Regenerate schematic (after making edits)
-  [3] View design report
-  [4] Export BOM & CPL for ordering
-  [5] Make changes to the design
-  [6] Exit
+
+  --- Verify ---
+  [1] Validate design (electrical rules + cross-reference audit)
+  [2] Run confidence report (full design readiness check)
+  [3] Run simulations (SPICE power/signal analysis)
+
+  --- Generate & Layout ---
+  [4] Regenerate schematic (after making edits)
+  [5] Optimize PCB placement (simulated annealing)
+  [6] View interactive placement (HTML thermal/net viewer)
+  [7] Autoroute PCB (requires Freerouting)
+
+  --- Export ---
+  [8] Export BOM & CPL for ordering
+  [9] Export Gerbers for fabrication
+  [10] Run DFM check on PCB
+
+  --- Other ---
+  [11] View design report
+  [12] Make changes to the design
+  [13] Exit
 ```
 
 Route based on selection:
-- **[1] Validate** → Run `validate` command
-- **[2] Regenerate** → Run `generate` command
-- **[3] Report** → Show `main_report.md`
-- **[4] Export** → Run `export-jlcpcb` command
-- **[5] Changes** → Return to Step 1 (requirements capture for edits)
-- **[6] Exit** → End the skill
+- **[1] Validate** → `python -m circuit_weaver validate ${DESIGN_PATH}/design.yaml --enhanced --verbose`
+- **[2] Confidence** → `python -m circuit_weaver confidence ${DESIGN_PATH}/design.yaml --run-sims -o ${DESIGN_PATH}/output/confidence_report.html`
+- **[3] Simulate** → `python -m circuit_weaver simulate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/sims`
+- **[4] Regenerate** → `python -m circuit_weaver generate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
+- **[5] Optimize placement** → `python -m circuit_weaver optimize-placement ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
+- **[6] Placement viewer** → `python -m circuit_weaver placement-viewer ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output/placement.html`
+- **[7] Autoroute** → `python -m circuit_weaver autoroute ${DESIGN_PATH}/output/main_placement.kicad_pcb -o ${DESIGN_PATH}/output/main_routed.kicad_pcb`
+- **[8] Export BOM** → `python -m circuit_weaver export-jlcpcb ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/export`
+- **[9] Export Gerbers** → `python -m circuit_weaver export-gerbers ${DESIGN_PATH}/output/main_placement.kicad_pcb -o ${DESIGN_PATH}/gerbers`
+- **[10] DFM check** → `python -m circuit_weaver check-dfm ${DESIGN_PATH}/output/main_placement.kicad_pcb`
+- **[11] Report** → Show `main_report.md`
+- **[12] Changes** → Return to Step 1 (requirements capture for edits)
+- **[13] Exit** → End the skill
 
 ---
 
@@ -404,7 +601,9 @@ Subsequent steps must write logs like:
 [Step 3] Design spec generated: design.yaml
 [Step 4] Validation: PASS
 [Step 5] Artifacts generated in output/
-[Step 6] Design review complete. User choice: export
+[Step 6] Confidence: 82/100 (B), readiness: needs_review
+[Step 7] PCB layout: optimize-placement, placement-viewer
+[Step 8] Design review complete. User choice: export
 ```
 
 ### For Claude Code
@@ -428,9 +627,13 @@ This directly invokes `_run_design_wizard()` in Python with `input()` prompts. *
 
 All Python operations accept **command-line arguments only**, no interactive prompts:
 - `scaffold --name X --mcu Y --power-converter Z --output design.yaml`
-- `validate design.yaml`
+- `validate design.yaml [--enhanced] [--verbose] [--detailed-score]`
 - `generate design.yaml --output ./out`
 - `export-jlcpcb design.yaml --output ./export`
+- `confidence design.yaml [--run-sims] [--pcb file.kicad_pcb] [-o report.html] [--json]`
+- `simulate design.yaml [-o ./sims] [--type power|signal|thermal|all] [--json]`
+- `discover [--root .] [--depth 2] [--json]`
+- `log-event project_dir --type <type> --message <msg> [--data <json>]`
 - `log-status project_dir`
 - `log-view project_dir` (show recent log entries)
 

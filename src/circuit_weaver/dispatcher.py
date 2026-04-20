@@ -1462,15 +1462,20 @@ def generate_artifacts(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Task 114: write circuit-weaver.log into the output directory
-    log_path = output_path / "circuit-weaver.log"
-    _file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-    _file_handler.setLevel(logging.DEBUG)
-    _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    _cw_logger = logging.getLogger("circuit_weaver")
-    _prev_level = _cw_logger.level
-    _cw_logger.setLevel(logging.DEBUG)
-    _cw_logger.addHandler(_file_handler)
+    # Set up logging: use unified bridge if not already initialized, else fallback
+    from .logging_bridge import cleanup_logging, get_design_logger, init_logging
+
+    _owned_logging = False
+    if get_design_logger() is None:
+        init_logging(output_path)
+        _owned_logging = True
+    else:
+        # Bridge already active -- still write circuit-weaver.log to output dir
+        _local_fh = logging.FileHandler(output_path / "circuit-weaver.log", mode="w", encoding="utf-8")
+        _local_fh.setLevel(logging.DEBUG)
+        _local_fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        logging.getLogger("circuit_weaver").addHandler(_local_fh)
+
     try:
         report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
         if require_valid and not report.valid:
@@ -1483,9 +1488,11 @@ def generate_artifacts(
         _logger.exception("Artifact generation failed for output directory %s", output_path)
         raise
     finally:
-        _cw_logger.removeHandler(_file_handler)
-        _file_handler.close()
-        _cw_logger.setLevel(_prev_level)
+        if _owned_logging:
+            cleanup_logging()
+        elif "_local_fh" in dir():
+            logging.getLogger("circuit_weaver").removeHandler(_local_fh)  # type: ignore[possibly-undefined]
+            _local_fh.close()  # type: ignore[possibly-undefined]
 
     canonical_spec_path = output_path / "canonical_spec.yaml"
     canonical_spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")
@@ -1783,6 +1790,12 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Include detailed design quality scoring (power, signal, placement, thermal, mfg)",
+    )
+    validate_p.add_argument(
+        "--enhanced",
+        action="store_true",
+        default=False,
+        help="Run enhanced validation with cross-reference audit (thermal, SI, power budget)",
     )
 
     patch_p = subparsers.add_parser("apply-patch", help="Apply a transactional patch to a design spec")
@@ -2139,6 +2152,62 @@ def main() -> None:
     erc_p.add_argument("schematic", type=str, help="Path to .kicad_sch file")
     erc_p.add_argument("--json", dest="json_output", action="store_true", help="Output results as JSON")
 
+    conf_p = subparsers.add_parser("confidence", help="Generate design confidence report")
+    conf_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    conf_p.add_argument("--output", "-o", default=None, help="Write HTML dashboard to file")
+    conf_p.add_argument("--pcb", default=None, help="Path to .kicad_pcb for DFM analysis")
+    conf_p.add_argument(
+        "--run-sims",
+        action="store_true",
+        default=False,
+        help="Run simulations as part of confidence check",
+    )
+    conf_p.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
+    conf_p.add_argument("--enrich-parts", action="store_true", default=False)
+
+    simulate_p = subparsers.add_parser("simulate", help="Run SPICE simulations on a design")
+    simulate_p.add_argument("spec", help="Path to YAML/JSON design spec")
+    simulate_p.add_argument("--output", "-o", default="./sims", help="Simulation output directory")
+    simulate_p.add_argument("--model-dir", default=None, help="Directory with SPICE models (default: auto-detect)")
+    simulate_p.add_argument(
+        "--type",
+        dest="sim_scope",
+        choices=["all", "power", "signal", "thermal"],
+        default="all",
+        help="Scope of simulations to run",
+    )
+    simulate_p.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
+
+    discover_p = subparsers.add_parser("discover", help="Discover existing circuit projects in current directory")
+    discover_p.add_argument("--root", default=".", help="Root directory to search (default: current dir)")
+    discover_p.add_argument("--depth", type=int, default=2, help="Maximum search depth (default: 2)")
+    discover_p.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
+
+    log_event_p = subparsers.add_parser("log-event", help="Log a structured event to the project design.log")
+    log_event_p.add_argument("project_dir", help="Project directory containing design.log")
+    log_event_p.add_argument(
+        "--type",
+        required=True,
+        choices=[
+            "wizard_step",
+            "cli_call",
+            "validation",
+            "research",
+            "part_lookup",
+            "symbol_resolution",
+            "simulation",
+            "thermal",
+            "erc_drc",
+            "scoring",
+            "sourcing",
+            "generation",
+            "error",
+        ],
+        help="Event type to log",
+    )
+    log_event_p.add_argument("--message", required=True, help="Event description")
+    log_event_p.add_argument("--data", default=None, help="JSON string with additional event data")
+
     args = parser.parse_args()
 
     if args.command == "validate":
@@ -2170,6 +2239,29 @@ def main() -> None:
             print("\n" + "=" * 60)
             print(score_result.summary_with_gaps())
             print("=" * 60)
+
+        # Enhanced validation: cross-reference audit
+        enhanced = getattr(args, "enhanced", False)
+        if enhanced:
+            from .cross_reference_validator import run_cross_reference_audit
+
+            compiled = compile_design_ir(spec, enrich_parts=args.enrich_parts)
+            xref_results = run_cross_reference_audit(compiled.components, spec=spec)
+            print("\n" + "=" * 60)
+            print("Cross-Reference Audit")
+            print("=" * 60)
+            for xr in xref_results:
+                status_sym = "PASS" if xr.status == "pass" else ("SKIP" if xr.status == "skipped" else "WARN")
+                print(f"  [{status_sym}] {xr.pass_name} ({xr.checked_items} items)")
+                for issue in xr.issues[:5]:
+                    prefix = "ERROR" if issue.level == "error" else "WARN "
+                    print(f"    [{prefix}] {issue.message}")
+            print("=" * 60)
+
+            # Factor cross-reference errors into exit code
+            xref_errors = sum(sum(1 for i in xr.issues if i.level == "error") for xr in xref_results)
+            if xref_errors > 0:
+                raise SystemExit(2)
 
         raise SystemExit(0 if report.valid else 2)
 
@@ -2600,8 +2692,6 @@ def main() -> None:
             raise SystemExit(1)
 
     if args.command == "log-view":
-        import json
-
         try:
             logger = DesignLogger(args.project_dir)
             if not logger.entries:
@@ -3096,6 +3186,258 @@ def main() -> None:
 
         raise SystemExit(exit_code)
 
+    if args.command == "confidence":
+        from .confidence_dashboard import generate_confidence_report
+        from .cross_reference_validator import run_cross_reference_audit
+
+        spec = _load_spec_file(args.spec)
+        compiled = _run_with_stderr_capture(
+            lambda: compile_design_ir(spec, enrich_parts=getattr(args, "enrich_parts", False))
+        )
+
+        # Run validation
+        report = _run_with_stderr_capture(
+            lambda: validate_design(spec, enrich_parts=getattr(args, "enrich_parts", False))
+        )
+
+        # Run cross-reference audit
+        xref_results = run_cross_reference_audit(compiled.components, spec=spec)
+
+        # Optional: run simulations
+        sim_report = None
+        if getattr(args, "run_sims", False):
+            from .simulation import run_design_simulations
+
+            sim_report = run_design_simulations(
+                compiled.components,
+                output_dir=Path(args.spec).parent / "sims",
+                spec=spec,
+            )
+
+        # Optional: DFM check
+        dfm_violations = None
+        pcb_path = getattr(args, "pcb", None)
+        if pcb_path:
+            from .dfm_checker import check_dfm
+
+            dfm_violations = check_dfm(pcb_path)
+
+        # Optional: ERC
+        erc_result = None
+        output_dir = Path(args.spec).parent / "output"
+        sch_files = list(output_dir.glob("*.kicad_sch")) if output_dir.exists() else []
+        if sch_files:
+            from .erc_runner import run_erc
+
+            erc_result = run_erc(sch_files[0])
+
+        # Optional: thermal
+        thermal_result = None
+        try:
+            from .thermal_analysis import analyze_thermal
+
+            thermal_result = analyze_thermal(compiled.components)
+        except Exception:
+            pass
+
+        confidence = generate_confidence_report(
+            components=compiled.components,
+            project=spec.get("project", "Unknown"),
+            validation_report=report,
+            sim_report=sim_report,
+            thermal_result=thermal_result,
+            dfm_violations=dfm_violations,
+            erc_result=erc_result,
+            xref_results=xref_results,
+            spec=spec,
+        )
+
+        if getattr(args, "json_output", False):
+            _print_json(confidence.to_dict())
+        else:
+            print(confidence.to_terminal())
+
+        # Write HTML if requested
+        output_path = getattr(args, "output", None)
+        if output_path:
+            Path(output_path).write_text(confidence.to_html(), encoding="utf-8")
+            print(f"\nHTML report written to: {output_path}")
+
+        raise SystemExit(0)
+
+    if args.command == "simulate":
+        from .simulation import plan_simulations, run_design_simulations
+
+        spec = _load_spec_file(args.spec)
+        compiled = compile_design_ir(spec)
+        plan = plan_simulations(compiled.components, spec=spec)
+
+        # Filter plan by scope
+        sim_scope = getattr(args, "sim_scope", "all")
+        if sim_scope == "power":
+            plan.signal_sims = []
+            plan.thermal_sims = []
+        elif sim_scope == "signal":
+            plan.power_sims = []
+            plan.thermal_sims = []
+        elif sim_scope == "thermal":
+            plan.power_sims = []
+            plan.signal_sims = []
+
+        model_dir = getattr(args, "model_dir", None)
+        if model_dir is None:
+            # Auto-detect: look for spice_models/ in spec directory
+            spec_dir = Path(args.spec).parent
+            candidate = spec_dir / "spice_models"
+            if candidate.exists():
+                model_dir = str(candidate)
+
+        report = run_design_simulations(
+            compiled.components,
+            plan=plan,
+            output_dir=args.output,
+            model_dir=model_dir,
+            spec=spec,
+        )
+
+        if getattr(args, "json_output", False):
+            _print_json(report.to_dict())
+        else:
+            print(f"\n{report.summary}")
+            if report.recommendations:
+                print("\nRecommendations:")
+                for rec in report.recommendations:
+                    print(f"  - {rec}")
+            print(f"\nSimulation output: {args.output}")
+        raise SystemExit(0)
+
+    if args.command == "discover":
+        from .project_discovery import discover_projects, format_project_table
+
+        root = Path(getattr(args, "root", "."))
+        depth = getattr(args, "depth", 2)
+        projects = discover_projects(root, max_depth=depth)
+
+        if getattr(args, "json_output", False):
+            _print_json([p.to_dict() for p in projects])
+        else:
+            if projects:
+                print(f"\nFound {len(projects)} circuit project(s):\n")
+                print(format_project_table(projects))
+                print()
+            else:
+                print("\nNo circuit projects found in this directory.\n")
+        raise SystemExit(0)
+
+    if args.command == "log-event":
+        project_dir = Path(args.project_dir)
+        if not project_dir.exists():
+            project_dir.mkdir(parents=True, exist_ok=True)
+        dl = DesignLogger(project_dir)
+        event_type = args.type
+        message = args.message
+        data: dict[str, Any] = {}
+        if args.data:
+            try:
+                data = json.loads(args.data)
+            except json.JSONDecodeError as exc:
+                print(f"Error: --data must be valid JSON: {exc}", file=sys.stderr)
+                raise SystemExit(1)
+
+        if event_type == "wizard_step":
+            dl.log_step(step=data.get("step", 0), description=message, user_input=data.get("user_input"))
+        elif event_type == "cli_call":
+            dl.log_cli_call(
+                command=data.get("command", "unknown"),
+                args=data.get("args", []),
+                return_code=data.get("return_code", 0),
+                stdout=data.get("stdout", ""),
+                stderr=data.get("stderr", ""),
+                duration_sec=data.get("duration_sec", 0.0),
+                generated_files=data.get("generated_files"),
+            )
+        elif event_type == "validation":
+            dl.log_validation(
+                spec_file=data.get("spec_file", ""),
+                passed=data.get("passed", True),
+                errors=data.get("errors"),
+                warnings=data.get("warnings"),
+            )
+        elif event_type == "research":
+            dl.log_research(
+                query_phase=data.get("phase", ""),
+                query=message,
+                status=data.get("status", "ok"),
+                result_count=data.get("result_count", 0),
+            )
+        elif event_type == "part_lookup":
+            dl.log_part_lookup(
+                mpn=data.get("mpn", ""),
+                source=data.get("source", ""),
+                status=data.get("status", "ok"),
+                details=data.get("details"),
+            )
+        elif event_type == "symbol_resolution":
+            dl.log_symbol_resolution(
+                ref=data.get("ref", ""),
+                mpn=data.get("mpn", ""),
+                status=data.get("status", "ok"),
+                pinout_source=data.get("pinout_source", ""),
+            )
+        elif event_type == "simulation":
+            dl.log_simulation(
+                sim_type=data.get("sim_type", ""),
+                target=data.get("target", ""),
+                status=data.get("status", "ok"),
+                metrics=data.get("metrics"),
+                duration_sec=data.get("duration_sec", 0.0),
+            )
+        elif event_type == "thermal":
+            dl.log_thermal(
+                ref=data.get("ref", ""),
+                tj_calc=data.get("tj_calc", 0.0),
+                tj_max=data.get("tj_max", 0.0),
+                status=data.get("status", "ok"),
+            )
+        elif event_type == "erc_drc":
+            dl.log_erc_drc(
+                check_type=data.get("check_type", ""),
+                file=data.get("file", ""),
+                errors=data.get("errors", 0),
+                warnings=data.get("warnings", 0),
+                details=data.get("details"),
+            )
+        elif event_type == "scoring":
+            dl.log_scoring(
+                dimension=data.get("dimension", ""),
+                score=data.get("score", 0.0),
+                grade=data.get("grade", ""),
+                gaps=data.get("gaps"),
+            )
+        elif event_type == "sourcing":
+            dl.log_sourcing(
+                mpn=data.get("mpn", ""),
+                supplier=data.get("supplier", ""),
+                status=data.get("status", "ok"),
+                price=data.get("price"),
+                stock=data.get("stock"),
+            )
+        elif event_type == "generation":
+            dl.log_generation(
+                artifact_type=data.get("artifact_type", ""),
+                path=data.get("path", ""),
+                status=data.get("status", "ok"),
+                duration_sec=data.get("duration_sec", 0.0),
+            )
+        elif event_type == "error":
+            dl.log_error(
+                operation=data.get("operation", "unknown"),
+                error=message,
+                traceback=data.get("traceback", ""),
+            )
+        print(f"Logged {event_type} event to {dl.log_path}")
+        raise SystemExit(0)
+
 
 def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:
     """Get user input with dry-run support.
@@ -3123,7 +3465,10 @@ def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_
 
 
 def _find_existing_circuits(root_dir: Path = None) -> list[Path]:
-    """Find all circuit project directories (contain design.yaml).
+    """Find all circuit project directories.
+
+    Uses the project_discovery module for enhanced detection of
+    design.yaml, .kicad_pro, and .kicad_sch projects.
 
     Args:
         root_dir: Directory to search in (default: current working directory)
@@ -3131,19 +3476,10 @@ def _find_existing_circuits(root_dir: Path = None) -> list[Path]:
     Returns:
         List of Path objects to project directories, sorted by name
     """
-    if root_dir is None:
-        root_dir = Path.cwd()
+    from .project_discovery import discover_projects
 
-    root_dir = Path(root_dir)
-    if not root_dir.exists():
-        return []
-
-    projects = []
-    for item in root_dir.iterdir():
-        if item.is_dir() and (item / "design.yaml").exists():
-            projects.append(item)
-
-    return sorted(projects, key=lambda p: p.name)
+    projects = discover_projects(root_dir, max_depth=1)
+    return [p.path for p in projects]
 
 
 def _handle_design_workflow(resume: str | None = None, dry_run: bool = False) -> None:

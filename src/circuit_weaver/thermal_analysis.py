@@ -166,6 +166,21 @@ def analyze_thermal(
         f"{len(results)} power-dissipating components, {total_power:.2f}W total. "
         f"{critical} critical, {warning} warning, {ok_count} ok."
     )
+
+    # Log thermal results to design.log
+    from .logging_bridge import get_design_logger
+
+    dl = get_design_logger()
+    if dl:
+        for r in results:
+            if r["status"] in ("critical", "warning"):
+                dl.log_thermal(
+                    ref=r["ref"],
+                    tj_calc=r["tj_calculated"],
+                    tj_max=r["tj_max"],
+                    status=r["status"],
+                )
+
     return {
         "status": "ok",
         "ambient_temp_c": ambient_temp_c,

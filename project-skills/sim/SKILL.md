@@ -6,7 +6,45 @@ description: >
   Run before ordering to validate performance before spending on prototypes.
 ---
 
-## Three-Layer Stack
+## Auto-Detection
+
+Before running simulations, discover existing projects in the current directory:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, select the target project automatically (most recently
+modified, or ask the user if multiple exist). Use the project's `design.yaml`
+and any existing SPICE models in `spice_models/` directory.
+
+---
+
+## Quick Start (Automated)
+
+Run automated simulations on any Circuit Weaver design:
+
+```bash
+# Run all simulations (power, signal, thermal)
+python -m circuit_weaver simulate design.yaml -o ./sims
+
+# Run only power supply simulations
+python -m circuit_weaver simulate design.yaml -o ./sims --type power
+
+# Fetch SPICE models first, then simulate
+python -m circuit_weaver fetch-spice design.yaml
+python -m circuit_weaver simulate design.yaml -o ./sims --model-dir ./spice_models
+
+# JSON output for programmatic use
+python -m circuit_weaver simulate design.yaml -o ./sims --json
+```
+
+The simulator auto-detects power regulators, filters, and op-amps from the
+design spec and generates appropriate SPICE netlists + analysis cards.
+
+---
+
+## Three-Layer Stack (Advanced / Manual)
 
 ### Layer 1 -- RF Chain (scikit-rf)
 

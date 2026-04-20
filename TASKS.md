@@ -2,6 +2,112 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 26 — Logging Overhaul (v0.22.0) ✅ DONE
+
+**Goal:** Make DesignLogger the single authoritative logging system. Instrument all major operations. Give skills a callable logging interface.
+
+### 125. Expand DesignLogger Event Types (P0, MEDIUM) ✅ DONE
+
+- [x] Add 9 new log methods: part_lookup, symbol_resolution, simulation, thermal, erc_drc, scoring, sourcing, generation, error
+- [x] Update get_summary() and print_summary() to aggregate new event types
+- [x] 33 tests in tests/test_design_logger_extended.py
+
+Files: `src/circuit_weaver/design_logger.py`, `tests/test_design_logger_extended.py`
+
+### 126. Create Logging Bridge (P0, MEDIUM) ✅ DONE
+
+- [x] Create `logging_bridge.py` with DesignLogHandler, get/set_design_logger, init_logging
+- [x] Integrate into dispatcher.py (generate_artifacts, validate_design, design_workflow)
+- [x] Add `log-event` CLI subcommand for skill-callable structured logging
+- [x] Instrument 7 modules: erc_runner, dfm_checker, validator, design_scorer, thermal_analysis, exporters, spice_fetcher
+
+Files: `src/circuit_weaver/logging_bridge.py`, `src/circuit_weaver/dispatcher.py`
+
+## Sprint 27 — Project Discovery (v0.22.0) ✅ DONE
+
+**Goal:** Skills auto-detect existing circuits in CWD before asking for paths.
+
+### 127. Project Discovery Module (P1, MEDIUM) ✅ DONE
+
+- [x] Create `project_discovery.py` with DiscoveredProject, discover_projects(), detect_project_type()
+- [x] Add `discover` CLI subcommand with JSON and table output
+- [x] Refactor _find_existing_circuits() to use discovery module
+- [x] Update 4 skills with auto-detection (circuit-weaver, design_wizard, kicad_validate, sim)
+- [x] 20 tests in tests/test_project_discovery.py
+
+Files: `src/circuit_weaver/project_discovery.py`, `src/circuit_weaver/dispatcher.py`, `tests/test_project_discovery.py`
+
+## Sprint 28 — Circuit Simulation Engine (v0.22.0) ✅ DONE
+
+**Goal:** Build SPICE netlist generation, ngspice execution, result parsing, and simulation confidence scoring.
+
+### 128. SPICE Netlist & Runner (P0, LARGE) ✅ DONE
+
+- [x] Create `spice_netlist.py`: SPICE .cir generation from ComponentDef lists
+- [x] Create `spice_runner.py`: ngspice subprocess runner with graceful degradation
+- [x] Create `simulation.py`: orchestrator with plan_simulations(), run_design_simulations(), score_simulation_confidence()
+- [x] Add resolve_spice_models() to spice_fetcher.py
+- [x] Add `simulate` CLI subcommand
+- [x] Update sim skill with automated quick-start
+- [x] 36 tests across test_spice_netlist.py, test_spice_runner.py, test_simulation.py
+
+Files: `src/circuit_weaver/spice_netlist.py`, `src/circuit_weaver/spice_runner.py`, `src/circuit_weaver/simulation.py`, `src/circuit_weaver/spice_fetcher.py`
+
+## Sprint 29 — Enhanced Validations (v0.22.0) ✅ DONE
+
+**Goal:** Add simulation-backed checks, thermal validation, SI checks, and cross-reference audit.
+
+### 129. Enhanced Validation Checks (P0, MEDIUM) ✅ DONE
+
+- [x] Add 3 new validation checks: power_budget, thermal_limits, signal_integrity (14 total)
+- [x] Create `cross_reference_validator.py` with 3 audit passes
+- [x] Add --enhanced flag to validate CLI
+- [x] Update kicad_validate skill
+- [x] 16 tests in tests/test_enhanced_validation.py
+
+Files: `src/circuit_weaver/validator.py`, `src/circuit_weaver/cross_reference_validator.py`, `src/circuit_weaver/dispatcher.py`
+
+## Sprint 30 — Confidence Dashboard & Workflow (v0.22.0) ✅ DONE
+
+**Goal:** Aggregate all checks into a unified confidence report. Wire placement/routing/SVG into the wizard flow.
+
+### 130. Confidence Dashboard (P0, LARGE) ✅ DONE
+
+- [x] Create `confidence_dashboard.py`: 7-source weighted scoring, HTML/terminal/JSON output
+- [x] Add `confidence` CLI subcommand with --run-sims and --pcb options
+- [x] Add Step 6 (Confidence) to both wizard flows as automatic step
+- [x] Add Step 7 (PCB Layout Preparation) with placement optimizer, viewer, SVG, autoroute, DFM
+- [x] Expand Existing Design menu to 13 categorized options
+- [x] Cross-reference all project-skills from main skills
+- [x] 23 tests in tests/test_confidence_dashboard.py
+
+Files: `src/circuit_weaver/confidence_dashboard.py`, `src/circuit_weaver/dispatcher.py`, `skills/circuit-weaver/SKILL.md`, `skills/design_wizard/SKILL.md`
+
+## Sprint 31 — Sprints 26-30 Review Follow-ups (backlog)
+
+**Context:** Items deferred from the pre-merge code review of PR #2 (Sprints 26-30) and a CI workflow regression discovered during that review. Non-blocking for PR #2 merge; queued for the next sprint.
+
+### 130. Fix legacy validation errors in `samples/*` and re-enable validate gate (P1, MEDIUM)
+
+The `Validate Designs` workflow was silently broken since Sprint 20 (renamed `mvp` → `dispatcher` without updating the workflow YAML). After fixing the invocation in PR #2, ~30 pre-existing validation errors surfaced across 11 sample YAMLs (unconnected pins, dangling nets, missing I2C pull-ups, missing artifact-export tooling). The job is set `continue-on-error: true` so it does not block merges; this task fixes the underlying samples and removes the flag.
+
+- [ ] Triage the validate-workflow output for each sample and decide per-sample: fix the YAML, add `explicit_no_connects` entries, or remove the sample
+- [ ] Document any required external dependencies (e.g., `kicad-cli` for artifact export) in the workflow setup or skip them on CI
+- [ ] Remove `continue-on-error: true` from `.github/workflows/validate-design.yml` once samples are clean
+
+Files: `.github/workflows/validate-design.yml`, `samples/**/*.yaml`
+
+### 131. Code-review SUGGESTIONs from PR #2 (P2, SMALL)
+
+Polish items from the pre-merge review. None block correctness; bundle into a single sweep.
+
+- [ ] `cross_reference_validator.py`: add `"warn"` to the `CrossReferenceResult.status` enum docstring (or normalise to `pass`/`fail`/`skipped`)
+- [ ] `cross_reference_validator.py`: tighten `_passive_prefixes` — diodes (`D`) and connectors (`J`) usually need MPNs for production sourcing; consider dropping them from the skip set
+- [ ] `confidence_dashboard.py`: `_score_from_issues(total_checks, ...)` ignores `total_checks` for scoring; either normalise the penalty by it or drop the parameter
+- [ ] `spice_runner.py`: `wdir / "results.raw"` is a fixed filename; safe today (sequential loop) but races if simulations are ever parallelised — derive output name from the netlist stem instead
+
+Files: `src/circuit_weaver/cross_reference_validator.py`, `src/circuit_weaver/confidence_dashboard.py`, `src/circuit_weaver/spice_runner.py`
+
 ## Sprint 22 — Pinout Verification Gate (v0.18.0)
 
 **Goal:** Before emitting any schematic, verify every IC pinout has a confirmed source. Replace silent STUB annotations with hard validation failures. This is the #1 community trust blocker — a swapped pin is invisible to DRC/ERC and kills the board.

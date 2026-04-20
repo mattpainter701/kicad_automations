@@ -240,6 +240,12 @@ def export_altium_xml(
     ET.indent(tree, space="  ")
     tree.write(str(out), encoding="unicode", xml_declaration=True)
 
+    from .logging_bridge import get_design_logger
+
+    dl = get_design_logger()
+    if dl:
+        dl.log_generation(artifact_type="altium_xml", path=str(out), status="ok")
+
     return str(out)
 
 
@@ -341,6 +347,12 @@ def export_eagle_xml(
         f.write('<!DOCTYPE eagle SYSTEM "eagle.dtd">\n')
         tree.write(f, encoding="unicode", xml_declaration=False)
 
+    from .logging_bridge import get_design_logger
+
+    dl = get_design_logger()
+    if dl:
+        dl.log_generation(artifact_type="eagle_xml", path=str(out), status="ok")
+
     return str(out)
 
 
@@ -410,5 +422,12 @@ def export_generic_netlist(
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(str(out), "w", encoding="utf-8") as f:
         json.dump(netlist, f, indent=2, ensure_ascii=False)
+
+    # Log export to design.log
+    from .logging_bridge import get_design_logger
+
+    dl = get_design_logger()
+    if dl:
+        dl.log_generation(artifact_type="netlist", path=str(out), status="ok")
 
     return str(out)

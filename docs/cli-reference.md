@@ -420,3 +420,76 @@ circuit-weaver log-view my_project/ --type cli_call
 Helpful for troubleshooting tool failures, checking wizard inputs, and understanding validation issues.
 
 See docs/DESIGN_LOGGING.md for details.
+
+## simulate
+
+Run SPICE simulations on a design. Auto-detects power regulators, filters, and
+op-amps and generates appropriate analysis (transient, AC, DC, operating point).
+
+```bash
+circuit-weaver simulate <spec.yaml> [-o <output_dir>] [--type <scope>] [--model-dir <dir>] [--json]
+```
+
+| Flag | Description |
+|-|-|
+| `-o`, `--output` | Simulation output directory (default: `./sims`) |
+| `--type` | Scope: `all`, `power`, `signal`, `thermal` (default: `all`) |
+| `--model-dir` | Directory with SPICE models (default: auto-detect `spice_models/`) |
+| `--json` | Output results as JSON |
+
+**Exit codes:** 0 = success
+
+Requires ngspice to be installed. If ngspice is not available, simulations are
+reported as "skipped" with a recommendation to install it.
+
+## confidence
+
+Generate a unified design confidence report. Aggregates validation, simulation,
+thermal, DFM, ERC, and cross-reference checks into a single 0-100 score.
+
+```bash
+circuit-weaver confidence <spec.yaml> [-o <report.html>] [--run-sims] [--pcb <file>] [--json]
+```
+
+| Flag | Description |
+|-|-|
+| `-o`, `--output` | Write HTML dashboard to file |
+| `--run-sims` | Run SPICE simulations as part of the confidence check |
+| `--pcb` | Path to `.kicad_pcb` file for DFM analysis |
+| `--json` | Output results as JSON |
+
+**Readiness classifications:**
+- `ready_for_fab`: score >= 80 with no blockers
+- `needs_review`: score >= 60 or has non-blocking warnings
+- `not_ready`: score < 60 or has blockers
+
+## discover
+
+Auto-detect circuit projects in the current directory or specified root.
+
+```bash
+circuit-weaver discover [--root <dir>] [--depth <n>] [--json]
+```
+
+| Flag | Description |
+|-|-|
+| `--root` | Root directory to search (default: current directory) |
+| `--depth` | Maximum search depth (default: 2) |
+| `--json` | Output results as JSON array |
+
+Detects projects by presence of `design.yaml`, `.kicad_pro`, or `.kicad_sch` files.
+
+## log-event
+
+Log a structured event to a project's `design.log` file. Designed for use by
+skills and automation scripts.
+
+```bash
+circuit-weaver log-event <project_dir> --type <event_type> --message <msg> [--data <json>]
+```
+
+| Flag | Description |
+|-|-|
+| `--type` | Event type: `wizard_step`, `cli_call`, `validation`, `research`, `part_lookup`, `symbol_resolution`, `simulation`, `thermal`, `erc_drc`, `scoring`, `sourcing`, `generation`, `error` |
+| `--message` | Event description |
+| `--data` | JSON string with additional event data |

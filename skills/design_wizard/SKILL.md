@@ -45,6 +45,22 @@ Never output raw JSON unless the user explicitly requests `--json` flag. Present
 
 ---
 
+## Step -1 — Auto-Detection (ALWAYS RUN FIRST)
+
+Before starting, scan the current directory for existing projects:
+
+```bash
+python -m circuit_weaver discover --json
+```
+
+If projects are found, present them and ask whether the user wants to:
+1. Continue/modify an existing project (load its design.yaml and skip to the relevant step)
+2. Start a fresh design (proceed to Step 0)
+
+If no projects are found, proceed directly to Step 0.
+
+---
+
 ## Step 0 — Welcome & Orientation
 
 Greet the user and explain what the wizard will cover:
@@ -59,7 +75,8 @@ I'll walk you through building a new circuit design from scratch:
   Step 3  BOM assembly & sourcing preferences
   Step 4  Schematic generation
   Step 5  Design review checkpoint
-  Step 6  PCB layout guidance & next steps
+  Step 6  Confidence & simulation check
+  Step 7  PCB layout guidance & next steps
 
 You can pause, go back, or skip any step. Let's start.
 ```
@@ -124,7 +141,7 @@ If the user mentioned an enclosure or physical constraints, dig deeper:
 For beginners: explain that connector placement and mounting holes are best
 decided now — moving them after PCB layout is expensive rework.
 
-Record all mechanical constraints — they feed directly into Step 6 (PCB layout)
+Record all mechanical constraints — they feed directly into Step 7 (PCB layout)
 for board outline and keep-out zone generation.
 
 ### 1b. Features & Interfaces
@@ -684,8 +701,16 @@ Run the generated schematic through the validation tools:
 
 ```bash
 # Full schematic validation
-circuit-weaver validate [spec.yaml]
+circuit-weaver validate [spec.yaml] --enhanced --verbose
+
+# Full confidence report (validation + simulation + thermal + DFM + cross-reference)
+circuit-weaver confidence [spec.yaml] --run-sims -o [output_dir]/confidence_report.html
 ```
+
+**Confidence Report:** The `confidence` command aggregates all available checks
+into a single 0-100 score with a readiness classification (ready_for_fab /
+needs_review / not_ready). Present the terminal output to the user. If an HTML
+output path was given, mention the HTML file for detailed review in a browser.
 
 Parse the validation report (categories level=error or level=warning) and present a structured review summary:
 
@@ -742,7 +767,7 @@ review the schematic before proceeding to layout.
 Ask: **Have you reviewed the schematic and are you satisfied with it?**
 
 - If issues found → help fix them, re-generate if needed, re-validate
-- If satisfied → proceed to PCB layout (Step 6)
+- If satisfied → proceed to confidence check (Step 6)
 - If they want peer review → suggest they share the .kicad_sch and come back
 
 Do not let beginners skip this step. For advanced users, a quick "looks good,
@@ -750,37 +775,118 @@ moving on" is fine.
 
 ---
 
-## Step 6 — PCB Layout Guidance & Next Steps
+## Step 6 — Confidence & Simulation Check
+
+**Goal:** Run all available checks in one pass to produce a single readiness
+score before the user invests time in PCB layout.
+
+### 6a. Run Confidence Dashboard
+
+**This step runs automatically after the review gate passes. Do not skip it.**
+
+```bash
+# Run confidence report with simulations
+circuit-weaver confidence [spec.yaml] --run-sims -o [output_dir]/confidence_report.html
+
+# For enhanced validation (includes cross-reference audit)
+circuit-weaver validate [spec.yaml] --enhanced --verbose
+```
+
+The confidence dashboard aggregates:
+1. **Electrical validation** — all 14 checks (decoupling, enable pins, power budget, thermal, SI)
+2. **Circuit simulation** — power supply transient/AC analysis via ngspice
+3. **Thermal analysis** — junction temperature vs Tj_max for all power ICs
+4. **Cross-reference audit** — spec vs schematic, BOM completeness, duplicate refs
+5. **ERC** — KiCad electrical rule check (if KiCad CLI installed)
+
+### 6b. Present Results
+
+Show the confidence score and readiness to the user:
+
+```
+Score:      82/100 (B)
+Readiness:  NEEDS REVIEW
+
+Sections:
+  [OK] Electrical Validation     90/100 (A)
+  [OK] Simulation                75/100 (C)
+  [OK] Thermal Analysis         100/100 (A)
+  [--] Signal Integrity            N/A (skipped)
+  [--] Manufacturing (DFM)         N/A (skipped)
+  [OK] Cross-Reference Audit     85/100 (B)
+  [--] ERC/DRC                     N/A (skipped)
+```
+
+**Interpretation guidance:**
+- **ready_for_fab** (80+, no blockers): "Your design looks solid. Proceed to PCB layout."
+- **needs_review** (60-80): "Design works but has issues worth addressing first."
+- **not_ready** (<60 or blockers): "Fix the blockers before investing in PCB layout."
+
+For beginners: explain what each section means and why the score matters.
+"This score tells you how confident we are that the circuit will work correctly
+when you build it. A higher score means fewer surprises when the board arrives."
+
+### 6c. Address Action Items
+
+If blockers or high-priority action items exist, walk through each one:
+
+1. Present the action item with context
+2. Offer to fix it (loop back to the relevant step: Step 2 for IC changes, Step 3 for passives)
+3. Re-run confidence after fixes to verify improvement
+
+Ask: **Want to address any of these items before moving to PCB layout?**
+
+If the user wants to proceed despite issues, note the decision in the log.
+
+**Log:** `[Step 6] Confidence: {score}/100 ({grade}), readiness: {readiness}`
+
+---
+
+## Step 7 — PCB Layout Guidance & Next Steps
 
 **Goal:** Guide the user into the PCB phase with clear expectations about
 what can be scripted vs. what requires manual KiCad work.
 
-### 6a. PCB Kickoff
+### 7a. PCB Kickoff — Automated Layout Assistance
 
-Explain the PCB workflow:
+The generated PCB file has initial component positions. Before manual routing,
+run the automated layout tools:
+
+```bash
+# 1. Optimize placement (simulated annealing for thermal/SI/DFM)
+circuit-weaver optimize-placement [spec.yaml] -o [output_dir]
+
+# 2. Generate interactive placement viewer (HTML with thermal heatmap)
+circuit-weaver placement-viewer [spec.yaml] -o [output_dir]/placement.html
+
+# 3. Optional: Export editable SVG placement (for Inkscape/CorelDRAW editing)
+circuit-weaver generate [spec.yaml] -o [output_dir] --svg-placement
+```
+
+Present results:
 
 ```
-=== PCB Layout — What Comes Next ===
+=== PCB Layout Preparation ===
 
-The generated schematic is ready for PCB layout. You now have:
-  - Schematic with all symbols placed and nets labeled
-  - Placer hints (JSON) with component grouping suggestions
-  - Design report with power budgets and DFM recommendations
+Automated steps completed:
+  [x] Placement optimized (thermal + SI + DFM scoring)
+  [x] Interactive viewer: output/placement.html
+  [x] Placement PCB: output/main_placement.kicad_pcb
 
-WHAT REQUIRES MANUAL KICAD WORK:
+Open placement.html in a browser to review component positions,
+net connections, and thermal heatmap before routing.
+
+WHAT YOU'LL DO IN KICAD:
   - Board outline and edge cuts
-  - Component placement and fine-tuning for routing
-  - Trace routing (power first, then signal traces)
-  - Critical routing for high-speed or sensitive signals
-  - Silkscreen labels and polarity markers
+  - Fine-tune placement for routing convenience
+  - Route traces (power first, then signals)
   - Ground/power planes and zone fills
-  - Design review and DFM verification
+  - Silkscreen labels and polarity markers
 
 WHAT WE CAN HELP WITH:
-  - Provide layout guidelines based on power budget and signal integrity
-  - Suggest trace widths for power vs. signal nets (using ee skill)
-  - Recommend layer stackup if 4-layer board needed
-  - Identify candidates for autorouting (non-critical signal nets)
+  - Trace width suggestions (use /ee skill)
+  - Layer stackup recommendation (2-layer vs 4-layer)
+  - Autorouting of non-critical nets (see 7c below)
 ```
 
 If mechanical constraints were captured in Step 1a-mech, incorporate them now:
@@ -789,7 +895,24 @@ If mechanical constraints were captured in Step 1a-mech, incorporate them now:
 - Connectors placed on specified edges
 - Height-restricted zones marked as keep-outs
 
-### 6c. Routing Guidance
+### 7b. SVG Placement Editor (Optional)
+
+For users who want to visually drag components in an editor before routing:
+
+```bash
+# Export placement as editable SVG
+circuit-weaver generate [spec.yaml] -o [output_dir] --svg-placement
+
+# User edits output/placement.svg in Inkscape...
+
+# Import edited positions back into KiCad PCB
+circuit-weaver import-placement output/main_placement.kicad_pcb --svg output/placement.svg
+```
+
+For beginners: "This lets you drag components around in a drawing program and
+we'll update the PCB file automatically."
+
+### 7c. Routing Guidance
 
 Based on the design:
 
@@ -798,24 +921,51 @@ Based on the design:
 - Recommend layer stackup if 4-layer
 - Identify candidates for autorouting (non-critical signal nets)
 
-**Optional: Freerouting Autorouting**
+**Autorouting with Freerouting (Optional)**
 
-If the user has Freerouting installed, offer to autoroute the PCB:
+If the user has Freerouting installed, offer to auto-route the PCB:
 
 ```bash
-# Export to PCB layout file, then route
-circuit-weaver autoroute output/[project].kicad_pcb -o routed.kicad_pcb
+circuit-weaver autoroute output/[project].kicad_pcb -o output/routed.kicad_pcb
 ```
 
-**Note:** Freerouting must be installed separately. If not available, the user can route manually in KiCad using the placer hints as guidance.
+**Note:** Freerouting must be installed separately. Best for non-critical signal
+nets — power and high-speed traces should be routed manually. For detailed
+autorouting workflow options, see the `/autoroute` project-skill.
 
-### 6d. Manufacturing Checklist
+### 7d. DFM Check (Recommended Before Ordering)
+
+Run DFM checks against the target manufacturer:
+
+```bash
+# Check against JLCPCB rules (default)
+circuit-weaver check-dfm output/main_placement.kicad_pcb
+
+# Check against PCBWay rules
+circuit-weaver check-dfm output/main_placement.kicad_pcb --profile pcbway
+```
+
+If DFM issues are found, present them and offer to fix (adjust trace widths,
+via sizes, clearances).
+
+#### Related Project-Skills
+
+For advanced PCB workflows beyond what the wizard covers:
+- `/kicad_pcb_place` — constraint-based placement with pcbnew API integration
+- `/autoroute` — detailed Freerouting workflow with DSN/SES file management
+- `/kicad_pinmap` — pin-to-net audit and verification
+- `/kicad_hierarchy` — hierarchical schematic sheet management
+- `/kicad_gen` — programmatic schematic generation for large ICs (BGAs)
+
+### 7e. Manufacturing Checklist
 
 Based on Step 3 manufacturer choice, present the final checklist:
 
 ```
 === Pre-Order Checklist ===
 
+  [ ] Confidence score >= 80 (circuit-weaver confidence design.yaml --run-sims)
+  [ ] DFM check clean (circuit-weaver check-dfm board.kicad_pcb)
   [ ] ERC clean in KiCad
   [ ] DRC clean in KiCad
   [ ] BOM exported (use /bom skill)
@@ -829,7 +979,7 @@ Based on Step 3 manufacturer choice, present the final checklist:
 
 Reference the `jlcpcb` or `pcbway` skill for manufacturer-specific DFM rules.
 
-### 6e. Revision Planning & Future-Proofing
+### 7f. Revision Planning & Future-Proofing
 
 Before the user commits to fabrication, help them think about the next revision.
 This is especially valuable for beginners who don't realize rev1 is almost never
@@ -894,14 +1044,19 @@ Throughout the wizard, follow these principles:
 
 | Skill | Used in step | Purpose |
 |-------|-------------|---------|
-| `ee` | 1, 2 | Calculations: power budget, filter values, thermal |
+| `ee` | 1, 2, 7 | Calculations: power budget, filter values, thermal, trace widths |
 | `digikey` | 2, 3 | Part search, stock check, datasheets |
 | `mouser` | 2, 3 | Alternative sourcing |
 | `lcsc` | 2, 3 | Production sourcing, JLCPCB parts |
 | `bom` | 3 | BOM export and order file generation |
 | `kicad` | 4, 5 | Schematic analysis, validation, and design review |
-| `jlcpcb` | 3, 6 | DFM rules, assembly ordering |
-| `pcbway` | 3, 6 | Alternative fab DFM rules |
+| `jlcpcb` | 3, 7 | DFM rules, assembly ordering |
+| `pcbway` | 3, 7 | Alternative fab DFM rules |
+| `sim` | 6 | Circuit simulation (SPICE power/signal analysis) |
+| `kicad_pcb_place` | 7 | Advanced constraint-based PCB placement |
+| `autoroute` | 7 | Freerouting PCB autorouting workflow |
+| `kicad_validate` | 5, 6 | Cross-reference validation audit |
+| `kicad_pinmap` | 5 | Pin-to-net audit and verification |
 
 ---
 
@@ -915,5 +1070,6 @@ If the user returns and says "continue my design" or "where were we":
    - Has ICs but no sourcing data → resume at Step 3
    - Has full spec but no generated files → resume at Step 4
    - Has generated schematics but no review → resume at Step 5
-   - Has reviewed schematics → resume at Step 6
+   - Has reviewed schematics → resume at Step 6 (confidence check)
+   - Has confidence report → resume at Step 7 (PCB layout)
 3. Summarize the current state and confirm with the user before proceeding

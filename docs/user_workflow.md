@@ -66,7 +66,7 @@ Everything else can be figured out during the conversation.
 
 ---
 
-## The Six Steps
+## The Eight Steps
 
 ### Step 1 — Requirements & Goals
 
@@ -290,7 +290,65 @@ catch the expensive mistakes.
 
 ---
 
-### Step 6 — PCB Layout Guidance & Next Steps
+### Step 6 — Confidence & Simulation Check
+
+**What happens:** The wizard automatically runs a comprehensive design readiness
+check. This aggregates all available data — validation results, circuit
+simulations, thermal analysis, cross-reference audit, and ERC — into a single
+0-100 confidence score.
+
+```bash
+circuit-weaver confidence design.yaml --run-sims -o output/confidence_report.html
+```
+
+**What you get:**
+- A confidence score (0-100) with letter grade (A-F)
+- Readiness classification: `ready_for_fab`, `needs_review`, or `not_ready`
+- Per-section breakdown (electrical, simulation, thermal, DFM, etc.)
+- Prioritized action items if issues are found
+- HTML dashboard for detailed review in a browser
+
+**Why this matters:** This step catches problems that individual checks might
+miss. A schematic can pass electrical validation but fail simulation (regulator
+unstable), or pass simulation but have thermal issues (junction temp too high).
+The confidence score gives you a single number to decide: should I proceed to
+PCB layout or fix things first?
+
+If the score is below 80, the wizard offers to loop back to fix action items.
+
+---
+
+### Step 7 — PCB Layout Preparation
+
+**What happens:** The wizard prepares your PCB for routing with automated tools:
+
+```bash
+# Optimize component placement (simulated annealing)
+circuit-weaver optimize-placement design.yaml -o output/
+
+# Generate interactive HTML placement viewer
+circuit-weaver placement-viewer design.yaml -o output/placement.html
+
+# Optional: export editable SVG for visual placement in Inkscape
+circuit-weaver generate design.yaml -o output/ --svg-placement
+
+# Optional: autoroute non-critical nets (requires Freerouting)
+circuit-weaver autoroute output/main_placement.kicad_pcb -o output/routed.kicad_pcb
+
+# DFM check against manufacturer rules
+circuit-weaver check-dfm output/main_placement.kicad_pcb
+```
+
+**What you get:**
+- Optimized component positions (thermal spacing, SI, DFM)
+- Interactive HTML viewer with thermal heatmap and net highlighting
+- Optional: SVG file editable in Inkscape, importable back to KiCad
+- Optional: autorouted PCB (best for non-critical signal nets)
+- DFM violation report against JLCPCB/PCBWay rules
+
+---
+
+### Step 8 — Final Review & Next Steps
 
 **What happens:** The wizard transitions you from schematic to PCB with clear
 expectations about what can be automated and what requires manual work.

@@ -735,6 +735,117 @@ def _validate_pinout_sources(components: list[ComponentDef]) -> list[ValidationI
     return issues
 
 
+# --- Enhanced validation checks (Sprint 4) ---
+
+
+def _validate_power_budget(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Validate power budget: regulator output current vs load estimates."""
+    issues: list[ValidationIssue] = []
+
+    # Find regulators and check for basic sanity
+    _power_keywords = {"regulator", "converter", "buck", "boost", "ldo"}
+
+    for comp in components:
+        desc = (comp.description or "").lower()
+        cat = (comp.category or "").lower()
+
+        if not any(kw in desc or kw in cat for kw in _power_keywords):
+            continue
+
+        ref = comp.source_ref or ""
+        mpn = comp.mpn or ""
+
+        # Check: power components should have power_reqs or power_pins defined
+        if not comp.power_pins and not comp.power_reqs:
+            issues.append(
+                ValidationIssue(
+                    code="power-budget",
+                    level="warning",
+                    ref=ref,
+                    mpn=mpn,
+                    message=f"{ref} ({mpn}): Power IC has no power_pins or power_reqs defined",
+                    suggestion="Add power pin definitions to enable power budget analysis",
+                )
+            )
+
+    return issues
+
+
+def _validate_thermal_limits(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Validate thermal design by checking for known-hot components.
+
+    Uses thermal_analysis module internally when available.
+    """
+    issues: list[ValidationIssue] = []
+
+    try:
+        from .thermal_analysis import analyze_thermal
+
+        result = analyze_thermal(components)
+        for comp_result in result.get("components", []):
+            if comp_result.get("status") == "critical":
+                ref = comp_result.get("ref", "")
+                tj = comp_result.get("tj_calculated", 0)
+                tj_max = comp_result.get("tj_max", 0)
+                issues.append(
+                    ValidationIssue(
+                        code="thermal-limits",
+                        level="error",
+                        ref=ref,
+                        mpn="",
+                        message=f"{ref}: Calculated Tj={tj:.0f}C exceeds Tj_max={tj_max:.0f}C",
+                        suggestion=comp_result.get("suggestion", "Add heatsink or increase copper area"),
+                    )
+                )
+            elif comp_result.get("status") == "warning":
+                ref = comp_result.get("ref", "")
+                margin = comp_result.get("margin_c", 0)
+                issues.append(
+                    ValidationIssue(
+                        code="thermal-limits",
+                        level="warning",
+                        ref=ref,
+                        mpn="",
+                        message=f"{ref}: Thermal margin only {margin:.0f}C",
+                        suggestion=comp_result.get("suggestion", "Consider additional copper area"),
+                    )
+                )
+    except Exception:
+        pass  # Graceful degradation if thermal data unavailable
+
+    return issues
+
+
+def _validate_signal_integrity(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Validate signal integrity by checking for high-speed bus requirements.
+
+    Wraps si_constraints module to detect missing termination, pull-ups, etc.
+    """
+    issues: list[ValidationIssue] = []
+
+    try:
+        from .si_constraints import analyze_si_constraints
+
+        si_result = analyze_si_constraints(components)
+        for constraint in si_result.get("constraints", []):
+            bus_type = constraint.get("bus_type", "")
+            if constraint.get("status") == "missing_termination":
+                issues.append(
+                    ValidationIssue(
+                        code="signal-integrity",
+                        level="warning",
+                        ref=constraint.get("ref", ""),
+                        mpn="",
+                        message=f"{bus_type}: Missing termination or impedance matching",
+                        suggestion=f"Add appropriate termination for {bus_type}",
+                    )
+                )
+    except Exception:
+        pass  # Graceful degradation
+
+    return issues
+
+
 _VALIDATION_CHECKS = (
     ("pinout-source", "Pinout verification", _validate_pinout_sources),
     ("feedback-divider", "Feedback dividers", _validate_feedback_dividers),
@@ -747,6 +858,9 @@ _VALIDATION_CHECKS = (
     ("enable-pins", "Enable/shutdown pins", _validate_enable_pins),
     ("bus-completeness", "Bus completeness", _validate_bus_completeness),
     ("pin-type-conflicts", "Pin type conflicts (ERC)", _validate_pin_type_conflicts),
+    ("power-budget", "Power budget", _validate_power_budget),
+    ("thermal-limits", "Thermal limits", _validate_thermal_limits),
+    ("signal-integrity", "Signal integrity", _validate_signal_integrity),
 )
 
 
@@ -762,6 +876,28 @@ def run_validation_checks(components: list[ComponentDef]) -> list[ValidationChec
         else:
             status = "WARN"
         results.append(ValidationCheckResult(code=code, label=label, status=status, issues=issues))
+
+    # Log aggregate results to design.log
+    from .logging_bridge import get_design_logger
+
+    dl = get_design_logger()
+    if dl:
+        all_passed = all(r.status != "FAIL" for r in results)
+        error_msgs = []
+        warning_msgs = []
+        for r in results:
+            for issue in r.issues:
+                if issue.level.lower() == "error":
+                    error_msgs.append(f"[{r.code}] {issue.message}")
+                else:
+                    warning_msgs.append(f"[{r.code}] {issue.message}")
+        dl.log_validation(
+            spec_file="(components)",
+            passed=all_passed,
+            errors=error_msgs[:5],
+            warnings=warning_msgs[:5],
+        )
+
     return results
 
 

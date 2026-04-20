@@ -262,6 +262,21 @@ def check_dfm(
     # Sort by severity (critical first, then warning)
     violations.sort(key=lambda v: (v.severity != "critical", v.type, v.location))
 
+    # Log to design.log via bridge
+    from .logging_bridge import get_design_logger
+
+    dl = get_design_logger()
+    if dl:
+        critical = sum(1 for v in violations if v.severity == "critical")
+        warns = sum(1 for v in violations if v.severity == "warning")
+        dl.log_erc_drc(
+            check_type="dfm",
+            file=str(path),
+            errors=critical,
+            warnings=warns,
+            details=[v.message for v in violations[:5]],
+        )
+
     return violations
 
 

@@ -147,6 +147,18 @@ def run_erc(schematic: str | Path, *, timeout: int = 60) -> ErcResult:
             result.warnings,
             schematic.name,
         )
+        # Log to design.log via bridge
+        from .logging_bridge import get_design_logger
+
+        dl = get_design_logger()
+        if dl:
+            dl.log_erc_drc(
+                check_type="erc",
+                file=str(schematic),
+                errors=result.errors,
+                warnings=result.warnings,
+                details=[v.description for v in result.violations[:5]],
+            )
         return result
 
     except subprocess.TimeoutExpired:
