@@ -35,7 +35,7 @@ jobs:
           for spec in samples/*/design_spec.yaml samples/*/*.yaml; do
             [ -f "$spec" ] || continue
             echo "::group::Validating $spec"
-            if python -m circuit_weaver.mvp validate "$spec"; then
+            if python -m circuit_weaver validate "$spec"; then
               echo "PASS: $spec"
             else
               echo "::error file=$spec::Validation failed for $spec"
@@ -51,7 +51,7 @@ jobs:
           for spec in src/circuit_weaver/examples/*.yaml; do
             [ -f "$spec" ] || continue
             echo "::group::Validating $spec"
-            if python -m circuit_weaver.mvp validate "$spec"; then
+            if python -m circuit_weaver validate "$spec"; then
               echo "PASS: $spec"
             else
               echo "::error file=$spec::Validation failed for $spec"
