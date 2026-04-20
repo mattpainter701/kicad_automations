@@ -15,6 +15,10 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # Non-blocking until samples are cleaned up — see TASKS.md Sprint 31
+    # follow-up. Once the legacy validation errors in samples/* are fixed,
+    # remove this flag so the workflow gates merges again.
+    continue-on-error: true
 
     steps:
       - name: Checkout

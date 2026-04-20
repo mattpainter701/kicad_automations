@@ -83,6 +83,31 @@ Files: `src/circuit_weaver/validator.py`, `src/circuit_weaver/cross_reference_va
 
 Files: `src/circuit_weaver/confidence_dashboard.py`, `src/circuit_weaver/dispatcher.py`, `skills/circuit-weaver/SKILL.md`, `skills/design_wizard/SKILL.md`
 
+## Sprint 31 — Sprints 26-30 Review Follow-ups (backlog)
+
+**Context:** Items deferred from the pre-merge code review of PR #2 (Sprints 26-30) and a CI workflow regression discovered during that review. Non-blocking for PR #2 merge; queued for the next sprint.
+
+### 130. Fix legacy validation errors in `samples/*` and re-enable validate gate (P1, MEDIUM)
+
+The `Validate Designs` workflow was silently broken since Sprint 20 (renamed `mvp` → `dispatcher` without updating the workflow YAML). After fixing the invocation in PR #2, ~30 pre-existing validation errors surfaced across 11 sample YAMLs (unconnected pins, dangling nets, missing I2C pull-ups, missing artifact-export tooling). The job is set `continue-on-error: true` so it does not block merges; this task fixes the underlying samples and removes the flag.
+
+- [ ] Triage the validate-workflow output for each sample and decide per-sample: fix the YAML, add `explicit_no_connects` entries, or remove the sample
+- [ ] Document any required external dependencies (e.g., `kicad-cli` for artifact export) in the workflow setup or skip them on CI
+- [ ] Remove `continue-on-error: true` from `.github/workflows/validate-design.yml` once samples are clean
+
+Files: `.github/workflows/validate-design.yml`, `samples/**/*.yaml`
+
+### 131. Code-review SUGGESTIONs from PR #2 (P2, SMALL)
+
+Polish items from the pre-merge review. None block correctness; bundle into a single sweep.
+
+- [ ] `cross_reference_validator.py`: add `"warn"` to the `CrossReferenceResult.status` enum docstring (or normalise to `pass`/`fail`/`skipped`)
+- [ ] `cross_reference_validator.py`: tighten `_passive_prefixes` — diodes (`D`) and connectors (`J`) usually need MPNs for production sourcing; consider dropping them from the skip set
+- [ ] `confidence_dashboard.py`: `_score_from_issues(total_checks, ...)` ignores `total_checks` for scoring; either normalise the penalty by it or drop the parameter
+- [ ] `spice_runner.py`: `wdir / "results.raw"` is a fixed filename; safe today (sequential loop) but races if simulations are ever parallelised — derive output name from the netlist stem instead
+
+Files: `src/circuit_weaver/cross_reference_validator.py`, `src/circuit_weaver/confidence_dashboard.py`, `src/circuit_weaver/spice_runner.py`
+
 ## Sprint 22 — Pinout Verification Gate (v0.18.0)
 
 **Goal:** Before emitting any schematic, verify every IC pinout has a confirmed source. Replace silent STUB annotations with hard validation failures. This is the #1 community trust blocker — a swapped pin is invisible to DRC/ERC and kills the board.
