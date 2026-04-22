@@ -1,12 +1,13 @@
 """Unified symbol resolution chain — multi-tier fallback for component lookup.
 
-Implements a 6-tier resolution chain:
+Implements a 7-tier resolution chain:
 1. Custom ComponentRegistry
-2. KiCad library
-3. SymbolCache (30-day TTL)
-4. EasyEDA (full symbol with pins via LCSC)
-5. DigiKey (stub with footprint data)
-6. Mouser (stub with footprint data)
+2. ic_data JSON store (user-curated + template-extracted; hot-loadable via register_ic)
+3. KiCad library
+4. SymbolCache (30-day TTL)
+5. EasyEDA (full symbol with pins via LCSC)
+6. DigiKey (stub with footprint data)
+7. Mouser (stub with footprint data)
 
 Falls back to unresolved stub if all tiers fail.
 
@@ -38,15 +39,16 @@ log = logging.getLogger(__name__)
 
 
 class SymbolResolver:
-    """Unified symbol resolution chain with 6-tier fallback strategy.
+    """Unified symbol resolution chain with 7-tier fallback strategy.
 
     Attributes:
         _reg: Custom ComponentRegistry (Tier 1)
-        _kicad: KiCad library (Tier 2)
-        _cache: SymbolCache (Tier 3)
-        _use_dk: Enable DigiKey loader (Tier 5)
-        _use_mouser: Enable Mouser loader (Tier 6)
-        _use_easyeda: Enable EasyEDA loader (Tier 4)
+        _use_ic_data: Enable ic_data JSON store lookup (Tier 2)
+        _kicad: KiCad library (Tier 3)
+        _cache: SymbolCache (Tier 4)
+        _use_easyeda: Enable EasyEDA loader (Tier 5)
+        _use_dk: Enable DigiKey loader (Tier 6)
+        _use_mouser: Enable Mouser loader (Tier 7)
     """
 
     def __init__(
@@ -57,16 +59,18 @@ class SymbolResolver:
         use_digikey: bool = True,
         use_mouser: bool = True,
         use_easyeda: bool = True,
+        use_ic_data: bool = True,
     ) -> None:
         """Initialize resolver with optional registries and cache.
 
         Args:
             component_reg: Custom ComponentRegistry (Tier 1).
-            kicad_lib: KiCad library (Tier 2).
-            cache: SymbolCache instance (Tier 3). Defaults to new SymbolCache().
-            use_digikey: Enable DigiKey loader (Tier 5).
-            use_mouser: Enable Mouser loader (Tier 6).
-            use_easyeda: Enable EasyEDA loader (Tier 4).
+            kicad_lib: KiCad library (Tier 3).
+            cache: SymbolCache instance (Tier 4). Defaults to new SymbolCache().
+            use_easyeda: Enable EasyEDA loader (Tier 5).
+            use_digikey: Enable DigiKey loader (Tier 6).
+            use_mouser: Enable Mouser loader (Tier 7).
+            use_ic_data: Enable ic_data JSON store lookup (Tier 2).
         """
         self._reg = component_reg
         self._kicad = kicad_lib
@@ -74,6 +78,7 @@ class SymbolResolver:
         self._use_dk = use_digikey
         self._use_mouser = use_mouser
         self._use_easyeda = use_easyeda
+        self._use_ic_data = use_ic_data
 
     def resolve(
         self,
@@ -82,15 +87,16 @@ class SymbolResolver:
         item: dict[str, Any] | None = None,
         category: str = "digital",
     ) -> tuple[ComponentDef | None, str]:
-        """Resolve an MPN through the full 6-tier chain.
+        """Resolve an MPN through the full 7-tier chain.
 
         Returns (ComponentDef | None, source_str) where source_str is one of:
         - "registry" (Tier 1)
-        - "kicad" (Tier 2)
-        - "cache" (Tier 3: rebuilt from cached metadata)
-        - "easyeda" (Tier 4: full symbol via LCSC)
-        - "digikey" (Tier 5: stub with footprint)
-        - "mouser" (Tier 6: stub with footprint)
+        - "ic_data" (Tier 2: JSON store, hot-loadable via register_ic)
+        - "kicad" (Tier 3)
+        - "cache" (Tier 4: rebuilt from cached metadata)
+        - "easyeda" (Tier 5: full symbol via LCSC)
+        - "digikey" (Tier 6: stub with footprint)
+        - "mouser" (Tier 7: stub with footprint)
         - "unresolved" (all tiers exhausted)
 
         Args:
@@ -108,14 +114,21 @@ class SymbolResolver:
                 log.debug("Resolved %s via registry", mpn)
                 return comp, "registry"
 
-        # Tier 2: KiCad library
+        # Tier 2: ic_data JSON store (user-curated + template-extracted)
+        if self._use_ic_data:
+            comp = self._resolve_ic_data(mpn)
+            if comp:
+                log.debug("Resolved %s via ic_data", mpn)
+                return comp, "ic_data"
+
+        # Tier 3: KiCad library
         if self._kicad:
             comp = self._kicad.get_component(mpn, category)
             if comp:
                 log.debug("Resolved %s via kicad lib", mpn)
                 return comp, "kicad"
 
-        # Tier 3: SymbolCache (rebuild from cached index entry)
+        # Tier 4: SymbolCache (rebuild from cached index entry)
         cached = self._cache.get(mpn)
         if cached:
             # Rebuild ComponentDef from cached metadata
@@ -203,8 +216,34 @@ class SymbolResolver:
             explicit_no_connects=set(),
         )
 
+    def _resolve_ic_data(self, mpn: str) -> ComponentDef | None:
+        """Tier 2: Try the ic_data JSON store.
+
+        Looks up ``mpn`` in the unified ic_data database (bundled JSON files
+        plus any user-registered entries) and converts the matched entry to
+        a ``ComponentDef``.
+
+        Args:
+            mpn: Manufacturer Part Number.
+
+        Returns:
+            ComponentDef from JSON data, or None if the MPN is not in the
+            store or the entry lacks a usable ``pins`` list.
+        """
+        try:
+            from .ic_data import get_ic_data, ic_data_to_component_def
+        except ImportError:
+            log.debug("ic_data module unavailable")
+            return None
+
+        data = get_ic_data(mpn)
+        if not data:
+            return None
+        comp = ic_data_to_component_def(mpn, data)
+        return comp
+
     def _resolve_easyeda(self, mpn: str) -> ComponentDef | None:
-        """Tier 4: Try LCSC-backed EasyEDA full symbol.
+        """Tier 5: Try LCSC-backed EasyEDA full symbol.
 
         Args:
             mpn: Manufacturer Part Number.
@@ -249,7 +288,7 @@ class SymbolResolver:
         return None
 
     def _resolve_digikey(self, mpn: str) -> ComponentDef | None:
-        """Tier 5: Try DigiKey loader (lazy import).
+        """Tier 6: Try DigiKey loader (lazy import).
 
         Args:
             mpn: Manufacturer Part Number.
@@ -272,7 +311,7 @@ class SymbolResolver:
             return None
 
     def _resolve_mouser(self, mpn: str) -> ComponentDef | None:
-        """Tier 6: Try Mouser loader (lazy import).
+        """Tier 7: Try Mouser loader (lazy import).
 
         Args:
             mpn: Manufacturer Part Number.

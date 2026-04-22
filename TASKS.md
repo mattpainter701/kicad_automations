@@ -36,10 +36,56 @@ Files: `.github/workflows/ci.yml`
 
 ### 150. CHANGELOG + release notes for v0.25.0 (P1, XS) ✅ DONE
 
-- [x] `## [0.25.0] - 2026-04-21` entry added summarising tasks 147-149
+- [x] `## [0.25.0] - 2026-04-22` entry added summarising tasks 147-149
 - [x] `__version__` bumped to 0.25.0 in `src/circuit_weaver/__init__.py` and `pyproject.toml`
 
 Files: `CHANGELOG.md`, `pyproject.toml`, `src/circuit_weaver/__init__.py`
+
+## Sprint 36 — Resolver Chain Fix (v0.25.0) ✅ DONE
+
+**Goal:** Fix the v0.24.x regression where common MPNs (SHT41-AD1B-R2, SGP40-D-R4, nRF52840) produced stubs despite being available on DigiKey/Mouser and in the bundled `ic_data` JSON store. Root cause: `project_spec._resolve_component` used an ad-hoc 3-tier inline resolver that never called `SymbolResolver`'s full chain.
+
+### 151. Wire ic_data into SymbolResolver as Tier 2 (P0, SMALL) ✅ DONE
+
+- [x] Add `_resolve_ic_data(mpn)` method in `SymbolResolver`
+- [x] Insert between ComponentRegistry and KiCad library tiers
+- [x] Add `use_ic_data` flag so tests can disable the tier
+- [x] Update class docstrings to reflect 7-tier chain (registry → ic_data → kicad → cache → easyeda → digikey → mouser)
+
+Files: `src/circuit_weaver/symbol_resolver.py`
+
+### 152. ic_data_to_component_def() converter (P0, MEDIUM) ✅ DONE
+
+- [x] New `ic_data_to_component_def(mpn, data)` helper in `ic_data/__init__.py`
+- [x] Converts JSON entry → `ComponentDef` with pins, footprint, power_pins auto-derived from `power_in` pin types
+- [x] Topology → category mapping (`_TOPOLOGY_CATEGORY`), topology → ref_prefix (connector=J, protection=D, crystal=Y)
+- [x] Returns None (rather than a broken ComponentDef) when `pins` list is missing/invalid
+
+Files: `src/circuit_weaver/ic_data/__init__.py`
+
+### 153. Replace project_spec.py inline resolver with SymbolResolver (P0, MEDIUM) ✅ DONE
+
+- [x] Delete the ad-hoc 3-tier chain (registry → kicad_lib → EasyEDA) in `_resolve_component`
+- [x] Delegate to `SymbolResolver.resolve()` — gets cache + DigiKey + Mouser fallback for free
+- [x] Keep `_try_easyeda_resolve` complementary path for YAMLs using explicit `lcsc:` keys
+- [x] Update stub warning to enumerate all 7 tiers so operators see what was tried
+
+Files: `src/circuit_weaver/project_spec.py`
+
+### 154. Fix register_ic() deadlock (P0, SMALL) ✅ DONE
+
+- [x] `register_ic()` used to hold `_db_lock` then call `_get_db()` which re-acquires it — deadlocked first call after `reload()`
+- [x] Resolve the db reference before entering the mutation lock block
+
+Files: `src/circuit_weaver/ic_data/__init__.py`
+
+### 155. Regression tests — resolver chain (P0, SMALL) ✅ DONE
+
+- [x] `tests/test_resolver_chain.py` — 6 tests covering the full chain
+- [x] Mocked DigiKey test for SHT41-AD1B-R2 (the user-reported failure case)
+- [x] `register_ic()` hot-load visibility test
+
+Files: `tests/test_resolver_chain.py`
 
 ## Sprint 31 — Bug Fixes & Error Handling (v0.23.0) ✅ DONE
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.25.0] - 2026-04-21
+## [0.25.0] - 2026-04-22
 
 ### Sprint 35 — Install-UX hardening & platform parity
 
@@ -23,6 +23,22 @@ Closes three P0 footguns identified in the v0.24.x review.
 
 ### Tests
 - `tests/test_skill_installer.py` — 12 new tests covering collision skip, force overwrite, backup, dry-run, unchanged no-op, and bundled-parity.
+
+### Sprint 36 — Resolver Chain Fix
+
+Fixes the reason v0.24.x stubbed common parts (SHT41-AD1B-R2, SGP40-D-R4, nRF52840) that were available on DigiKey, Mouser, and in `ic_data` JSON — the standalone-component resolver never looked there.
+
+### Fixed
+- **`project_spec._resolve_component`** now delegates to `SymbolResolver`. Previously it had an ad-hoc 3-tier chain (ComponentRegistry → KiCad lib → EasyEDA) that ignored the cache, DigiKey, Mouser, and the `ic_data` JSON store that shipped in v0.24.0. Any MPN not in one of those three tiers became a stub, even if DigiKey/Mouser carried it.
+- **`ic_data.register_ic()` deadlock** — the function held `_db_lock` while calling `_get_db()`, which also tries to acquire the same non-reentrant lock. First call to `register_ic()` after `reload()` hung indefinitely. Fixed by resolving the db reference before acquiring the mutation lock.
+
+### Added
+- **`SymbolResolver` Tier 2: ic_data JSON store** — resolver now consults `ic_data.get_ic_data()` between `ComponentRegistry` (Tier 1) and the KiCad library (Tier 3). The 7-tier chain is now: registry → ic_data → kicad_lib → cache → easyeda → digikey → mouser → unresolved.
+- **`ic_data.ic_data_to_component_def(mpn, data)`** — converts a JSON IC entry into a `ComponentDef` with pins, footprint, power_pins auto-derived from power_in pin types, and topology-based category/ref_prefix mapping. Returns `None` for entries that lack a usable `pins` list.
+- **Stub reason now enumerates all 7 tiers** — so the diagnostic output makes it obvious what was tried and what the user can register to fix it.
+
+### Tests
+- **`tests/test_resolver_chain.py`** — 6 regression tests: registry-wins-first, ic_data-resolves-template-part (DS3231), register_ic-hot-load-visible-immediately, DigiKey-rescues-unknown-MPN (mocked SHT41-AD1B-R2), project_spec-delegates-to-SymbolResolver, unresolved-falls-to-informative-stub.
 
 ---
 

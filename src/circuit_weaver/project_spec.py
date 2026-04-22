@@ -556,22 +556,53 @@ def _resolve_component(
         return [_make_stub_component("", section_category, ref, reason="No 'type' or 'ic' specified")]
 
     explicit_lcsc = bool(str(item.get("lcsc", "")).strip())
+    comp = None
+    source = ""
 
     # An explicit lcsc: key is an intentional override: prefer the EasyEDA
     # symbol even if earlier tiers could resolve the MPN by name.
-    comp = _try_easyeda_resolve(item, ic, parts_lookup) if explicit_lcsc else None
-    if not comp:
-        comp = component_reg.get(ic)
-    if not comp and kicad_lib:
-        comp = kicad_lib.get_component(ic, category=section_category)
-    if not comp and not explicit_lcsc:
-        # Tier 4: EasyEDA/LCSC — try by explicit lcsc: key or by MPN lookup
+    if explicit_lcsc:
         comp = _try_easyeda_resolve(item, ic, parts_lookup)
+        if comp:
+            source = "easyeda"
+
+    # Main resolution chain: registry → ic_data → KiCad lib → cache →
+    # EasyEDA → DigiKey → Mouser. Delegated to SymbolResolver so every
+    # caller uses the same 7-tier fallback.
     if not comp:
-        print(f"  WARNING: Unknown component '{ic}', not in registry, KiCad library, or EasyEDA, creating stub")
+        from .symbol_resolver import SymbolResolver
+
+        resolver = SymbolResolver(
+            component_reg=component_reg,
+            kicad_lib=kicad_lib,
+        )
+        comp, source = resolver.resolve(ic, item=item, category=section_category)
+
+    # Last chance: EasyEDA-by-MPN path that consults parts_lookup for the
+    # LCSC mapping (SymbolResolver's easyeda tier uses a direct LCSC search
+    # but does not see the caller's parts_lookup, so this remains as a
+    # complementary path for YAMLs that provide an explicit lcsc elsewhere).
+    if not comp and not explicit_lcsc:
+        comp = _try_easyeda_resolve(item, ic, parts_lookup)
+        if comp:
+            source = "easyeda"
+
+    if not comp:
+        print(
+            f"  WARNING: Unknown component '{ic}', not in registry, ic_data, "
+            f"KiCad library, cache, EasyEDA, DigiKey, or Mouser — creating stub"
+        )
         return [
-            _make_stub_component(ic, section_category, ref, reason=f"'{ic}' not in registry, KiCad library, or EasyEDA")
+            _make_stub_component(
+                ic,
+                section_category,
+                ref,
+                reason=f"'{ic}' unresolved through all 7 tiers (registry/ic_data/kicad/cache/easyeda/digikey/mouser)",
+            )
         ]
+
+    if source and source not in ("registry", ""):
+        print(f"  -> Resolved '{ic}' via {source} ({len(comp.pins)} pins)")
 
     instance = copy.deepcopy(comp)
     instance.category = section_category
