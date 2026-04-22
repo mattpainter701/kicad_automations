@@ -2,6 +2,115 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 37 — Observability, Research Pipeline & Resolver Polish (v0.26.0)
+
+**Goal:** Turn the v0.25.0 resolver into something users can trust end-to-end — visible credentials diagnostics, persistent research output, hermetic regression coverage of the full chain, and a finished data-driven template migration.
+
+Three categories bundled into one minor-version release:
+- **Observability** (Tasks 156, 159) — users can see what the engine is doing, which tiers fired, and why some skipped.
+- **Research pipeline** (Tasks 160, 161) — structured, persisted research output with a backend selector (sonar-pro vs. standard WebSearch).
+- **Resolver polish** (Tasks 157, 158) — end-to-end integration coverage + complete the Sprint 34 data-driven migration.
+
+---
+
+### 156. Resolver credential visibility (P1, SMALL)
+
+When a SymbolResolver tier skips because its env vars aren't set, log one clear INFO line instead of silently falling through.
+
+- [ ] `_resolve_digikey` / `_resolve_mouser` / `_resolve_easyeda` emit a single `logging.info` line the first time they're skipped per session: `"DigiKey tier skipped: DIGIKEY_CLIENT_ID not set. Run 'circuit-weaver doctor' to configure."`
+- [ ] De-dupe so multi-component runs don't spam the same message N times (module-level flag or `functools.lru_cache`).
+- [ ] `doctor` already surfaces credential status — cross-link in the skip message.
+
+Files: `src/circuit_weaver/symbol_resolver.py`, `src/circuit_weaver/doctor.py`, `tests/test_resolver_chain.py`
+
+---
+
+### 157. Resolver end-to-end integration test (P1, MEDIUM)
+
+Lock in the user-reported Zigbee sensor flow as a hermetic test so v0.24.x-style resolver regressions never ship again.
+
+- [ ] Write `tests/test_resolver_e2e.py` with a minimal YAML containing `SHT41-AD1B-R2`, `SGP40-D-R4`, `nRF52840` (mix of MPNs that should resolve via ic_data, DigiKey, and stub-with-reason).
+- [ ] Mock the DigiKey HTTP layer (use `responses` or `httpx-mock`; prefer `responses` since the DigiKey loader uses `requests`).
+- [ ] Assert: (a) no component falls back to a generic stub when a tier should have caught it, (b) diagnostic log mentions which tier resolved each MPN, (c) when all tiers fail, the stub reason enumerates all 7 tiers.
+- [ ] Test runs under ~1 second with no network.
+
+Files: `tests/test_resolver_e2e.py` (new), possibly `pyproject.toml` (add `responses` to dev deps if needed)
+
+---
+
+### 158. Migrate legacy templates to data-driven path (P2, MEDIUM)
+
+Close the Sprint 34 footnote: `audio_amplifier.py`, `motor_driver.py`, `protection.py` still have hardcoded Python dicts even though their ICs are now in `ic_data/`. Migrate + dedupe.
+
+- [ ] Add parity tests comparing legacy class output to the data-driven builder output for each representative IC (PAM8302A, DRV8833, SMBJ5.0A).
+- [ ] Delete hardcoded `*_IC_DATABASE` dicts once parity is verified.
+- [ ] Register legacy class names as aliases so existing YAML `type: audio_amplifier` continues to work via `DataDrivenTemplate`.
+- [ ] Update CHANGELOG "Follow-up" item from v0.24.0 → mark resolved.
+
+Files: `src/circuit_weaver/subcircuits/audio_amplifier.py`, `motor_driver.py`, `protection.py`, `base.py`, `tests/test_template_structure.py`
+
+---
+
+### 159. Workflow-level logging hardening (P0, MEDIUM) — user-reported
+
+**User report:** `i:\my_circuit\zigbee_air_sensor\output\circuit-weaver.log` is weak — no workflow step markers, no visible log-level messages, barely populated.
+
+Root causes identified:
+- `init_logging()` only called from `generate_artifacts()` — `validate`, `confidence`, `simulate`, `erc`, `cost-bom` don't create a log.
+- Many key modules use `_logger.debug()` for events that should be `info()`.
+- No explicit "Workflow Step N: …" markers in the log.
+
+- [ ] Move `init_logging()` invocation up to the CLI dispatcher so every subcommand that operates on an output dir gets a log.
+- [ ] Add a `log_workflow_step(step, message)` helper to `design_logger.py` + Python-side INFO log; instrument the top of each major CLI handler (validate, generate, confidence, simulate, erc, cost-bom, export-*).
+- [ ] Audit `_logger.debug(...)` calls in resolver, validator, generator, spice_runner, erc_runner — promote user-visible events to `info`; keep byte-level trace at debug.
+- [ ] Ensure the `circuit-weaver` root logger is at `INFO` by default (debug via `CIRCUIT_WEAVER_LOG_LEVEL=DEBUG` env var).
+- [ ] Document the log locations in README + `docs/user_workflow.md`.
+- [ ] Regression test: run `circuit-weaver validate <yaml> -o <dir>` and assert `<dir>/circuit-weaver.log` exists, mentions "Workflow Step", has at least one INFO-level entry per major module.
+
+Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/logging_bridge.py`, `src/circuit_weaver/design_logger.py`, `src/circuit_weaver/validator.py`, `src/circuit_weaver/generator.py`, `src/circuit_weaver/spice_runner.py`, `src/circuit_weaver/erc_runner.py`, `README.md`, `docs/user_workflow.md`, `tests/test_logging_workflow.py` (new)
+
+---
+
+### 160. Persist research output to project directory (P0, MEDIUM) — user-reported
+
+**User report:** `research-analyst` runs but produces no artifacts in the project dir — users can't see what was researched, what citations were consulted, or reproduce the findings.
+
+- [ ] Every research call (via the `/research` skill or `research-analyst` agent) writes to `{output_dir}/research/`:
+  - `{topic-slug}.json` — structured result: query, backend used, citations, summary, timestamp
+  - `{topic-slug}.md` — human-readable rendering
+  - `summary.md` — rolling index of all research runs for this project
+- [ ] `design.log` entry references the `{topic-slug}.json` file path so the full chain is reproducible.
+- [ ] Update `skills/circuit-weaver/SKILL.md` Step 2 to instruct the agent to dump research output via `circuit-weaver log-event --type research --file <path.json>` (or a new `save-research` subcommand).
+- [ ] Document in README that `output/research/` is the single source of truth for how ICs were chosen.
+
+Files: `src/circuit_weaver/dispatcher.py` (new `save-research` or extend `log-event`), `src/circuit_weaver/design_logger.py`, `skills/circuit-weaver/SKILL.md`, `agents/research-analyst.md`, `README.md`
+
+---
+
+### 161. Research backend selector (sonar-pro vs standard) (P1, SMALL) — user-reported
+
+**User report:** user wants to choose between Perplexity sonar-pro (paid, high-quality) and standard Claude WebSearch/WebFetch (free) for research runs.
+
+- [ ] Add `--research-backend {sonar-pro,standard,auto}` to any CLI command that spawns research, plus env var `CIRCUIT_WEAVER_RESEARCH_BACKEND`.
+- [ ] `auto` (default) uses sonar-pro if `PERPLEXITY_API_KEY` is set, otherwise standard.
+- [ ] `skills/circuit-weaver/SKILL.md` Step 2 reads the backend and invokes either `/research` (sonar-pro path) or Claude's native WebSearch tool.
+- [ ] `research-analyst` agent prompt updated to respect the backend choice.
+- [ ] `doctor` reports the selected backend + whether Perplexity creds are configured.
+
+Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/doctor.py`, `skills/circuit-weaver/SKILL.md`, `agents/research-analyst.md`
+
+---
+
+### 162. CHANGELOG + version bump for v0.26.0 (P1, XS)
+
+- [ ] Add `## [0.26.0] - YYYY-MM-DD` entry summarising Sprints 37.
+- [ ] Bump `__version__` to 0.26.0 in `pyproject.toml`, `__init__.py`, `tests/test_bootstrap.py`.
+- [ ] Tag + push to trigger PyPI release.
+
+Files: `CHANGELOG.md`, `pyproject.toml`, `src/circuit_weaver/__init__.py`, `tests/test_bootstrap.py`
+
+---
+
 ## Sprint 35 — Install-UX Hardening & Platform Parity (v0.25.0) ✅ DONE
 
 **Goal:** Close the three P0 footguns identified in the v0.24.x review — silent overwrite of curated user skills, bundled-skill drift vs repo, and zero Windows CI coverage. Keeps `pip install circuit-weaver && circuit-weaver install-skills` safe to recommend.
