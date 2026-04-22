@@ -265,7 +265,15 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.24.0
+## What's New in v0.25.0
+
+| Sprint | Feature |
+|-|-|
+| 35 | **`install-skills` collision protection** — will no longer silently overwrite a curated `SKILL.md` whose content differs from the bundled source. New `--force`, `--backup`, `--dry-run` flags; skipped entries are reported via `skills_skipped` so you can review before acting |
+| 35 | **All 11 skills now bundled in the wheel** — previously only a stale `circuit-weaver/SKILL.md` (410 of 651 lines) shipped to PyPI; `install-skills` from a fresh `pip install` was missing `bom`, `kicad`, `digikey`, `lcsc`, `mouser`, `jlcpcb`, `pcbway`, `ee`, `design_wizard`, `vivado`. Kept in sync by `scripts/sync_bundled_skills.py` with CI + pre-commit drift guards |
+| 35 | **Windows CI leg** — `windows-latest` / Python 3.12 smoke run (non-blocking first sprint) covering CLI commands, doctor, skill installer, and `python -m circuit_weaver --version` |
+
+<details><summary>v0.24.0</summary>
 
 | Sprint | Feature |
 |-|-|
@@ -275,6 +283,8 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 | 33 | **Platform Compatibility** — full Claude Code / Codex / OpenCode support across all skills, updated shim files, skill trigger disambiguation |
 | 32 | **CLI Integration Tests** — 24 end-to-end CLI tests; informational output moved to stderr |
 | 31 | **Bug Fixes & Hardening** — thread-safe logging bridge, correct zero-check scoring, connector MPN validation, SPICE value parser edge cases |
+
+</details>
 
 <details><summary>v0.22.0</summary>
 
