@@ -4,8 +4,6 @@ import json
 import subprocess
 import sys
 
-import pytest
-
 from circuit_weaver.doctor import (
     CheckResult,
     DoctorReport,

@@ -15,14 +15,12 @@ from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
     FP_0402C,
     FP_0402R,
-    FP_0805C,
     BoundaryPort,
     SubcircuitResult,
-    buck_inductor,
-    buck_output_cap,
     boost_inductor,
     buck_boost_inductor,
-    crystal_load_caps,
+    buck_inductor,
+    buck_output_cap,
     cap_footprint,
     feedback_divider_top,
     feedback_divider_vout,
@@ -30,20 +28,15 @@ from .base import (
     format_inductance,
     format_resistance,
     ind_footprint,
-    res_footprint,
     snap_cap,
     snap_ind,
-    snap_to_e24,
     snap_to_e96,
 )
 
 
 def _pins_from_data(ic_data: dict) -> list[PinDef]:
     """Convert JSON pin list to PinDef objects."""
-    return [
-        PinDef(p["number"], p["name"], p["type"], p["side"])
-        for p in ic_data.get("pins", [])
-    ]
+    return [PinDef(p["number"], p["name"], p["type"], p["side"]) for p in ic_data.get("pins", [])]
 
 
 def _pin_role(ic_data: dict, role: str) -> str | None:
@@ -146,24 +139,66 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
         pin_nets[pin_bst] = bst_net
 
     bypass_caps = [
-        BypassCap("CIN", vin_net, "GND", format_capacitance(cin_val),
-                  cap_footprint(cin_val), role="input_cap", presentation="topology_local"),
-        BypassCap("COUT", rail_name, "GND", format_capacitance(cout_val),
-                  cap_footprint(cout_val), role="output_cap", presentation="topology_local"),
-        BypassCap("L", sw_net, rail_name, format_inductance(l_val),
-                  ind_footprint(l_val, iout), role="inductor", presentation="topology_local"),
+        BypassCap(
+            "CIN",
+            vin_net,
+            "GND",
+            format_capacitance(cin_val),
+            cap_footprint(cin_val),
+            role="input_cap",
+            presentation="topology_local",
+        ),
+        BypassCap(
+            "COUT",
+            rail_name,
+            "GND",
+            format_capacitance(cout_val),
+            cap_footprint(cout_val),
+            role="output_cap",
+            presentation="topology_local",
+        ),
+        BypassCap(
+            "L",
+            sw_net,
+            rail_name,
+            format_inductance(l_val),
+            ind_footprint(l_val, iout),
+            role="inductor",
+            presentation="topology_local",
+        ),
     ]
     if pin_bst:
         bypass_caps.append(
-            BypassCap("CBST", bst_net, sw_net, format_capacitance(cbst_val),
-                      FP_0402C, role="bootstrap_cap", presentation="topology_local"),
+            BypassCap(
+                "CBST",
+                bst_net,
+                sw_net,
+                format_capacitance(cbst_val),
+                FP_0402C,
+                role="bootstrap_cap",
+                presentation="topology_local",
+            ),
         )
 
     straps = [
-        StrapConfig("FBT", fb_net, rail_name, format_resistance(r_fbt),
-                    FP_0402R, role="feedback_top", presentation="topology_local"),
-        StrapConfig("FBB", fb_net, "GND", format_resistance(r_fbb_snapped),
-                    FP_0402R, role="feedback_bottom", presentation="topology_local"),
+        StrapConfig(
+            "FBT",
+            fb_net,
+            rail_name,
+            format_resistance(r_fbt),
+            FP_0402R,
+            role="feedback_top",
+            presentation="topology_local",
+        ),
+        StrapConfig(
+            "FBB",
+            fb_net,
+            "GND",
+            format_resistance(r_fbb_snapped),
+            FP_0402R,
+            role="feedback_bottom",
+            presentation="topology_local",
+        ),
     ]
 
     annotations = [
@@ -174,12 +209,18 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
     ]
 
     ic_comp = ComponentDef(
-        mpn=ic_name, ref_prefix="U", value=ic_name,
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
         footprint=ic_data.get("footprint", ""),
         description=ic_data.get("description", ""),
-        category="power", pins=_pins_from_data(ic_data),
-        power_pins=power_pins, pin_nets=pin_nets,
-        bypass_caps=bypass_caps, straps=straps, annotations=annotations,
+        category="power",
+        pins=_pins_from_data(ic_data),
+        power_pins=power_pins,
+        pin_nets=pin_nets,
+        bypass_caps=bypass_caps,
+        straps=straps,
+        annotations=annotations,
     )
 
     ports = [
@@ -191,7 +232,8 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
 
     topo_label = {"buck": "Buck", "boost": "Boost", "buck_boost": "Buck-Boost"}[topology]
     return SubcircuitResult(
-        components=[ic_comp], boundary_ports=ports,
+        components=[ic_comp],
+        boundary_ports=ports,
         annotations=[f"{topo_label} {ic_name}: {vin_net} ({vin}V) -> {rail_name} ({actual_vout:.2f}V) at {iout}A"],
         primary_category="power",
     )
@@ -205,7 +247,6 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
 def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     """Build an LDO regulator subcircuit."""
     ic_name = params.get("ic", ic_data.get("_mpn", "UNKNOWN"))
-    ref = params.get("ref", "U")
     vin = params["vin"]
     vout = params.get("vout", ic_data.get("vout_fixed", 3.3))
     iout = params.get("iout", ic_data.get("iout_max", 0.5))
@@ -242,10 +283,24 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
         pin_nets[pin_en] = en_net
 
     bypass_caps = [
-        BypassCap("CIN", vin_net, "GND", format_capacitance(cin_val),
-                  cap_footprint(cin_val), role="decoupling", presentation="topology_local"),
-        BypassCap("COUT", rail_name, "GND", format_capacitance(cout_val),
-                  cap_footprint(cout_val), role="decoupling", presentation="topology_local"),
+        BypassCap(
+            "CIN",
+            vin_net,
+            "GND",
+            format_capacitance(cin_val),
+            cap_footprint(cin_val),
+            role="decoupling",
+            presentation="topology_local",
+        ),
+        BypassCap(
+            "COUT",
+            rail_name,
+            "GND",
+            format_capacitance(cout_val),
+            cap_footprint(cout_val),
+            role="decoupling",
+            presentation="topology_local",
+        ),
     ]
 
     iq_ua = ic_data.get("iq_ua", 0)
@@ -255,12 +310,17 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
     ] + warnings
 
     ic_comp = ComponentDef(
-        mpn=ic_name, ref_prefix="U", value=ic_name,
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
         footprint=ic_data.get("footprint", ""),
         description=ic_data.get("description", ""),
-        category="power", pins=_pins_from_data(ic_data),
-        power_pins=power_pins, pin_nets=pin_nets,
-        bypass_caps=bypass_caps, annotations=annotations,
+        category="power",
+        pins=_pins_from_data(ic_data),
+        power_pins=power_pins,
+        pin_nets=pin_nets,
+        bypass_caps=bypass_caps,
+        annotations=annotations,
     )
 
     ports = [
@@ -272,7 +332,8 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
         ports.append(BoundaryPort(en_net, "input"))
 
     return SubcircuitResult(
-        components=[ic_comp], boundary_ports=ports,
+        components=[ic_comp],
+        boundary_ports=ports,
         annotations=[f"LDO {ic_name}: {vin_net} ({vin}V) -> {rail_name} ({vout}V) at {iout}A"] + warnings,
         primary_category="power",
     )
@@ -311,18 +372,20 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
                     power_pins[str(p)] = "GND"
 
     bypass_caps = [
-        BypassCap("C_VDD", vdd_net, "GND", "100nF", FP_0402C,
-                  role="decoupling", presentation="topology_local"),
+        BypassCap("C_VDD", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
     ]
 
     ref_prefix = ic_data.get("ref_prefix", "U")
     ic_comp = ComponentDef(
-        mpn=ic_name, ref_prefix=ref_prefix, value=ic_name,
+        mpn=ic_name,
+        ref_prefix=ref_prefix,
+        value=ic_name,
         footprint=ic_data.get("footprint", ""),
         description=ic_data.get("description", ""),
         category=ic_data.get("category", "digital"),
         pins=_pins_from_data(ic_data),
-        power_pins=power_pins, pin_nets={},
+        power_pins=power_pins,
+        pin_nets={},
         bypass_caps=bypass_caps,
         annotations=[f"{ic_data.get('description', ic_name)}"],
     )
@@ -334,7 +397,8 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     ]
 
     return SubcircuitResult(
-        components=[ic_comp], boundary_ports=ports,
+        components=[ic_comp],
+        boundary_ports=ports,
         annotations=[f"{ic_name}: {vdd_net}"],
         primary_category=ic_data.get("primary_category", "digital"),
     )
@@ -354,15 +418,39 @@ TOPOLOGY_BUILDERS: dict[str, Any] = {
 
 # All other topologies fall through to build_generic
 _GENERIC_TOPOLOGIES = {
-    "protection", "connector", "usb_c_connector", "eeprom", "rtc",
-    "display_driver", "wireless_module", "mosfet_switch", "relay_driver",
-    "gate_driver", "led_driver", "power_mux", "battery_monitor",
-    "ethernet_phy", "usb_controller", "usb_hub", "battery_charger",
-    "charge_pump", "voltage_reference", "motor_driver",
-    "can_transceiver", "rs485_transceiver", "level_shifter",
-    "i2c_bus", "spi_bus", "adc", "dac", "current_sense",
-    "opamp", "sensor_frontend", "audio_amplifier",
-    "crystal_oscillator", "clock_synth",
+    "protection",
+    "connector",
+    "usb_c_connector",
+    "eeprom",
+    "rtc",
+    "display_driver",
+    "wireless_module",
+    "mosfet_switch",
+    "relay_driver",
+    "gate_driver",
+    "led_driver",
+    "power_mux",
+    "battery_monitor",
+    "ethernet_phy",
+    "usb_controller",
+    "usb_hub",
+    "battery_charger",
+    "charge_pump",
+    "voltage_reference",
+    "motor_driver",
+    "can_transceiver",
+    "rs485_transceiver",
+    "level_shifter",
+    "i2c_bus",
+    "spi_bus",
+    "adc",
+    "dac",
+    "current_sense",
+    "opamp",
+    "sensor_frontend",
+    "audio_amplifier",
+    "crystal_oscillator",
+    "clock_synth",
 }
 
 for _topo in _GENERIC_TOPOLOGIES:

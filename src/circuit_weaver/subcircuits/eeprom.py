@@ -14,12 +14,9 @@ from typing import Any
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
     FP_0402C,
-    FP_0402R,
     BoundaryPort,
     SubcircuitResult,
     SubcircuitTemplate,
-    format_resistance,
-    snap_to_e24,
 )
 
 EEPROM_IC_DATABASE = {

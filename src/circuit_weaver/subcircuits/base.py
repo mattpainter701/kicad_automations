@@ -546,20 +546,14 @@ class SubcircuitTemplate(ABC):
             # Options/enum check
             options = spec.get("options") or spec.get("enum")
             if options and value not in options:
-                errors.append(
-                    f"Parameter '{name}' must be one of {options}, got '{value}'"
-                )
+                errors.append(f"Parameter '{name}' must be one of {options}, got '{value}'")
 
             # Range check (minimum/maximum)
             if isinstance(value, (int, float)):
                 if "minimum" in spec and value < spec["minimum"]:
-                    errors.append(
-                        f"Parameter '{name}' must be >= {spec['minimum']}, got {value}"
-                    )
+                    errors.append(f"Parameter '{name}' must be >= {spec['minimum']}, got {value}")
                 if "maximum" in spec and value > spec["maximum"]:
-                    errors.append(
-                        f"Parameter '{name}' must be <= {spec['maximum']}, got {value}"
-                    )
+                    errors.append(f"Parameter '{name}' must be <= {spec['maximum']}, got {value}")
 
         return errors
 
@@ -581,7 +575,13 @@ class DataDrivenTemplate(SubcircuitTemplate):
     New ICs are added by writing JSON — no Python code changes needed.
     """
 
-    def __init__(self, template_type: str, topology: str, ic_database: dict[str, dict], param_schema: list | None = None):
+    def __init__(
+        self,
+        template_type: str,
+        topology: str,
+        ic_database: dict[str, dict],
+        param_schema: list | None = None,
+    ):
         self.template_type = template_type
         self.description = f"Data-driven {template_type} template"
         self._topology = topology
@@ -598,9 +598,7 @@ class DataDrivenTemplate(SubcircuitTemplate):
             ic_name = next(iter(self._ic_database))
             ic_data = dict(self._ic_database[ic_name])
         else:
-            raise ValueError(
-                f"No ICs registered for topology '{self._topology}'"
-            )
+            raise ValueError(f"No ICs registered for topology '{self._topology}'")
 
         ic_data["_mpn"] = ic_name
         params = dict(params)

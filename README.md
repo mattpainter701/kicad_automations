@@ -259,7 +259,18 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.22.0
+## What's New in v0.24.0
+
+| Sprint | Feature |
+|-|-|
+| 34 | **Data-Driven Template Engine** — IC data now lives in JSON files under `src/circuit_weaver/ic_data/` (11 categories). New `topology_builders.py` produces schematic fragments dynamically, replacing hardcoded template classes |
+| 34 | **7 New Subcircuit Templates** — RTC (DS3231, PCF8563), EEPROM (24LCxx, 25LCxx), wireless modules (nRF52, ESP32, LoRa), USB-C connectors, SPI bus conditioning, voltage references (REF5025, LM4040), generic connectors — total template count now 37 |
+| 34 | **IC Registration CLI** — `scripts/extract_ic_data.py` harvests IC entries from datasheet research; `register_ic()` API persists to `custom.json` |
+| 33 | **Platform Compatibility** — full Claude Code / Codex / OpenCode support across all skills, updated shim files, skill trigger disambiguation |
+| 32 | **CLI Integration Tests** — 24 end-to-end CLI tests; informational output moved to stderr |
+| 31 | **Bug Fixes & Hardening** — thread-safe logging bridge, correct zero-check scoring, connector MPN validation, SPICE value parser edge cases |
+
+<details><summary>v0.22.0</summary>
 
 | Sprint | Feature |
 |-|-|
@@ -269,6 +280,8 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 | 28 | **Circuit Simulation Engine** — SPICE netlist generation, ngspice runner with graceful degradation, simulation orchestrator with auto-planning and confidence scoring |
 | 27 | **Project Discovery** — `circuit-weaver discover` auto-detects projects in CWD; all skills now pre-check before asking for paths |
 | 26 | **Logging Overhaul** — 13 structured event types in `design.log`, Python logging bridge, `log-event` CLI for skill-callable logging, 7 modules instrumented |
+
+</details>
 
 <details><summary>v0.21.0</summary>
 

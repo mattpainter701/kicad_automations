@@ -21,8 +21,6 @@ from .base import (
     BoundaryPort,
     SubcircuitResult,
     SubcircuitTemplate,
-    cap_footprint,
-    format_capacitance,
     format_resistance,
     snap_to_e24,
 )

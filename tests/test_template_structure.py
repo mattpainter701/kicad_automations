@@ -800,7 +800,7 @@ def test_connector_pin_header_generates():
 
 def test_ic_data_store_loads():
     """IC data store should load all JSON files and find known ICs."""
-    from circuit_weaver.ic_data import get_ic_data, get_all_ics, list_topologies
+    from circuit_weaver.ic_data import get_all_ics, get_ic_data, list_topologies
 
     ap = get_ic_data("AP62300")
     assert ap is not None

@@ -280,7 +280,7 @@ class WirelessModuleTemplate(SubcircuitTemplate):
 
             annotations.extend([
                 f"WiFi + BLE 5.0, peak {ic_db['peak_current_ma']}mA",
-                f"EN=10k pull-up + 1uF, IO0=10k pull-up (normal boot)",
+                "EN=10k pull-up + 1uF, IO0=10k pull-up (normal boot)",
                 f"UART: TXD={txd_net}, RXD={rxd_net}",
             ])
 
