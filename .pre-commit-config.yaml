@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: validate-designs
         name: Validate changed design specs
-        entry: python -m circuit_weaver.mvp validate --strict
+        entry: python -m circuit_weaver validate --strict
         language: system
         files: '^(samples|src/circuit_weaver/examples)/.*\.yaml$'
         pass_filenames: true

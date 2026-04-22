@@ -1,6 +1,6 @@
 # CLI Reference
 
-All commands use the `circuit-weaver` entry point (or `python -m circuit_weaver.mvp`).
+All commands use the `circuit-weaver` entry point (or `python -m circuit_weaver`).
 
 ## validate
 
@@ -157,13 +157,35 @@ circuit-weaver import-placement placement.svg design.kicad_pcb -o design_updated
 List all available subcircuit templates.
 
 ```bash
-circuit-weaver list-templates [--json] [--verbose]
+circuit-weaver list-templates [--json] [--verbose] [--include-data-driven]
 ```
 
 | Flag | Description |
 |-|-|
 | `--json` | Machine-readable JSON output |
 | `--verbose` | Include full parameter schema with types, defaults, and options |
+| `--include-data-driven` | Also list ICs available via JSON data store (`ic_data/`) |
+
+---
+
+## register-ic
+
+Register a new IC in the data-driven template system. Accepts JSON from a file or stdin.
+
+```bash
+# Register from a file (dict of MPN → IC data)
+circuit-weaver register-ic --file new_ics.json
+
+# Register a single IC from stdin
+echo '{"topology": "buck", "vref": 0.6, ...}' | circuit-weaver register-ic --mpn TPS54308
+```
+
+| Flag | Description |
+|-|-|
+| `--file`, `-f` | JSON file with IC data |
+| `--mpn` | MPN name (required when input is a single IC object) |
+
+The IC is persisted to `ic_data/custom.json` and is immediately available for use in design specs.
 
 ---
 

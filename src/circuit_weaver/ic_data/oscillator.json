@@ -1,0 +1,651 @@
+{
+  "HC-49S": {
+    "topology": "crystal_oscillator",
+    "description": "Through-hole crystal HC-49S 2-pin",
+    "footprint": "Crystal:Crystal_HC49-U_Vertical",
+    "pins": [
+      {
+        "number": "1",
+        "name": "XTAL1",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "XTAL2",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_xtal1": "1",
+    "pin_xtal2": "2",
+    "gnd_pins": []
+  },
+  "ABM8G": {
+    "topology": "crystal_oscillator",
+    "description": "SMD ceramic crystal 3.2x1.5mm 4-pin",
+    "footprint": "Crystal:Crystal_SMD_3215-4Pin_3.2x1.5mm",
+    "pins": [
+      {
+        "number": "1",
+        "name": "XTAL1",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "passive",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "XTAL2",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "GND",
+        "type": "passive",
+        "side": "B"
+      }
+    ],
+    "pin_xtal1": "1",
+    "pin_xtal2": "3",
+    "gnd_pins": [
+      "2",
+      "4"
+    ]
+  },
+  "AD9528": {
+    "topology": "clock_synth",
+    "description": "JESD204B/C Clock Gen 14 LVDS Outputs LFCSP-72",
+    "footprint": "LFCSP-72",
+    "output_count": 14,
+    "vdd_domains": [
+      "VDD",
+      "VDDO"
+    ],
+    "has_pll_loop_filter": true,
+    "pll_filter_c1_default": 1e-07,
+    "pll_filter_c2_default": 1e-08,
+    "pll_filter_r_default": 1000.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "REFA+",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "REFA-",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "REFB+",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "REFB-",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "7",
+        "name": "VCXO_OUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "9",
+        "name": "LF1",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "10",
+        "name": "LF2",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "11",
+        "name": "LF3",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "13",
+        "name": "RESETB",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "14",
+        "name": "SCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "SDIO",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "16",
+        "name": "SDO",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "17",
+        "name": "CSB",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "18",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "19",
+        "name": "STATUS0",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "20",
+        "name": "STATUS1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "21",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "22",
+        "name": "OUT0+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "23",
+        "name": "OUT0-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "24",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "25",
+        "name": "OUT1+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "26",
+        "name": "OUT1-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "27",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "28",
+        "name": "OUT2+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "29",
+        "name": "OUT2-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "30",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "31",
+        "name": "OUT3+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "32",
+        "name": "OUT3-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "33",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "34",
+        "name": "OUT4+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "35",
+        "name": "OUT4-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "36",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "37",
+        "name": "OUT5+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "38",
+        "name": "OUT5-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "39",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "40",
+        "name": "OUT6+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "41",
+        "name": "OUT6-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "42",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "43",
+        "name": "OUT7+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "44",
+        "name": "OUT7-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "45",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "46",
+        "name": "OUT8+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "47",
+        "name": "OUT8-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "48",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "49",
+        "name": "OUT9+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "50",
+        "name": "OUT9-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "51",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "52",
+        "name": "OUT10+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "53",
+        "name": "OUT10-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "54",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "55",
+        "name": "OUT11+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "56",
+        "name": "OUT11-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "57",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "58",
+        "name": "OUT12+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "59",
+        "name": "OUT12-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "60",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "61",
+        "name": "OUT13+",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "62",
+        "name": "OUT13-",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "63",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "64",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "65",
+        "name": "IP_PLL2",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "66",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "67",
+        "name": "SYSREF_REQ",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "68",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "69",
+        "name": "PD",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "70",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "71",
+        "name": "XO+",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "72",
+        "name": "XO-",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "73",
+        "name": "EPAD",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vdd": [
+      "3",
+      "6",
+      "8",
+      "12",
+      "18",
+      "33",
+      "51",
+      "64",
+      "66",
+      "68",
+      "70"
+    ],
+    "pin_vddo": [
+      "21",
+      "24",
+      "27",
+      "30",
+      "36",
+      "39",
+      "42",
+      "45",
+      "48",
+      "54",
+      "57",
+      "60",
+      "63"
+    ],
+    "pin_gnd": [
+      "73"
+    ],
+    "pin_lf": {
+      "lf1": "9",
+      "lf2": "10",
+      "lf3": "11"
+    },
+    "pin_spi": {
+      "sclk": "14",
+      "sdio": "15",
+      "sdo": "16",
+      "csb": "17"
+    },
+    "pin_ref": {
+      "refa_p": "1",
+      "refa_n": "2",
+      "refb_p": "4",
+      "refb_n": "5"
+    },
+    "pin_resetb": "13"
+  },
+  "SI5351A": {
+    "topology": "clock_synth",
+    "description": "3-Output I2C Clock Generator MSOP-10",
+    "footprint": "MSOP-10",
+    "output_count": 3,
+    "vdd_domains": [
+      "VDD"
+    ],
+    "has_pll_loop_filter": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "SCL",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "VDDO",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "CLK0",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "CLK1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "CLK2",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "OEB",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "9",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "10",
+        "name": "XA/XI",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": [
+      "9"
+    ],
+    "pin_vddo": [
+      "3"
+    ],
+    "pin_gnd": [
+      "8"
+    ],
+    "pin_lf": {},
+    "pin_i2c": {
+      "sda": "1",
+      "scl": "2"
+    },
+    "pin_oeb": "7"
+  }
+}

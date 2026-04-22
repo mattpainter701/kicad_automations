@@ -1,0 +1,317 @@
+{
+  "BARREL_JACK_2.1MM": {
+    "topology": "connector",
+    "description": "DC Barrel Jack 2.1mm Center-Positive",
+    "footprint": "Connector_BarrelJack:BarrelJack_Horizontal",
+    "connector_type": "power",
+    "pins": [
+      {
+        "number": "1",
+        "name": "TIP",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "RING",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "SWITCH",
+        "type": "passive",
+        "side": "L"
+      }
+    ],
+    "pin_positive": "1",
+    "pin_negative": "2",
+    "pin_switch": "3"
+  },
+  "PIN_HEADER_2P": {
+    "topology": "connector",
+    "description": "2-Pin 2.54mm Pin Header",
+    "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+    "connector_type": "generic",
+    "pins": [
+      {
+        "number": "1",
+        "name": "P1",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "P2",
+        "type": "passive",
+        "side": "R"
+      }
+    ]
+  },
+  "PIN_HEADER_4P": {
+    "topology": "connector",
+    "description": "4-Pin 2.54mm Pin Header",
+    "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+    "connector_type": "generic",
+    "pins": [
+      {
+        "number": "1",
+        "name": "P1",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "P2",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "P3",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "P4",
+        "type": "passive",
+        "side": "R"
+      }
+    ]
+  },
+  "JST_PH_2P": {
+    "topology": "connector",
+    "description": "JST PH 2-Pin Connector (Battery/Sensor)",
+    "footprint": "Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical",
+    "connector_type": "power",
+    "pins": [
+      {
+        "number": "1",
+        "name": "P1",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "P2",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_positive": "1",
+    "pin_negative": "2"
+  },
+  "JST_PH_4P": {
+    "topology": "connector",
+    "description": "JST PH 4-Pin Connector (I2C Sensor)",
+    "footprint": "Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical",
+    "connector_type": "signal",
+    "pins": [
+      {
+        "number": "1",
+        "name": "VCC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "SDA",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "SCL",
+        "type": "passive",
+        "side": "R"
+      }
+    ]
+  },
+  "USB4125-GF-A": {
+    "topology": "usb_c_connector",
+    "description": "USB Type-C Receptacle 16-Pin Mid-Mount",
+    "footprint": "USB_C_Receptacle_GCT_USB4125",
+    "pins": [
+      {
+        "number": "A1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "A4",
+        "name": "VBUS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "A5",
+        "name": "CC1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "A6",
+        "name": "DP1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "A7",
+        "name": "DN1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "A8",
+        "name": "SBU1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "A9",
+        "name": "VBUS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "A12",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "B1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "B4",
+        "name": "VBUS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "B5",
+        "name": "CC2",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "B6",
+        "name": "DN2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "B7",
+        "name": "DP2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "B8",
+        "name": "SBU2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "B9",
+        "name": "VBUS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "B12",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vbus": [
+      "A4",
+      "A9",
+      "B4",
+      "B9"
+    ],
+    "pin_gnd": [
+      "A1",
+      "A12",
+      "B1",
+      "B12"
+    ],
+    "pin_cc1": "A5",
+    "pin_cc2": "B5",
+    "pin_dp1": "A6",
+    "pin_dn1": "A7",
+    "pin_dp2": "B7",
+    "pin_dn2": "B6",
+    "pin_sbu1": "A8",
+    "pin_sbu2": "B8"
+  },
+  "USB_C_SIMPLE": {
+    "topology": "usb_c_connector",
+    "description": "USB Type-C Receptacle 6-Pin (USB 2.0 Only)",
+    "footprint": "USB_C_Receptacle_USB2Only",
+    "pins": [
+      {
+        "number": "A1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "A4",
+        "name": "VBUS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "A5",
+        "name": "CC1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "A6",
+        "name": "DP",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "A7",
+        "name": "DN",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "B5",
+        "name": "CC2",
+        "type": "bidirectional",
+        "side": "L"
+      }
+    ],
+    "pin_vbus": [
+      "A4"
+    ],
+    "pin_gnd": [
+      "A1"
+    ],
+    "pin_cc1": "A5",
+    "pin_cc2": "B5",
+    "pin_dp1": "A6",
+    "pin_dn1": "A7",
+    "pin_dp2": null,
+    "pin_dn2": null,
+    "pin_sbu1": null,
+    "pin_sbu2": null
+  }
+}

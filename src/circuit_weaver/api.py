@@ -36,8 +36,11 @@ try:
 except ImportError:
     _FASTAPI_AVAILABLE = False
 
-# Engine version — read from pyproject.toml at import time or fall back
-_VERSION = "0.5.0"
+# Engine version — use package version
+try:
+    from . import __version__ as _VERSION
+except ImportError:
+    _VERSION = "0.22.0"
 
 
 def _get_version() -> str:

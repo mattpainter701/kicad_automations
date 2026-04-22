@@ -1,0 +1,94 @@
+{
+  "SMBJ5.0A": {
+    "topology": "protection",
+    "description": "TVS Diode 5V Unidirectional SMB",
+    "footprint": "Diode_SMD:D_SMB",
+    "vrwm": 5.0,
+    "vbr_min": 6.4,
+    "vc_max": 9.2,
+    "bidirectional": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "A",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "K",
+        "type": "passive",
+        "side": "R"
+      }
+    ]
+  },
+  "SMBJ12A": {
+    "topology": "protection",
+    "description": "TVS Diode 12V Unidirectional SMB",
+    "footprint": "Diode_SMD:D_SMB",
+    "vrwm": 12.0,
+    "vbr_min": 13.3,
+    "vc_max": 19.9,
+    "bidirectional": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "A",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "K",
+        "type": "passive",
+        "side": "R"
+      }
+    ]
+  },
+  "SMBJ5.0CA": {
+    "topology": "protection",
+    "description": "TVS Diode 5V Bidirectional SMB",
+    "footprint": "Diode_SMD:D_SMB",
+    "vrwm": 5.0,
+    "vbr_min": 6.4,
+    "vc_max": 9.2,
+    "bidirectional": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "A",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "K",
+        "type": "passive",
+        "side": "R"
+      }
+    ]
+  },
+  "PESD5V0S1BA": {
+    "topology": "protection",
+    "description": "ESD Protection Diode 5V SOD-323",
+    "footprint": "Diode_SMD:D_SOD-323",
+    "vrwm": 5.0,
+    "vbr_min": 6.0,
+    "vc_max": 11.0,
+    "bidirectional": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "A",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "K",
+        "type": "passive",
+        "side": "R"
+      }
+    ]
+  }
+}

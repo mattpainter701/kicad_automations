@@ -1,0 +1,648 @@
+{
+  "PULLUPS_ONLY": {
+    "topology": "i2c_bus",
+    "description": "I2C pull-up resistor network (no physical IC)",
+    "footprint": "",
+    "ref_prefix": "RP",
+    "pins": [
+      {
+        "number": "1",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "SCL",
+        "type": "bidirectional",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": "1",
+    "pin_gnd": "2",
+    "pin_sda": "3",
+    "pin_scl": "4",
+    "needs_external_pullups": true,
+    "has_level_shift": false
+  },
+  "PCA9306": {
+    "topology": "i2c_bus",
+    "description": "Dual Bidirectional I2C Level Shifter SOT-23-6",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "ref_prefix": "U",
+    "pins": [
+      {
+        "number": "1",
+        "name": "VREF1",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "SCL1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "SDA1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "SDA2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "SCL2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "VREF2",
+        "type": "power_in",
+        "side": "R"
+      }
+    ],
+    "pin_vref1": "1",
+    "pin_scl1": "2",
+    "pin_sda1": "3",
+    "pin_sda2": "4",
+    "pin_scl2": "5",
+    "pin_vref2": "6",
+    "needs_external_pullups": false,
+    "has_level_shift": true
+  },
+  "RESISTORS_ONLY": {
+    "topology": "spi_bus",
+    "description": "SPI bus series termination resistors (no physical IC)",
+    "footprint": "",
+    "ref_prefix": "RP",
+    "has_level_shift": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "MOSI",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "MISO",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "SCLK",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "CS_N",
+        "type": "bidirectional",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": "1",
+    "pin_gnd": "2",
+    "pin_mosi": "3",
+    "pin_miso": "4",
+    "pin_sclk": "5",
+    "pin_cs": "6"
+  },
+  "SN74LVC1T45": {
+    "topology": "spi_bus",
+    "description": "Single-Bit Level Shifter SOT-23-6 (one per signal)",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "ref_prefix": "U",
+    "has_level_shift": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VCCA",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "A",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "B",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "DIR",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "VCCB",
+        "type": "power_in",
+        "side": "R"
+      }
+    ],
+    "pin_vcca": "1",
+    "pin_gnd": "2",
+    "pin_a": "3",
+    "pin_b": "4",
+    "pin_dir": "5",
+    "pin_vccb": "6"
+  },
+  "SN65HVD230": {
+    "topology": "can_transceiver",
+    "description": "CAN Transceiver 3.3V 1Mbps SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "vdd": 3.3,
+    "speed_mbps": 1,
+    "pins": [
+      {
+        "number": "1",
+        "name": "D",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "R",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "VREF",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "CANL",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "CANH",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "RS",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_txd": "1",
+    "pin_gnd": "2",
+    "pin_vcc": "3",
+    "pin_rxd": "4",
+    "pin_vref": "5",
+    "pin_canl": "6",
+    "pin_canh": "7",
+    "pin_rs": "8",
+    "rs_highspeed_to_gnd": true
+  },
+  "MCP2551-I/SN": {
+    "topology": "can_transceiver",
+    "description": "CAN Transceiver 5V 1Mbps SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "vdd": 5.0,
+    "speed_mbps": 1,
+    "pins": [
+      {
+        "number": "1",
+        "name": "TXD",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "VSS",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "RXD",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "VREF",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "CANL",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "CANH",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "RS",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_txd": "1",
+    "pin_gnd": "2",
+    "pin_vcc": "3",
+    "pin_rxd": "4",
+    "pin_vref": "5",
+    "pin_canl": "6",
+    "pin_canh": "7",
+    "pin_rs": "8",
+    "rs_highspeed_to_gnd": true
+  },
+  "SP3485EN-L/TR": {
+    "topology": "rs485_transceiver",
+    "description": "RS-485 Transceiver 3.3V 10Mbps SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "vdd": 3.3,
+    "speed_mbps": 10,
+    "pins": [
+      {
+        "number": "1",
+        "name": "RO",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "RE_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "DE",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "DI",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "A",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "B",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_ro": "1",
+    "pin_re_n": "2",
+    "pin_de": "3",
+    "pin_di": "4",
+    "pin_gnd": "5",
+    "pin_a": "6",
+    "pin_b": "7",
+    "pin_vcc": "8"
+  },
+  "MAX485ESA+": {
+    "topology": "rs485_transceiver",
+    "description": "RS-485 Transceiver 5V 2.5Mbps SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "vdd": 5.0,
+    "speed_mbps": 2.5,
+    "pins": [
+      {
+        "number": "1",
+        "name": "RO",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "RE_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "DE",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "DI",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "A",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "B",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_ro": "1",
+    "pin_re_n": "2",
+    "pin_de": "3",
+    "pin_di": "4",
+    "pin_gnd": "5",
+    "pin_a": "6",
+    "pin_b": "7",
+    "pin_vcc": "8"
+  },
+  "TXB0108": {
+    "topology": "level_shifter",
+    "description": "8-bit Bidirectional Level Shifter TSSOP-20",
+    "footprint": "Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm",
+    "channels": 8,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VCCA",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "A1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "A2",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "A3",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "A4",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "A5",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "A6",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "A7",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "9",
+        "name": "A8",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "10",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "11",
+        "name": "OE",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "B8",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "B7",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "B6",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "15",
+        "name": "B5",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "16",
+        "name": "B4",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "17",
+        "name": "B3",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "18",
+        "name": "B2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "19",
+        "name": "B1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "20",
+        "name": "VCCB",
+        "type": "power_in",
+        "side": "R"
+      }
+    ],
+    "pin_vcca": "1",
+    "pin_vccb": "20",
+    "pin_gnd": "10",
+    "pin_oe": "11"
+  },
+  "TXS0102": {
+    "topology": "level_shifter",
+    "description": "2-bit Bidirectional Level Shifter SOT-23-8",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-8",
+    "channels": 2,
+    "pins": [
+      {
+        "number": "1",
+        "name": "B1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VCCA",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "A1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "A2",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "VCCB",
+        "type": "power_in",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "OE",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "B2",
+        "type": "bidirectional",
+        "side": "R"
+      }
+    ],
+    "pin_vcca": "3",
+    "pin_vccb": "6",
+    "pin_gnd": "2",
+    "pin_oe": "7"
+  }
+}

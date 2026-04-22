@@ -1,0 +1,143 @@
+{
+  "24LC256": {
+    "topology": "eeprom",
+    "description": "256Kbit I2C EEPROM SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "interface": "i2c",
+    "capacity_kbit": 256,
+    "i2c_base_addr": 80,
+    "vdd_range": [
+      2.5,
+      5.5
+    ],
+    "pins": [
+      {
+        "number": "1",
+        "name": "A0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "A1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "A2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "VSS",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "WP",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vcc": "8",
+    "pin_gnd": "4",
+    "pin_sda": "5",
+    "pin_scl": "6",
+    "pin_wp": "7",
+    "pin_addr": [
+      "1",
+      "2",
+      "3"
+    ]
+  },
+  "AT25SF128A": {
+    "topology": "eeprom",
+    "description": "128Mbit SPI NOR Flash SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "interface": "spi",
+    "capacity_kbit": 131072,
+    "vdd_range": [
+      2.3,
+      3.6
+    ],
+    "pins": [
+      {
+        "number": "1",
+        "name": "CS_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "SO/IO1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "WP_N/IO2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "SI/IO0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "SCK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "HOLD_N/IO3",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vcc": "8",
+    "pin_gnd": "4",
+    "pin_cs": "1",
+    "pin_so": "2",
+    "pin_wp": "3",
+    "pin_si": "5",
+    "pin_sck": "6",
+    "pin_hold": "7"
+  }
+}

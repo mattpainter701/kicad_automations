@@ -1,0 +1,522 @@
+{
+  "TLV75518": {
+    "topology": "ldo",
+    "description": "500mA LDO 1.8V Fixed Low-Noise",
+    "footprint": "SOT-23-5",
+    "vout_fixed": 1.8,
+    "adjustable": false,
+    "iout_max": 0.5,
+    "vdropout": 0.18,
+    "iq_ua": 35,
+    "cin": 1e-06,
+    "cout": 1e-06,
+    "pins": [
+      {
+        "number": "1",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_gnd": "2",
+    "pin_out": "5",
+    "pin_en": "3"
+  },
+  "AMS1117-3.3": {
+    "topology": "ldo",
+    "description": "1A LDO 3.3V Fixed",
+    "footprint": "SOT-223",
+    "vout_fixed": 3.3,
+    "adjustable": false,
+    "iout_max": 1.0,
+    "vdropout": 1.1,
+    "iq_ua": 5000,
+    "cin": 1e-05,
+    "cout": 2.2e-05,
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      }
+    ],
+    "pin_vin": "3",
+    "pin_gnd": "1",
+    "pin_out": "2",
+    "pin_en": null
+  },
+  "AP2112K-3.3": {
+    "topology": "ldo",
+    "description": "600mA LDO 3.3V Fixed Low-Noise",
+    "footprint": "SOT-23-5",
+    "vout_fixed": 3.3,
+    "adjustable": false,
+    "iout_max": 0.6,
+    "vdropout": 0.25,
+    "iq_ua": 55,
+    "cin": 1e-06,
+    "cout": 1e-06,
+    "pins": [
+      {
+        "number": "1",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      }
+    ],
+    "pin_vin": "5",
+    "pin_gnd": "2",
+    "pin_out": "1",
+    "pin_en": "3"
+  },
+  "MCP1700-3302E": {
+    "topology": "ldo",
+    "description": "250mA LDO 3.3V Low-Iq",
+    "footprint": "SOT-23",
+    "vout_fixed": 3.3,
+    "adjustable": false,
+    "iout_max": 0.25,
+    "vdropout": 0.178,
+    "iq_ua": 1.6,
+    "cin": 1e-06,
+    "cout": 1e-06,
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      }
+    ],
+    "pin_vin": "3",
+    "pin_gnd": "1",
+    "pin_out": "2",
+    "pin_en": null
+  },
+  "LM2776": {
+    "topology": "charge_pump",
+    "description": "Inverting Charge Pump -VIN 100mA SOT-23-5",
+    "footprint": "SOT-23-5",
+    "vin_min": 2.7,
+    "vin_max": 5.5,
+    "iout_max": 0.1,
+    "fsw": 1000000.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VOUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "C_FLY_N",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "C_FLY_P",
+        "type": "passive",
+        "side": "T"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_gnd": "2",
+    "pin_vout": "3",
+    "pin_cfn": "4",
+    "pin_cfp": "5"
+  },
+  "ICL7660": {
+    "topology": "charge_pump",
+    "description": "Inverting/Doubling Charge Pump -VIN 10mA SOIC-8",
+    "footprint": "SOIC-8",
+    "vin_min": 1.5,
+    "vin_max": 10.0,
+    "iout_max": 0.01,
+    "fsw": 10000.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "NC",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "C_FLY_P",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "4",
+        "name": "C_FLY_N",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "VOUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "LV",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "OSC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vin": "8",
+    "pin_gnd": "3",
+    "pin_vout": "5",
+    "pin_cfp": "2",
+    "pin_cfn": "4"
+  },
+  "REF3030": {
+    "topology": "series",
+    "description": "3.0V Precision Series Voltage Reference SOT-23-3",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "vout": 3.0,
+    "accuracy_pct": 0.2,
+    "tempco_ppm": 50,
+    "iq_ua": 100,
+    "iout_max": 0.025,
+    "vin_min": 3.1,
+    "vin_max": 12.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_vout": "2",
+    "pin_gnd": "3"
+  },
+  "REF3033": {
+    "topology": "series",
+    "description": "3.3V Precision Series Voltage Reference SOT-23-3",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "vout": 3.3,
+    "accuracy_pct": 0.2,
+    "tempco_ppm": 50,
+    "iq_ua": 100,
+    "iout_max": 0.025,
+    "vin_min": 3.4,
+    "vin_max": 12.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_vout": "2",
+    "pin_gnd": "3"
+  },
+  "LM4040-2.5": {
+    "topology": "shunt",
+    "description": "2.5V Precision Shunt Voltage Reference SOT-23",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "vout": 2.5,
+    "accuracy_pct": 0.1,
+    "tempco_ppm": 100,
+    "iz_min": 6e-05,
+    "iz_max": 0.015,
+    "pins": [
+      {
+        "number": "1",
+        "name": "K",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "A",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_cathode": "1",
+    "pin_anode": "2"
+  },
+  "LM4040-4.1": {
+    "topology": "shunt",
+    "description": "4.096V Precision Shunt Voltage Reference SOT-23",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "vout": 4.096,
+    "accuracy_pct": 0.1,
+    "tempco_ppm": 100,
+    "iz_min": 6e-05,
+    "iz_max": 0.015,
+    "pins": [
+      {
+        "number": "1",
+        "name": "K",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "A",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_cathode": "1",
+    "pin_anode": "2"
+  },
+  "MCP73831T-2ACI/OT": {
+    "topology": "battery_charger",
+    "description": "500mA Li-Ion/LiPo Charger SOT-23-5",
+    "footprint": "SOT-23-5",
+    "vcell": 4.2,
+    "ichg_max": 0.5,
+    "k_prog": 1000,
+    "pins": [
+      {
+        "number": "1",
+        "name": "STAT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "VSS",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VBAT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "PROG",
+        "type": "input",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": "4",
+    "pin_gnd": "2",
+    "pin_bat": "3",
+    "pin_prog": "5",
+    "pin_stat": "1",
+    "pin_temp": null,
+    "pin_ce": null,
+    "has_temp_pin": false
+  },
+  "TP4056": {
+    "topology": "battery_charger",
+    "description": "1A Li-Ion/LiPo Charger SOP-8",
+    "footprint": "SOP-8",
+    "vcell": 4.2,
+    "ichg_max": 1.0,
+    "k_prog": 1200,
+    "pins": [
+      {
+        "number": "1",
+        "name": "TEMP",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "PROG",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "4",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "STDBY",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "CHRG",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "BAT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "CE",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": "4",
+    "pin_gnd": "3",
+    "pin_bat": "7",
+    "pin_prog": "2",
+    "pin_stat": "6",
+    "pin_temp": "1",
+    "pin_ce": "8",
+    "has_temp_pin": true
+  }
+}

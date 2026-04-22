@@ -1,0 +1,443 @@
+{
+  "AP62300": {
+    "topology": "buck",
+    "description": "3A Sync Buck Regulator SOT-23-6",
+    "footprint": "SOT-23-6",
+    "vref": 0.8,
+    "fsw": 600000.0,
+    "iout_max": 3.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "SW",
+        "type": "output",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "FB",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "BST",
+        "type": "passive",
+        "side": "T"
+      }
+    ],
+    "pin_vin": "3",
+    "pin_gnd": "1",
+    "pin_sw": "2",
+    "pin_fb": "4",
+    "pin_en": "5",
+    "pin_bst": "6",
+    "r_fbb_default": 100000.0
+  },
+  "TPS62088": {
+    "topology": "buck",
+    "description": "2A Sync Buck 3MHz SOT-583-8",
+    "footprint": "SOT-583-8",
+    "vref": 0.6,
+    "fsw": 3000000.0,
+    "iout_max": 2.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "FB",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "SW",
+        "type": "output",
+        "side": "T"
+      },
+      {
+        "number": "6",
+        "name": "PG",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "VOS",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "EPAD",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_gnd": "2",
+    "pin_gnd_extra": [
+      "8"
+    ],
+    "pin_sw": "5",
+    "pin_fb": "4",
+    "pin_en": "3",
+    "pin_bst": null,
+    "r_fbb_default": 200000.0
+  },
+  "TPS61230A": {
+    "topology": "boost",
+    "description": "5.5A Switch Boost Converter SOT-23-6",
+    "footprint": "SOT-23-6",
+    "vref": 0.5,
+    "fsw": 2500000.0,
+    "iout_max": 5.5,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "SW",
+        "type": "output",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "FB",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "VOUT",
+        "type": "power_out",
+        "side": "R"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_gnd": "2",
+    "pin_en": "3",
+    "pin_sw": "4",
+    "pin_fb": "5",
+    "pin_vout": "6",
+    "r_fbb_default": 1000000.0
+  },
+  "MT3608": {
+    "topology": "boost",
+    "description": "2A Switch Boost Converter SOT-23-6",
+    "footprint": "SOT-23-6",
+    "vref": 0.6,
+    "fsw": 1200000.0,
+    "iout_max": 2.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "SW",
+        "type": "output",
+        "side": "T"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "FB",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_vin": "3",
+    "pin_gnd": "2",
+    "pin_en": "5",
+    "pin_sw": "1",
+    "pin_fb": "4",
+    "pin_vout": null,
+    "r_fbb_default": 100000.0
+  },
+  "TPS63020": {
+    "topology": "buck_boost",
+    "description": "Buck-Boost Converter 2A QFN-14",
+    "footprint": "Package_DFN_QFN:QFN-14-1EP_3.5x3.5mm_P0.5mm_EP2.05x2.05mm",
+    "vref": 0.5,
+    "fsw": 2400000.0,
+    "vin_range": [
+      1.8,
+      5.5
+    ],
+    "vout_range": [
+      1.2,
+      5.5
+    ],
+    "iout_max_buck": 2.0,
+    "iout_max_boost": 1.3,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VINA",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "VINA",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "PS_SYNC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "VAUX",
+        "type": "power_out",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "L1",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "7",
+        "name": "L2",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "8",
+        "name": "PG",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "FB",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "11",
+        "name": "VOUTA",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "VOUTA",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "14",
+        "name": "EPAD",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_gnd": "10",
+    "pin_epad": "14",
+    "pin_en": "3",
+    "pin_fb": "9",
+    "pin_pg": "8",
+    "pin_l1": "6",
+    "pin_l2": "7",
+    "pin_vout": "11",
+    "pin_vaux": "5",
+    "pin_ps_sync": "4",
+    "pin_vin2": "2",
+    "pin_vout2": "12",
+    "pin_gnd2": "13",
+    "has_vaux": true,
+    "r_fbb_default": 1000000.0
+  },
+  "TPS63000": {
+    "topology": "buck_boost",
+    "description": "Buck-Boost Converter 800mA QFN-10",
+    "footprint": "Package_DFN_QFN:QFN-10-1EP_2x2mm_P0.4mm_EP0.6x0.6mm",
+    "vref": 0.5,
+    "fsw": 1500000.0,
+    "vin_range": [
+      1.8,
+      5.5
+    ],
+    "vout_range": [
+      1.2,
+      5.5
+    ],
+    "iout_max_buck": 0.8,
+    "iout_max_boost": 0.5,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VINA",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "VINB",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "L1",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "L2",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "VOUTA",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "VOUTB",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "FB",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "PS_SYNC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "10",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_vin2": "2",
+    "pin_gnd": "10",
+    "pin_epad": null,
+    "pin_en": "5",
+    "pin_fb": "8",
+    "pin_pg": null,
+    "pin_l1": "3",
+    "pin_l2": "4",
+    "pin_vout": "6",
+    "pin_vout2": "7",
+    "pin_vaux": null,
+    "pin_ps_sync": "9",
+    "pin_gnd2": null,
+    "has_vaux": false,
+    "r_fbb_default": 1000000.0
+  }
+}

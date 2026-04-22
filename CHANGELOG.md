@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.24.0] - 2026-04-21
+
+### Sprint 34 — Data-Driven Template Engine
+
+This release replaces the hardcoded subcircuit template classes with a JSON-driven IC data system plus dynamic topology builders, and expands the template library from 30 to 37 entries.
+
+### Added
+- **`src/circuit_weaver/ic_data/`** (new package): 11 JSON files — `amplifier.json`, `bus_interface.json`, `connector.json`, `converter.json`, `custom.json`, `linear_regulator.json`, `memory.json`, `misc.json`, `oscillator.json`, `protection.json`, `switching_regulator.json` — storing IC pin maps, topology classifiers, and electrical parameters
+- **`ic_data/__init__.py`**: `load_ic_data()`, `register_ic()`, and lookup helpers for the new data store
+- **`subcircuits/topology_builders.py`** (new module): dynamic builders — `build_switching_regulator()`, `build_linear_regulator()`, `build_generic()` — that read JSON IC data and produce schematic fragments without hardcoded template classes
+- **7 new subcircuit templates** (brings total to 37):
+  - `rtc.py` — real-time clocks (DS3231, PCF8563, MCP79410)
+  - `eeprom.py` — I2C/SPI EEPROMs (24LCxx, 25LCxx, M95xxx families)
+  - `wireless_module.py` — BLE/WiFi/LoRa modules (nRF52-DK, ESP32, RYLR896)
+  - `usb_c_connector.py` — USB-C receptacles with CC/SBU routing
+  - `spi_bus.py` — SPI bus conditioning (pull-ups, chip-select matrix)
+  - `voltage_reference.py` — precision voltage references (REF5025, LM4040, ADR4540)
+  - `connector.py` — generic pin-header/through-hole connectors
+- **`scripts/extract_ic_data.py`**: harvests IC data entries from datasheet research output
+- **`docs/ic-data-system.md`**: reference documentation for the new IC data system
+
+### Changed
+- **`subcircuits/base.py`** (+90 lines): data-driven dispatch support; templates can now delegate to the JSON IC data store
+- **Legacy templates** (`audio_amplifier.py`, `motor_driver.py`, `protection.py`): updated to route through the new builder path
+- **`list-templates` CLI**: shows data-driven entries alongside legacy templates
+- **`scaffold` CLI**: supports data-driven template parameters
+- **Docs refreshed**: `docs/templates.md`, `docs/cli-reference.md`, `scripts/gen_template_docs.py`
+
+### Fixed
+- **`.pre-commit-config.yaml`**: updated `circuit_weaver.mvp` references to `circuit_weaver` (post-dispatcher rename)
+- **`tests/test_cli_commands.py`**: uses `python -m circuit_weaver` module form
+
+### Tests
+- **380 new lines** in `tests/test_template_structure.py`: parity tests comparing data-driven output against legacy templates, structural tests for the 7 new templates
+
+---
+
 ## [0.23.0] - 2026-04-10
 
 ### Sprint 31 — Bug Fixes & Error Handling Hardening

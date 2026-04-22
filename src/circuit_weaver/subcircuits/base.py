@@ -573,8 +573,53 @@ class SubcircuitTemplate(ABC):
 # ================================================================
 
 
+class DataDrivenTemplate(SubcircuitTemplate):
+    """Template backed by JSON IC data + topology builder function.
+
+    Wraps a topology builder with the SubcircuitTemplate interface so the
+    registry, dispatcher, and validator see it as a normal template.
+    New ICs are added by writing JSON — no Python code changes needed.
+    """
+
+    def __init__(self, template_type: str, topology: str, ic_database: dict[str, dict], param_schema: list | None = None):
+        self.template_type = template_type
+        self.description = f"Data-driven {template_type} template"
+        self._topology = topology
+        self._ic_database = ic_database
+        self.param_schema = param_schema or []
+
+    def generate(self, params: dict[str, Any]) -> SubcircuitResult:
+        from .topology_builders import get_builder
+
+        ic_name = params.get("ic")
+        if ic_name and ic_name in self._ic_database:
+            ic_data = dict(self._ic_database[ic_name])
+        elif self._ic_database:
+            ic_name = next(iter(self._ic_database))
+            ic_data = dict(self._ic_database[ic_name])
+        else:
+            raise ValueError(
+                f"No ICs registered for topology '{self._topology}'"
+            )
+
+        ic_data["_mpn"] = ic_name
+        params = dict(params)
+        params.setdefault("ic", ic_name)
+
+        builder = get_builder(self._topology)
+        return builder(ic_data, params)
+
+    def validate_params(self, params: dict[str, Any]) -> list[str]:
+        return self._validate_params_from_schema(params)
+
+
 class SubcircuitRegistry:
-    """Registry of available subcircuit templates, queryable by type name."""
+    """Registry of available subcircuit templates, queryable by type name.
+
+    Resolution order:
+    1. Legacy template classes (registered via register())
+    2. Data-driven templates from JSON IC data store
+    """
 
     def __init__(self):
         self._templates: dict[str, SubcircuitTemplate] = {}
@@ -584,8 +629,33 @@ class SubcircuitRegistry:
         self._templates[template.template_type] = template
 
     def get(self, type_name: str) -> SubcircuitTemplate | None:
-        """Look up a template by type name (e.g., 'buck', 'ldo')."""
-        return self._templates.get(type_name)
+        """Look up a template by type name (e.g., 'buck', 'ldo').
+
+        Checks legacy templates first, then falls back to data-driven
+        templates from the JSON IC data store.
+        """
+        if type_name in self._templates:
+            return self._templates[type_name]
+
+        # Data-driven fallback
+        return self._get_data_driven(type_name)
+
+    def _get_data_driven(self, type_name: str) -> DataDrivenTemplate | None:
+        """Try to build a DataDrivenTemplate from JSON IC data."""
+        try:
+            from ..ic_data import get_all_ics
+        except ImportError:
+            return None
+
+        ics = get_all_ics(type_name)
+        if not ics:
+            return None
+
+        return DataDrivenTemplate(
+            template_type=type_name,
+            topology=type_name,
+            ic_database=ics,
+        )
 
     def available_types(self) -> list[str]:
         """List all registered template type names."""
@@ -614,11 +684,13 @@ def _build_default_registry() -> SubcircuitRegistry:
     from .can_transceiver import CANTransceiverTemplate
     from .charge_pump import ChargePumpTemplate
     from .clock import ClockSynthTemplate
+    from .connector import ConnectorTemplate
     from .crystal_oscillator import CrystalOscillatorTemplate
     from .current_sense import CurrentSenseTemplate
     from .dac import DACTemplate
     from .display_driver import DisplayDriverTemplate
     from .driver import GateDriverTemplate, LevelShifterTemplate
+    from .eeprom import EEPROMTemplate
     from .ethernet import EthernetPHYTemplate
     from .i2c_bus import I2CBusTemplate
     from .ldo import LDOTemplate
@@ -630,8 +702,13 @@ def _build_default_registry() -> SubcircuitRegistry:
     from .protection import ProtectionTemplate
     from .relay_driver import RelayDriverTemplate
     from .rs485_transceiver import RS485TransceiverTemplate
+    from .rtc import RTCTemplate
     from .sensor_frontend import SensorFrontendTemplate
+    from .spi_bus import SPIBusTemplate
     from .usb import USBControllerTemplate, USBHubTemplate
+    from .usb_c_connector import USBCConnectorTemplate
+    from .voltage_reference import VoltageReferenceTemplate
+    from .wireless_module import WirelessModuleTemplate
 
     for tmpl_cls in [
         ADCTemplate,
@@ -644,10 +721,12 @@ def _build_default_registry() -> SubcircuitRegistry:
         CANTransceiverTemplate,
         ChargePumpTemplate,
         ClockSynthTemplate,
+        ConnectorTemplate,
         CrystalOscillatorTemplate,
         CurrentSenseTemplate,
         DACTemplate,
         DisplayDriverTemplate,
+        EEPROMTemplate,
         EthernetPHYTemplate,
         GateDriverTemplate,
         I2CBusTemplate,
@@ -661,9 +740,14 @@ def _build_default_registry() -> SubcircuitRegistry:
         ProtectionTemplate,
         RelayDriverTemplate,
         RS485TransceiverTemplate,
+        RTCTemplate,
         SensorFrontendTemplate,
+        SPIBusTemplate,
+        USBCConnectorTemplate,
         USBControllerTemplate,
         USBHubTemplate,
+        VoltageReferenceTemplate,
+        WirelessModuleTemplate,
     ]:
         reg.register(tmpl_cls())
     return reg

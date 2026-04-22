@@ -1,0 +1,471 @@
+{
+  "ADS1115IDGSR": {
+    "topology": "adc",
+    "description": "16-bit 860SPS 4-Ch Delta-Sigma ADC I2C MSOP-10",
+    "footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm",
+    "bits": 16,
+    "sps": 860,
+    "interface": "i2c",
+    "max_channels": 4,
+    "needs_external_vref": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "ADDR",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "ALERT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "4",
+        "name": "AIN0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "AIN1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "AIN2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "AIN3",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "9",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": "8",
+    "pin_gnd": "3",
+    "pin_sda": "9",
+    "pin_scl": "10",
+    "pin_addr": "1",
+    "pin_alert": "2",
+    "input_pins": [
+      "4",
+      "5",
+      "6",
+      "7"
+    ],
+    "input_names": [
+      "AIN0",
+      "AIN1",
+      "AIN2",
+      "AIN3"
+    ],
+    "i2c_addr_map": {
+      "GND": "0x48",
+      "VDD": "0x49",
+      "SDA": "0x4A",
+      "SCL": "0x4B"
+    }
+  },
+  "MCP3208-CI/SL": {
+    "topology": "adc",
+    "description": "12-bit 100kSPS 8-Ch SAR ADC SPI SOIC-16",
+    "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
+    "bits": 12,
+    "sps": 100000,
+    "interface": "spi",
+    "max_channels": 8,
+    "needs_external_vref": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "CH0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "CH1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "CH2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "CH3",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "CH4",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "CH5",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "CH6",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "CH7",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "9",
+        "name": "DGND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "10",
+        "name": "CS_N",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "DIN",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "DOUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "CLK",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "AGND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "15",
+        "name": "VREF",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "16",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vdd": "16",
+    "pin_dgnd": "9",
+    "pin_agnd": "14",
+    "pin_vref": "15",
+    "pin_cs": "10",
+    "pin_din": "11",
+    "pin_dout": "12",
+    "pin_clk": "13",
+    "input_pins": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8"
+    ],
+    "input_names": [
+      "CH0",
+      "CH1",
+      "CH2",
+      "CH3",
+      "CH4",
+      "CH5",
+      "CH6",
+      "CH7"
+    ]
+  },
+  "MCP4725A0T": {
+    "topology": "dac",
+    "description": "12-bit I2C DAC SOT-23-6",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+    "bits": 12,
+    "interface": "i2c",
+    "channels": 1,
+    "has_external_vref": false,
+    "i2c_addr_a0_gnd": "0x60",
+    "i2c_addr_a0_vdd": "0x61",
+    "pins": [
+      {
+        "number": "1",
+        "name": "VOUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "VSS",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "A0",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": "3",
+    "pin_gnd": "2",
+    "pin_vout": "1",
+    "pin_sda": "4",
+    "pin_scl": "5",
+    "pin_a0": "6"
+  },
+  "DAC8552IDGK": {
+    "topology": "dac",
+    "description": "Dual 16-bit SPI DAC MSOP-8",
+    "footprint": "Package_SO:MSOP-8_3x3mm_P0.65mm",
+    "bits": 16,
+    "interface": "spi",
+    "channels": 2,
+    "has_external_vref": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VOUTA",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "VOUTB",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "4",
+        "name": "VREF",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "DIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "SCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "SYNC_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vdd": "8",
+    "pin_gnd": "3",
+    "pin_vref": "4",
+    "pin_vouta": "1",
+    "pin_voutb": "2",
+    "pin_din": "5",
+    "pin_sclk": "6",
+    "pin_sync": "7"
+  },
+  "INA219": {
+    "topology": "current_sense",
+    "description": "High-Side Current/Power Monitor I2C MSOP-8",
+    "footprint": "Package_SO:MSOP-8_3x3mm_P0.65mm",
+    "ref_prefix": "U",
+    "vsense_max": 0.32,
+    "gain": 1,
+    "has_i2c": true,
+    "has_analog_out": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "A1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "A0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "VS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "7",
+        "name": "IN_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "IN_P",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vs": "6",
+    "pin_gnd": "5",
+    "pin_inp": "8",
+    "pin_inn": "7",
+    "pin_sda": "3",
+    "pin_scl": "4",
+    "pin_a0": "2",
+    "pin_a1": "1"
+  },
+  "INA180A1": {
+    "topology": "current_sense",
+    "description": "High-Side Current Sense Amp x20 Gain SOT-23-5",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+    "ref_prefix": "U",
+    "vsense_max": 0.1,
+    "gain": 20,
+    "has_i2c": false,
+    "has_analog_out": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "OUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "IN_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "IN_P",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vs": "3",
+    "pin_gnd": "2",
+    "pin_inp": "5",
+    "pin_inn": "4",
+    "pin_out": "1"
+  }
+}

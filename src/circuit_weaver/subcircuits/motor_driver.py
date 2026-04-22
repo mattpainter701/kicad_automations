@@ -358,7 +358,7 @@ class MotorDriverTemplate(SubcircuitTemplate):
             value=ic_name,
             footprint=ic_db["footprint"],
             description=ic_db["description"],
-            category="power",
+            category="motor",
             pins=list(ic_db["pins"]),
             power_pins=power_pins,
             pin_nets=pin_nets,
@@ -390,7 +390,7 @@ class MotorDriverTemplate(SubcircuitTemplate):
             annotations=[
                 f"Motor Driver {ic_name}: VM={vm}V, Ichop={actual_ichop:.2f}A/ch ({motor_type})",
             ],
-            primary_category="power",
+            primary_category="motor",
         )
 
     def _generate_tb6612(
@@ -518,7 +518,7 @@ class MotorDriverTemplate(SubcircuitTemplate):
             value=ic_name,
             footprint=ic_db["footprint"],
             description=ic_db["description"],
-            category="power",
+            category="motor",
             pins=list(ic_db["pins"]),
             power_pins=power_pins,
             pin_nets=pin_nets,
@@ -552,5 +552,5 @@ class MotorDriverTemplate(SubcircuitTemplate):
             annotations=[
                 f"Motor Driver {ic_name}: VM={vm}V, Imax=1.2A/ch ({motor_type})",
             ],
-            primary_category="power",
+            primary_category="motor",
         )

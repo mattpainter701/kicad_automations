@@ -899,16 +899,15 @@ def _generate_compiled_artifacts(
     root = _find_root_schematic(files, compiled.metadata.get("project", "project"))
     if export_svg and root is not None:
         cli = _kicad_cli_path()
-        if cli is None:
-            raise RuntimeError("KiCad CLI is required for strict artifact export smoke")
-        svg_dir = output_dir / "svg"
-        svg_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [str(cli), "sch", "export", "svg", "-o", str(svg_dir), str(root)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        if cli is not None:
+            svg_dir = output_dir / "svg"
+            svg_dir.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                [str(cli), "sch", "export", "svg", "-o", str(svg_dir), str(root)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
     return files, root
 
 
@@ -1885,11 +1884,27 @@ def main() -> None:
         "--json", dest="json_output", action="store_true", default=False, help="Machine-readable JSON output"
     )
     list_p.add_argument("--verbose", action="store_true", default=False, help="Show full parameter schema")
+    list_p.add_argument(
+        "--include-data-driven",
+        action="store_true",
+        default=False,
+        help="Also list ICs available via data-driven JSON (ic_data/)",
+    )
 
     scaffold_p = subparsers.add_parser("scaffold", help="Generate a YAML design spec stub from a template")
     scaffold_p.add_argument("--template", "-t", help="Template type (e.g., buck, ldo, opamp)")
     scaffold_p.add_argument("--ref", default="U1", help="Reference designator (default: U1)")
     scaffold_p.add_argument("--output", "-o", help="Write to file instead of stdout")
+
+    register_ic_p = subparsers.add_parser(
+        "register-ic", help="Register a new IC in the data-driven template system"
+    )
+    register_ic_p.add_argument(
+        "--file", "-f", help="JSON file with IC data (or read from stdin)"
+    )
+    register_ic_p.add_argument(
+        "--mpn", help="IC MPN (required when reading from --file with a single IC object)"
+    )
 
     jlcpcb_p = subparsers.add_parser("export-jlcpcb", help="Export JLCPCB BOM and CPL files for assembly ordering")
     jlcpcb_p.add_argument("spec", help="Design spec YAML file")
@@ -2461,6 +2476,7 @@ def main() -> None:
             info = {
                 "type": ttype,
                 "description": tmpl.description,
+                "source": "legacy",
                 "params": [
                     {k: v for k, v in spec.items() if k in ("name", "type", "required", "default", "options")}
                     for spec in tmpl.param_schema
@@ -2470,19 +2486,34 @@ def main() -> None:
             }
             templates_info.append(info)
 
+        if args.include_data_driven:
+            from .ic_data import get_all_ics, list_topologies
+
+            for topo in sorted(list_topologies()):
+                ics = get_all_ics(topo)
+                for mpn, ic_data in ics.items():
+                    templates_info.append({
+                        "type": topo,
+                        "ic": mpn,
+                        "description": ic_data.get("description", ""),
+                        "source": "data-driven",
+                    })
+
         if args.json_output:
             _print_json(templates_info)
         else:
             for info in templates_info:
-                params = ", ".join(p["name"] + ("*" if p.get("required") else "") for p in info["params"])
-                print(f"  {info['type']:25s} {info['description']}")
-                if args.verbose:
+                source_tag = f" [{info['source']}]" if info.get("source") == "data-driven" else ""
+                ic_tag = f" (ic: {info['ic']})" if "ic" in info else ""
+                print(f"  {info['type']:25s} {info['description']}{ic_tag}{source_tag}")
+                if args.verbose and "params" in info:
                     for p in info["params"]:
                         default = f" (default: {p['default']})" if "default" in p else ""
                         options = f" [{', '.join(str(o) for o in p['options'])}]" if "options" in p else ""
                         req = " REQUIRED" if p.get("required") else ""
                         print(f"    {p['name']:20s} {p.get('type', ''):10s}{req}{default}{options}")
-                else:
+                elif "params" in info:
+                    params = ", ".join(p["name"] + ("*" if p.get("required") else "") for p in info["params"])
                     print(f"    params: {params}")
         raise SystemExit(0)
 
@@ -2534,6 +2565,36 @@ def main() -> None:
             print(f"Wrote scaffold to {args.output}")
         else:
             print(yaml_text)
+        raise SystemExit(0)
+
+    if args.command == "register-ic":
+        import json as _json_mod
+
+        from .ic_data import register_ic
+
+        if args.file:
+            ic_json = Path(args.file).read_text(encoding="utf-8")
+        else:
+            ic_json = sys.stdin.read()
+
+        data = _json_mod.loads(ic_json)
+
+        if isinstance(data, dict) and "topology" in data:
+            mpn = args.mpn
+            if not mpn:
+                print("Error: --mpn required when input is a single IC object", file=sys.stderr)
+                raise SystemExit(1)
+            register_ic(mpn, data, persist=True)
+            print(f"Registered IC: {mpn} (topology: {data.get('topology', 'unknown')})")
+        elif isinstance(data, dict):
+            count = 0
+            for mpn, ic_data in data.items():
+                register_ic(mpn, ic_data, persist=True)
+                count += 1
+            print(f"Registered {count} IC(s)")
+        else:
+            print("Error: expected JSON object with IC data", file=sys.stderr)
+            raise SystemExit(1)
         raise SystemExit(0)
 
     if args.command == "export-jlcpcb":

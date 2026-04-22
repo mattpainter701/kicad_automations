@@ -1,0 +1,3091 @@
+{
+  "DS3231": {
+    "topology": "rtc",
+    "description": "Extremely Accurate I2C RTC with Integrated TCXO SOIC-16",
+    "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
+    "has_internal_xtal": true,
+    "vdd_range": [
+      2.3,
+      5.5
+    ],
+    "vbat_min": 2.3,
+    "i2c_addr": 104,
+    "pins": [
+      {
+        "number": "1",
+        "name": "32KHZ",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "INT_N/SQW",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "RST_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "NC",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "NC",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "NC",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "9",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "VBAT",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "16",
+        "name": "SCL",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vcc": "2",
+    "pin_gnd": "8",
+    "pin_vbat": "14",
+    "pin_sda": "15",
+    "pin_scl": "16",
+    "pin_int": "3",
+    "pin_rst": "4",
+    "pin_32k": "1"
+  },
+  "PCF8523": {
+    "topology": "rtc",
+    "description": "Low-Power I2C RTC with Battery Backup SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "has_internal_xtal": false,
+    "xtal_freq": 32768,
+    "xtal_cl": 7e-12,
+    "vdd_range": [
+      1.8,
+      5.5
+    ],
+    "vbat_min": 1.8,
+    "i2c_addr": 104,
+    "pins": [
+      {
+        "number": "1",
+        "name": "OSCI",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "OSCO",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "VBAT",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "VSS",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "INT_N",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vcc": "8",
+    "pin_gnd": "4",
+    "pin_vbat": "3",
+    "pin_sda": "5",
+    "pin_scl": "6",
+    "pin_int": "7",
+    "pin_osci": "1",
+    "pin_osco": "2"
+  },
+  "SSD1306": {
+    "topology": "display_driver",
+    "description": "128x64 OLED Driver with Charge Pump",
+    "footprint": "SSD1306_Module",
+    "vdd_range": [
+      1.65,
+      3.3
+    ],
+    "display_type": "oled",
+    "resolution": "128x64",
+    "has_charge_pump": true,
+    "has_backlight": false,
+    "riref_default": 910000.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "RES_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "DC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "CS_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "IREF",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "VCOMH",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "11",
+        "name": "C1P",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "12",
+        "name": "C2P",
+        "type": "passive",
+        "side": "T"
+      }
+    ],
+    "pin_vdd": "2",
+    "pin_gnd": "1",
+    "pin_scl": "3",
+    "pin_sda": "4",
+    "pin_res_n": "5",
+    "pin_dc": "6",
+    "pin_cs_n": "7",
+    "pin_iref": "8",
+    "pin_vcomh": "9",
+    "pin_vcc": "10",
+    "pin_c1p": "11",
+    "pin_c2p": "12",
+    "pin_bl": null
+  },
+  "ST7789V": {
+    "topology": "display_driver",
+    "description": "240x320 SPI TFT LCD Driver",
+    "footprint": "ST7789_Module",
+    "vdd_range": [
+      1.65,
+      3.3
+    ],
+    "display_type": "lcd",
+    "resolution": "240x320",
+    "has_charge_pump": false,
+    "has_backlight": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "SDA",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "RES_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "DC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "CS_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "BL",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": "2",
+    "pin_gnd": "1",
+    "pin_scl": "3",
+    "pin_sda": "4",
+    "pin_res_n": "5",
+    "pin_dc": "6",
+    "pin_cs_n": "7",
+    "pin_bl": "8",
+    "pin_iref": null,
+    "pin_vcomh": null,
+    "pin_vcc": null,
+    "pin_c1p": null,
+    "pin_c2p": null
+  },
+  "DRV8833": {
+    "topology": "motor_driver",
+    "description": "Dual H-Bridge Motor Driver 2A WSON-10",
+    "footprint": "Package_SO:VSSOP-10_3x3mm_P0.5mm",
+    "vin_range": [
+      2.7,
+      10.8
+    ],
+    "ipeak": 2.0,
+    "has_current_sense": true,
+    "vref_isense": 0.2,
+    "pins": [
+      {
+        "number": "1",
+        "name": "nSLEEP",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "ISENA",
+        "type": "input",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "OUT1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "OUT2",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "VM",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "6",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "7",
+        "name": "OUT3",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "OUT4",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "ISENB",
+        "type": "input",
+        "side": "B"
+      },
+      {
+        "number": "10",
+        "name": "nFAULT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "IN1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "IN2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "13",
+        "name": "IN3",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "14",
+        "name": "IN4",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "EPAD",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vm": "5",
+    "pin_gnd": "6",
+    "pin_epad": "15",
+    "pin_nsleep": "1",
+    "pin_nfault": "10",
+    "pin_isena": "2",
+    "pin_isenb": "9",
+    "pin_in1": "11",
+    "pin_in2": "12",
+    "pin_in3": "13",
+    "pin_in4": "14",
+    "pin_out1": "3",
+    "pin_out2": "4",
+    "pin_out3": "7",
+    "pin_out4": "8",
+    "has_vcc": false
+  },
+  "TB6612FNG": {
+    "topology": "motor_driver",
+    "description": "Dual H-Bridge Motor Driver 1.2A SSOP-24",
+    "footprint": "Package_SO:SSOP-24_5.3x8.2mm_P0.65mm",
+    "vin_range": [
+      2.5,
+      13.5
+    ],
+    "ipeak": 3.2,
+    "has_current_sense": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "AO1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "AO2",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "4",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "BO2",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "BO1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "VM",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "8",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "9",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "10",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "11",
+        "name": "PWMA",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "AIN2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "13",
+        "name": "AIN1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "14",
+        "name": "STBY",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "BIN1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "16",
+        "name": "BIN2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "17",
+        "name": "PWMB",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "18",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "19",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "20",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "21",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "22",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "23",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "24",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vm": "7",
+    "pin_vcc": "8",
+    "pin_gnd": "3",
+    "pin_stby": "14",
+    "pin_ain1": "13",
+    "pin_ain2": "12",
+    "pin_pwma": "11",
+    "pin_bin1": "15",
+    "pin_bin2": "16",
+    "pin_pwmb": "17",
+    "pin_ao1": "1",
+    "pin_ao2": "2",
+    "pin_bo1": "6",
+    "pin_bo2": "5",
+    "has_vcc": true
+  },
+  "ESP32-S3-WROOM-1": {
+    "topology": "wireless_module",
+    "description": "ESP32-S3 WiFi+BLE5 Module with PCB Antenna",
+    "footprint": "ESP32-S3-WROOM-1",
+    "vdd_range": [
+      3.0,
+      3.6
+    ],
+    "typical_vdd": 3.3,
+    "peak_current_ma": 500,
+    "interfaces": [
+      "uart",
+      "spi",
+      "i2c",
+      "i2s",
+      "usb"
+    ],
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "3V3",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "EN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "IO4",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "IO5",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "IO6",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "IO7",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "IO15",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "IO16",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "IO17",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "IO18",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "IO8",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "IO19",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "IO20",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "15",
+        "name": "IO3",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "16",
+        "name": "IO46",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "17",
+        "name": "IO9",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "18",
+        "name": "IO10",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "19",
+        "name": "IO11",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "20",
+        "name": "IO12",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "21",
+        "name": "IO13",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "22",
+        "name": "IO14",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "23",
+        "name": "IO21",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "24",
+        "name": "IO47",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "25",
+        "name": "IO48",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "26",
+        "name": "IO45",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "27",
+        "name": "IO0",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "28",
+        "name": "IO35",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "29",
+        "name": "IO36",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "30",
+        "name": "IO37",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "31",
+        "name": "IO38",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "32",
+        "name": "IO39",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "33",
+        "name": "IO40",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "34",
+        "name": "IO41",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "35",
+        "name": "IO42",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "36",
+        "name": "RXD0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "37",
+        "name": "TXD0",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "38",
+        "name": "IO2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "39",
+        "name": "IO1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "40",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "41",
+        "name": "EPAD",
+        "type": "power_in",
+        "side": "B"
+      }
+    ],
+    "pin_vdd": "2",
+    "pin_gnd": [
+      "1",
+      "40",
+      "41"
+    ],
+    "pin_en": "3",
+    "pin_boot": "27",
+    "pin_txd": "37",
+    "pin_rxd": "36"
+  },
+  "nRF52840-MODULE": {
+    "topology": "wireless_module",
+    "description": "nRF52840 BLE 5.0 Module with PCB Antenna",
+    "footprint": "nRF52840_Module",
+    "vdd_range": [
+      1.7,
+      5.5
+    ],
+    "typical_vdd": 3.3,
+    "peak_current_ma": 50,
+    "interfaces": [
+      "uart",
+      "spi",
+      "i2c",
+      "usb"
+    ],
+    "pins": [
+      {
+        "number": "1",
+        "name": "SWDIO",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "SWDCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "4",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "P0.02",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "P0.03",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "P0.04",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "P0.05",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "P0.06",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "P0.07",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "P0.08",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "RESET_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "13",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "14",
+        "name": "P0.11",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "15",
+        "name": "P0.12",
+        "type": "bidirectional",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": "4",
+    "pin_gnd": [
+      "3",
+      "13"
+    ],
+    "pin_reset": "12",
+    "pin_swdio": "1",
+    "pin_swdclk": "2"
+  },
+  "BSS138": {
+    "topology": "low_side",
+    "description": "N-Channel MOSFET 50V 200mA SOT-23",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "vds": 50,
+    "id_max": 0.2,
+    "rdson": 3.5,
+    "vgs_th_min": 0.8,
+    "vgs_th_max": 1.5,
+    "polarity": "n",
+    "pins": [
+      {
+        "number": "1",
+        "name": "G",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "S",
+        "type": "passive",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "D",
+        "type": "passive",
+        "side": "T"
+      }
+    ],
+    "pin_g": "1",
+    "pin_s": "2",
+    "pin_d": "3"
+  },
+  "AO3400A": {
+    "topology": "low_side",
+    "description": "N-Channel MOSFET 30V 5.7A SOT-23",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "vds": 30,
+    "id_max": 5.7,
+    "rdson": 0.026,
+    "vgs_th_min": 0.65,
+    "vgs_th_max": 1.45,
+    "polarity": "n",
+    "pins": [
+      {
+        "number": "1",
+        "name": "G",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "S",
+        "type": "passive",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "D",
+        "type": "passive",
+        "side": "T"
+      }
+    ],
+    "pin_g": "1",
+    "pin_s": "2",
+    "pin_d": "3"
+  },
+  "AO3401A": {
+    "topology": "high_side",
+    "description": "P-Channel MOSFET -30V -4A SOT-23",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "vds": -30,
+    "id_max": -4.0,
+    "rdson": 0.044,
+    "vgs_th_min": -0.5,
+    "vgs_th_max": -1.3,
+    "polarity": "p",
+    "pins": [
+      {
+        "number": "1",
+        "name": "G",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "S",
+        "type": "passive",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "D",
+        "type": "passive",
+        "side": "B"
+      }
+    ],
+    "pin_g": "1",
+    "pin_s": "2",
+    "pin_d": "3"
+  },
+  "ULN2003A": {
+    "topology": "relay_driver",
+    "description": "7-Channel Darlington Driver SOIC-16",
+    "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
+    "channels": 7,
+    "has_internal_diode": true,
+    "has_internal_base_r": true,
+    "vce_sat": 0.9,
+    "iout_per_ch": 0.5,
+    "pins": [
+      {
+        "number": "1",
+        "name": "IN1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "IN2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "IN3",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "IN4",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "IN5",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "IN6",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "IN7",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "9",
+        "name": "COM",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "10",
+        "name": "OUT7",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "OUT6",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "OUT5",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "OUT4",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "OUT3",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "15",
+        "name": "OUT2",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "16",
+        "name": "OUT1",
+        "type": "output",
+        "side": "R"
+      }
+    ],
+    "pin_gnd": "8",
+    "pin_com": "9",
+    "in_pins": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7"
+    ],
+    "out_pins": [
+      "16",
+      "15",
+      "14",
+      "13",
+      "12",
+      "11",
+      "10"
+    ]
+  },
+  "DISCRETE_NPN": {
+    "topology": "relay_driver",
+    "description": "NPN BJT Relay Driver SOT-23 (2N2222 equivalent)",
+    "footprint": "Package_TO_SOT_SMD:SOT-23",
+    "channels": 1,
+    "has_internal_diode": false,
+    "has_internal_base_r": false,
+    "vce_sat": 0.3,
+    "iout_per_ch": 0.8,
+    "beta_min": 100,
+    "pins": [
+      {
+        "number": "1",
+        "name": "B",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "E",
+        "type": "passive",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "C",
+        "type": "passive",
+        "side": "T"
+      }
+    ],
+    "pin_b": "1",
+    "pin_e": "2",
+    "pin_c": "3",
+    "in_pins": [
+      "1"
+    ],
+    "out_pins": [
+      "3"
+    ]
+  },
+  "IR2110": {
+    "topology": "gate_driver",
+    "description": "High/Low Side Gate Driver DIP-14",
+    "footprint": "Package_DIP:DIP-14_W7.62mm",
+    "pins": [
+      {
+        "number": "1",
+        "name": "LO",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "COM",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "NC",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "VS",
+        "type": "power_in",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "VB",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "7",
+        "name": "HO",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "NC2",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "10",
+        "name": "HIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "11",
+        "name": "SD",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "LIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "13",
+        "name": "NC3",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "NC4",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_vcc": "3",
+    "pin_vdd": "9",
+    "pin_vb": "6",
+    "pin_vs": "5",
+    "pin_com": "2",
+    "pin_ho": "7",
+    "pin_lo": "1",
+    "pin_hin": "10",
+    "pin_lin": "12",
+    "pin_sd": "11",
+    "cbst": 1e-07
+  },
+  "UCC27524": {
+    "topology": "gate_driver",
+    "description": "Dual 5A Low-Side Gate Driver SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "pins": [
+      {
+        "number": "1",
+        "name": "INA",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "INB",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "4",
+        "name": "GND2",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "OUTB",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "OUTA",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "8",
+        "name": "VDD2",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vdd": "7",
+    "pin_vdd_extra": [
+      "8"
+    ],
+    "pin_com": "3",
+    "pin_com_extra": [
+      "4"
+    ],
+    "pin_ho": "6",
+    "pin_lo": "5",
+    "pin_hin": "1",
+    "pin_lin": "2"
+  },
+  "AL8861Y-13": {
+    "topology": "buck",
+    "description": "Buck LED Driver 4.5-40V SOT-25",
+    "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+    "vin_range": [
+      4.5,
+      40.0
+    ],
+    "vsense": 0.1,
+    "fsw": 500000.0,
+    "has_inductor": true,
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "SW",
+        "type": "output",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "ADJ",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "ISENSE",
+        "type": "input",
+        "side": "B"
+      }
+    ],
+    "pin_vin": "2",
+    "pin_gnd": "1",
+    "pin_sw": "3",
+    "pin_adj": "4",
+    "pin_isense": "5"
+  },
+  "TLC5940NT": {
+    "topology": "linear_sink",
+    "description": "16-Channel PWM LED Driver DIP-28",
+    "footprint": "Package_DIP:DIP-28_W7.62mm",
+    "vin_range": [
+      3.0,
+      5.5
+    ],
+    "vsense_formula": "iref",
+    "has_inductor": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "OUT0",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "OUT1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "OUT2",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "OUT3",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "OUT4",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "OUT5",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "OUT6",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "OUT7",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "OUT8",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "OUT9",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "OUT10",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "OUT11",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "OUT12",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "15",
+        "name": "OUT13",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "16",
+        "name": "OUT14",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "17",
+        "name": "OUT15",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "18",
+        "name": "GSCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "19",
+        "name": "DCPRG",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "20",
+        "name": "IREF",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "21",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "22",
+        "name": "VPRG",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "23",
+        "name": "BLANK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "24",
+        "name": "XLAT",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "25",
+        "name": "SCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "26",
+        "name": "SIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "27",
+        "name": "SOUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "28",
+        "name": "XERR",
+        "type": "output",
+        "side": "R"
+      }
+    ],
+    "pin_vcc": "21",
+    "pin_gnd": "14",
+    "pin_iref": "20",
+    "pin_sclk": "25",
+    "pin_sin": "26",
+    "pin_blank": "23",
+    "pin_xlat": "24",
+    "pin_gsclk": "18",
+    "pin_sout": "27",
+    "pin_dcprg": "19",
+    "pin_vprg": "22",
+    "pin_xerr": "28"
+  },
+  "TPS2113ADRBR": {
+    "topology": "power_mux",
+    "description": "Auto-Switching Power Mux 2.8-5.5V 1A SON-8",
+    "footprint": "SON-8",
+    "vin_min": 2.8,
+    "vin_max": 5.5,
+    "iout_max": 1.0,
+    "ilim_formula_k": 375.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "IN1",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "D1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "D2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "IN2",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "ILIM2",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "ILIM1",
+        "type": "input",
+        "side": "R"
+      }
+    ],
+    "pin_in1": "1",
+    "pin_in2": "4",
+    "pin_gnd": "5",
+    "pin_out": "7",
+    "pin_ilim1": "8",
+    "pin_ilim2": "6",
+    "pin_d1": "2",
+    "pin_d2": "3",
+    "has_ilim": true
+  },
+  "LTC4357CMS8": {
+    "topology": "power_mux",
+    "description": "Ideal Diode OR Controller MSOP-8",
+    "footprint": "MSOP-8",
+    "vin_min": 9.0,
+    "vin_max": 80.0,
+    "iout_max": 10.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GATE",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "SOURCE",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "SHDN_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "VIN",
+        "type": "power_in",
+        "side": "L"
+      }
+    ],
+    "pin_vin": "1",
+    "pin_vin_extra": [
+      "6",
+      "7",
+      "8"
+    ],
+    "pin_gnd": "4",
+    "pin_gate": "2",
+    "pin_source": "3",
+    "pin_shdn": "5",
+    "has_ilim": false
+  },
+  "MAX17048G+T": {
+    "topology": "battery_monitor",
+    "description": "ModelGauge Li-Ion Fuel Gauge DFN-8",
+    "footprint": "DFN-8-EP",
+    "vdd_range": [
+      2.5,
+      4.5
+    ],
+    "i2c_addr": "0x36",
+    "method": "ModelGauge (voltage-based)",
+    "has_rsense": false,
+    "pins": [
+      {
+        "number": "1",
+        "name": "CTG",
+        "type": "input",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "CELL",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "QSTRT",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": "3",
+    "pin_gnd": "4",
+    "pin_cell": "2",
+    "pin_ctg": "1",
+    "pin_qstrt": "6",
+    "pin_sda": "7",
+    "pin_scl": "8",
+    "extra_gnd_pins": [
+      "5"
+    ]
+  },
+  "BQ27441-G1A": {
+    "topology": "battery_monitor",
+    "description": "Impedance Track Li-Ion Fuel Gauge DSBGA-12",
+    "footprint": "DSBGA-12",
+    "vdd_range": [
+      2.6,
+      4.5
+    ],
+    "i2c_addr": "0x55",
+    "method": "Impedance Track (coulomb counting)",
+    "has_rsense": true,
+    "rsense_default": 0.01,
+    "pins": [
+      {
+        "number": "1",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "2",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "GPOUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "VSS",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "SRP",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "SRN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "BAT",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "9",
+        "name": "BIN",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": "1",
+    "pin_gnd": "5",
+    "pin_sda": "2",
+    "pin_scl": "3",
+    "pin_gpout": "4",
+    "pin_srp": "6",
+    "pin_srn": "7",
+    "pin_bat": "8",
+    "pin_bin": "9",
+    "extra_gnd_pins": []
+  },
+  "KSZ9031": {
+    "topology": "ethernet_phy",
+    "description": "GigE Ethernet PHY RGMII QFN-48",
+    "footprint": "QFN-48-EP_7x7mm_P0.5mm",
+    "interface_modes": [
+      "rgmii",
+      "rmii",
+      "mii"
+    ],
+    "default_mode": "rgmii",
+    "crystal_cl": 9e-12,
+    "iset_r": 12100.0,
+    "has_internal_ldo": true,
+    "ldo_bypass_cap": 1e-06,
+    "pins": [
+      {
+        "number": "1",
+        "name": "DVDDH",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "2",
+        "name": "DVDDL",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "AVDDH",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "AVDDL",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "49",
+        "name": "EPAD",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "TXD0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "TXD1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "TXD2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "9",
+        "name": "TXD3",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "10",
+        "name": "TXCTL",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "11",
+        "name": "TXC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "RXD0",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "13",
+        "name": "RXD1",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "14",
+        "name": "RXD2",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "RXD3",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "16",
+        "name": "RXCTL",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "17",
+        "name": "RXC",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "18",
+        "name": "MDC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "19",
+        "name": "MDIO",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "20",
+        "name": "TXP_A",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "21",
+        "name": "TXN_A",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "22",
+        "name": "RXP_B",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "23",
+        "name": "RXN_B",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "24",
+        "name": "TXP_C",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "25",
+        "name": "TXN_C",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "26",
+        "name": "RXP_D",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "27",
+        "name": "RXN_D",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "28",
+        "name": "XO",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "29",
+        "name": "XI",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "30",
+        "name": "ISET",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "31",
+        "name": "RESET_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "32",
+        "name": "INT_N",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "33",
+        "name": "RXD0_MODE0",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "34",
+        "name": "RXD1_MODE1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "35",
+        "name": "RXD2_MODE2",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "36",
+        "name": "RXD3_MODE3",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "37",
+        "name": "RXCTL_CLK",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "38",
+        "name": "VDDOL",
+        "type": "power_out",
+        "side": "T"
+      },
+      {
+        "number": "39",
+        "name": "LED0",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "40",
+        "name": "LED1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "41",
+        "name": "LED2",
+        "type": "output",
+        "side": "R"
+      }
+    ],
+    "pin_dvddh": "1",
+    "pin_dvddl": "2",
+    "pin_avddh": "3",
+    "pin_avddl": "4",
+    "pin_gnd": "5",
+    "pin_epad": "49",
+    "pin_iset": "30",
+    "pin_reset": "31",
+    "pin_int": "32",
+    "pin_xo": "28",
+    "pin_xi": "29",
+    "pin_vddol": "38",
+    "mode_straps": {
+      "rgmii": [
+        {
+          "pin": "33",
+          "net_suffix": "RXD0",
+          "rail": "GND"
+        },
+        {
+          "pin": "34",
+          "net_suffix": "RXD1",
+          "rail": "GND"
+        },
+        {
+          "pin": "35",
+          "net_suffix": "RXD2",
+          "rail": "GND"
+        },
+        {
+          "pin": "36",
+          "net_suffix": "RXD3",
+          "rail": "GND"
+        },
+        {
+          "pin": "37",
+          "net_suffix": "RXCTL",
+          "rail": "VDD"
+        }
+      ]
+    },
+    "decoupling": {
+      "DVDDH": [
+        1e-07,
+        1e-05
+      ],
+      "AVDDH": [
+        1e-07
+      ]
+    }
+  },
+  "DP83867": {
+    "topology": "ethernet_phy",
+    "description": "GigE Ethernet PHY RGMII QFP-48",
+    "footprint": "QFP-48_7x7mm_P0.5mm",
+    "interface_modes": [
+      "rgmii",
+      "rmii",
+      "mii"
+    ],
+    "default_mode": "rgmii",
+    "crystal_cl": 9e-12,
+    "iset_r": null,
+    "has_internal_ldo": false,
+    "ldo_bypass_cap": null,
+    "pins": [
+      {
+        "number": "1",
+        "name": "DVDD_3P3",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "2",
+        "name": "DVDD_1P8",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "AVDD_3P3",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "AVDD_1P8",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "49",
+        "name": "EPAD",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "6",
+        "name": "TXD0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "TXD1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "TXD2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "9",
+        "name": "TXD3",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "10",
+        "name": "TX_CTL",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "11",
+        "name": "TX_CLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "RXD0",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "13",
+        "name": "RXD1",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "14",
+        "name": "RXD2",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "RXD3",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "16",
+        "name": "RX_CTL",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "17",
+        "name": "RX_CLK",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "18",
+        "name": "MDC",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "19",
+        "name": "MDIO",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "20",
+        "name": "TDP_A",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "21",
+        "name": "TDN_A",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "22",
+        "name": "RDP_B",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "23",
+        "name": "RDN_B",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "24",
+        "name": "TDP_C",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "25",
+        "name": "TDN_C",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "26",
+        "name": "RDP_D",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "27",
+        "name": "RDN_D",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "28",
+        "name": "XI",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "29",
+        "name": "XO",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "30",
+        "name": "RESET_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "31",
+        "name": "INT_N",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "32",
+        "name": "RXD0_STRAP0",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "33",
+        "name": "RXD1_STRAP1",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "34",
+        "name": "RXD2_STRAP2",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "35",
+        "name": "RXD3_STRAP3",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "36",
+        "name": "RX_CTL_STRAP4",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "37",
+        "name": "LED_0",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "38",
+        "name": "LED_1",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "39",
+        "name": "LED_2",
+        "type": "output",
+        "side": "R"
+      }
+    ],
+    "pin_dvddh": "1",
+    "pin_dvddl": "2",
+    "pin_avddh": "3",
+    "pin_avddl": "4",
+    "pin_gnd": "5",
+    "pin_epad": "49",
+    "pin_iset": null,
+    "pin_reset": "30",
+    "pin_int": "31",
+    "pin_xi": "28",
+    "pin_xo": "29",
+    "pin_vddol": null,
+    "mode_straps": {
+      "rgmii": [
+        {
+          "pin": "32",
+          "net_suffix": "RXD0",
+          "rail": "GND"
+        },
+        {
+          "pin": "33",
+          "net_suffix": "RXD1",
+          "rail": "GND"
+        },
+        {
+          "pin": "34",
+          "net_suffix": "RXD2",
+          "rail": "GND"
+        },
+        {
+          "pin": "35",
+          "net_suffix": "RXD3",
+          "rail": "GND"
+        },
+        {
+          "pin": "36",
+          "net_suffix": "RX_CTL",
+          "rail": "VDD"
+        }
+      ]
+    },
+    "decoupling": {
+      "DVDD_3P3": [
+        1e-07,
+        1e-05
+      ],
+      "AVDD_3P3": [
+        1e-07
+      ]
+    }
+  },
+  "CYUSB3014": {
+    "topology": "usb_controller",
+    "description": "USB 3.0 SuperSpeed Controller (FX3) 121-BGA",
+    "footprint": "BGA-121",
+    "power_rails": {
+      "VDD": 1.2,
+      "VBUS": 5.0,
+      "DVDDIO": 1.8,
+      "AVDD": 1.2
+    },
+    "pins": [
+      {
+        "number": "A1",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "A2",
+        "name": "DVDDIO",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "A11",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "B1",
+        "name": "AVDD",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "B11",
+        "name": "VBUS",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "K1",
+        "name": "SSRX_P",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "K2",
+        "name": "SSRX_N",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "K3",
+        "name": "SSTX_P",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "K4",
+        "name": "SSTX_N",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "J1",
+        "name": "D_P",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "J2",
+        "name": "D_N",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "C1",
+        "name": "GPIF_D0",
+        "type": "bidirectional",
+        "side": "T"
+      },
+      {
+        "number": "C2",
+        "name": "GPIF_D1",
+        "type": "bidirectional",
+        "side": "T"
+      },
+      {
+        "number": "C3",
+        "name": "GPIF_CLK",
+        "type": "output",
+        "side": "T"
+      },
+      {
+        "number": "C4",
+        "name": "GPIF_CTL0",
+        "type": "output",
+        "side": "T"
+      },
+      {
+        "number": "H1",
+        "name": "PMODE0",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "H2",
+        "name": "PMODE1",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "H3",
+        "name": "PMODE2",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "G1",
+        "name": "SPI_CLK",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "G2",
+        "name": "SPI_SSN",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "G3",
+        "name": "SPI_MISO",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "G4",
+        "name": "SPI_MOSI",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "F1",
+        "name": "RESET_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "E1",
+        "name": "XTALIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "E2",
+        "name": "XTALOUT",
+        "type": "output",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": [
+      "A1"
+    ],
+    "pin_power_rails": {
+      "VDD": [
+        "A1"
+      ],
+      "DVDDIO": [
+        "A2"
+      ],
+      "AVDD": [
+        "B1"
+      ],
+      "VBUS": [
+        "B11"
+      ]
+    },
+    "pin_gnd": [
+      "A11"
+    ],
+    "boot_straps": {
+      "spi_slave": {
+        "PMODE2": [
+          "VDD",
+          "pull_up"
+        ],
+        "PMODE1": [
+          "GND",
+          "pull_down"
+        ]
+      }
+    },
+    "data_buses": [
+      "GPIF",
+      "SPI"
+    ]
+  },
+  "CH340G": {
+    "topology": "usb_controller",
+    "description": "USB-UART Bridge SOP-16",
+    "footprint": "SOP-16",
+    "power_rails": {
+      "VCC": 3.3
+    },
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "TXD",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "RXD",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "V3",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "D_P",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "D_N",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "XI",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "XO",
+        "type": "output",
+        "side": "L"
+      },
+      {
+        "number": "9",
+        "name": "CTS_N",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "DSR_N",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "RI_N",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "DCD_N",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "13",
+        "name": "DTR_N",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "14",
+        "name": "RTS_N",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "15",
+        "name": "R232",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "16",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": [
+      "16"
+    ],
+    "pin_gnd": [
+      "1"
+    ],
+    "boot_straps": {},
+    "data_buses": [
+      "UART"
+    ]
+  },
+  "USB2514B": {
+    "topology": "usb_hub",
+    "description": "4-Port USB 2.0 Hub Controller QFN-36",
+    "footprint": "QFN-36",
+    "power_rails": {
+      "VDD33": 3.3
+    },
+    "pins": [
+      {
+        "number": "1",
+        "name": "VDD33",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "36",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "USBDM0",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "USBDP0",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "USBDM1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "USBDP1",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "USBDM2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "USBDP2",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "USBDM3",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "USBDP3",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "USBDM4",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "11",
+        "name": "USBDP4",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "12",
+        "name": "RBIAS",
+        "type": "passive",
+        "side": "B"
+      },
+      {
+        "number": "13",
+        "name": "PLLFILT",
+        "type": "passive",
+        "side": "B"
+      },
+      {
+        "number": "14",
+        "name": "RESET_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "TEST",
+        "type": "input",
+        "side": "B"
+      },
+      {
+        "number": "16",
+        "name": "XTALIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "17",
+        "name": "XTALOUT",
+        "type": "output",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": [
+      "1"
+    ],
+    "pin_gnd": [
+      "36"
+    ],
+    "rbias_value": 12000.0,
+    "pllfilt_value": 1e-06,
+    "max_ports": 4
+  }
+}

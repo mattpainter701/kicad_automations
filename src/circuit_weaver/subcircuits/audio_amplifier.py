@@ -309,7 +309,7 @@ class AudioAmplifierTemplate(SubcircuitTemplate):
             value=ic_name,
             footprint=ic_db["footprint"],
             description=ic_db["description"],
-            category="power",
+            category="audio",
             pins=list(ic_db["pins"]),
             power_pins=power_pins,
             pin_nets=pin_nets,
@@ -344,5 +344,5 @@ class AudioAmplifierTemplate(SubcircuitTemplate):
             components=[ic_comp],
             boundary_ports=ports,
             annotations=[summary],
-            primary_category="power",
+            primary_category="audio",
         )

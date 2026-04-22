@@ -72,16 +72,41 @@ class ProtectionTemplate(SubcircuitTemplate):
     template_type = "protection"
     description = "Protection circuit (TVS, ESD, reverse polarity)"
     param_schema = [
-        {"name": "ic", "type": "string", "required": False, "default": "SMBJ5.0A"},
-        {"name": "ref", "type": "string", "required": False, "default": "D"},
+        {
+            "name": "ic",
+            "type": "string",
+            "required": False,
+            "default": "SMBJ5.0A",
+            "description": "Protection device MPN",
+        },
+        {
+            "name": "ref",
+            "type": "string",
+            "required": False,
+            "default": "D",
+            "description": "Reference designator for the protection device",
+        },
         {
             "name": "protect_net",
             "type": "string",
             "required": True,
             "description": "Net to protect (e.g., VBUS_5V, USB_DP)",
         },
-        {"name": "gnd_net", "type": "string", "required": False, "default": "GND"},
-        {"name": "protection_type", "type": "string", "required": False, "default": "tvs", "options": ["tvs", "esd"]},
+        {
+            "name": "gnd_net",
+            "type": "string",
+            "required": False,
+            "default": "GND",
+            "description": "Ground reference net name",
+        },
+        {
+            "name": "protection_type",
+            "type": "string",
+            "required": False,
+            "default": "tvs",
+            "options": ["tvs", "esd"],
+            "description": "Protection type: TVS for power lines, ESD for signal lines",
+        },
     ]
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:

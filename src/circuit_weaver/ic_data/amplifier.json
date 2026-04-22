@@ -1,0 +1,485 @@
+{
+  "LM358": {
+    "topology": "opamp",
+    "description": "Dual Op-Amp General Purpose",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "units": 2,
+    "supply_range": [
+      3.0,
+      32.0
+    ],
+    "gbw_mhz": 1.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "OUT_A",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "IN-_A",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "IN+_A",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "V-",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "IN+_B",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "IN-_B",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "OUT_B",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "V+",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vplus": "8",
+    "pin_vminus": "4",
+    "pin_out_a": "1",
+    "pin_inm_a": "2",
+    "pin_inp_a": "3"
+  },
+  "MCP6002": {
+    "topology": "opamp",
+    "description": "Dual Op-Amp Rail-to-Rail 1MHz",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "units": 2,
+    "supply_range": [
+      1.8,
+      6.0
+    ],
+    "gbw_mhz": 1.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "OUT_A",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "IN-_A",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "IN+_A",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "VSS",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "IN+_B",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "IN-_B",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "OUT_B",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vplus": "8",
+    "pin_vminus": "4",
+    "pin_out_a": "1",
+    "pin_inm_a": "2",
+    "pin_inp_a": "3"
+  },
+  "OPA2340": {
+    "topology": "opamp",
+    "description": "Dual Op-Amp Rail-to-Rail CMOS 5.5MHz",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "units": 2,
+    "supply_range": [
+      2.7,
+      5.5
+    ],
+    "gbw_mhz": 5.5,
+    "pins": [
+      {
+        "number": "1",
+        "name": "OUT_A",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "IN-_A",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "IN+_A",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "V-",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "IN+_B",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "IN-_B",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "OUT_B",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "V+",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vplus": "8",
+    "pin_vminus": "4",
+    "pin_out_a": "1",
+    "pin_inm_a": "2",
+    "pin_inp_a": "3"
+  },
+  "INA128PA": {
+    "topology": "sensor_frontend",
+    "description": "Precision Instrumentation Amplifier SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "supply_range": [
+      4.5,
+      36.0
+    ],
+    "gain_formula": "ina128",
+    "r_internal": 50000.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "RG_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "IN_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "IN_P",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "V_NEG",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "REF",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "VOUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "V_POS",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "8",
+        "name": "RG_P",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vpos": "7",
+    "pin_vneg": "4",
+    "pin_inp": "3",
+    "pin_inn": "2",
+    "pin_vout": "6",
+    "pin_ref": "5",
+    "pin_rg_p": "8",
+    "pin_rg_n": "1"
+  },
+  "AD8421BRZ": {
+    "topology": "sensor_frontend",
+    "description": "Low Noise Precision Instrumentation Amplifier SOIC-8",
+    "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+    "supply_range": [
+      4.6,
+      36.0
+    ],
+    "gain_formula": "ad8421",
+    "r_internal": 9900.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "RG_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "IN_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "IN_P",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "V-",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "5",
+        "name": "REF",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "VOUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "V+",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "8",
+        "name": "RG_P",
+        "type": "input",
+        "side": "L"
+      }
+    ],
+    "pin_vpos": "7",
+    "pin_vneg": "4",
+    "pin_inp": "3",
+    "pin_inn": "2",
+    "pin_vout": "6",
+    "pin_ref": "5",
+    "pin_rg_p": "8",
+    "pin_rg_n": "1"
+  },
+  "PAM8302AASCR": {
+    "topology": "audio_amplifier",
+    "description": "Class-D Mono Audio Amp 2.5W Filterless MSOP-8",
+    "footprint": "MSOP-8",
+    "vdd_min": 2.0,
+    "vdd_max": 5.5,
+    "output_power_w": 2.5,
+    "speaker_impedance": 4,
+    "gain_db": 24,
+    "filterless": true,
+    "interface": "analog",
+    "r_in": 20000.0,
+    "pins": [
+      {
+        "number": "1",
+        "name": "SD_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "4",
+        "name": "VO_P",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "IN_P",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "IN_N",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "8",
+        "name": "VO_N",
+        "type": "output",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": "3",
+    "pin_gnd": "2",
+    "pin_sd": "1",
+    "pin_inp": "5",
+    "pin_inn": "6",
+    "pin_vop": "4",
+    "pin_von": "8"
+  },
+  "MAX98357AETE+T": {
+    "topology": "audio_amplifier",
+    "description": "I2S Class-D Mono Audio Amp 3.2W Filterless QFN-16",
+    "footprint": "QFN-16",
+    "vdd_min": 2.5,
+    "vdd_max": 5.5,
+    "output_power_w": 3.2,
+    "speaker_impedance": 4,
+    "gain_db": 0,
+    "filterless": true,
+    "interface": "i2s",
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "3",
+        "name": "DIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "BCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "LRCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "6",
+        "name": "SD_MODE",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "7",
+        "name": "GAIN",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "8",
+        "name": "OUTP",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "9",
+        "name": "OUTN",
+        "type": "output",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": "2",
+    "pin_gnd": "1",
+    "pin_din": "3",
+    "pin_bclk": "4",
+    "pin_lrclk": "5",
+    "pin_sd_mode": "6",
+    "pin_gain": "7",
+    "pin_outp": "8",
+    "pin_outn": "9"
+  }
+}

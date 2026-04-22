@@ -20,7 +20,7 @@ _EXAMPLE_SPEC = Path(__file__).resolve().parent.parent / "src" / "circuit_weaver
 
 def _run(args: list[str], *, timeout: int = 60, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "circuit_weaver.dispatcher"] + args,
+        [sys.executable, "-m", "circuit_weaver"] + args,
         capture_output=True,
         text=True,
         timeout=timeout,

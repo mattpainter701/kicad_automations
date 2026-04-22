@@ -54,6 +54,49 @@ Files: `skills/{bom,digikey,mouser,lcsc,jlcpcb,pcbway,ee,vivado,kicad}/SKILL.md`
 - [x] Add disambiguation notes to bom, design_wizard, kicad, sim skills
 Files: `skills/bom/SKILL.md`, `skills/kicad/SKILL.md`, `skills/design_wizard/SKILL.md`, `project-skills/sim/SKILL.md`
 
+## Sprint 34 — Data-Driven Template Engine (v0.24.0) ✅ DONE
+
+**Goal:** Replace hardcoded subcircuit template classes with a JSON-driven IC data system + dynamic topology builders. Expand the template library to 37 entries covering RTC, EEPROM, wireless, USB-C, SPI bus, voltage reference, and connectors.
+
+### 142. IC Data System (P0, LARGE) ✅ DONE
+
+- [x] New `ic_data/` directory: 11 JSON files (amplifier, bus_interface, connector, converter, linear_regulator, memory, misc, oscillator, protection, switching_regulator, custom) holding IC specs, pinmaps, and topology classifiers
+- [x] New `ic_data/__init__.py` module with `load_ic_data()`, `register_ic()`, and data lookup helpers
+- [x] New `scripts/extract_ic_data.py` CLI for harvesting IC data from datasheet research output
+- [x] New `docs/ic-data-system.md` reference documentation
+
+Files: `src/circuit_weaver/ic_data/*.json`, `src/circuit_weaver/ic_data/__init__.py`, `scripts/extract_ic_data.py`, `docs/ic-data-system.md`
+
+### 143. Dynamic Topology Builders (P0, LARGE) ✅ DONE
+
+- [x] New `subcircuits/topology_builders.py`: `build_switching_regulator()`, `build_linear_regulator()`, `build_generic()` — reads IC data JSON and produces schematic fragments dynamically, replacing hardcoded template classes
+- [x] Refactored `subcircuits/base.py` (+90 lines) to support data-driven dispatch
+- [x] Updated legacy templates (`audio_amplifier.py`, `motor_driver.py`, `protection.py`) to delegate to the new builder path
+
+Files: `src/circuit_weaver/subcircuits/topology_builders.py`, `src/circuit_weaver/subcircuits/base.py`, `src/circuit_weaver/subcircuits/audio_amplifier.py`, `src/circuit_weaver/subcircuits/motor_driver.py`, `src/circuit_weaver/subcircuits/protection.py`
+
+### 144. Expanded Template Library (P1, LARGE) ✅ DONE
+
+Added 7 new subcircuit templates (brings total to 37):
+- [x] `rtc.py` — real-time clocks (DS3231, PCF8563, MCP79410)
+- [x] `eeprom.py` — I2C/SPI EEPROMs (24LCxx, 25LCxx, M95xxx families)
+- [x] `wireless_module.py` — BLE/WiFi/LoRa modules (nRF52-DK, ESP32, RYLR896)
+- [x] `usb_c_connector.py` — USB-C receptacles with CC/SBU routing
+- [x] `spi_bus.py` — SPI bus conditioning (pull-ups, chip-select matrix)
+- [x] `voltage_reference.py` — precision voltage references (REF5025, LM4040, ADR4540)
+- [x] `connector.py` — generic pin-header/through-hole connectors
+
+Files: `src/circuit_weaver/subcircuits/rtc.py`, `src/circuit_weaver/subcircuits/eeprom.py`, `src/circuit_weaver/subcircuits/wireless_module.py`, `src/circuit_weaver/subcircuits/usb_c_connector.py`, `src/circuit_weaver/subcircuits/spi_bus.py`, `src/circuit_weaver/subcircuits/voltage_reference.py`, `src/circuit_weaver/subcircuits/connector.py`
+
+### 145. CLI + Tests (P1, MEDIUM) ✅ DONE
+
+- [x] `list-templates` extended to show data-driven entries alongside legacy templates
+- [x] `scaffold` supports data-driven template params
+- [x] `.pre-commit-config.yaml` and `tests/test_cli_commands.py` updated for `circuit_weaver` package rename (post-dispatcher refactor)
+- [x] 380 new lines in `tests/test_template_structure.py`: parity tests comparing data-driven output to legacy templates, new-template structural tests
+
+Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/api.py`, `.pre-commit-config.yaml`, `tests/test_template_structure.py`, `tests/test_cli_commands.py`, `scripts/gen_template_docs.py`, `docs/templates.md`, `docs/cli-reference.md`
+
 ## Sprint 26 — Logging Overhaul (v0.22.0) ✅ DONE
 
 **Goal:** Make DesignLogger the single authoritative logging system. Instrument all major operations. Give skills a callable logging interface.
@@ -1595,4 +1638,3 @@ Files: `docs/user_workflow.md`
 - [x] Document asciinema recording (optional tool, not a dependency)
 - [x] Update README: README already pointed to DEMO_COMMANDS.md
 
-Files: `docs/DEMO_COMMANDS.md`, `README.md`
