@@ -54,9 +54,21 @@ Files: `skills/{bom,digikey,mouser,lcsc,jlcpcb,pcbway,ee,vivado,kicad}/SKILL.md`
 - [x] Add disambiguation notes to bom, design_wizard, kicad, sim skills
 Files: `skills/bom/SKILL.md`, `skills/kicad/SKILL.md`, `skills/design_wizard/SKILL.md`, `project-skills/sim/SKILL.md`
 
-## Sprint 34 — Data-Driven Template Engine (v0.24.0) ✅ DONE
+## Sprint 34 — Data-Driven Template Engine (v0.24.0 / v0.24.1) ✅ DONE
 
 **Goal:** Replace hardcoded subcircuit template classes with a JSON-driven IC data system + dynamic topology builders. Expand the template library to 37 entries covering RTC, EEPROM, wireless, USB-C, SPI bus, voltage reference, and connectors.
+
+### 146. Sprint 34 Follow-up Hardening (P1, SMALL) ✅ DONE — v0.24.1
+
+Post-release review cleanup — documentation accuracy + `register_ic()` portability.
+
+- [x] Atomic write (tmp-file rename) for `custom.json` to prevent corruption on interrupt
+- [x] Fallback to user data dir (`$XDG_DATA_HOME` / `%APPDATA%`) when package dir is read-only; load merges overlays from both
+- [x] Thread-safe `_get_db()` lazy init via `threading.Lock` (double-checked locking)
+- [x] USB-C `source_current` param: Rp selection per USB-C Rev 2.1 — `default`/`1.5A`/`3A` → 56k/22k/10k
+- [x] CHANGELOG v0.24.0 correction: remove false claim about legacy module migration (audio_amplifier/motor_driver/protection remain hardcoded; data-driven fallback exists but none are migrated yet)
+
+Files: `src/circuit_weaver/ic_data/__init__.py`, `src/circuit_weaver/subcircuits/usb_c_connector.py`, `CHANGELOG.md`, `docs/ic-data-system.md`
 
 ### 142. IC Data System (P0, LARGE) ✅ DONE
 

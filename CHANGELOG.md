@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.24.1] - 2026-04-22
+
+### Sprint 34 — Follow-up hardening
+
+Post-release review follow-ups for the data-driven template engine. No
+functional changes to generated schematics.
+
+### Changed
+- **`register_ic()`** now writes atomically via tmp-file rename, preventing a corrupted `custom.json` if the process is interrupted
+- **`register_ic()`** falls back to the user data directory (`$XDG_DATA_HOME/circuit-weaver/custom.json` on POSIX, `%APPDATA%/circuit-weaver/custom.json` on Windows) when the installed package directory is read-only — previously raised `PermissionError` on system/container Python installs
+- **IC data loader** now merges `custom.json` overlays from both the package and user data dirs
+- **`_get_db()`** lazy initialization is now thread-safe via `threading.Lock` (double-checked locking)
+
+### Added
+- **USB-C `source_current` param** (`usb_c_connector.py`): when `role="source"`, selects Rp per USB-C Rev 2.1 Table 4-25 — `"default"` → 56k (USB 2.0 / 500 mA), `"1.5A"` → 22k, `"3A"` → 10k. Previous behavior (56k) remains the default.
+
+### Fixed
+- **CHANGELOG v0.24.0**: removed inaccurate claim that `audio_amplifier.py`, `motor_driver.py`, `protection.py` had been migrated to the data-driven builder path. The `DataDrivenTemplate` infrastructure is in place and serves as a registry fallback, but migration of those three legacy modules is deferred to a follow-up sprint.
+
+---
+
 ## [0.24.0] - 2026-04-21
 
 ### Sprint 34 — Data-Driven Template Engine
@@ -22,10 +43,10 @@ This release replaces the hardcoded subcircuit template classes with a JSON-driv
 - **`docs/ic-data-system.md`**: reference documentation for the new IC data system
 
 ### Changed
-- **`subcircuits/base.py`** (+90 lines): data-driven dispatch support; templates can now delegate to the JSON IC data store
-- **Legacy templates** (`audio_amplifier.py`, `motor_driver.py`, `protection.py`): updated to route through the new builder path
+- **`subcircuits/base.py`** (+90 lines): `DataDrivenTemplate` class and `SubcircuitRegistry._get_data_driven()` fallback — when the registry has no hardcoded template for a type, it constructs one from JSON IC data and routes through `topology_builders`
 - **`list-templates` CLI**: shows data-driven entries alongside legacy templates
 - **`scaffold` CLI**: supports data-driven template parameters
+- **Minor refactors** to `audio_amplifier.py`, `motor_driver.py`, `protection.py` (misc. tidy-ups; these templates remain hardcoded for now — migration to the data-driven path is a follow-up sprint)
 - **Docs refreshed**: `docs/templates.md`, `docs/cli-reference.md`, `scripts/gen_template_docs.py`
 
 ### Fixed
@@ -33,7 +54,7 @@ This release replaces the hardcoded subcircuit template classes with a JSON-driv
 - **`tests/test_cli_commands.py`**: uses `python -m circuit_weaver` module form
 
 ### Tests
-- **380 new lines** in `tests/test_template_structure.py`: parity tests comparing data-driven output against legacy templates, structural tests for the 7 new templates
+- **380 new lines** in `tests/test_template_structure.py`: structural tests for the 7 new templates + IC data store loading/lookup/registration
 
 ---
 

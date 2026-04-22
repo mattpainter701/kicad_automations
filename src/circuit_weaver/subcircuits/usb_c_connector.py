@@ -111,7 +111,18 @@ class USBCConnectorTemplate(SubcircuitTemplate):
             "required": False,
             "default": "device",
             "options": ["device", "source"],
-            "description": "USB role: device (5.1k pull-down) or source (Rp to VBUS)",
+            "description": "USB role: device (5.1k pull-down on CC) or source (Rp pull-up on CC)",
+        },
+        {
+            "name": "source_current",
+            "type": "string",
+            "required": False,
+            "default": "default",
+            "options": ["default", "1.5A", "3A"],
+            "description": (
+                "For role=source: Rp value advertising USB-C current capability. "
+                "'default' = 56k (USB 2.0/500 mA), '1.5A' = 22k, '3A' = 10k."
+            ),
         },
         {
             "name": "vbus_net",
@@ -154,10 +165,7 @@ class USBCConnectorTemplate(SubcircuitTemplate):
         errors = []
         ic_name = params.get("ic", "USB4125-GF-A")
         if ic_name not in USB_C_CONNECTOR_DATABASE:
-            errors.append(
-                f"Unknown USB-C connector '{ic_name}'. "
-                f"Available: {', '.join(USB_C_CONNECTOR_DATABASE)}"
-            )
+            errors.append(f"Unknown USB-C connector '{ic_name}'. Available: {', '.join(USB_C_CONNECTOR_DATABASE)}")
         role = params.get("role", "device")
         if role not in ("device", "source"):
             errors.append(f"role must be 'device' or 'source', got '{role}'")
@@ -177,9 +185,7 @@ class USBCConnectorTemplate(SubcircuitTemplate):
             usb3: bool -- expose USB3 pairs (default: False)
         """
         ic_name = params.get("ic", "USB4125-GF-A")
-        ic_db = USB_C_CONNECTOR_DATABASE.get(
-            ic_name, USB_C_CONNECTOR_DATABASE["USB4125-GF-A"]
-        )
+        ic_db = USB_C_CONNECTOR_DATABASE.get(ic_name, USB_C_CONNECTOR_DATABASE["USB4125-GF-A"])
         ref = params.get("ref", "J")
         role = params.get("role", "device")
         vbus_net = params.get("vbus_net", "VBUS")
@@ -254,8 +260,13 @@ class USBCConnectorTemplate(SubcircuitTemplate):
                 ]
             )
         else:
-            # Source/DFP: 56k pull-up to VBUS (default current advertisement)
-            r_cc = snap_to_e24(56e3)
+            # Source/DFP Rp: USB-C Rev 2.1 Table 4-25 — per source_current param.
+            # Rp is pulled to Vdd (3.3V or 4.75–5.5V VBUS is spec-acceptable for
+            # the "Default USB Power" role; 1.5A/3A advertisements require
+            # tighter tolerance but the resistance values still apply).
+            source_current = params.get("source_current", "default")
+            r_cc_by_role = {"default": 56e3, "1.5A": 22e3, "3A": 10e3}
+            r_cc = snap_to_e24(r_cc_by_role.get(source_current, 56e3))
             straps.extend(
                 [
                     StrapConfig(
@@ -342,8 +353,7 @@ class USBCConnectorTemplate(SubcircuitTemplate):
             components=[ic_comp],
             boundary_ports=ports,
             annotations=[
-                f"USB-C {ic_name}: {role}, CC={format_resistance(r_cc)}, "
-                f"VBUS={vbus_net}",
+                f"USB-C {ic_name}: {role}, CC={format_resistance(r_cc)}, VBUS={vbus_net}",
             ],
             primary_category="digital",
         )

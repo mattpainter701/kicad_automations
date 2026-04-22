@@ -1,20 +1,34 @@
 """IC application data store.
 
 Loads IC pin maps, electrical specs, and topology metadata from JSON files.
-New ICs can be added by writing to custom.json — no Python code changes needed.
+New ICs can be added via ``register_ic()`` or by editing ``custom.json``.
+
+Persistence lookup order for the user-writable ``custom.json``:
+
+1. **Package directory** (``<install>/circuit_weaver/ic_data/custom.json``) —
+   used when the install is editable/writable.
+2. **User data directory** (``~/.local/share/circuit-weaver/custom.json`` on
+   POSIX, ``%APPDATA%/circuit-weaver/custom.json`` on Windows) — used when
+   the package dir is read-only (system Python, containers, multi-user
+   installs). Also read on load if present.
+
+This lets `pip install circuit-weaver` in a read-only environment still
+support ``register_ic()`` without crashing on ``PermissionError``.
 
 Usage:
     from circuit_weaver.ic_data import get_ic_data, get_all_ics, register_ic
 
     ic = get_ic_data("AP62300")        # returns dict or None
     ics = get_all_ics("buck")          # all ICs with topology="buck"
-    register_ic("NEW_IC", {...})       # add at runtime (persisted to custom.json)
+    register_ic("NEW_IC", {...})       # add at runtime (persisted atomically)
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +50,7 @@ _JSON_FILES = [
 ]
 
 _ic_database: dict[str, dict[str, Any]] | None = None
+_db_lock = threading.Lock()
 
 # Maps topology names to the template_type aliases they can serve.
 # When the registry looks up "buck", it finds ICs with topology="buck".
@@ -80,8 +95,24 @@ TOPOLOGY_ALIASES: dict[str, str] = {
 }
 
 
+def _user_data_dir() -> Path:
+    """User-writable data directory for overrides (XDG on POSIX, APPDATA on Windows)."""
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")
+        return Path(base) / "circuit-weaver"
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        return Path(xdg) / "circuit-weaver"
+    return Path.home() / ".local" / "share" / "circuit-weaver"
+
+
+def _user_custom_path() -> Path:
+    """Path to the user-data custom.json (may or may not exist)."""
+    return _user_data_dir() / "custom.json"
+
+
 def _load_database() -> dict[str, dict[str, Any]]:
-    """Load all JSON files into a single merged dict keyed by MPN."""
+    """Load all bundled JSON files + the user-data custom.json overlay."""
     db: dict[str, dict[str, Any]] = {}
     for fname in _JSON_FILES:
         fpath = _DATA_DIR / fname
@@ -92,20 +123,31 @@ def _load_database() -> dict[str, dict[str, Any]]:
             db.update(data)
         except (json.JSONDecodeError, OSError) as e:
             _logger.warning("Failed to load %s: %s", fpath, e)
+
+    user_custom = _user_custom_path()
+    if user_custom.exists():
+        try:
+            data = json.loads(user_custom.read_text(encoding="utf-8"))
+            db.update(data)
+        except (json.JSONDecodeError, OSError) as e:
+            _logger.warning("Failed to load user custom.json %s: %s", user_custom, e)
     return db
 
 
 def _get_db() -> dict[str, dict[str, Any]]:
     global _ic_database
     if _ic_database is None:
-        _ic_database = _load_database()
+        with _db_lock:
+            if _ic_database is None:
+                _ic_database = _load_database()
     return _ic_database
 
 
 def reload() -> None:
-    """Force reload of all JSON data files."""
+    """Force reload of all JSON data files on the next access."""
     global _ic_database
-    _ic_database = None
+    with _db_lock:
+        _ic_database = None
 
 
 def get_ic_data(mpn: str) -> dict[str, Any] | None:
@@ -130,21 +172,52 @@ def get_default_ic(topology: str) -> tuple[str, dict[str, Any]] | None:
     return None
 
 
-def register_ic(mpn: str, data: dict[str, Any], *, persist: bool = True) -> None:
-    """Register a new IC at runtime. If persist=True, writes to custom.json."""
-    db = _get_db()
-    db[mpn] = data
-    if persist:
-        custom_path = _DATA_DIR / "custom.json"
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write JSON atomically via tmp-file rename."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _write_custom(mpn: str, data: dict[str, Any]) -> Path:
+    """Persist a single IC entry into custom.json, preferring the package dir.
+
+    Returns the path actually written to.
+
+    If the package dir is read-only (``PermissionError`` / ``OSError``),
+    falls back to the user data dir. Raises ``OSError`` if both fail.
+    """
+    for candidate in (_DATA_DIR / "custom.json", _user_custom_path()):
         try:
-            existing = json.loads(custom_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
-            existing = {}
-        existing[mpn] = data
-        custom_path.write_text(
-            json.dumps(existing, indent=2, default=str), encoding="utf-8"
-        )
-        _logger.info("Registered IC %s to custom.json", mpn)
+            if candidate.exists():
+                try:
+                    existing = json.loads(candidate.read_text(encoding="utf-8"))
+                    if not isinstance(existing, dict):
+                        existing = {}
+                except (json.JSONDecodeError, OSError):
+                    existing = {}
+            else:
+                existing = {}
+            existing[mpn] = data
+            _atomic_write_json(candidate, existing)
+            return candidate
+        except (PermissionError, OSError) as e:
+            _logger.debug("Could not write %s (%s), trying next location", candidate, e)
+            continue
+    raise OSError(f"Could not write custom.json to either {_DATA_DIR} or {_user_data_dir()}")
+
+
+def register_ic(mpn: str, data: dict[str, Any], *, persist: bool = True) -> None:
+    """Register a new IC at runtime. If ``persist=True``, writes atomically to
+    ``custom.json`` in the package dir (preferred) or user data dir (fallback).
+    """
+    with _db_lock:
+        db = _get_db()
+        db[mpn] = data
+        if persist:
+            path = _write_custom(mpn, data)
+            _logger.info("Registered IC %s to %s", mpn, path)
 
 
 def list_topologies() -> list[str]:

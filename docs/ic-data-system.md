@@ -134,6 +134,23 @@ register_ic("MY_NEW_LDO", {
 # Now `type: ldo, ic: MY_NEW_LDO` works in design YAML
 ```
 
+### Where `register_ic()` persists (v0.24.1+)
+
+`register_ic()` writes atomically (tmp file + rename) so an interrupted call
+cannot corrupt `custom.json`. It tries two locations in order:
+
+1. **Package directory** — `<install>/circuit_weaver/ic_data/custom.json`. Works
+   when the install is editable/writable (the typical `pip install -e .` or
+   per-user install).
+2. **User data directory fallback** — used automatically when the package dir
+   is read-only (system Python, Docker images, `pip install` as root):
+   - POSIX: `$XDG_DATA_HOME/circuit-weaver/custom.json`, default
+     `~/.local/share/circuit-weaver/custom.json`
+   - Windows: `%APPDATA%/circuit-weaver/custom.json`
+
+Both locations are merged on load, so ICs you register survive package
+upgrades when they land in the user data dir.
+
 ## Topology Builders
 
 **Location:** `src/circuit_weaver/subcircuits/topology_builders.py`
