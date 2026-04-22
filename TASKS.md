@@ -2,6 +2,45 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 35 — Install-UX Hardening & Platform Parity (v0.25.0) ✅ DONE
+
+**Goal:** Close the three P0 footguns identified in the v0.24.x review — silent overwrite of curated user skills, bundled-skill drift vs repo, and zero Windows CI coverage. Keeps `pip install circuit-weaver && circuit-weaver install-skills` safe to recommend.
+
+### 147. install-skills collision protection (P0, MEDIUM) ✅ DONE
+
+- [x] `_copy_skill()` hashes existing destination `SKILL.md` and skips mismatches by default
+- [x] `install_skills()` gained `force`, `backup`, `dry_run` params; result dict exposes `skills_skipped` / `skills_unchanged`
+- [x] `install-skills` CLI parser adds `--force`, `--backup`, `--dry-run`; handler prints skipped entries to stderr
+- [x] README quick-start + `docs/agent-platforms.md` document the collision matrix and flags
+- [x] 11 regression tests in `tests/test_skill_installer.py`
+
+Files: `src/circuit_weaver/skill_installer.py`, `src/circuit_weaver/dispatcher.py`, `tests/test_skill_installer.py`, `README.md`, `docs/agent-platforms.md`
+
+### 148. Bundle all skills + CI drift guard (P0, MEDIUM) ✅ DONE
+
+- [x] `scripts/sync_bundled_skills.py` mirrors `skills/` → `_bundled_skills/` with a `--check` mode
+- [x] Bundled tree seeded with all 11 workflow skills, byte-identical to source
+- [x] `bundled-skills` CI job runs `--check` on every push
+- [x] `.pre-commit-config.yaml` adds `sync-bundled-skills` hook
+- [x] `test_bundled_skills_parity_with_repo_skills` covers the invariant at pytest time
+
+Files: `scripts/sync_bundled_skills.py`, `src/circuit_weaver/_bundled_skills/**`, `.github/workflows/ci.yml`, `.pre-commit-config.yaml`, `tests/test_skill_installer.py`
+
+### 149. Windows CI leg (P0, SMALL) ✅ DONE
+
+- [x] `ci.yml` matrix now includes `windows-latest` / Python 3.12
+- [x] Non-blocking smoke subset runs `test_cli_commands`, `test_cli_new_commands`, `test_doctor`, `test_skill_installer` + `python -m circuit_weaver --version`
+- [x] Existing Linux Python 3.10–3.13 legs remain blocking
+
+Files: `.github/workflows/ci.yml`
+
+### 150. CHANGELOG + release notes for v0.25.0 (P1, XS) ✅ DONE
+
+- [x] `## [0.25.0] - 2026-04-21` entry added summarising tasks 147-149
+- [x] `__version__` bumped to 0.25.0 in `src/circuit_weaver/__init__.py` and `pyproject.toml`
+
+Files: `CHANGELOG.md`, `pyproject.toml`, `src/circuit_weaver/__init__.py`
+
 ## Sprint 31 — Bug Fixes & Error Handling (v0.23.0) ✅ DONE
 
 **Goal:** Fix confirmed bugs from code review, add error handling to all new CLI handlers.

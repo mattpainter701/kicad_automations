@@ -1896,15 +1896,9 @@ def main() -> None:
     scaffold_p.add_argument("--ref", default="U1", help="Reference designator (default: U1)")
     scaffold_p.add_argument("--output", "-o", help="Write to file instead of stdout")
 
-    register_ic_p = subparsers.add_parser(
-        "register-ic", help="Register a new IC in the data-driven template system"
-    )
-    register_ic_p.add_argument(
-        "--file", "-f", help="JSON file with IC data (or read from stdin)"
-    )
-    register_ic_p.add_argument(
-        "--mpn", help="IC MPN (required when reading from --file with a single IC object)"
-    )
+    register_ic_p = subparsers.add_parser("register-ic", help="Register a new IC in the data-driven template system")
+    register_ic_p.add_argument("--file", "-f", help="JSON file with IC data (or read from stdin)")
+    register_ic_p.add_argument("--mpn", help="IC MPN (required when reading from --file with a single IC object)")
 
     jlcpcb_p = subparsers.add_parser("export-jlcpcb", help="Export JLCPCB BOM and CPL files for assembly ordering")
     jlcpcb_p.add_argument("spec", help="Design spec YAML file")
@@ -2007,6 +2001,21 @@ def main() -> None:
         "--list",
         action="store_true",
         help="List detected platforms without installing",
+    )
+    install_p.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing SKILL.md files that differ from the source (default: skip and warn)",
+    )
+    install_p.add_argument(
+        "--backup",
+        action="store_true",
+        help="With --force, preserve the prior SKILL.md as a timestamped .bak file before overwriting",
+    )
+    install_p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be installed without modifying any files",
     )
 
     schema_p = subparsers.add_parser("schema", help="Print JSON schema for the DesignIR format")
@@ -2492,12 +2501,14 @@ def main() -> None:
             for topo in sorted(list_topologies()):
                 ics = get_all_ics(topo)
                 for mpn, ic_data in ics.items():
-                    templates_info.append({
-                        "type": topo,
-                        "ic": mpn,
-                        "description": ic_data.get("description", ""),
-                        "source": "data-driven",
-                    })
+                    templates_info.append(
+                        {
+                            "type": topo,
+                            "ic": mpn,
+                            "description": ic_data.get("description", ""),
+                            "source": "data-driven",
+                        }
+                    )
 
         if args.json_output:
             _print_json(templates_info)
@@ -2702,8 +2713,31 @@ def main() -> None:
         if args.platform and "all" not in args.platform:
             platforms = args.platform
 
-        result = install_skills(platforms=platforms, skills=getattr(args, "skills", None))
+        result = install_skills(
+            platforms=platforms,
+            skills=getattr(args, "skills", None),
+            force=getattr(args, "force", False),
+            backup=getattr(args, "backup", False),
+            dry_run=getattr(args, "dry_run", False),
+        )
         _print_json(result)
+
+        skipped = result.get("skills_skipped") or []
+        if skipped:
+            print(
+                f"[!] Skipped {len(skipped)} existing skill(s) to avoid overwriting customizations.",
+                file=sys.stderr,
+            )
+            for entry in skipped:
+                print(
+                    f"    {entry['platform']}/{entry['skill']} → {entry['dest']}",
+                    file=sys.stderr,
+                )
+            print(
+                "    Re-run with --force to overwrite (add --backup to keep the prior version).",
+                file=sys.stderr,
+            )
+
         raise SystemExit(0 if result["status"] in ("ok", "partial") else 1)
 
     if args.command == "schema":
@@ -3443,67 +3477,91 @@ def main() -> None:
                 dl.log_step(step=data.get("step", 0), description=message, user_input=data.get("user_input"))
             elif event_type == "cli_call":
                 dl.log_cli_call(
-                    command=data.get("command", "unknown"), args=data.get("args", []),
-                    return_code=data.get("return_code", 0), stdout=data.get("stdout", ""),
-                    stderr=data.get("stderr", ""), duration_sec=data.get("duration_sec", 0.0),
+                    command=data.get("command", "unknown"),
+                    args=data.get("args", []),
+                    return_code=data.get("return_code", 0),
+                    stdout=data.get("stdout", ""),
+                    stderr=data.get("stderr", ""),
+                    duration_sec=data.get("duration_sec", 0.0),
                     generated_files=data.get("generated_files"),
                 )
             elif event_type == "validation":
                 dl.log_validation(
-                    spec_file=data.get("spec_file", ""), passed=data.get("passed", True),
-                    errors=data.get("errors"), warnings=data.get("warnings"),
+                    spec_file=data.get("spec_file", ""),
+                    passed=data.get("passed", True),
+                    errors=data.get("errors"),
+                    warnings=data.get("warnings"),
                 )
             elif event_type == "research":
                 dl.log_research(
-                    query_phase=data.get("phase", ""), query=message,
-                    status=data.get("status", "ok"), result_count=data.get("result_count", 0),
+                    query_phase=data.get("phase", ""),
+                    query=message,
+                    status=data.get("status", "ok"),
+                    result_count=data.get("result_count", 0),
                 )
             elif event_type == "part_lookup":
                 dl.log_part_lookup(
-                    mpn=data.get("mpn", ""), source=data.get("source", ""),
-                    status=data.get("status", "ok"), details=data.get("details"),
+                    mpn=data.get("mpn", ""),
+                    source=data.get("source", ""),
+                    status=data.get("status", "ok"),
+                    details=data.get("details"),
                 )
             elif event_type == "symbol_resolution":
                 dl.log_symbol_resolution(
-                    ref=data.get("ref", ""), mpn=data.get("mpn", ""),
-                    status=data.get("status", "ok"), pinout_source=data.get("pinout_source", ""),
+                    ref=data.get("ref", ""),
+                    mpn=data.get("mpn", ""),
+                    status=data.get("status", "ok"),
+                    pinout_source=data.get("pinout_source", ""),
                 )
             elif event_type == "simulation":
                 dl.log_simulation(
-                    sim_type=data.get("sim_type", ""), target=data.get("target", ""),
-                    status=data.get("status", "ok"), metrics=data.get("metrics"),
+                    sim_type=data.get("sim_type", ""),
+                    target=data.get("target", ""),
+                    status=data.get("status", "ok"),
+                    metrics=data.get("metrics"),
                     duration_sec=data.get("duration_sec", 0.0),
                 )
             elif event_type == "thermal":
                 dl.log_thermal(
-                    ref=data.get("ref", ""), tj_calc=data.get("tj_calc", 0.0),
-                    tj_max=data.get("tj_max", 0.0), status=data.get("status", "ok"),
+                    ref=data.get("ref", ""),
+                    tj_calc=data.get("tj_calc", 0.0),
+                    tj_max=data.get("tj_max", 0.0),
+                    status=data.get("status", "ok"),
                 )
             elif event_type == "erc_drc":
                 dl.log_erc_drc(
-                    check_type=data.get("check_type", ""), file=data.get("file", ""),
-                    errors=data.get("errors", 0), warnings=data.get("warnings", 0),
+                    check_type=data.get("check_type", ""),
+                    file=data.get("file", ""),
+                    errors=data.get("errors", 0),
+                    warnings=data.get("warnings", 0),
                     details=data.get("details"),
                 )
             elif event_type == "scoring":
                 dl.log_scoring(
-                    dimension=data.get("dimension", ""), score=data.get("score", 0.0),
-                    grade=data.get("grade", ""), gaps=data.get("gaps"),
+                    dimension=data.get("dimension", ""),
+                    score=data.get("score", 0.0),
+                    grade=data.get("grade", ""),
+                    gaps=data.get("gaps"),
                 )
             elif event_type == "sourcing":
                 dl.log_sourcing(
-                    mpn=data.get("mpn", ""), supplier=data.get("supplier", ""),
-                    status=data.get("status", "ok"), price=data.get("price"),
+                    mpn=data.get("mpn", ""),
+                    supplier=data.get("supplier", ""),
+                    status=data.get("status", "ok"),
+                    price=data.get("price"),
                     stock=data.get("stock"),
                 )
             elif event_type == "generation":
                 dl.log_generation(
-                    artifact_type=data.get("artifact_type", ""), path=data.get("path", ""),
-                    status=data.get("status", "ok"), duration_sec=data.get("duration_sec", 0.0),
+                    artifact_type=data.get("artifact_type", ""),
+                    path=data.get("path", ""),
+                    status=data.get("status", "ok"),
+                    duration_sec=data.get("duration_sec", 0.0),
                 )
             elif event_type == "error":
                 dl.log_error(
-                    operation=data.get("operation", "unknown"), error=message,
+                    operation=data.get("operation", "unknown"),
+                    error=message,
                     traceback=data.get("traceback", ""),
                 )
             print(f"Logged {event_type} event to {dl.log_path}", file=sys.stderr)

@@ -22,3 +22,10 @@ repos:
         language: system
         files: '^(samples|src/circuit_weaver/examples)/.*\.yaml$'
         pass_filenames: true
+
+      - id: sync-bundled-skills
+        name: Keep _bundled_skills/ in sync with skills/
+        entry: python scripts/sync_bundled_skills.py --check
+        language: system
+        files: '^(skills/|src/circuit_weaver/_bundled_skills/)'
+        pass_filenames: false

@@ -42,8 +42,14 @@ pip install circuit-weaver
 **Step 2 — Register the skill** *(one-time, for Claude Code / Codex / OpenCode)*
 
 ```bash
-circuit-weaver install-skills
+circuit-weaver install-skills            # safe: skips existing skills, reports what would overwrite
+circuit-weaver install-skills --dry-run  # preview without touching disk
+circuit-weaver install-skills --force --backup   # overwrite existing skills, keep timestamped .bak files
 ```
+
+> **Note:** `install-skills` will **not** overwrite an existing `SKILL.md` that differs from the
+> bundled version — it prints a warning and leaves your customizations intact. Pass `--force` (and
+> optionally `--backup`) only after reviewing the reported collisions.
 
 **Step 3 — Launch**
 

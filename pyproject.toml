@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuit-weaver"
-version = "0.24.1"
+version = "0.25.0"
 description = "Programmatic circuit design, validation, and KiCad artifact generation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -48,6 +48,7 @@ circuit_weaver = ["_bundled_skills/**"]
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+extend-exclude = ["src/circuit_weaver/_bundled_skills"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

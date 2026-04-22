@@ -1,8 +1,25 @@
-"""Install Circuit Weaver skills to detected AI platforms (Claude Code, Codex, OpenCode, Kilo)."""
+"""Install Circuit Weaver skills to detected AI platforms (Claude Code, Codex, OpenCode, Kilo).
+
+Collision policy
+----------------
+Many target users curate their own global skill library — e.g. ``~/.claude/skills/kicad/`` —
+whose names collide with the skills shipped by this package. To avoid destroying that work,
+``install_skills`` hashes existing ``SKILL.md`` files before overwriting:
+
+* Byte-identical content → silent copy (treated as idempotent).
+* Absent → install normally.
+* Present and different → **skipped** by default and reported via ``skills_skipped``.
+  The caller must pass ``force=True`` to overwrite, optionally with ``backup=True`` to
+  preserve the prior version next to the target as ``SKILL.md.bak.<timestamp>``.
+
+``dry_run=True`` performs every check but never touches disk.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +86,29 @@ def _find_skills_source() -> tuple[Path | None, str]:
     return None, "none"
 
 
-def _copy_skill(src_dir: Path, dest_platform_dir: Path, skill_name: str) -> bool:
+def _file_hash(path: Path) -> str | None:
+    """Return sha256 hex digest of a file, or None if unreadable."""
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _backup_path(target: Path, *, now: datetime | None = None) -> Path:
+    """Return the backup filename to use for ``target``."""
+    ts = (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
+    return target.with_suffix(target.suffix + f".bak.{ts}")
+
+
+def _copy_skill(
+    src_dir: Path,
+    dest_platform_dir: Path,
+    skill_name: str,
+    *,
+    force: bool = False,
+    backup: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
     """
     Copy a skill from source to destination platform directory.
 
@@ -78,44 +117,80 @@ def _copy_skill(src_dir: Path, dest_platform_dir: Path, skill_name: str) -> bool
     - scripts/ subdirectory (if present)
     - references/ subdirectory (if present)
 
-    Args:
-        src_dir: Source skills directory (repo/skills or _bundled_skills)
-        dest_platform_dir: Destination platform skills directory
-        skill_name: Name of skill to copy (e.g., "circuit-weaver", "bom")
-
-    Returns:
-        True if copy successful, False otherwise
+    Returns a dict:
+        {"status": "installed" | "skipped" | "unchanged" | "missing_source",
+         "reason": str | None,
+         "dest": str}
     """
     src_skill = src_dir / skill_name
-    if not src_skill.is_dir():
-        return False
-
     dest_skill = dest_platform_dir / skill_name
-    dest_skill.mkdir(parents=True, exist_ok=True)
+    if not src_skill.is_dir():
+        return {"status": "missing_source", "reason": "source directory missing", "dest": str(dest_skill)}
 
-    # Copy SKILL.md
-    skill_md = src_skill / "SKILL.md"
-    if skill_md.exists():
-        shutil.copy2(skill_md, dest_skill / "SKILL.md")
+    src_md = src_skill / "SKILL.md"
+    if not src_md.exists():
+        return {"status": "missing_source", "reason": "source SKILL.md missing", "dest": str(dest_skill)}
+
+    dest_md = dest_skill / "SKILL.md"
+
+    # Collision check: existing SKILL.md with different content
+    if dest_md.exists():
+        src_hash = _file_hash(src_md)
+        dest_hash = _file_hash(dest_md)
+        if src_hash and dest_hash and src_hash == dest_hash:
+            # Already up to date — still sync auxiliary dirs below in case they changed
+            status = "unchanged"
+            reason: str | None = None
+        elif not force:
+            return {
+                "status": "skipped",
+                "reason": "destination SKILL.md exists with different content; use --force to overwrite",
+                "dest": str(dest_md),
+            }
+        else:
+            status = "installed"
+            reason = None
+            if backup and not dry_run:
+                try:
+                    shutil.copy2(dest_md, _backup_path(dest_md))
+                except OSError as exc:
+                    return {
+                        "status": "skipped",
+                        "reason": f"backup failed before overwrite: {exc}",
+                        "dest": str(dest_md),
+                    }
     else:
-        return False
+        status = "installed"
+        reason = None
 
-    # Copy scripts/ if present
+    if dry_run:
+        return {"status": status, "reason": reason, "dest": str(dest_md)}
+
+    # Perform the actual copy
+    dest_skill.mkdir(parents=True, exist_ok=True)
+    if status != "unchanged":
+        shutil.copy2(src_md, dest_md)
+
+    # Always mirror auxiliary directories — they're additive.
     src_scripts = src_skill / "scripts"
     if src_scripts.is_dir():
-        dest_scripts = dest_skill / "scripts"
-        shutil.copytree(src_scripts, dest_scripts, dirs_exist_ok=True)
+        shutil.copytree(src_scripts, dest_skill / "scripts", dirs_exist_ok=True)
 
-    # Copy references/ if present
     src_references = src_skill / "references"
     if src_references.is_dir():
-        dest_references = dest_skill / "references"
-        shutil.copytree(src_references, dest_references, dirs_exist_ok=True)
+        shutil.copytree(src_references, dest_skill / "references", dirs_exist_ok=True)
 
-    return True
+    return {"status": status, "reason": reason, "dest": str(dest_md)}
 
 
-def install_skills(platforms: list[str] | None = None, skills: list[str] | None = None) -> dict[str, Any]:
+def install_skills(
+    platforms: list[str] | None = None,
+    skills: list[str] | None = None,
+    *,
+    force: bool = False,
+    backup: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
     """
     Install skills to detected or specified platforms.
 
@@ -124,13 +199,18 @@ def install_skills(platforms: list[str] | None = None, skills: list[str] | None 
                    If None, auto-detects available platforms.
         skills: List of skill names to install (e.g., ["circuit-weaver", "bom"]).
                 If None, installs all available skills.
+        force: Overwrite pre-existing SKILL.md files that have different content.
+        backup: When overwriting (requires force=True), write a timestamped .bak copy first.
+        dry_run: Walk the install plan without modifying disk.
 
     Returns:
         {
             "status": "ok" | "partial" | "error",
             "platforms_detected": [...],
             "platforms_installed": [...],
+            "skills_skipped": [{"platform": ..., "skill": ..., "reason": ..., "dest": ...}],
             "source": "repo" | "bundled" | "none",
+            "dry_run": bool,
             "warnings": [...],
             "message": "..."
         }
@@ -139,7 +219,9 @@ def install_skills(platforms: list[str] | None = None, skills: list[str] | None 
         "status": "ok",
         "platforms_detected": [],
         "platforms_installed": [],
+        "skills_skipped": [],
         "source": "none",
+        "dry_run": dry_run,
         "warnings": [],
         "message": "",
     }
@@ -193,41 +275,79 @@ def install_skills(platforms: list[str] | None = None, skills: list[str] | None 
 
     # Install to each platform
     partial_failure = False
+    any_skipped = False
     for platform in platforms:
         if platform not in _PLATFORM_SKILL_DIRS:
             continue
 
         platform_skill_dir = _PLATFORM_SKILL_DIRS[platform]
-        platform_skill_dir.mkdir(parents=True, exist_ok=True)
+        if not dry_run:
+            platform_skill_dir.mkdir(parents=True, exist_ok=True)
 
-        installed_count = 0
-        failed_skills = []
+        installed_skills: list[str] = []
+        unchanged_skills: list[str] = []
+        failed_skills: list[str] = []
+        skipped_entries: list[dict[str, Any]] = []
 
         for skill_name in skills_to_install:
-            if _copy_skill(skills_source, platform_skill_dir, skill_name):
-                installed_count += 1
-            else:
+            outcome = _copy_skill(
+                skills_source,
+                platform_skill_dir,
+                skill_name,
+                force=force,
+                backup=backup,
+                dry_run=dry_run,
+            )
+            status = outcome["status"]
+            if status == "installed":
+                installed_skills.append(skill_name)
+            elif status == "unchanged":
+                unchanged_skills.append(skill_name)
+            elif status == "skipped":
+                any_skipped = True
+                skipped_entries.append(
+                    {
+                        "platform": platform,
+                        "skill": skill_name,
+                        "reason": outcome.get("reason") or "skipped",
+                        "dest": outcome.get("dest", ""),
+                    }
+                )
+            else:  # missing_source etc.
                 failed_skills.append(skill_name)
                 partial_failure = True
 
         result["platforms_installed"].append(
             {
                 "platform": platform,
-                "skills_installed": [s for s in skills_to_install if s not in failed_skills],
+                "skills_installed": installed_skills,
+                "skills_unchanged": unchanged_skills,
                 "path": str(platform_skill_dir),
             }
         )
+        if skipped_entries:
+            result["skills_skipped"].extend(skipped_entries)
 
         if failed_skills:
             result["warnings"].append(f"{platform}: failed to install {', '.join(failed_skills)}")
 
     # Determine final status
+    total_installed = sum(len(p.get("skills_installed", [])) for p in result["platforms_installed"])
+    total_unchanged = sum(len(p.get("skills_unchanged", [])) for p in result["platforms_installed"])
+
     if partial_failure:
         result["status"] = "partial"
-        total_skills = sum(len(p.get("skills_installed", [])) for p in result["platforms_installed"])
-        result["message"] = f"Installed {total_skills} skills to {len(platforms)} platforms (with failures)"
+        result["message"] = f"Installed {total_installed} skills to {len(platforms)} platforms (with failures)"
+    elif any_skipped:
+        result["status"] = "partial"
+        result["message"] = (
+            f"Installed {total_installed} skills; skipped {len(result['skills_skipped'])} existing "
+            f"(use --force to overwrite, --backup to keep a copy)"
+        )
     else:
         result["status"] = "ok"
-        result["message"] = f"Installed {len(skills_to_install)} skills to {len(platforms)} platform(s)"
+        prefix = "Would install" if dry_run else "Installed"
+        unchanged_note = f" ({total_unchanged} already up to date)" if total_unchanged else ""
+        result["message"] = f"{prefix} {total_installed} skills to {len(platforms)} platform(s){unchanged_note}"
 
     return result

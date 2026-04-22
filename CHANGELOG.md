@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.25.0] - 2026-04-21
+
+### Sprint 35 — Install-UX hardening & platform parity
+
+Closes three P0 footguns identified in the v0.24.x review.
+
+### Added
+- **`circuit-weaver install-skills` collision protection** — an existing `SKILL.md` with content different from the bundled source is now left untouched by default. The command reports each skipped skill and exits with status `partial`. New flags:
+  - `--force` — overwrite existing `SKILL.md` files that differ from source
+  - `--backup` — when overwriting, preserve the prior `SKILL.md` as `SKILL.md.bak.YYYYMMDD_HHMMSS`
+  - `--dry-run` — walk the install plan without touching the filesystem
+  - Result dict now includes `skills_skipped` and `skills_unchanged`
+- **`scripts/sync_bundled_skills.py`** — keeps `src/circuit_weaver/_bundled_skills/` in sync with `skills/`. Run with `--check` in CI / pre-commit to fail on drift.
+- **`bundled-skills` CI job** in `.github/workflows/ci.yml` — verifies parity between `skills/` and `_bundled_skills/` on every push.
+- **`sync-bundled-skills` pre-commit hook** — prevents divergence at author time.
+- **Windows CI leg** (`windows-latest` / Python 3.12, currently non-blocking) — smoke-tests CLI commands, doctor, skill installer, and `python -m circuit_weaver --version`.
+
+### Changed
+- **Bundled skills now include all 11 workflow skills** (`bom`, `circuit-weaver`, `design_wizard`, `digikey`, `ee`, `jlcpcb`, `kicad`, `lcsc`, `mouser`, `pcbway`, `vivado`). Previously only the stale `circuit-weaver` skill (410 of 651 lines) shipped in the PyPI wheel.
+- `README.md` and `docs/agent-platforms.md` now describe the collision policy and new flags.
+
+### Tests
+- `tests/test_skill_installer.py` — 12 new tests covering collision skip, force overwrite, backup, dry-run, unchanged no-op, and bundled-parity.
+
+---
+
 ## [0.24.1] - 2026-04-22
 
 ### Sprint 34 — Follow-up hardening

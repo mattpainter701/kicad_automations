@@ -24,6 +24,24 @@ Circuit Weaver supports four agent surfaces directly from this repo: Claude Code
 
 Installers require an explicit platform or explicit destination path. They do not assume a default platform.
 
+### Collision policy
+
+`circuit-weaver install-skills` hashes every destination `SKILL.md` before copying:
+
+| Destination state                          | Default behavior               | With `--force`          |
+|--------------------------------------------|--------------------------------|-------------------------|
+| Absent                                     | Install                        | Install                 |
+| Present, same content                      | No-op (reported as unchanged)  | No-op                   |
+| Present, different content                 | **Skip + warn** (exit non-zero) | Overwrite               |
+
+Flags:
+
+- `--dry-run` walks the full plan without touching the filesystem.
+- `--force` overwrites an existing `SKILL.md` whose content differs from the source.
+- `--backup` (requires `--force`) writes `SKILL.md.bak.YYYYMMDD_HHMMSS` next to the target before overwriting.
+
+This protects users who curate their own global skill library (e.g. a hand-edited `~/.claude/skills/kicad/SKILL.md`) from silent data loss on re-install.
+
 ### Install global skills everywhere
 
 ```bash
