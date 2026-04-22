@@ -2864,7 +2864,16 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
     if args.command == "design-wizard":
         resume_spec = getattr(args, "resume", None)
         dry_run = getattr(args, "dry_run", False)
-        _handle_design_workflow(resume=resume_spec, dry_run=dry_run)
+        effective_backend = None
+        if getattr(args, "research_backend", None) is not None:
+            from .research import resolve_backend
+
+            effective_backend = resolve_backend(args.research_backend)
+        _handle_design_workflow(
+            resume=resume_spec,
+            dry_run=dry_run,
+            research_backend=effective_backend,
+        )
         raise SystemExit(0)
 
     if args.command == "log-status":
@@ -3629,6 +3638,8 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                     query=message,
                     status=data.get("status", "ok"),
                     result_count=data.get("result_count", 0),
+                    backend=data.get("backend", ""),
+                    artifact_path=data.get("artifact_path", ""),
                 )
             elif event_type == "part_lookup":
                 dl.log_part_lookup(
@@ -3747,12 +3758,17 @@ def _find_existing_circuits(root_dir: Path = None) -> list[Path]:
     return [p.path for p in projects]
 
 
-def _handle_design_workflow(resume: str | None = None, dry_run: bool = False) -> None:
+def _handle_design_workflow(
+    resume: str | None = None,
+    dry_run: bool = False,
+    research_backend: str | None = None,
+) -> None:
     """Orchestrate new or existing circuit design workflow.
 
     Args:
         resume: Path to a partially-completed design.yaml to resume from
         dry_run: If True, use default answers for all prompts
+        research_backend: Effective backend for downstream agent research steps
 
     Prompts user to choose:
     1. Create a new circuit (captures name, creates folder, runs wizard)
@@ -3836,7 +3852,11 @@ def _handle_design_workflow(resume: str | None = None, dry_run: bool = False) ->
             print(f"\n[+] Created folder: {project_dir.absolute()}\n")
 
         # Run wizard in that directory
-        spec, logger = _run_design_wizard(project_dir, project_name_override=project_name)
+        spec, logger = _run_design_wizard(
+            project_dir,
+            project_name_override=project_name,
+            research_backend=research_backend,
+        )
 
         if spec and logger:
             output_file = project_dir / "design.yaml"
@@ -3867,7 +3887,9 @@ def _handle_design_workflow(resume: str | None = None, dry_run: bool = False) ->
 
 
 def _run_design_wizard(
-    project_dir: Path | str = ".", project_name_override: str | None = None
+    project_dir: Path | str = ".",
+    project_name_override: str | None = None,
+    research_backend: str | None = None,
 ) -> tuple[dict[str, Any] | None, DesignLogger | None]:
     """Interactive offline design wizard — capture requirements, scaffold spec (no hardcoded options).
 
@@ -3877,10 +3899,16 @@ def _run_design_wizard(
     Args:
         project_dir: Directory to write design.log to
         project_name_override: If provided, use this project name instead of asking
+        research_backend: Effective backend for downstream agent research steps
 
     Returns:
         Tuple of (spec dict, logger) or (None, None) if cancelled
     """
+    if research_backend is None:
+        from .research import resolve_backend
+
+        research_backend = resolve_backend(None)
+
     project_dir = Path(project_dir)
     project_dir.mkdir(parents=True, exist_ok=True)
     logger = DesignLogger(project_dir)
@@ -3910,8 +3938,14 @@ def _run_design_wizard(
     logger = DesignLogger(project_dir)  # Re-initialize with actual project dir
 
     print(f"✓ Project folder created: {project_dir.resolve()}")
-    print(f"✓ Logfile created: {project_dir / 'design.log'}\n")
-    logger.log_step(1, "Project created", {"project_name": project_name})
+    print(f"✓ Logfile created: {project_dir / 'design.log'}")
+    if research_backend:
+        print(f"✓ Downstream research backend: {research_backend} (used by agent workflows)")
+    print()
+    project_context = {"project_name": project_name}
+    if research_backend:
+        project_context["research_backend"] = research_backend
+    logger.log_step(1, "Project created", project_context)
 
     # ===== STEP 1b: BASIC INFO =====
     print("-" * 80)
@@ -3989,6 +4023,7 @@ def _run_design_wizard(
             "title": project_name,
             "version": "1.0",
             "description": f"{purpose}. Created via circuit-weaver design-wizard (offline).",
+            "research_backend": research_backend or "standard",
         },
         "interfaces": {
             "power_in": {

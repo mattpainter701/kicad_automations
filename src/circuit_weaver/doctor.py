@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .parts_lookup import _get_credential
+
 
 @dataclass
 class CheckResult:
@@ -283,6 +285,27 @@ def _check_python_package(name: str, pip_name: str, purpose: str, required: bool
         )
 
 
+def _check_api_credentials(name: str, env_vars: list[str], purpose: str) -> CheckResult:
+    """Report whether optional API credentials are configured via env or secrets.env."""
+    missing = [env_var for env_var in env_vars if not _get_credential(env_var)]
+    if not missing:
+        return CheckResult(
+            name=name,
+            status="ok",
+            version="configured",
+            required=False,
+        )
+
+    install_bits = " and ".join(env_vars)
+    return CheckResult(
+        name=name,
+        status="missing",
+        required=False,
+        message=f"{purpose}. Missing: {', '.join(missing)}",
+        install_hint=f"Set {install_bits} in the environment or secrets.env",
+    )
+
+
 def run_doctor() -> DoctorReport:
     """Run all environment checks and return a structured report."""
     report = DoctorReport(
@@ -321,6 +344,20 @@ def run_doctor() -> DoctorReport:
             "requests",
             "requests",
             "Required for online part lookups (DigiKey, Mouser, LCSC)",
+        )
+    )
+    report.checks.append(
+        _check_api_credentials(
+            "DigiKey API credentials",
+            ["DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET"],
+            "Enables DigiKey resolver fallback and part lookup",
+        )
+    )
+    report.checks.append(
+        _check_api_credentials(
+            "Mouser API key",
+            ["MOUSER_SEARCH_API_KEY"],
+            "Enables Mouser resolver fallback and part lookup",
         )
     )
     report.checks.append(

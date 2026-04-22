@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from circuit_weaver.logging_bridge import cleanup_logging, init_logging
 from circuit_weaver.research_store import (
     ResearchCitation,
     ResearchFinding,
@@ -47,6 +48,12 @@ class TestSlugify:
 
 
 class TestSaveResearchResult:
+    @pytest.fixture(autouse=True)
+    def _cleanup_logging(self):
+        cleanup_logging()
+        yield
+        cleanup_logging()
+
     def test_writes_json_md_and_summary(self, tmp_path):
         result = ResearchResult(
             topic="MCU Selection",
@@ -100,6 +107,24 @@ class TestSaveResearchResult:
         data = json.loads((tmp_path / "research" / "mcu.json").read_text(encoding="utf-8"))
         assert data["query"] == "v2"
         assert data["backend"] == "standard"
+
+    def test_design_log_references_saved_json_path(self, tmp_path):
+        init_logging(tmp_path)
+        json_path = save_research_result(
+            tmp_path,
+            ResearchResult(topic="Sensor", query="q", backend="standard"),
+        )
+
+        entries = [
+            json.loads(line)
+            for line in (tmp_path / "design.log").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        research_entries = [entry for entry in entries if entry.get("type") == "research"]
+        assert research_entries, "expected at least one research entry in design.log"
+        latest = research_entries[-1]
+        assert latest["backend"] == "standard"
+        assert latest["artifact_path"] == str(json_path)
 
 
 class TestSaveResearchFromDict:

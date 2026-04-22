@@ -24,6 +24,7 @@ from unittest.mock import patch
 import pytest
 
 from circuit_weaver.component_db import ComponentDef, PinDef
+from circuit_weaver.symbol_cache import SymbolCache
 
 
 def _fake_component(mpn: str, description: str) -> ComponentDef:
@@ -106,6 +107,8 @@ def test_resolver_e2e_zigbee_yaml(zigbee_yaml, monkeypatch):
     # Seed DIGIKEY_CLIENT_ID so the credential-missing guard (Task 156)
     # doesn't short-circuit the DigiKey tier before our patch runs.
     monkeypatch.setenv("DIGIKEY_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("DIGIKEY_CLIENT_SECRET", "test-client-secret")
+    cache = SymbolCache(zigbee_yaml.parent / "symbol-cache")
 
     # Disable Mouser + EasyEDA so the test stays hermetic (those tiers
     # would still work without credentials thanks to lazy imports, but we
@@ -122,6 +125,10 @@ def test_resolver_e2e_zigbee_yaml(zigbee_yaml, monkeypatch):
         patch(
             "circuit_weaver.digikey_loader.load_from_digikey",
             side_effect=_mock_digikey,
+        ),
+        patch(
+            "circuit_weaver.symbol_resolver.SymbolCache",
+            return_value=cache,
         ),
     ):
         from circuit_weaver.project_spec import load_project
@@ -155,11 +162,23 @@ def test_resolver_e2e_without_credentials_degrades_to_informative_stubs(zigbee_y
 
     SymbolResolver._cred_warned.clear()  # type: ignore[attr-defined]
     monkeypatch.delenv("DIGIKEY_CLIENT_ID", raising=False)
+    monkeypatch.delenv("DIGIKEY_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("MOUSER_SEARCH_API_KEY", raising=False)
+    cache = SymbolCache(zigbee_yaml.parent / "symbol-cache")
 
-    with patch(
-        "circuit_weaver.symbol_resolver.SymbolResolver._resolve_easyeda",
-        return_value=None,
+    with (
+        patch(
+            "circuit_weaver.symbol_resolver.SymbolResolver._resolve_easyeda",
+            return_value=None,
+        ),
+        patch(
+            "circuit_weaver.symbol_resolver._get_credential",
+            return_value="",
+        ),
+        patch(
+            "circuit_weaver.symbol_resolver.SymbolCache",
+            return_value=cache,
+        ),
     ):
         from circuit_weaver.project_spec import load_project
 

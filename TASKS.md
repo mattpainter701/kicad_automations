@@ -111,6 +111,42 @@ Files: `CHANGELOG.md`, `pyproject.toml`, `src/circuit_weaver/__init__.py`, `test
 
 ---
 
+## Sprint 38 — Review Follow-up Hardening (v0.26.1) ✅ DONE
+
+**Goal:** Close the medium/high gaps found while reviewing Sprint 36-37 before the next release cut.
+
+### 163. Resolver credential checks honor shared loader state (P1, SMALL) ✅ DONE
+
+- [x] `SymbolResolver` now checks credentials through the shared `_get_credential()` path instead of raw env vars.
+- [x] DigiKey requires both `DIGIKEY_CLIENT_ID` and `DIGIKEY_CLIENT_SECRET` before the tier runs.
+- [x] Mouser skip detection now honors `MOUSER_SEARCH_API_KEY` from `secrets.env` as well as env vars.
+
+Files: `src/circuit_weaver/symbol_resolver.py`, `tests/test_resolver_chain.py`
+
+### 164. Doctor surfaces actionable resolver credential status (P1, SMALL) ✅ DONE
+
+- [x] `circuit-weaver doctor` now reports DigiKey and Mouser credential configuration as optional checks.
+- [x] Task 156 skip messages now point to a diagnostic command that actually shows the missing credentials.
+
+Files: `src/circuit_weaver/doctor.py`, `tests/test_doctor.py`
+
+### 165. Research artifacts are traceable from design.log (P1, SMALL) ✅ DONE
+
+- [x] `DesignLogger.log_research()` records backend + canonical artifact path when available.
+- [x] `save-research` writes those fields into the matching `design.log` entry for reproducibility.
+
+Files: `src/circuit_weaver/design_logger.py`, `src/circuit_weaver/research_store.py`, `src/circuit_weaver/dispatcher.py`, `tests/test_research_store.py`
+
+### 166. Backend selector wired into the agent workflow docs (P1, SMALL) ✅ DONE
+
+- [x] `design-wizard --research-backend` now persists the effective backend into scaffold metadata and the first design-log step.
+- [x] `skills/circuit-weaver/SKILL.md` now tells Codex / Claude / OpenCode how to honor `sonar-pro` vs `standard`.
+- [x] `README.md` now documents `output/research/` as the source of truth and shows `save-research`.
+
+Files: `src/circuit_weaver/dispatcher.py`, `skills/circuit-weaver/SKILL.md`, `README.md`, `tests/test_research_backend.py`
+
+---
+
 ## Sprint 35 — Install-UX Hardening & Platform Parity (v0.25.0) ✅ DONE
 
 **Goal:** Close the three P0 footguns identified in the v0.24.x review — silent overwrite of curated user skills, bundled-skill drift vs repo, and zero Windows CI coverage. Keeps `pip install circuit-weaver && circuit-weaver install-skills` safe to recommend.
@@ -1843,4 +1879,3 @@ Files: `docs/user_workflow.md`
 - [x] Commands: list-templates, scaffold, apply-patch, validate, generate, cost-bom, export-jlcpcb, autoroute
 - [x] Document asciinema recording (optional tool, not a dependency)
 - [x] Update README: README already pointed to DEMO_COMMANDS.md
-

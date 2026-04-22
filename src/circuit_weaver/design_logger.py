@@ -153,7 +153,15 @@ class DesignLogger:
         }
         self._append_entry(entry)
 
-    def log_research(self, query_phase: str, query: str, status: str, result_count: int = 0) -> None:
+    def log_research(
+        self,
+        query_phase: str,
+        query: str,
+        status: str,
+        result_count: int = 0,
+        backend: str = "",
+        artifact_path: str = "",
+    ) -> None:
         """Log a research-analyst query.
 
         Args:
@@ -161,6 +169,8 @@ class DesignLogger:
             query: The query sent to Perplexity
             status: ok, timeout, error, no_api_key
             result_count: Number of results returned
+            backend: Backend used for the research run (sonar-pro, standard)
+            artifact_path: Path to the canonical saved research JSON file
         """
         entry = {
             "timestamp": _now_iso(),
@@ -170,6 +180,10 @@ class DesignLogger:
             "result_count": result_count,
             "query_length": len(query),
         }
+        if backend:
+            entry["backend"] = backend
+        if artifact_path:
+            entry["artifact_path"] = artifact_path
         self._append_entry(entry)
 
     def log_part_lookup(

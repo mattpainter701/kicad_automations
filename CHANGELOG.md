@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.26.1] - 2026-04-22
+
+### Fixed
+
+- **Resolver credential checks now honor the real credential sources** used by
+  the loaders (`env` or `secrets.env`) instead of looking only at process
+  environment variables. DigiKey now treats both `DIGIKEY_CLIENT_ID` and
+  `DIGIKEY_CLIENT_SECRET` as required for the tier, and Mouser honors
+  `MOUSER_SEARCH_API_KEY` from the shared credential loader as well.
+- **`circuit-weaver doctor` now surfaces DigiKey and Mouser credential status**,
+  so the Task 156 skip message ("Run `circuit-weaver doctor` to configure")
+  now points users to actionable diagnostics.
+- **Saved research artifacts are now traceable from `design.log`**. Research
+  entries include the effective backend and the canonical `{project}/research/{slug}.json`
+  path written by `save-research`.
+
+### Changed
+
+- **`design-wizard --research-backend ...` now persists the effective backend**
+  into the scaffolded spec metadata and the initial `design.log` step, so the
+  downstream Codex / Claude / OpenCode workflow can actually honor the selector.
+- **`skills/circuit-weaver/SKILL.md` and `README.md` now describe the real
+  research workflow**: resolve backend first, use native web tooling for
+  `standard`, and persist every run through `circuit-weaver save-research`.
+
+### Tests
+
+- Added regression coverage for DigiKey secret handling, credential-loader based
+  resolver fallback, doctor credential reporting, `design.log` research artifact
+  paths, and `design-wizard` research-backend persistence.
+- Full suite at release cut: **708 passed, 1 skipped, 0 failed**.
+
 ## [0.26.0] - 2026-04-22
 
 ### Sprint 37 — Observability, Research Pipeline & Resolver Polish

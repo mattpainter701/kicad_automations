@@ -8,6 +8,8 @@ env var, with sensible auto-detection fallback.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from circuit_weaver.research import backend_info, resolve_backend
@@ -106,3 +108,21 @@ class TestDoctorIncludesBackendInfo:
 
         text = run_doctor().to_terminal()
         assert "Research backend" in text
+
+
+class TestDesignWizardPersistsBackend:
+    def test_wizard_scaffold_captures_selected_backend(self, tmp_path, monkeypatch):
+        from circuit_weaver.dispatcher import _run_design_wizard
+
+        monkeypatch.chdir(tmp_path)
+        inputs = iter(["", "", "", "", "", "", "", "", ""])
+        with patch("builtins.input", side_effect=lambda _prompt="": next(inputs)):
+            spec, logger = _run_design_wizard(
+                project_name_override="BackendCapture",
+                research_backend="sonar-pro",
+            )
+
+        assert spec is not None
+        assert logger is not None
+        assert spec["metadata"]["research_backend"] == "sonar-pro"
+        assert logger.entries[0]["user_input"]["research_backend"] == "sonar-pro"

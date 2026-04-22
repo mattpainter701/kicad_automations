@@ -32,7 +32,7 @@ from .component_db import ComponentDef, ComponentRegistry
 from .easyeda_api import fetch_easyeda_component
 from .easyeda_parser import easyeda_to_component_def
 from .kicad_lib import KiCadLibrary
-from .parts_lookup import _search_lcsc
+from .parts_lookup import _get_credential, _search_lcsc
 from .symbol_cache import SymbolCache
 
 log = logging.getLogger(__name__)
@@ -222,14 +222,15 @@ class SymbolResolver:
     _cred_warned: set[str] = set()
 
     @classmethod
-    def _warn_credential_missing_once(cls, tier: str, env_var: str) -> None:
+    def _warn_credential_missing_once(cls, tier: str, missing: tuple[str, ...]) -> None:
         if tier in cls._cred_warned:
             return
         cls._cred_warned.add(tier)
+        missing_text = ", ".join(missing)
         log.info(
             "%s tier skipped: %s not set. Run 'circuit-weaver doctor' to configure.",
             tier,
-            env_var,
+            missing_text,
         )
 
     def _resolve_ic_data(self, mpn: str) -> ComponentDef | None:
@@ -312,10 +313,13 @@ class SymbolResolver:
         Returns:
             ComponentDef stub from DigiKey, or None if unavailable.
         """
-        import os as _os
-
-        if not _os.environ.get("DIGIKEY_CLIENT_ID"):
-            self._warn_credential_missing_once("DigiKey", "DIGIKEY_CLIENT_ID")
+        missing = tuple(
+            name
+            for name in ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET")
+            if not _get_credential(name)
+        )
+        if missing:
+            self._warn_credential_missing_once("DigiKey", missing)
             return None
 
         try:
@@ -341,10 +345,8 @@ class SymbolResolver:
         Returns:
             ComponentDef stub from Mouser, or None if unavailable.
         """
-        import os as _os
-
-        if not _os.environ.get("MOUSER_SEARCH_API_KEY"):
-            self._warn_credential_missing_once("Mouser", "MOUSER_SEARCH_API_KEY")
+        if not _get_credential("MOUSER_SEARCH_API_KEY"):
+            self._warn_credential_missing_once("Mouser", ("MOUSER_SEARCH_API_KEY",))
             return None
 
         try:

@@ -191,17 +191,41 @@ If user wants to change something, loop back to the relevant question.
 
 ### Step 2 — IC Research & Selection
 
-Run `/research` agent with structured queries. **Log all research queries and results to design.log.**
+Before the first query, resolve the effective research backend:
+
+- Respect `metadata.research_backend` from a scaffolded spec when present.
+- Otherwise respect `CIRCUIT_WEAVER_RESEARCH_BACKEND={auto,sonar-pro,standard}`.
+- `auto` means: use `sonar-pro` when `PERPLEXITY_API_KEY` is configured, otherwise `standard`.
+- `circuit-weaver doctor` is the source of truth for the effective backend and credential status.
+
+Use the backend consistently for the whole session:
+
+- `sonar-pro` → use the `/research` path.
+- `standard` → use the platform's native web search / web fetch tools instead of `/research`.
+
+Persist every completed research run with `circuit-weaver save-research`. The saved
+`{project_dir}/research/*.json` files are the source of truth; `design.log` should
+point back to those JSON artifacts for reproducibility.
 
 #### Phase 2a — Project Context
 
 Single broad query to understand the design space:
 
+If backend is `sonar-pro`:
+
 ```
-/research "Design a [application description]. 
+/research "Design a [application description].
   Constraints: [form factor], [power source], [interfaces].
-  Find 1-2 existing reference designs, key IC families (MCU, power conversion, sensors), 
+  Find 1-2 existing reference designs, key IC families (MCU, power conversion, sensors),
   typical topologies, and estimated BOM size."
+```
+
+If backend is `standard`, run the equivalent query with the platform's built-in web tools.
+
+After the result is consolidated, persist it:
+
+```bash
+circuit-weaver save-research --project-dir ./output --backend <sonar-pro|standard> --topic "project-context" --file research.json
 ```
 
 This grounds subsequent searches in reality.
@@ -215,23 +239,25 @@ For each major functional block, run targeted research in parallel:
 Based on application type, run 3-5 of these (adapt to your design):
 
 ```
-/research "MCU for [interfaces: WiFi, BLE, Ethernet, etc.], 
+MCU for [interfaces: WiFi, BLE, Ethernet, etc.],
   [power constraint: battery, low-power, high-performance].
-  Return: Top 3 options with MPN, LCSC cost, key specs (flash, RAM, peripherals)."
+  Return: Top 3 options with MPN, LCSC cost, key specs (flash, RAM, peripherals).
 
-/research "Power conversion: [input voltage] to [output voltage, current].
+Power conversion: [input voltage] to [output voltage, current].
   Application: [battery/USB/wall-powered, form factor constraints].
-  Return: Top 3 IC options (topology, MPN, LCSC cost, efficiency), required passives."
+  Return: Top 3 IC options (topology, MPN, LCSC cost, efficiency), required passives.
 
-/research "[Sensor type: environmental, motion, audio, etc.] for [application].
+[Sensor type: environmental, motion, audio, etc.] for [application].
   Interface: [I2C/SPI/analog], power constraint: [mA budget].
-  Return: Top 3 sensors with MPN, LCSC cost, typical application circuit."
+  Return: Top 3 sensors with MPN, LCSC cost, typical application circuit.
 
-/research "Connector/interface: [USB/Barrel Jack/JST-PH/etc.] for [application].
-  Return: Recommended part with MPN, LCSC cost, pin assignment, typical footprint."
+Connector/interface: [USB/Barrel Jack/JST-PH/etc.] for [application].
+  Return: Recommended part with MPN, LCSC cost, pin assignment, typical footprint.
 ```
 
-Run these in parallel (spawn multiple `/research` calls).
+Run these in parallel where the platform supports it, using `/research` for `sonar-pro`
+and native web tooling for `standard`. Persist each completed query with
+`circuit-weaver save-research --project-dir ./output ...`.
 
 **Log:** `[Step 2b] Targeted research queries:` [list each query]
 

@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+from unittest.mock import patch
 
 from circuit_weaver.doctor import (
     CheckResult,
@@ -87,6 +88,24 @@ class TestRunDoctor:
     def test_circuit_weaver_check_ok(self):
         result = _check_circuit_weaver()
         assert result.status == "ok"
+
+    def test_reports_api_credential_checks(self):
+        with patch("circuit_weaver.doctor._get_credential", return_value=""):
+            report = run_doctor()
+        names = {check.name for check in report.checks}
+        assert "DigiKey API credentials" in names
+        assert "Mouser API key" in names
+
+    def test_terminal_mentions_missing_resolver_credentials(self):
+        def _cred(name: str) -> str:
+            return "configured" if name == "MOUSER_SEARCH_API_KEY" else ""
+
+        with patch("circuit_weaver.doctor._get_credential", side_effect=_cred):
+            text = run_doctor().to_terminal()
+
+        assert "DigiKey API credentials" in text
+        assert "DIGIKEY_CLIENT_ID" in text
+        assert "Mouser API key" in text
 
 
 class TestDoctorCLI:

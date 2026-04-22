@@ -18,6 +18,7 @@ from unittest.mock import patch
 from circuit_weaver.component_db import ComponentDef, ComponentRegistry, PinDef
 from circuit_weaver.ic_data import register_ic
 from circuit_weaver.ic_data import reload as _reload_ic_data
+from circuit_weaver.symbol_cache import SymbolCache
 from circuit_weaver.symbol_resolver import SymbolResolver
 
 
@@ -85,7 +86,7 @@ def test_ic_data_tier_honors_register_ic_hot_load():
     assert len(comp.pins) == 4
 
 
-def test_digikey_tier_rescues_parts_not_in_ic_data():
+def test_digikey_tier_rescues_parts_not_in_ic_data(tmp_path):
     """Tier 6: DigiKey fallback catches MPNs that no earlier tier knows.
 
     This is the SHT41-AD1B-R2 bug from v0.24.x — the resolver used to stop
@@ -102,7 +103,7 @@ def test_digikey_tier_rescues_parts_not_in_ic_data():
     )
 
     with patch("circuit_weaver.symbol_resolver.SymbolResolver._resolve_digikey", return_value=fake_def):
-        r = SymbolResolver(use_easyeda=False, use_mouser=False)
+        r = SymbolResolver(use_easyeda=False, use_mouser=False, cache=SymbolCache(tmp_path / "symbol-cache"))
         comp, src = r.resolve("SHT41-AD1B-R2")
 
     assert comp is not None, "DigiKey tier must catch SHT41-AD1B-R2"
@@ -142,19 +143,21 @@ def test_project_spec_uses_symbol_resolver_chain():
     assert len(comp.pins) > 0
 
 
-def test_digikey_tier_logs_missing_credential_once(caplog, monkeypatch):
+def test_digikey_tier_logs_missing_credential_once(caplog):
     """Sprint 37 Task 156: when DIGIKEY_CLIENT_ID is absent the DigiKey
     tier must log ONE informative INFO line per session, then silently
     skip on subsequent MPNs in the same run.
     """
-    monkeypatch.delenv("DIGIKEY_CLIENT_ID", raising=False)
     # Reset the per-class warn cache so the test sees the first-call path.
     from circuit_weaver.symbol_resolver import SymbolResolver
 
     SymbolResolver._cred_warned.clear()  # type: ignore[attr-defined]
 
     r = SymbolResolver(use_easyeda=False, use_mouser=False, use_ic_data=False)
-    with caplog.at_level("INFO", logger="circuit_weaver.symbol_resolver"):
+    with (
+        patch("circuit_weaver.symbol_resolver._get_credential", return_value=""),
+        caplog.at_level("INFO", logger="circuit_weaver.symbol_resolver"),
+    ):
         r.resolve("NONEXISTENT-1")
         r.resolve("NONEXISTENT-2")
         r.resolve("NONEXISTENT-3")
@@ -162,7 +165,69 @@ def test_digikey_tier_logs_missing_credential_once(caplog, monkeypatch):
     skip_lines = [rec for rec in caplog.records if "DigiKey tier skipped" in rec.getMessage()]
     assert len(skip_lines) == 1, f"expected exactly one 'DigiKey tier skipped' INFO log, got {len(skip_lines)}"
     assert "DIGIKEY_CLIENT_ID" in skip_lines[0].getMessage()
+    assert "DIGIKEY_CLIENT_SECRET" in skip_lines[0].getMessage()
     assert "circuit-weaver doctor" in skip_lines[0].getMessage()
+
+
+def test_digikey_tier_honors_shared_credential_loader(tmp_path):
+    """Resolver skip checks must honor the same credential loader as DigiKey."""
+    fake_def = ComponentDef(
+        mpn="DIGIKEY-SECRETS-ONLY",
+        ref_prefix="U",
+        value="DIGIKEY-SECRETS-ONLY",
+        footprint="Package:Generic",
+        description="Loaded via DigiKey credentials from shared loader",
+        source_manufacturer="ACME",
+        pins=_stub_pindefs(),
+    )
+
+    def _cred(name: str) -> str:
+        return "configured" if name in ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET") else ""
+
+    with (
+        patch("circuit_weaver.symbol_resolver._get_credential", side_effect=_cred),
+        patch("circuit_weaver.digikey_loader.load_from_digikey", return_value=fake_def),
+    ):
+        r = SymbolResolver(
+            use_easyeda=False,
+            use_mouser=False,
+            use_ic_data=False,
+            cache=SymbolCache(tmp_path / "symbol-cache"),
+        )
+        comp, src = r.resolve("DIGIKEY-SECRETS-ONLY")
+
+    assert comp is not None
+    assert src == "digikey"
+
+
+def test_mouser_tier_honors_shared_credential_loader(tmp_path):
+    fake_def = ComponentDef(
+        mpn="MOUSER-SECRETS-ONLY",
+        ref_prefix="U",
+        value="MOUSER-SECRETS-ONLY",
+        footprint="Package:Generic",
+        description="Loaded via Mouser credentials from shared loader",
+        source_manufacturer="ACME",
+        pins=_stub_pindefs(),
+    )
+
+    def _cred(name: str) -> str:
+        return "configured" if name == "MOUSER_SEARCH_API_KEY" else ""
+
+    with (
+        patch("circuit_weaver.symbol_resolver._get_credential", side_effect=_cred),
+        patch("circuit_weaver.mouser_loader.load_from_mouser", return_value=fake_def),
+    ):
+        r = SymbolResolver(
+            use_easyeda=False,
+            use_digikey=False,
+            use_ic_data=False,
+            cache=SymbolCache(tmp_path / "symbol-cache"),
+        )
+        comp, src = r.resolve("MOUSER-SECRETS-ONLY")
+
+    assert comp is not None
+    assert src == "mouser"
 
 
 def test_unresolved_mpn_falls_to_stub_with_informative_reason():

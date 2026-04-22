@@ -145,7 +145,9 @@ Sensor: BME280
 vs PlatformIO vs vendor SDK — because a great chip with a bad toolchain is
 worse than a modest chip with great tooling.
 
-**After you confirm the selections**, the wizard researches each IC:
+**After you confirm the selections**, the wizard researches each IC. The
+effective backend is controlled by `metadata.research_backend` in the scaffolded
+spec or by `CIRCUIT_WEAVER_RESEARCH_BACKEND={auto,sonar-pro,standard}`.
 
 - **Datasheet highlights** — recommended application circuit, key specs,
   decoupling requirements
@@ -153,6 +155,9 @@ worse than a modest chip with great tooling.
 - **Known gotchas** — errata, strapping pins, common mistakes
 - **Thermal analysis** — for power ICs, it calculates junction temperature
   and flags if copper pours or heatsinks are mandatory
+- **Traceable artifacts** — each completed query should be persisted to
+  `output/research/{topic}.json` via `circuit-weaver save-research`, with
+  `summary.md` as the rolling project index
 
 You can swap any IC, request deeper research, or ask for more alternatives
 at any point.
@@ -522,6 +527,8 @@ Being clear about boundaries prevents frustration:
 | `placer_hints.json` | Step 4 | PCB placement guidance | Yes |
 | `jlcpcb/bom_jlcpcb.csv` | Step 6 | BOM for JLCPCB assembly | Yes |
 | `jlcpcb/cpl_jlcpcb.csv` | Step 6 | Component placement for JLCPCB | Yes |
+| `research/*.json` | Step 2 | Canonical saved research runs and citations | Yes |
+| `research/summary.md` | Step 2 | Rolling index of all saved research runs | Yes |
 | `datasheets/` | Step 2 | Downloaded IC datasheets | No (large, re-downloadable) |
 
 ---

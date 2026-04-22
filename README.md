@@ -65,6 +65,29 @@ That's it. The skill walks you through IC selection, passive generation, and man
 
 ---
 
+## Research Traceability
+
+Agentic research runs are expected to persist their output into `output/research/`.
+That directory is the source of truth for why an IC was chosen, which citations
+backed it, and which backend produced the result.
+
+```bash
+# Check which backend is active before research starts
+circuit-weaver doctor
+
+# Optional: force backend selection for agent workflows
+export CIRCUIT_WEAVER_RESEARCH_BACKEND=standard   # or sonar-pro / auto
+# PowerShell: $env:CIRCUIT_WEAVER_RESEARCH_BACKEND="standard"
+
+# Persist a completed research result
+circuit-weaver save-research --project-dir ./output --file research.json
+```
+
+Each saved run produces `{slug}.json`, `{slug}.md`, and `summary.md`, and the
+matching `design.log` entry records the canonical JSON path for later audit.
+
+---
+
 ## What You Get
 
 Every `generate` run produces a complete artifact bundle:
@@ -195,6 +218,7 @@ circuit-weaver export-gerbers design.yaml -o ./gerbers
 # ── Project management ───────────────────────────────────────────────────────
 circuit-weaver discover                             # Auto-detect projects in CWD
 circuit-weaver discover --json --depth 2            # JSON output, search 2 levels deep
+circuit-weaver save-research --project-dir ./output --file research.json
 circuit-weaver log-event ./project --type scoring --message "Review done"
 
 # ── Design tools ──────────────────────────────────────────────────────────────
@@ -265,13 +289,23 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.25.0
+## What's New in v0.26.1
+
+| Sprint | Feature |
+|-|-|
+| 38 | **Research workflow is now reproducible end-to-end** — `design-wizard --research-backend` persists the effective backend into spec metadata, `save-research` records the canonical JSON artifact path in `design.log`, and the workflow docs now tell agents to treat `output/research/` as the source of truth |
+| 38 | **Resolver credential diagnostics now match real runtime behavior** — DigiKey checks both `DIGIKEY_CLIENT_ID` and `DIGIKEY_CLIENT_SECRET`, Mouser honors `MOUSER_SEARCH_API_KEY` through the shared credential loader, and `circuit-weaver doctor` now reports both credential states directly |
+| 37 | **Research persistence + backend selection shipped in the CLI** — `circuit-weaver save-research`, `CIRCUIT_WEAVER_RESEARCH_BACKEND`, and `circuit-weaver doctor` backend reporting are now available in the published package |
+
+<details><summary>v0.25.0</summary>
 
 | Sprint | Feature |
 |-|-|
 | 35 | **`install-skills` collision protection** — will no longer silently overwrite a curated `SKILL.md` whose content differs from the bundled source. New `--force`, `--backup`, `--dry-run` flags; skipped entries are reported via `skills_skipped` so you can review before acting |
 | 35 | **All 11 skills now bundled in the wheel** — previously only a stale `circuit-weaver/SKILL.md` (410 of 651 lines) shipped to PyPI; `install-skills` from a fresh `pip install` was missing `bom`, `kicad`, `digikey`, `lcsc`, `mouser`, `jlcpcb`, `pcbway`, `ee`, `design_wizard`, `vivado`. Kept in sync by `scripts/sync_bundled_skills.py` with CI + pre-commit drift guards |
 | 35 | **Windows CI leg** — `windows-latest` / Python 3.12 smoke run (non-blocking first sprint) covering CLI commands, doctor, skill installer, and `python -m circuit_weaver --version` |
+
+</details>
 
 <details><summary>v0.24.0</summary>
 

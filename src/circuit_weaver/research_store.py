@@ -259,6 +259,8 @@ def save_research_result(
                 query=result.query,
                 status="ok",
                 result_count=len(result.findings),
+                backend=result.backend,
+                artifact_path=str(json_path),
             )
     except Exception:  # pragma: no cover — logging must not raise
         pass
