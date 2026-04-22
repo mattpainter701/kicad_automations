@@ -15,6 +15,7 @@ dist/
 *.kicad_prl
 ~*.lck
 *-backups/
+.history/
 
 # Demo recording artifacts
 ffmpeg.exe
