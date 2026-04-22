@@ -50,3 +50,7 @@ bom/orders/
 # MemPalace per-project files (issue #185)
 mempalace.yaml
 entities.json
+
+# Workflow logs (Sprint 37 Task 159) — regenerated on every run
+circuit-weaver.log
+design.log

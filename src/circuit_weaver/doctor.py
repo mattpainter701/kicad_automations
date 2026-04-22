@@ -49,6 +49,7 @@ class DoctorReport:
     python_version: str = ""
     platform: str = ""
     circuit_weaver_version: str = ""
+    research_backend: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok_count(self) -> int:
@@ -71,6 +72,7 @@ class DoctorReport:
             "python_version": self.python_version,
             "platform": self.platform,
             "circuit_weaver_version": self.circuit_weaver_version,
+            "research_backend": self.research_backend,
             "checks": [c.to_dict() for c in self.checks],
             "ok_count": self.ok_count,
             "missing_count": self.missing_count,
@@ -121,6 +123,19 @@ class DoctorReport:
         if missing_optional:
             lines.append(f"{len(missing_optional)} optional dependency(ies) not installed.")
 
+        if self.research_backend and "error" not in self.research_backend:
+            lines.append("")
+            lines.append("Research backend:")
+            effective = self.research_backend.get("effective_backend", "?")
+            env_val = self.research_backend.get("env_value")
+            has_key = self.research_backend.get("perplexity_key_set")
+            lines.append(f"  Selected:           {effective}")
+            lines.append(f"  PERPLEXITY_API_KEY: {'set' if has_key else 'not set'}")
+            if env_val:
+                lines.append(f"  CIRCUIT_WEAVER_RESEARCH_BACKEND: {env_val}")
+            if effective == "standard" and not has_key:
+                lines.append("  (set PERPLEXITY_API_KEY to enable sonar-pro)")
+
         lines.append("=" * 60)
         return "\n".join(lines)
 
@@ -142,7 +157,9 @@ def _check_python() -> CheckResult:
     if sys.version_info >= (3, 10):
         return CheckResult(name="Python", status="ok", version=ver)
     return CheckResult(
-        name="Python", status="warning", version=ver,
+        name="Python",
+        status="warning",
+        version=ver,
         message=f"Python 3.10+ recommended, found {ver}",
         install_hint="https://www.python.org/downloads/",
     )
@@ -156,7 +173,8 @@ def _check_circuit_weaver() -> CheckResult:
         return CheckResult(name="circuit-weaver", status="ok", version=ver)
     except ImportError:
         return CheckResult(
-            name="circuit-weaver", status="missing",
+            name="circuit-weaver",
+            status="missing",
             message="circuit-weaver package not installed",
             install_hint="pip install circuit-weaver",
         )
@@ -175,7 +193,10 @@ def _check_kicad_cli() -> CheckResult:
         # Try to get version
         try:
             result = subprocess.run(
-                [path, "version"], capture_output=True, text=True, timeout=5,
+                [path, "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             ver = result.stdout.strip().split("\n")[0] if result.returncode == 0 else ""
         except Exception:
@@ -189,7 +210,8 @@ def _check_kicad_cli() -> CheckResult:
             return CheckResult(name="KiCad CLI", status="ok", version=ver)
 
     return CheckResult(
-        name="KiCad CLI", status="missing",
+        name="KiCad CLI",
+        status="missing",
         message="Required for ERC, Gerber export, and DFM checks",
         install_hint=hints.get(os_hint, hints["linux"]),
     )
@@ -207,7 +229,10 @@ def _check_ngspice() -> CheckResult:
     if path:
         try:
             result = subprocess.run(
-                [path, "--version"], capture_output=True, text=True, timeout=5,
+                [path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             ver = result.stdout.strip().split("\n")[0] if result.returncode == 0 else ""
         except Exception:
@@ -215,7 +240,9 @@ def _check_ngspice() -> CheckResult:
         return CheckResult(name="ngspice", status="ok", version=ver, required=False)
 
     return CheckResult(
-        name="ngspice", status="missing", required=False,
+        name="ngspice",
+        status="missing",
+        required=False,
         message="Required for circuit simulation (SPICE analysis)",
         install_hint=hints.get(os_hint, hints["linux"]),
     )
@@ -233,7 +260,9 @@ def _check_freerouting() -> CheckResult:
         return CheckResult(name="Freerouting", status="ok", version="JAR", required=False)
 
     return CheckResult(
-        name="Freerouting", status="missing", required=False,
+        name="Freerouting",
+        status="missing",
+        required=False,
         message="Required for PCB autorouting",
         install_hint="Download from https://github.com/freerouting/freerouting/releases",
     )
@@ -246,7 +275,9 @@ def _check_python_package(name: str, pip_name: str, purpose: str, required: bool
         return CheckResult(name=pip_name, status="ok", version=str(ver), required=required)
     except ImportError:
         return CheckResult(
-            name=pip_name, status="missing", required=required,
+            name=pip_name,
+            status="missing",
+            required=required,
             message=purpose,
             install_hint=f"pip install {pip_name}",
         )
@@ -277,17 +308,44 @@ def run_doctor() -> DoctorReport:
     report.checks.append(_check_freerouting())
 
     # Python optional dependencies
-    report.checks.append(_check_python_package(
-        "yaml", "PyYAML", "Required for YAML spec parsing", required=True,
-    ))
-    report.checks.append(_check_python_package(
-        "requests", "requests", "Required for online part lookups (DigiKey, Mouser, LCSC)",
-    ))
-    report.checks.append(_check_python_package(
-        "fastapi", "fastapi", "Required for HTTP API server", required=False,
-    ))
-    report.checks.append(_check_python_package(
-        "skrf", "scikit-rf", "Required for RF chain simulation (S-parameter analysis)", required=False,
-    ))
+    report.checks.append(
+        _check_python_package(
+            "yaml",
+            "PyYAML",
+            "Required for YAML spec parsing",
+            required=True,
+        )
+    )
+    report.checks.append(
+        _check_python_package(
+            "requests",
+            "requests",
+            "Required for online part lookups (DigiKey, Mouser, LCSC)",
+        )
+    )
+    report.checks.append(
+        _check_python_package(
+            "fastapi",
+            "fastapi",
+            "Required for HTTP API server",
+            required=False,
+        )
+    )
+    report.checks.append(
+        _check_python_package(
+            "skrf",
+            "scikit-rf",
+            "Required for RF chain simulation (S-parameter analysis)",
+            required=False,
+        )
+    )
+
+    # Research backend selection (Sprint 37 Task 161)
+    try:
+        from .research import backend_info
+
+        report.research_backend = backend_info()
+    except Exception as exc:  # pragma: no cover — diagnostic path
+        report.research_backend = {"error": str(exc)}
 
     return report

@@ -111,21 +111,21 @@ class SymbolResolver:
         if self._reg:
             comp = self._reg.get(mpn)
             if comp:
-                log.debug("Resolved %s via registry", mpn)
+                log.info("Resolved %s via registry", mpn)
                 return comp, "registry"
 
         # Tier 2: ic_data JSON store (user-curated + template-extracted)
         if self._use_ic_data:
             comp = self._resolve_ic_data(mpn)
             if comp:
-                log.debug("Resolved %s via ic_data", mpn)
+                log.info("Resolved %s via ic_data", mpn)
                 return comp, "ic_data"
 
         # Tier 3: KiCad library
         if self._kicad:
             comp = self._kicad.get_component(mpn, category)
             if comp:
-                log.debug("Resolved %s via kicad lib", mpn)
+                log.info("Resolved %s via kicad lib", mpn)
                 return comp, "kicad"
 
         # Tier 4: SymbolCache (rebuild from cached index entry)
@@ -133,21 +133,21 @@ class SymbolResolver:
         if cached:
             # Rebuild ComponentDef from cached metadata
             comp = self._rebuild_from_cache(mpn, cached)
-            log.debug("Resolved %s via cache (source=%s)", mpn, cached.get("source", "unknown"))
+            log.info("Resolved %s via cache (source=%s)", mpn, cached.get("source", "unknown"))
             return comp, "cache"
 
-        # Tier 4: EasyEDA (full symbol via LCSC)
+        # Tier 5: EasyEDA (full symbol via LCSC)
         if self._use_easyeda:
             comp = self._resolve_easyeda(mpn)
             if comp:
-                log.debug("Resolved %s via easyeda", mpn)
+                log.info("Resolved %s via easyeda", mpn)
                 return comp, "easyeda"
 
-        # Tier 5: DigiKey (stub with footprint)
+        # Tier 6: DigiKey (stub with footprint)
         if self._use_dk:
             comp = self._resolve_digikey(mpn)
             if comp:
-                log.debug("Resolved %s via digikey", mpn)
+                log.info("Resolved %s via digikey", mpn)
                 return comp, "digikey"
 
         # Tier 6: Mouser (stub with footprint)
@@ -214,6 +214,22 @@ class SymbolResolver:
             bypass_caps=[],
             straps=[],
             explicit_no_connects=set(),
+        )
+
+    # Module-level once-per-session cache of credential warnings so a
+    # multi-component run doesn't emit the same "DigiKey skipped" line N
+    # times. (Sprint 37 Task 156.)
+    _cred_warned: set[str] = set()
+
+    @classmethod
+    def _warn_credential_missing_once(cls, tier: str, env_var: str) -> None:
+        if tier in cls._cred_warned:
+            return
+        cls._cred_warned.add(tier)
+        log.info(
+            "%s tier skipped: %s not set. Run 'circuit-weaver doctor' to configure.",
+            tier,
+            env_var,
         )
 
     def _resolve_ic_data(self, mpn: str) -> ComponentDef | None:
@@ -296,6 +312,12 @@ class SymbolResolver:
         Returns:
             ComponentDef stub from DigiKey, or None if unavailable.
         """
+        import os as _os
+
+        if not _os.environ.get("DIGIKEY_CLIENT_ID"):
+            self._warn_credential_missing_once("DigiKey", "DIGIKEY_CLIENT_ID")
+            return None
+
         try:
             from .digikey_loader import load_from_digikey
 
@@ -319,6 +341,12 @@ class SymbolResolver:
         Returns:
             ComponentDef stub from Mouser, or None if unavailable.
         """
+        import os as _os
+
+        if not _os.environ.get("MOUSER_SEARCH_API_KEY"):
+            self._warn_credential_missing_once("Mouser", "MOUSER_SEARCH_API_KEY")
+            return None
+
         try:
             from .mouser_loader import load_from_mouser
 

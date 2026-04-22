@@ -142,6 +142,29 @@ def test_project_spec_uses_symbol_resolver_chain():
     assert len(comp.pins) > 0
 
 
+def test_digikey_tier_logs_missing_credential_once(caplog, monkeypatch):
+    """Sprint 37 Task 156: when DIGIKEY_CLIENT_ID is absent the DigiKey
+    tier must log ONE informative INFO line per session, then silently
+    skip on subsequent MPNs in the same run.
+    """
+    monkeypatch.delenv("DIGIKEY_CLIENT_ID", raising=False)
+    # Reset the per-class warn cache so the test sees the first-call path.
+    from circuit_weaver.symbol_resolver import SymbolResolver
+
+    SymbolResolver._cred_warned.clear()  # type: ignore[attr-defined]
+
+    r = SymbolResolver(use_easyeda=False, use_mouser=False, use_ic_data=False)
+    with caplog.at_level("INFO", logger="circuit_weaver.symbol_resolver"):
+        r.resolve("NONEXISTENT-1")
+        r.resolve("NONEXISTENT-2")
+        r.resolve("NONEXISTENT-3")
+
+    skip_lines = [rec for rec in caplog.records if "DigiKey tier skipped" in rec.getMessage()]
+    assert len(skip_lines) == 1, f"expected exactly one 'DigiKey tier skipped' INFO log, got {len(skip_lines)}"
+    assert "DIGIKEY_CLIENT_ID" in skip_lines[0].getMessage()
+    assert "circuit-weaver doctor" in skip_lines[0].getMessage()
+
+
 def test_unresolved_mpn_falls_to_stub_with_informative_reason():
     """When every tier fails, we still get a stub — but the diagnostic now
     names all 7 tiers so the user can see exactly what was tried.

@@ -109,18 +109,29 @@ class ProtectionTemplate(SubcircuitTemplate):
         },
     ]
 
+    @staticmethod
+    def _ic_db() -> dict[str, dict[str, Any]]:
+        """Hardcoded TVS_DATABASE merged with ic_data 'protection' entries
+        so user :func:`register_ic` calls also reach the legacy template.
+        Sprint 37 Task 158."""
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db(TVS_DATABASE, "protection")
+
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
         if not params.get("protect_net"):
             errors.append("Missing required param 'protect_net'")
         ic = params.get("ic", "SMBJ5.0A")
-        if ic not in TVS_DATABASE:
-            errors.append(f"Unknown protection IC '{ic}'. Available: {', '.join(TVS_DATABASE)}")
+        db = self._ic_db()
+        if ic not in db:
+            errors.append(f"Unknown protection IC '{ic}'. Available: {', '.join(db)}")
         return errors
 
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
         ic_name = params.get("ic", "SMBJ5.0A")
-        ic_db = TVS_DATABASE.get(ic_name, TVS_DATABASE["SMBJ5.0A"])
+        db = self._ic_db()
+        ic_db = db.get(ic_name, db["SMBJ5.0A"])
         ref = params.get("ref", "D")
         protect_net = params["protect_net"]
         gnd_net = params.get("gnd_net", "GND")

@@ -2,7 +2,7 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
-## Sprint 37 — Observability, Research Pipeline & Resolver Polish (v0.26.0)
+## Sprint 37 — Observability, Research Pipeline & Resolver Polish (v0.26.0) ✅ DONE
 
 **Goal:** Turn the v0.25.0 resolver into something users can trust end-to-end — visible credentials diagnostics, persistent research output, hermetic regression coverage of the full chain, and a finished data-driven template migration.
 
@@ -13,7 +13,7 @@ Three categories bundled into one minor-version release:
 
 ---
 
-### 156. Resolver credential visibility (P1, SMALL)
+### 156. Resolver credential visibility (P1, SMALL) ✅ DONE
 
 When a SymbolResolver tier skips because its env vars aren't set, log one clear INFO line instead of silently falling through.
 
@@ -25,7 +25,7 @@ Files: `src/circuit_weaver/symbol_resolver.py`, `src/circuit_weaver/doctor.py`, 
 
 ---
 
-### 157. Resolver end-to-end integration test (P1, MEDIUM)
+### 157. Resolver end-to-end integration test (P1, MEDIUM) ✅ DONE
 
 Lock in the user-reported Zigbee sensor flow as a hermetic test so v0.24.x-style resolver regressions never ship again.
 
@@ -38,7 +38,7 @@ Files: `tests/test_resolver_e2e.py` (new), possibly `pyproject.toml` (add `respo
 
 ---
 
-### 158. Migrate legacy templates to data-driven path (P2, MEDIUM)
+### 158. Migrate legacy templates to data-driven path (P2, MEDIUM) ✅ DONE
 
 Close the Sprint 34 footnote: `audio_amplifier.py`, `motor_driver.py`, `protection.py` still have hardcoded Python dicts even though their ICs are now in `ic_data/`. Migrate + dedupe.
 
@@ -51,7 +51,7 @@ Files: `src/circuit_weaver/subcircuits/audio_amplifier.py`, `motor_driver.py`, `
 
 ---
 
-### 159. Workflow-level logging hardening (P0, MEDIUM) — user-reported
+### 159. Workflow-level logging hardening (P0, MEDIUM) — user-reported ✅ DONE
 
 **User report:** `i:\my_circuit\zigbee_air_sensor\output\circuit-weaver.log` is weak — no workflow step markers, no visible log-level messages, barely populated.
 
@@ -71,7 +71,7 @@ Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/logging_bridge.py
 
 ---
 
-### 160. Persist research output to project directory (P0, MEDIUM) — user-reported
+### 160. Persist research output to project directory (P0, MEDIUM) — user-reported ✅ DONE
 
 **User report:** `research-analyst` runs but produces no artifacts in the project dir — users can't see what was researched, what citations were consulted, or reproduce the findings.
 
@@ -87,7 +87,7 @@ Files: `src/circuit_weaver/dispatcher.py` (new `save-research` or extend `log-ev
 
 ---
 
-### 161. Research backend selector (sonar-pro vs standard) (P1, SMALL) — user-reported
+### 161. Research backend selector (sonar-pro vs standard) (P1, SMALL) — user-reported ✅ DONE
 
 **User report:** user wants to choose between Perplexity sonar-pro (paid, high-quality) and standard Claude WebSearch/WebFetch (free) for research runs.
 
@@ -101,7 +101,7 @@ Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/doctor.py`, `skil
 
 ---
 
-### 162. CHANGELOG + version bump for v0.26.0 (P1, XS)
+### 162. CHANGELOG + version bump for v0.26.0 (P1, XS) ✅ DONE
 
 - [ ] Add `## [0.26.0] - YYYY-MM-DD` entry summarising Sprints 37.
 - [ ] Bump `__version__` to 0.26.0 in `pyproject.toml`, `__init__.py`, `tests/test_bootstrap.py`.

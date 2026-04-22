@@ -7,21 +7,65 @@ Provides a unified logging interface so that:
    module log structured events without passing a logger instance around.
 3. init_logging() sets up both design.log (JSON Lines) and circuit-weaver.log
    (text) from the start of any operation, not just during generate_artifacts().
+4. init_logging_for_cli(args) picks the right log directory based on the
+   argparse Namespace — a file-path --output writes to the file's parent
+   dir, a directory --output writes to the dir itself, and commands with
+   no --output fall back to the YAML spec's parent or CWD.
+
+The root logger level is controlled by ``CIRCUIT_WEAVER_LOG_LEVEL``
+(default ``INFO``). Setting ``DEBUG`` surfaces byte-level trace — useful
+when reproducing resolver/subprocess issues.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    import argparse
+
     from .design_logger import DesignLogger
 
 _lock = threading.Lock()
 _current_logger: DesignLogger | None = None
 _file_handler: logging.FileHandler | None = None
+
+# Filename extensions that indicate args.output is a single artifact file
+# rather than an output directory. When we detect one of these we log to
+# the parent directory instead of trying to create args.output/ as a dir.
+_FILE_OUTPUT_SUFFIXES = {
+    ".html",
+    ".htm",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".csv",
+    ".md",
+    ".svg",
+    ".txt",
+    ".pdf",
+    ".zip",
+    ".stl",
+    ".scad",
+}
+
+# Commands that intentionally don't touch a project directory — skip file
+# logging entirely for these so we don't litter CWD with empty log files.
+_NO_LOG_COMMANDS = {
+    "doctor",
+    "discover",
+    "list-templates",
+    "schema",
+    "cache",
+    "log-view",
+    "log-status",
+    "install-skills",
+    "log-event",
+}
 
 
 def get_design_logger() -> DesignLogger | None:
@@ -161,17 +205,114 @@ def init_logging(
     bridge.setLevel(logging.DEBUG)
     cw_logger.addHandler(bridge)
 
-    # Also set up circuit-weaver.log text file
+    # Also set up circuit-weaver.log text file. The file handler always
+    # captures DEBUG so reruns can inspect everything; the root logger
+    # level is driven by CIRCUIT_WEAVER_LOG_LEVEL (default INFO) which
+    # controls what propagates to stderr.
     log_path = project_path / "circuit-weaver.log"
     with _lock:
         _file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
         _file_handler.setLevel(logging.DEBUG)
         _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     cw_logger.addHandler(_file_handler)
-    if cw_logger.level == logging.NOTSET or cw_logger.level > logging.DEBUG:
-        cw_logger.setLevel(logging.DEBUG)
+
+    env_level = os.environ.get("CIRCUIT_WEAVER_LOG_LEVEL", "INFO").upper()
+    try:
+        level = getattr(logging, env_level)
+    except AttributeError:
+        level = logging.INFO
+    if cw_logger.level == logging.NOTSET or cw_logger.level > level:
+        cw_logger.setLevel(level)
 
     return dl, bridge
+
+
+def _resolve_log_dir(command: str, args: argparse.Namespace | None) -> Path | None:
+    """Pick a log directory from the CLI args.
+
+    Rules:
+    1. ``command in _NO_LOG_COMMANDS`` → return None (no log file).
+    2. ``args.output`` is a directory-like path → use it.
+    3. ``args.output`` looks like a single-file artifact → use its parent.
+    4. ``args.spec`` / ``args.design`` → use the spec file's parent.
+    5. Otherwise → current working directory.
+    """
+    if not command or command in _NO_LOG_COMMANDS:
+        return None
+
+    out = getattr(args, "output", None) if args is not None else None
+    if out:
+        p = Path(out)
+        if p.suffix.lower() in _FILE_OUTPUT_SUFFIXES:
+            return p.parent if str(p.parent) else Path.cwd()
+        return p
+
+    # Fall back to the spec file's directory when a YAML arg is present.
+    for attr in ("spec", "design", "schematic", "project_dir"):
+        val = getattr(args, attr, None) if args is not None else None
+        if val:
+            candidate = Path(val)
+            if candidate.exists() and candidate.is_file():
+                return candidate.parent
+            return candidate if candidate.is_dir() else Path.cwd()
+
+    return Path.cwd()
+
+
+def init_logging_for_cli(
+    command: str,
+    args: argparse.Namespace | None = None,
+) -> Path | None:
+    """Initialise logging for a CLI subcommand.
+
+    Figures out where ``circuit-weaver.log`` should live based on ``args``
+    and calls :func:`init_logging`. Idempotent — if a DesignLogger is
+    already bound for a different directory (e.g. from an in-process
+    caller like ``generate_artifacts``) we leave it alone.
+
+    Returns the resolved log directory, or ``None`` if logging was skipped.
+    """
+    if get_design_logger() is not None:
+        # Already initialised by an outer caller.
+        return None
+
+    log_dir = _resolve_log_dir(command, args)
+    if log_dir is None:
+        return None
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    init_logging(log_dir)
+    return log_dir
+
+
+def log_workflow_step(
+    command: str,
+    step: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Emit a visible workflow marker to both design.log and circuit-weaver.log.
+
+    Use at the top of each CLI handler and at major transitions inside
+    long-running workflows (validate → generate → confidence, etc.) so
+    users can trace what the tool was doing just by reading the log.
+
+    Args:
+        command: CLI subcommand name (e.g. ``"generate"``).
+        step: Short step label (e.g. ``"start"``, ``"validate"``, ``"emit-artifacts"``).
+        message: Human-readable description.
+        details: Optional structured fields for the design.log JSON entry.
+    """
+    cw_logger = logging.getLogger("circuit_weaver")
+    prefix = f"[{command}:{step}]"
+    cw_logger.info("%s %s", prefix, message)
+
+    dl = get_design_logger()
+    if dl is not None:
+        try:
+            dl.log_step(0, f"{prefix} {message}", user_input=details)
+        except Exception:  # pragma: no cover — logger must never raise
+            pass
 
 
 def cleanup_logging() -> None:

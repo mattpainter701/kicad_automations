@@ -175,6 +175,15 @@ class MotorDriverTemplate(SubcircuitTemplate):
         },
     ]
 
+    @staticmethod
+    def _ic_db() -> dict[str, dict[str, Any]]:
+        """Hardcoded MOTOR_DRIVER_IC_DATABASE merged with ic_data 'motor_driver'
+        entries so user :func:`register_ic` calls work with the legacy template
+        too. Sprint 37 Task 158."""
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db(MOTOR_DRIVER_IC_DATABASE, "motor_driver")
+
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
         vm = params.get("vm")
@@ -185,11 +194,12 @@ class MotorDriverTemplate(SubcircuitTemplate):
             errors.append("Missing required param 'imotor' (motor current in A)")
 
         ic_name = params.get("ic", "DRV8833")
-        if ic_name not in MOTOR_DRIVER_IC_DATABASE:
-            errors.append(f"Unknown motor driver IC '{ic_name}'. Available: {', '.join(MOTOR_DRIVER_IC_DATABASE)}")
+        db = self._ic_db()
+        if ic_name not in db:
+            errors.append(f"Unknown motor driver IC '{ic_name}'. Available: {', '.join(db)}")
             return errors
 
-        ic_db = MOTOR_DRIVER_IC_DATABASE[ic_name]
+        ic_db = db[ic_name]
         if vm is not None:
             vin_min, vin_max = ic_db["vin_range"]
             if vm < vin_min or vm > vin_max:
@@ -223,7 +233,8 @@ class MotorDriverTemplate(SubcircuitTemplate):
         vdd_net = params.get("vdd_net", "VDD_3P3")
         motor_type = params.get("motor_type", "dc")
 
-        ic_db = MOTOR_DRIVER_IC_DATABASE.get(ic_name, MOTOR_DRIVER_IC_DATABASE["DRV8833"])
+        db = self._ic_db()
+        ic_db = db.get(ic_name, db["DRV8833"])
 
         if ic_name == "DRV8833":
             return self._generate_drv8833(ic_name, ic_db, vm, imotor, ref, vm_net, motor_type)

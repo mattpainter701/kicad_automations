@@ -1944,6 +1944,17 @@ def main() -> None:
         default=False,
         help="Run wizard without prompting (use for testing; all prompts use defaults)",
     )
+    wizard_p.add_argument(
+        "--research-backend",
+        dest="research_backend",
+        choices=["auto", "sonar-pro", "standard"],
+        default="auto",
+        help=(
+            "Which research backend to use for /research calls. "
+            "'auto' (default) picks sonar-pro when PERPLEXITY_API_KEY is set, "
+            "else standard WebSearch. Env var: CIRCUIT_WEAVER_RESEARCH_BACKEND."
+        ),
+    )
 
     log_status_p = subparsers.add_parser(
         "log-status",
@@ -2210,6 +2221,23 @@ def main() -> None:
     discover_p.add_argument("--depth", type=int, default=2, help="Maximum search depth (default: 2)")
     discover_p.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
 
+    save_research_p = subparsers.add_parser(
+        "save-research",
+        help="Persist a research-analyst result to {project_dir}/research/ (JSON + Markdown + summary)",
+    )
+    save_research_p.add_argument(
+        "--project-dir",
+        dest="output",
+        required=True,
+        help="Project output directory — results land in {project_dir}/research/",
+    )
+    save_research_p.add_argument("--file", default=None, help="Read JSON payload from this file (default: stdin)")
+    save_research_p.add_argument("--topic", default=None, help="Override topic slug (otherwise taken from JSON)")
+    save_research_p.add_argument("--backend", default=None, help="Override backend label (sonar-pro|standard|...)")
+    save_research_p.add_argument(
+        "--json", dest="json_output", action="store_true", help="Print the saved record path as JSON"
+    )
+
     log_event_p = subparsers.add_parser("log-event", help="Log a structured event to the project design.log")
     log_event_p.add_argument("project_dir", help="Project directory containing design.log")
     log_event_p.add_argument(
@@ -2237,11 +2265,64 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # Task 159: every CLI subcommand gets a circuit-weaver.log in the
+    # project directory (unless it's a read-only/administrative command
+    # listed in _NO_LOG_COMMANDS). Workflow-step markers are emitted at
+    # the top of each handler below so users can trace the run.
+    from .logging_bridge import (
+        cleanup_logging as _cw_cleanup_logging,
+    )
+    from .logging_bridge import (
+        init_logging_for_cli as _cw_init_logging_for_cli,
+    )
+    from .logging_bridge import (
+        log_workflow_step as _cw_log_workflow_step,
+    )
+
+    _cw_owned_log_dir = _cw_init_logging_for_cli(args.command, args)
+    if _cw_owned_log_dir is not None:
+        _cw_log_workflow_step(
+            args.command,
+            "start",
+            f"CLI invoked: circuit-weaver {args.command}",
+            details={"log_dir": str(_cw_owned_log_dir)},
+        )
+
+    try:
+        _cw_dispatch_result = _main_dispatch(args, _cw_log_workflow_step)
+    except SystemExit:
+        if _cw_owned_log_dir is not None:
+            _cw_log_workflow_step(args.command, "end", "CLI exited via SystemExit")
+            _cw_cleanup_logging()
+        raise
+    except Exception as exc:
+        if _cw_owned_log_dir is not None:
+            _logger.exception("CLI command '%s' failed: %s", args.command, exc)
+            _cw_log_workflow_step(args.command, "error", f"Unhandled exception: {exc}")
+            _cw_cleanup_logging()
+        raise
+    else:
+        if _cw_owned_log_dir is not None:
+            _cw_log_workflow_step(args.command, "end", "CLI completed")
+            _cw_cleanup_logging()
+        return _cw_dispatch_result
+
+
+def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatcher
+    """Original body of main(). Split out so the outer main() can wrap it
+    with unified workflow-logging setup/teardown.
+    """
     if args.command == "validate":
         strict = getattr(args, "strict", False)
         color = getattr(args, "color", "auto")
         verbose = getattr(args, "verbose", False)
         detailed_score = getattr(args, "detailed_score", False)
+        log_workflow_step(
+            "validate",
+            "load-spec",
+            f"Loading design spec from {args.spec}",
+            details={"spec": str(args.spec), "strict": strict},
+        )
         spec = _load_spec_file(args.spec)
         report = _run_with_stderr_capture(
             lambda: validate_design(
@@ -2306,6 +2387,12 @@ def main() -> None:
         raise SystemExit(0 if result["accepted"] else 2)
 
     if args.command == "generate":
+        log_workflow_step(
+            "generate",
+            "load-spec",
+            f"Loading design spec from {args.spec}",
+            details={"spec": str(args.spec), "output_dir": str(args.output)},
+        )
         spec = _load_spec_file(args.spec)
         if args.presentation_profile:
             spec["presentation_profile"] = args.presentation_profile
@@ -3456,6 +3543,50 @@ def main() -> None:
         except Exception as exc:
             print(f"Error discovering projects: {exc}", file=sys.stderr)
             raise SystemExit(1)
+
+    if args.command == "save-research":
+        import json as _json_mod
+
+        from .research_store import save_research_from_dict
+
+        project_dir = Path(args.output)
+        project_dir.mkdir(parents=True, exist_ok=True)
+        log_workflow_step(
+            "save-research",
+            "start",
+            f"Persisting research result to {project_dir}/research/",
+        )
+        try:
+            if args.file:
+                raw = Path(args.file).read_text(encoding="utf-8")
+            else:
+                raw = sys.stdin.read()
+            if not raw.strip():
+                print("Error: no JSON payload provided (use --file or stdin)", file=sys.stderr)
+                raise SystemExit(2)
+            payload = _json_mod.loads(raw)
+            if not isinstance(payload, dict):
+                print("Error: research payload must be a JSON object", file=sys.stderr)
+                raise SystemExit(2)
+            if args.topic:
+                payload["topic"] = args.topic
+            if args.backend:
+                payload["backend"] = args.backend
+            saved_path = save_research_from_dict(project_dir, payload)
+        except SystemExit:
+            raise
+        except _json_mod.JSONDecodeError as exc:
+            print(f"Error: invalid JSON payload: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
+        except Exception as exc:
+            print(f"Error saving research: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+        if getattr(args, "json_output", False):
+            print(_json_mod.dumps({"path": str(saved_path)}, indent=2))
+        else:
+            print(f"Saved research → {saved_path}", file=sys.stderr)
+        raise SystemExit(0)
 
     if args.command == "log-event":
         try:

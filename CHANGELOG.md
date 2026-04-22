@@ -1,5 +1,97 @@
 # Changelog
 
+## [0.26.0] - 2026-04-22
+
+### Sprint 37 — Observability, Research Pipeline & Resolver Polish
+
+Three categories bundled into one release, all driven by user reports
+against v0.25.x.
+
+### Added — Observability (Task 159, user-reported)
+
+- **`circuit-weaver.log` now covers every subcommand**, not just `generate`. The
+  dispatcher calls `init_logging_for_cli(args.command, args)` before dispatching,
+  so `validate`, `confidence`, `simulate`, `erc`, `cost-bom`, `export-*`, etc.
+  all produce a log file in the project directory.
+- **Log directory heuristics:** file-style `--output` (e.g. `report.html`) →
+  log to its parent dir; directory-style → log to that dir; otherwise fall back
+  to the spec file's parent (so `validate design.yaml` with no `--output`
+  still writes next to the YAML). Administrative commands (`doctor`,
+  `discover`, `list-templates`, `cache`, `install-skills`, ...) skip file
+  logging entirely to avoid littering CWD.
+- **`log_workflow_step(command, step, message, details)`** helper emits
+  `[command:step]` markers to both `circuit-weaver.log` and `design.log`.
+  Handlers for `validate`, `generate`, and `save-research` now mark
+  their entry points.
+- **`CIRCUIT_WEAVER_LOG_LEVEL`** env var controls root level (default
+  `INFO`; set `DEBUG` for byte-level trace).
+- **Resolver tier resolution is now INFO-level** (was DEBUG) so users
+  see which MPN resolved via which tier without enabling debug mode.
+
+### Added — Research pipeline (Tasks 160 & 161, user-reported)
+
+- **`circuit-weaver save-research`** new CLI subcommand. Reads a JSON
+  payload from stdin or `--file`, writes `{project_dir}/research/{slug}.json`,
+  `{slug}.md`, and a rebuilt `summary.md` index. Structured record
+  includes: topic, query, backend, summary, findings (mpn/cost/notes),
+  citations (title/url/snippet), timestamp.
+- **`src/circuit_weaver/research_store.py`** new module: atomic-write
+  persistence (`tmp`→rename), markdown renderer, summary-index rebuild,
+  `list_research_topics()` for downstream tooling.
+- **`--research-backend {auto,sonar-pro,standard}` on `design-wizard`**,
+  plus `CIRCUIT_WEAVER_RESEARCH_BACKEND` env var. `auto` (default) picks
+  `sonar-pro` when `PERPLEXITY_API_KEY` is set, else `standard` (Claude
+  native WebSearch). Requesting `sonar-pro` without a key degrades to
+  `standard` with an INFO log rather than crashing.
+- **`src/circuit_weaver/research.py`** new module: `resolve_backend()`
+  + `backend_info()` for the selection logic.
+- **`doctor` reports research backend** — effective backend, whether
+  `PERPLEXITY_API_KEY` is set, env var state.
+
+### Added — Resolver polish (Tasks 156, 157, 158)
+
+- **Task 156 — credential skip visibility:** `SymbolResolver` emits one
+  INFO log per session when DigiKey or Mouser tier is skipped because
+  `DIGIKEY_CLIENT_ID` / `MOUSER_SEARCH_API_KEY` is unset. Dedupe cache
+  prevents spamming the log on large designs.
+- **Task 157 — hermetic end-to-end regression test:** `tests/test_resolver_e2e.py`
+  runs the user-reported Zigbee air-sensor YAML (SHT41 / SGP40 / nRF52840)
+  through the full chain with mocked `load_from_digikey`. Asserts no MPN
+  falls to a stub when a tier should have caught it.
+- **Task 158 — legacy templates honour `register_ic()`:** `audio_amplifier`,
+  `motor_driver`, and `protection` now merge `ic_data` entries for their
+  topology into their hardcoded `*_IC_DATABASE` dicts via `ic_data.merge_into_legacy_db`.
+  Users can now `register_ic("TEST-NEW-TVS", {...})` and have the new IC
+  resolve through the legacy `type: protection` template as well as
+  `DataDrivenTemplate`.
+
+### Fixed
+
+- `ic_data.merge_into_legacy_db` converts dict-shaped pin entries to
+  `PinDef` instances so legacy `generate()` paths (which iterate pins as
+  dataclass objects) don't choke on user-registered JSON.
+
+### Tests
+
+- **`tests/test_logging_workflow.py`** — 10 tests covering log-dir
+  resolution, CLI subcommand log file creation, workflow markers, and
+  `CIRCUIT_WEAVER_LOG_LEVEL=DEBUG` propagation.
+- **`tests/test_research_store.py`** — 16 tests covering slugify, JSON
+  persistence, Markdown rendering, summary index, atomic write, and CLI.
+- **`tests/test_research_backend.py`** — 12 tests covering backend
+  resolution precedence, env-var handling, and doctor integration.
+- **`tests/test_resolver_e2e.py`** — 2 end-to-end tests locking in the
+  Zigbee air-sensor user scenario with mocked DigiKey.
+- **`tests/test_legacy_template_hotload.py`** — 4 tests proving
+  `register_ic()` entries flow into audio_amplifier / motor_driver /
+  protection template classes.
+- **Task 156 regression test** added to `tests/test_resolver_chain.py` —
+  asserts exactly one "DigiKey tier skipped" INFO log per session.
+
+**Total: 702 passed, 1 skipped, 0 failed. Ruff clean.**
+
+---
+
 ## [0.25.0] - 2026-04-22
 
 ### Sprint 35 — Install-UX hardening & platform parity

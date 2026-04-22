@@ -142,11 +142,24 @@ class AudioAmplifierTemplate(SubcircuitTemplate):
         },
     ]
 
+    @staticmethod
+    def _ic_db() -> dict[str, dict[str, Any]]:
+        """Return the hardcoded DB merged with ic_data entries for 'audio_amplifier'.
+
+        Sprint 37 Task 158: lets users register_ic() new audio amps and have
+        them work with the legacy template path too, not just the data-driven
+        fallback registered in SubcircuitRegistry.
+        """
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db(AUDIO_AMP_IC_DATABASE, "audio_amplifier")
+
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
         ic_name = params.get("ic", "PAM8302AASCR")
-        if ic_name not in AUDIO_AMP_IC_DATABASE:
-            errors.append(f"Unknown audio amp IC '{ic_name}'. Available: {', '.join(AUDIO_AMP_IC_DATABASE)}")
+        db = self._ic_db()
+        if ic_name not in db:
+            errors.append(f"Unknown audio amp IC '{ic_name}'. Available: {', '.join(db)}")
         f_low = params.get("f_low", 100)
         if f_low is not None and f_low <= 0:
             errors.append(f"f_low ({f_low} Hz) must be positive")
@@ -167,7 +180,8 @@ class AudioAmplifierTemplate(SubcircuitTemplate):
             speaker_impedance: float — speaker impedance ohms (default: 8)
         """
         ic_name = params.get("ic", "PAM8302AASCR")
-        ic_db = AUDIO_AMP_IC_DATABASE.get(ic_name, AUDIO_AMP_IC_DATABASE["PAM8302AASCR"])
+        db = self._ic_db()
+        ic_db = db.get(ic_name, db["PAM8302AASCR"])
         ref = params.get("ref", "U")
         vdd_net = params.get("vdd_net", "VDD_3P3")
         audio_in_net = params.get("audio_in_net", "AUDIO_IN")

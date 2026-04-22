@@ -227,6 +227,49 @@ def list_topologies() -> list[str]:
     return sorted({data.get("topology", "") for data in _get_db().values()} - {""})
 
 
+def merge_into_legacy_db(legacy_db: dict[str, dict[str, Any]], topology: str) -> dict[str, dict[str, Any]]:
+    """Return ``legacy_db`` augmented with any ic_data entries matching ``topology``.
+
+    Used by legacy template classes (audio_amplifier, motor_driver, protection)
+    whose hardcoded ``*_IC_DATABASE`` dicts were extracted into ic_data JSON
+    in Sprint 34. This helper lets those templates also honour ICs registered
+    at runtime via :func:`register_ic`, keeping both paths in lockstep
+    without requiring a full refactor.
+
+    ic_data overlays the legacy dict ONLY for MPNs not already present —
+    legacy entries win on collision so existing behaviour is preserved.
+    The ``topology`` field is stripped and any dict-shaped ``pins`` entries
+    are converted to :class:`PinDef` instances (legacy generate() paths
+    iterate pins as dataclass objects, not dicts).
+    """
+    from ..component_db import PinDef  # local import — avoid cycles
+
+    def _as_pindef(p: Any) -> Any:
+        if isinstance(p, PinDef):
+            return p
+        if isinstance(p, dict):
+            return PinDef(
+                str(p.get("number", "")),
+                str(p.get("name", "")),
+                str(p.get("type", "passive")),
+                str(p.get("side", "L")),
+            )
+        return p
+
+    merged: dict[str, dict[str, Any]] = dict(legacy_db)
+    for mpn, entry in get_all_ics(topology).items():
+        if mpn in merged:
+            # Hardcoded legacy entry wins — it carries template-specific
+            # fields (vdd_min, ipeak, vrwm, ...) that may be richer than
+            # the JSON extract.
+            continue
+        cleaned = {k: v for k, v in entry.items() if k != "topology"}
+        if isinstance(cleaned.get("pins"), list):
+            cleaned["pins"] = [_as_pindef(p) for p in cleaned["pins"]]
+        merged[mpn] = cleaned
+    return merged
+
+
 # Topology → ComponentDef.category mapping for the resolver tier.
 _TOPOLOGY_CATEGORY: dict[str, str] = {
     "buck": "power",
