@@ -2,6 +2,238 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 40 — Generation Quality Regression Repair (v0.27.0)
+
+**Goal:** Repair regressions introduced while building out the dynamic IC
+designer, placement pipeline, and schematic density work. A user-shared
+generation output (IoT air-quality sensor) surfaced failure modes that are
+not design-specific — cache-stub poisoning, strap double-emission, fabricated
+PCB footprints, and reports claiming features the schematic doesn't contain —
+so every fix must generalize across circuit archetypes (IoT, motor/toy, SBC,
+inverter, wearable) and land behind regression coverage that prevents the next
+wave of generator improvements from silently breaking these subsystems again.
+
+---
+
+### 169. Cache rebuild must produce real symbols, not 2-pin stubs (P0, MEDIUM) ✅ DONE
+
+`SymbolResolver._rebuild_from_cache` previously emitted every cached MPN as
+a 2-pin passive stub with `pinout_source="explicit"`, bypassing the
+validator's existing `pinout-source` gate. Fixed by (a) marking cache
+rebuilds without pin data as `pinout_source="stub"` so the validator fails
+closed, and (b) extending `SymbolCache.put()` + adding
+`component_def_to_cache_payload()` so loaders with real pin topology
+(EasyEDA) persist full data and rebuild as trusted on the next session.
+
+- [x] `symbol_resolver.py` no longer silently emits routed 2-pin passives
+  for multi-pin cached parts — stubs are flagged with
+  `pinout_source="stub"` so the existing `pinout-source` validator rejects
+  them.
+- [x] `symbol_cache` entries now carry pins, pin_nets, power_pins,
+  power_reqs, bypass_caps, straps, and explicit_no_connects when the caller
+  supplies them (versioned as `_schema_version: 2`). Legacy entries still
+  parse cleanly as stubs.
+- [x] EasyEDA resolver tier caches via `component_def_to_cache_payload()`
+  so full pin topology round-trips across sessions.
+- [x] Tests: cache-without-pins marks component stub, cache-with-full-pins
+  is trusted with round-tripped power_pins, stub rebuild triggers the
+  `unverified-pinout` validator error.
+
+Files: `src/circuit_weaver/symbol_resolver.py`,
+`src/circuit_weaver/symbol_cache.py`, `tests/test_resolver_chain.py`
+
+Files: `src/circuit_weaver/symbol_resolver.py`,
+`src/circuit_weaver/symbol_cache.py`, `src/circuit_weaver/validator.py`,
+`tests/test_resolver_chain.py`, `tests/test_symbol_cache.py`
+
+---
+
+### 170. Eliminate double-emission in strap/support placer (P0, MEDIUM) ✅ DONE
+
+Fixed by instituting a hard invariant in `primitives.assemble_sheet` —
+structural duplicates are deduped before emission, and a test module
+`test_schematic_invariants` runs the same invariants from outside so any
+future placer/topology-dispatcher regression shows up as a test failure.
+Root-cause search in the 1522-line placer deferred to follow-up work;
+current fix guarantees the on-disk schematic is always internally
+consistent regardless of where upstream duplication was introduced.
+
+- [x] `primitives._dedupe_sheet_elements` now dedupes instances by
+  `(lib_id, ref, at)` + UUID, wires by sorted endpoints, labels by
+  `(kind, text, at)`, no-connects + junctions by `(at)`.
+- [x] Two distinct refs at the same coordinate are preserved — that's an
+  overlap bug for the placer to flag, not a reason to silently drop a
+  component.
+- [x] `tests/test_schematic_invariants.py` exposes
+  `assert_schematic_invariants(sch_text)` for reuse by the Sprint 40
+  corpus runner (Task 174).
+- [x] Reproducer built from the user-reported IoT AQ sensor symptom is
+  detected by the invariant runner — test fails loudly if the invariant
+  ever stops catching it.
+
+Follow-up (deferred): root-cause the doubled emission in `placer.py` /
+`_apply_topology_*` so duplicates don't need to be cleaned up at assembly
+time. Tracked as a backlog item; current dedup is the shipping safety net.
+
+Files: `src/circuit_weaver/primitives.py`,
+`tests/test_schematic_invariants.py`
+
+Files: `src/circuit_weaver/placer.py`, `src/circuit_weaver/generator.py`,
+`tests/test_placer.py`, `tests/test_schematic_invariants.py` (new)
+
+---
+
+### 171. Placement PCB emits real footprints or no pads — never fabricated ones (P0, MEDIUM) ✅ DONE
+
+Root cause: `pcb_export._footprint_sexpr` fell back to
+`Package_SO:SOIC-8_3.9x4.9mm_P1.27mm` whenever a component had no
+`footprint` binding AND synthesized two 1.27-pitch SMD pads for every
+footprint regardless of the part's real pad count. This produced
+physically-misleading geometry — ESP32-S3-WROOM-1 modules with 2 pads,
+LEDs / switches / sensors silently wearing SOIC-8 outlines.
+
+The placement `.kicad_pcb` is a layout *preview*, not a fabrication
+artifact. Real pads come from KiCad's forward-annotation pass after the
+user opens the generated schematic. Fixed by:
+
+- [x] Never fabricate a SOIC-8 fallback. Missing footprint bindings emit
+  `Placement_Preview:Missing_<ref>` placeholders so reviewers can't
+  mistake them for a real part.
+- [x] Never emit synthetic pads. Whichever footprint lands in the file,
+  zero pads are synthesized — KiCad's forward-annotation is authoritative.
+- [x] The `(generator ...)` field now reads
+  `"schematic_engine placement_preview"` so downstream tooling can
+  distinguish preview PCBs from fab-ready ones.
+- [x] `tests/test_pcb_preview_invariants.py` — three tests: no SOIC-8
+  fallback, no synthetic pads on any footprint, generator field
+  self-identifies.
+
+Files: `src/circuit_weaver/pcb_export.py`,
+`tests/test_pcb_preview_invariants.py`
+
+Files: `src/circuit_weaver/kicad_placement_api.py`,
+`src/circuit_weaver/generator.py`, `src/circuit_weaver/pcb_export.py`,
+`tests/test_kicad_placement_api.py`, `tests/test_pcb_invariants.py` (new)
+
+---
+
+### 172. Report and downstream artifacts describe only what was emitted (P0, SMALL) ✅ DONE
+
+Added `report.verify_report_fidelity(report_text, components)` — a
+diagnostic that scans any report text for references to component refs,
+net names, and component-embedded annotations that don't exist in the
+resolved design. Catches the IoT AQ audit pattern where the report
+claimed "BME688 I2C + pull-ups" and "LED + current-limit R4" without
+any backing wires.
+
+- [x] Regex-based scanner detects ghost refs (`U2`, `R4`, `LED1`), ghost
+  nets (`VBAT`, `SWDIO`, `SDA`, `SWCLK`, etc.), and ghost annotations
+  (claims naming a ref that isn't on any component in the design).
+- [x] Five tests cover: clean report passes, ghost refs caught, ghost
+  nets caught, annotation-level ghost claims caught, and the
+  reconstructed IoT AQ audit scenario.
+- [x] Diagnostic today; adopting as a generate-time gate is a follow-up
+  once the Sprint 40 corpus confirms no template currently trips it.
+
+Files: `src/circuit_weaver/report.py`, `tests/test_report_fidelity.py`
+
+Files: `src/circuit_weaver/report.py`, `src/circuit_weaver/design_ir.py`,
+`src/circuit_weaver/generator.py`, `tests/test_report_fidelity.py` (new)
+
+---
+
+### 173. `generate` honors every validator category consistently across runs (P1, SMALL) ✅ DONE
+
+Root cause: `dispatcher.generate_artifacts` had a single `require_valid`
+gate that bypassed ALL validation categories at once. `--no-require-valid`
+(intended to let users skip soft electrical warnings while iterating)
+silently let hard structural + implementation errors through too — which
+is how the IoT AQ audit ended up with 4 `missing-footprint` errors in
+`validation_report.json` but still writing artifacts to disk.
+
+Split the gate into two tiers:
+
+- [x] `structural` + `implementation` category errors ALWAYS raise,
+  regardless of `require_valid`. The error message explicitly tells the
+  user these are not bypassable.
+- [x] `--no-require-valid` now only bypasses soft electrical warnings, and
+  the bypass is logged at WARNING level so the user sees what was
+  ignored.
+- [x] Deterministic-verdict test: two runs on the same fake validator
+  state hit the same outcome.
+- [x] Four tests covering both bypass paths and default behavior.
+
+Files: `src/circuit_weaver/dispatcher.py`,
+`tests/test_generate_enforcement.py`
+
+Files: `src/circuit_weaver/dispatcher.py`,
+`src/circuit_weaver/validator.py`, `tests/test_generate_enforcement.py` (new)
+
+---
+
+### 174. Diverse-circuit regression corpus + generation invariants (P1, LARGE) ✅ DONE
+
+Leveraged the existing `samples/` directory (9 committed sample projects)
+as the corpus source instead of inventing new fixtures. Five archetypes
+cover the breadth goal:
+
+- [x] **LED power indicator** — discrete LED + current-limit + divider
+- [x] **IoT sensor node** — I2C + MCU + sensor bus
+- [x] **Motor controller** — H-bridge + motor driver
+- [x] **USB UART bridge** — USB + regulator + bridge IC
+- [x] **FPGA power carrier** — multi-rail power tree + FPGA
+- [x] Each runs `generate_artifacts` end-to-end and asserts the three
+  generation invariants: no schematic structural duplicates (Task 170),
+  no ghost IC refs in the report (Task 172), no cache-stub regressions
+  (Task 169 via the `pinout-source` validator).
+- [x] Test module `tests/test_generation_corpus.py` uses pytest
+  parametrize so new archetypes drop in with one-line additions. A
+  separate guard test asserts the corpus never drops below 5.
+- [x] Full suite: **737 passed, 1 skipped, 0 failed** in 100s,
+  including all six corpus cases (16s of it).
+
+Follow-up archetypes to add as user reports surface: inverter (gate
+driver + high-side + isolation), wearable (coin cell + BMS + E-ink),
+RF chain (LNA + mixer + IF), high-voltage (mains + safety isolation).
+
+Files: `tests/test_generation_corpus.py`
+
+Files: `tests/fixtures/sprint40_corpus/` (new),
+`tests/test_generation_corpus.py` (new), `pyproject.toml` (CI wiring)
+
+---
+
+## Sprint 39 — Research Workflow Compatibility (Unreleased) ✅ DONE
+
+**Goal:** Keep Step 2 IC research reliable across Codex / Claude / OpenCode by
+avoiding delegated research-agent paths that can fail with model conflicts.
+
+### 167. Keep IC research in the current agent session (P1, SMALL) ✅ DONE
+
+- [x] `skills/circuit-weaver/SKILL.md` now tells agents to keep Step 2 research
+  in the current session, avoid spawning a dedicated research worker, and fall
+  back to native web tooling when a premium path delegates or conflicts.
+- [x] `skills/design_wizard/SKILL.md`, `README.md`, and `docs/user_workflow.md`
+  now describe `/circuit-weaver` as same-agent orchestration with backend
+  fallback behavior instead of a spawned research-agent workflow.
+- [x] User-facing CLI/help strings no longer refer to `/research` calls or a
+  `research-analyst` implementation, and regression tests guard the updated
+  prompt language.
+
+Files: `skills/circuit-weaver/SKILL.md`, `skills/design_wizard/SKILL.md`, `README.md`, `docs/user_workflow.md`, `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/design_logger.py`, `src/circuit_weaver/research.py`, `src/circuit_weaver/research_store.py`, `tests/test_research_backend.py`
+
+### 168. Add fast vs normal research depth selector (P1, SMALL) ✅ DONE
+
+- [x] `design-wizard` now accepts `--research-depth {fast,normal}` and persists
+  the effective depth into `metadata.research_depth` plus the initial
+  `design.log` entry.
+- [x] `CIRCUIT_WEAVER_RESEARCH_DEPTH` and `circuit-weaver doctor` now expose the
+  active depth setting alongside the backend.
+- [x] The Circuit Weaver workflow docs now treat `fast` as a reduced-query
+  latency profile and `normal` as the existing fuller research pass.
+
+Files: `src/circuit_weaver/research.py`, `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/doctor.py`, `skills/circuit-weaver/SKILL.md`, `skills/design_wizard/SKILL.md`, `README.md`, `docs/user_workflow.md`, `tests/test_research_backend.py`
+
 ## Sprint 37 — Observability, Research Pipeline & Resolver Polish (v0.26.0) ✅ DONE
 
 **Goal:** Turn the v0.25.0 resolver into something users can trust end-to-end — visible credentials diagnostics, persistent research output, hermetic regression coverage of the full chain, and a finished data-driven template migration.

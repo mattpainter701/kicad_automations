@@ -8,11 +8,12 @@ env var, with sensible auto-detection fallback.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from circuit_weaver.research import backend_info, resolve_backend
+from circuit_weaver.research import backend_info, resolve_backend, resolve_depth
 
 
 @pytest.fixture
@@ -20,6 +21,7 @@ def clean_env(monkeypatch):
     """Strip both research-related env vars so tests are hermetic."""
     monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
     monkeypatch.delenv("CIRCUIT_WEAVER_RESEARCH_BACKEND", raising=False)
+    monkeypatch.delenv("CIRCUIT_WEAVER_RESEARCH_DEPTH", raising=False)
     yield monkeypatch
 
 
@@ -83,16 +85,39 @@ class TestBackendInfo:
         info = backend_info()
         assert info["env_var"] == "CIRCUIT_WEAVER_RESEARCH_BACKEND"
         assert info["effective_backend"] in ("sonar-pro", "standard")
+        assert info["depth_env_var"] == "CIRCUIT_WEAVER_RESEARCH_DEPTH"
+        assert info["effective_depth"] in ("fast", "normal")
         assert info["perplexity_key_set"] is False
         assert "valid_choices" in info
+        assert "depth_valid_choices" in info
 
     def test_reflects_env_config(self, clean_env):
         clean_env.setenv("PERPLEXITY_API_KEY", "pplx-xxxx")
         clean_env.setenv("CIRCUIT_WEAVER_RESEARCH_BACKEND", "sonar-pro")
+        clean_env.setenv("CIRCUIT_WEAVER_RESEARCH_DEPTH", "fast")
         info = backend_info()
         assert info["perplexity_key_set"] is True
         assert info["env_value"] == "sonar-pro"
         assert info["effective_backend"] == "sonar-pro"
+        assert info["depth_env_value"] == "fast"
+        assert info["effective_depth"] == "fast"
+
+
+class TestResolveDepth:
+    def test_defaults_to_normal(self, clean_env):
+        assert resolve_depth(None) == "normal"
+        assert resolve_depth("") == "normal"
+
+    def test_explicit_fast_wins(self, clean_env):
+        assert resolve_depth("fast") == "fast"
+
+    def test_env_var_fallback(self, clean_env):
+        clean_env.setenv("CIRCUIT_WEAVER_RESEARCH_DEPTH", "fast")
+        assert resolve_depth(None) == "fast"
+
+    def test_invalid_value_falls_back_to_env_or_default(self, clean_env):
+        clean_env.setenv("CIRCUIT_WEAVER_RESEARCH_DEPTH", "fast")
+        assert resolve_depth("turbo") == "fast"
 
 
 class TestDoctorIncludesBackendInfo:
@@ -108,10 +133,11 @@ class TestDoctorIncludesBackendInfo:
 
         text = run_doctor().to_terminal()
         assert "Research backend" in text
+        assert "Research depth" in text
 
 
-class TestDesignWizardPersistsBackend:
-    def test_wizard_scaffold_captures_selected_backend(self, tmp_path, monkeypatch):
+class TestDesignWizardPersistsResearchSettings:
+    def test_wizard_scaffold_captures_selected_settings(self, tmp_path, monkeypatch):
         from circuit_weaver.dispatcher import _run_design_wizard
 
         monkeypatch.chdir(tmp_path)
@@ -120,9 +146,34 @@ class TestDesignWizardPersistsBackend:
             spec, logger = _run_design_wizard(
                 project_name_override="BackendCapture",
                 research_backend="sonar-pro",
+                research_depth="fast",
             )
 
         assert spec is not None
         assert logger is not None
         assert spec["metadata"]["research_backend"] == "sonar-pro"
+        assert spec["metadata"]["research_depth"] == "fast"
         assert logger.entries[0]["user_input"]["research_backend"] == "sonar-pro"
+        assert logger.entries[0]["user_input"]["research_depth"] == "fast"
+
+
+class TestWorkflowDocsKeepResearchInCurrentAgent:
+    def test_circuit_weaver_skill_avoids_delegated_research_agents(self):
+        repo_root = Path(__file__).resolve().parent.parent
+        skill_text = (repo_root / "skills" / "circuit-weaver" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "Do **not** spawn a separate" in skill_text
+        assert "research-analyst" not in skill_text
+        assert "use the `/research` path" not in skill_text
+        assert "metadata.research_depth" in skill_text
+        assert "CIRCUIT_WEAVER_RESEARCH_DEPTH" in skill_text
+        assert "at most 2 targeted" in skill_text
+
+    def test_design_wizard_describes_same_agent_circuit_weaver_flow(self):
+        repo_root = Path(__file__).resolve().parent.parent
+        skill_text = (repo_root / "skills" / "design_wizard" / "SKILL.md").read_text(encoding="utf-8")
+
+        assert "same-agent orchestration" in skill_text
+        assert "spawns research agents" not in skill_text
+        assert "research-analyst" not in skill_text
+        assert "fast" in skill_text and "normal" in skill_text

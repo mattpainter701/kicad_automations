@@ -1,5 +1,101 @@
 # Changelog
 
+## [Unreleased]
+
+### Sprint 40 — Generation Quality Regression Repair
+
+Repaired regressions introduced during the dynamic IC designer, placement
+pipeline, and schematic density work. Every fix landed behind a
+diverse-circuit regression corpus so follow-on generator work can't silently
+break these subsystems again.
+
+### Added
+
+- **Placement preview clarity**: `placement.kicad_pcb` now self-identifies
+  as `(generator "schematic_engine placement_preview")` and uses
+  `Placement_Preview:Missing_<ref>` placeholders when a footprint binding
+  is absent — no more silent SOIC-8 fallbacks that look fabricatable.
+- **`report.verify_report_fidelity(report_text, components)`** —
+  diagnostic that catches references to component refs, nets, or
+  annotations that don't exist in the resolved design (Task 172).
+- **`symbol_cache.component_def_to_cache_payload()`** helper — serializes a
+  ComponentDef with full pin / power / bypass / strap topology so cache
+  entries round-trip as trusted on the next session (Task 169).
+- **Five-archetype generation corpus**
+  (`tests/test_generation_corpus.py`): LED driver, IoT sensor, motor
+  controller, USB bridge, FPGA power carrier. Each runs `generate` end-to-
+  end and enforces schematic / PCB / report invariants (Task 174).
+
+### Changed
+
+- **Cache-rebuilt components without pin data are now flagged
+  `pinout_source="stub"`**, so the existing `pinout-source` validator
+  correctly rejects multi-pin ICs that would otherwise ship as silent
+  2-pin passives. This is the class of bug the IoT AQ audit hit on
+  BME688 / LED1 / SW1 — fixed at the resolver so every user's cached
+  parts are covered, not just one design (Task 169).
+- **`assemble_sheet` now dedupes structural duplicates before emission**:
+  symbol instances by `(lib_id, ref, at, uuid)`, wires by sorted
+  endpoints, labels by `(kind, text, at)`, no-connects / junctions by
+  position. Catches any upstream double-emission in the placer /
+  topology dispatchers (Task 170).
+- **`generate_artifacts` enforcement is now deterministic across runs**:
+  structural + implementation category errors always raise, regardless
+  of `require_valid`. `--no-require-valid` now only bypasses soft
+  electrical warnings, and that bypass is logged at WARNING level
+  (Task 173).
+
+### Fixed
+
+- **PCB placement preview no longer fabricates wrong footprints or
+  synthetic pads** — previously any non-recognized footprint fell back to
+  SOIC-8, and every footprint got exactly two 1.27-pitch SMD pads
+  synthesized regardless of real pad count. ESP32 modules shipped with 2
+  pads, barrel jacks with 0. Now the preview emits reference locations
+  only — KiCad's schematic→PCB forward annotation is the authoritative
+  source of pads (Task 171).
+
+### Tests
+
+- Added `tests/test_schematic_invariants.py` — reusable
+  `assert_schematic_invariants()` helper + reproducer test that would
+  detect the IoT AQ regression (Task 170).
+- Added `tests/test_pcb_preview_invariants.py` — 3 tests proving the
+  preview PCB never fabricates footprints or synthetic pads (Task 171).
+- Added `tests/test_report_fidelity.py` — 5 tests covering clean report,
+  ghost refs, ghost nets, annotation ghost claims, reconstructed IoT AQ
+  audit scenario (Task 172).
+- Added `tests/test_generate_enforcement.py` — 4 tests proving hard
+  validation errors can't be bypassed via `--no-require-valid`, soft
+  warnings can, verdicts are deterministic across runs (Task 173).
+- Added `tests/test_generation_corpus.py` — 6 tests (5 archetypes + 1
+  breadth guard) running full `generate_artifacts` pipeline with
+  invariants (Task 174).
+- Added 3 new cases to `tests/test_resolver_chain.py` covering cache
+  stub flagging, full-topology cache round-trip, and validator
+  integration (Task 169).
+- Full suite at sprint close: **737 passed, 1 skipped, 0 failed**.
+
+### Sprint 39 — Research Workflow Compatibility
+
+### Fixed
+
+- **Step 2 IC research guidance now stays in the current agent session** for
+  Codex / Claude / OpenCode workflows instead of steering `sonar-pro` users
+  into delegated `/research` / `research-analyst` paths that can trigger model
+  conflicts. The docs now tell agents to fall back to native web tooling in the
+  same session and persist the backend that actually ran.
+
+### Changed
+
+- **Research backend help text and persistence docs now describe the generic
+  research workflow**, not a specific subagent implementation. README, workflow
+  docs, and skill prompts were synchronized to match the real behavior.
+- **Research workflow now has a latency selector**. `design-wizard` can persist
+  `research_depth={fast,normal}` into spec metadata, `doctor` reports the
+  effective depth, and the Circuit Weaver skill uses a smaller query budget in
+  `fast` mode.
+
 ## [0.26.1] - 2026-04-22
 
 ### Fixed

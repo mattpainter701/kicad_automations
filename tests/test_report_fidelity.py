@@ -1,0 +1,111 @@
+"""Sprint 40 Task 172 — report must describe only what's in the design.
+
+The IoT AQ Sensor audit shipped a report that claimed "BME688 I2C + pull-ups"
+and "LED + current-limit R4 = 330Ω" when the emitted schematic contained
+zero wires for any of those components. The report was pulling annotations
+from template boilerplate rather than what the placer actually emitted.
+
+``verify_report_fidelity`` is a diagnostic the test suite and generation
+pipeline can run against any report text to catch references to
+components or nets that don't exist in the resolved design.
+"""
+
+from __future__ import annotations
+
+from circuit_weaver.component_db import ComponentDef, PinDef
+from circuit_weaver.report import verify_report_fidelity
+
+
+def _mcu(ref: str = "U1") -> ComponentDef:
+    return ComponentDef(
+        mpn="GENERIC-MCU-32",
+        ref_prefix="U",
+        value="GENERIC-MCU-32",
+        footprint="Package_QFP:LQFP-32",
+        category="digital",
+        source_ref=ref,
+        pins=[PinDef(str(i), f"P{i}", "bidirectional", "L" if i % 2 else "R") for i in range(1, 33)],
+        power_pins={"1": "VDD_3P3", "32": "GND"},
+        pin_nets={"5": "SDA", "6": "SCL"},
+    )
+
+
+def test_fidelity_passes_for_report_that_only_names_real_refs_and_nets():
+    comps = [_mcu("U1")]
+    report_text = (
+        "## Power Tree\n"
+        "external -> [VDD_3P3] -> U1\n"
+        "## Design Rationale\n"
+        "### U1 — GENERIC-MCU-32\n"
+        "- Uses SDA and SCL for I2C\n"
+    )
+    result = verify_report_fidelity(report_text, comps)
+    assert result["ghost_refs"] == [], result
+    assert result["ghost_nets"] == [], result
+    assert result["stub_annotations"] == []
+
+
+def test_fidelity_flags_ghost_component_references():
+    """Report names U2, R4, LED1 — none of which exist in the design."""
+    comps = [_mcu("U1")]
+    report_text = "### U2 — BME688\n- I2C connection via R4 pull-up\n### LED1 — status indicator\n"
+    result = verify_report_fidelity(report_text, comps)
+    assert "U2" in result["ghost_refs"]
+    assert "R4" in result["ghost_refs"]
+    assert "LED1" in result["ghost_refs"]
+
+
+def test_fidelity_flags_ghost_nets():
+    """Report names SDA/SCL/SWDIO/SWO — only SDA and SCL are on real pins."""
+    comps = [_mcu("U1")]
+    report_text = (
+        "### U1 — MCU\n"
+        "- Debug: SWDIO and SWO exposed on pins 36/37\n"
+        "- Sensor bus: SDA/SCL routed to external connector\n"
+    )
+    result = verify_report_fidelity(report_text, comps)
+    assert "SWDIO" in result["ghost_nets"]
+    assert "SWO" in result["ghost_nets"]
+    # SDA and SCL are real pin_nets and must NOT be flagged
+    assert "SDA" not in result["ghost_nets"]
+    assert "SCL" not in result["ghost_nets"]
+
+
+def test_fidelity_flags_ghost_annotations_inside_components():
+    """An annotation attached to U1 that references R99 (nonexistent) is
+    a ghost-feature claim even if the report text itself never mentions R99
+    directly. The IoT AQ regression was exactly this pattern — U1's
+    annotation claimed "EN=10k pull-up (R5) + IO0=10k pull-up (R6)" when
+    R6 didn't exist.
+    """
+    comp = _mcu("U1")
+    comp.annotations = [
+        "EN=10k pull-up via R99 + 1uF cap",
+        "Designed for I2C bus",
+    ]
+    result = verify_report_fidelity(report_text="", components=[comp])
+    ghost_refs = [s["ghost_ref"] for s in result["stub_annotations"]]
+    assert "R99" in ghost_refs, result
+
+
+def test_user_reported_iot_audit_would_be_caught():
+    """Reconstruct the IoT AQ audit scenario and prove the fidelity check
+    catches it. The audit report called out BME688 I2C + pull-ups and
+    LED current-limit chain, none of which existed in the schematic.
+    """
+    u1 = _mcu("U1")
+    # Simulate the audited output: U1 is present, but BME688 / LED1 / R4 /
+    # SW1 are not wired — they'd fail to appear in the resolved components
+    # list because the generator stubbed them out.
+    comps = [u1]
+    report_text = (
+        "### U2 — BME688\n"
+        "- CACHED: from digikey via symbol cache\n"
+        "- I2C bus: SDA + SCL + 10k pull-ups\n"
+        "### LED1 — status\n"
+        "- Current-limited by R4 (330Ω) from VBAT\n"
+        "### SW1 — tactile reset\n"
+    )
+    result = verify_report_fidelity(report_text, comps)
+    assert {"U2", "LED1", "R4", "SW1"}.issubset(set(result["ghost_refs"]))
+    assert "VBAT" in result["ghost_nets"]

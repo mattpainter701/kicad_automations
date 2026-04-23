@@ -516,7 +516,12 @@ def _validate_component_resolution(
                     message="Resolved block has neither pins nor an embedded symbol definition",
                 )
             )
-        if not primary.footprint:
+        # Some template types (e.g. PULLUPS_ONLY) are virtual — they expand into
+        # discrete passives and carry no physical footprint by design. The block
+        # ref inherits a 'U' prefix from the YAML field, not from the template,
+        # so ref_prefix alone cannot distinguish these; use the MPN instead.
+        _VIRTUAL_MPNS: frozenset[str] = frozenset({"PULLUPS_ONLY"})
+        if not primary.footprint and primary.mpn not in _VIRTUAL_MPNS:
             implementation.append(
                 ValidationMessage(
                     category="implementation",
@@ -1477,9 +1482,42 @@ def generate_artifacts(
 
     try:
         report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
+
+        # Sprint 40 Task 173 — generate enforcement is deterministic regardless
+        # of the ``require_valid`` flag. Structural / implementation errors
+        # always block (a missing footprint or a cache stub that bypassed the
+        # pinout-source gate must never ship), while ``--no-require-valid``
+        # only bypasses soft electrical warnings. Without this split the flag
+        # could silently let broken artifacts through, which is how the IoT
+        # AQ audit ended up with a schematic full of `missing-footprint`
+        # errors written to disk.
+        _HARD_ERROR_CATEGORIES = ("structural", "implementation")
+        hard_errors = [
+            msg
+            for category in _HARD_ERROR_CATEGORIES
+            for msg in report.categories.get(category, [])
+            if getattr(msg, "level", "") == "error"
+        ]
+        if hard_errors:
+            _logger.error(
+                "Design has %d hard validation error(s) in %s categories — blocking generation: %s",
+                len(hard_errors),
+                "/".join(_HARD_ERROR_CATEGORIES),
+                report.summary,
+            )
+            raise ValueError(
+                f"Design has {len(hard_errors)} structural/implementation error(s) — "
+                "fix these before generation (these are not bypassable via "
+                "--no-require-valid)"
+            )
         if require_valid and not report.valid:
             _logger.error("Design failed standard validation: %s", report.summary)
             raise ValueError("Design failed standard validation")
+        if not require_valid and not report.valid:
+            _logger.warning(
+                "--no-require-valid: proceeding despite soft validation warnings: %s",
+                report.summary,
+            )
 
         compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
         files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg, score=score)
@@ -1950,9 +1988,20 @@ def main() -> None:
         choices=["auto", "sonar-pro", "standard"],
         default="auto",
         help=(
-            "Which research backend to use for /research calls. "
+            "Which research backend to use for the IC research workflow. "
             "'auto' (default) picks sonar-pro when PERPLEXITY_API_KEY is set, "
             "else standard WebSearch. Env var: CIRCUIT_WEAVER_RESEARCH_BACKEND."
+        ),
+    )
+    wizard_p.add_argument(
+        "--research-depth",
+        dest="research_depth",
+        choices=["fast", "normal"],
+        default=None,
+        help=(
+            "How much IC research to do for downstream agent workflows. "
+            "'fast' keeps the query budget small for lower latency; "
+            "'normal' does the fuller pass. Env var: CIRCUIT_WEAVER_RESEARCH_DEPTH."
         ),
     )
 
@@ -2223,7 +2272,7 @@ def main() -> None:
 
     save_research_p = subparsers.add_parser(
         "save-research",
-        help="Persist a research-analyst result to {project_dir}/research/ (JSON + Markdown + summary)",
+        help="Persist a research result to {project_dir}/research/ (JSON + Markdown + summary)",
     )
     save_research_p.add_argument(
         "--project-dir",
@@ -2865,14 +2914,17 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         resume_spec = getattr(args, "resume", None)
         dry_run = getattr(args, "dry_run", False)
         effective_backend = None
+        effective_depth = None
         if getattr(args, "research_backend", None) is not None:
-            from .research import resolve_backend
+            from .research import resolve_backend, resolve_depth
 
             effective_backend = resolve_backend(args.research_backend)
+            effective_depth = resolve_depth(getattr(args, "research_depth", None))
         _handle_design_workflow(
             resume=resume_spec,
             dry_run=dry_run,
             research_backend=effective_backend,
+            research_depth=effective_depth,
         )
         raise SystemExit(0)
 
@@ -3762,6 +3814,7 @@ def _handle_design_workflow(
     resume: str | None = None,
     dry_run: bool = False,
     research_backend: str | None = None,
+    research_depth: str | None = None,
 ) -> None:
     """Orchestrate new or existing circuit design workflow.
 
@@ -3769,6 +3822,7 @@ def _handle_design_workflow(
         resume: Path to a partially-completed design.yaml to resume from
         dry_run: If True, use default answers for all prompts
         research_backend: Effective backend for downstream agent research steps
+        research_depth: Effective research depth profile for downstream agent research steps
 
     Prompts user to choose:
     1. Create a new circuit (captures name, creates folder, runs wizard)
@@ -3856,6 +3910,7 @@ def _handle_design_workflow(
             project_dir,
             project_name_override=project_name,
             research_backend=research_backend,
+            research_depth=research_depth,
         )
 
         if spec and logger:
@@ -3890,6 +3945,7 @@ def _run_design_wizard(
     project_dir: Path | str = ".",
     project_name_override: str | None = None,
     research_backend: str | None = None,
+    research_depth: str | None = None,
 ) -> tuple[dict[str, Any] | None, DesignLogger | None]:
     """Interactive offline design wizard — capture requirements, scaffold spec (no hardcoded options).
 
@@ -3900,14 +3956,18 @@ def _run_design_wizard(
         project_dir: Directory to write design.log to
         project_name_override: If provided, use this project name instead of asking
         research_backend: Effective backend for downstream agent research steps
+        research_depth: Effective research depth profile for downstream agent research steps
 
     Returns:
         Tuple of (spec dict, logger) or (None, None) if cancelled
     """
-    if research_backend is None:
-        from .research import resolve_backend
+    if research_backend is None or research_depth is None:
+        from .research import resolve_backend, resolve_depth
 
-        research_backend = resolve_backend(None)
+        if research_backend is None:
+            research_backend = resolve_backend(None)
+        if research_depth is None:
+            research_depth = resolve_depth(None)
 
     project_dir = Path(project_dir)
     project_dir.mkdir(parents=True, exist_ok=True)
@@ -3941,10 +4001,14 @@ def _run_design_wizard(
     print(f"✓ Logfile created: {project_dir / 'design.log'}")
     if research_backend:
         print(f"✓ Downstream research backend: {research_backend} (used by agent workflows)")
+    if research_depth:
+        print(f"✓ Downstream research depth: {research_depth} (used by agent workflows)")
     print()
     project_context = {"project_name": project_name}
     if research_backend:
         project_context["research_backend"] = research_backend
+    if research_depth:
+        project_context["research_depth"] = research_depth
     logger.log_step(1, "Project created", project_context)
 
     # ===== STEP 1b: BASIC INFO =====
@@ -4024,6 +4088,7 @@ def _run_design_wizard(
             "version": "1.0",
             "description": f"{purpose}. Created via circuit-weaver design-wizard (offline).",
             "research_backend": research_backend or "standard",
+            "research_depth": research_depth or "normal",
         },
         "interfaces": {
             "power_in": {

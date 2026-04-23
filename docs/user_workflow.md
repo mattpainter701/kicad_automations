@@ -258,6 +258,12 @@ Buses:      I2C (BME280), UART (debug), SPI (none)
 | Implementation | Part bindings, footprint assignments |
 | Presentation | Labels, pin numbers, readability |
 
+> **Enforcement (v0.27.0+):** Structural and implementation errors always
+> block artifact emission, regardless of the `--no-require-valid` flag.
+> `--no-require-valid` only relaxes soft electrical warnings (dangling dev
+> signals, crystal load-cap tolerance, etc.); the bypass is logged so it's
+> visible in `circuit-weaver.log`.
+
 **What you get:**
 
 - `.kicad_sch` schematic files (top-level + sub-sheets)
@@ -354,6 +360,15 @@ circuit-weaver autoroute output/main_placement.kicad_pcb -o output/routed.kicad_
 # DFM check against manufacturer rules
 circuit-weaver check-dfm output/main_placement.kicad_pcb
 ```
+
+> **Note on `{project}_placement.kicad_pcb`:** as of v0.27.0 this file is a
+> placement *preview* (its `(generator ...)` field reads
+> `schematic_engine placement_preview`). It carries reference locations and
+> board outline for layout review, but **real footprint pads come from KiCad's
+> schematic → PCB forward annotation**, not from this file. If a component's
+> footprint binding was missing at generation time the preview shows a
+> `Placement_Preview:Missing_<ref>` placeholder — resolve those in the source
+> YAML before fab.
 
 **What you get:**
 - Optimized component positions (thermal spacing, SI, DFM)

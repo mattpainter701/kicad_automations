@@ -259,3 +259,134 @@ def test_unresolved_mpn_falls_to_stub_with_informative_reason():
     annotation_text = " ".join(comp.annotations).lower()
     # The stub reason must mention the 7-tier chain so operators know what to fix.
     assert "7 tiers" in annotation_text or "unresolved" in annotation_text
+
+
+# ---------------------------------------------------------------------------
+# Sprint 40 Task 169: cache rebuild must not silently emit 2-pin stubs.
+# ---------------------------------------------------------------------------
+
+
+def test_cache_hit_without_pins_marks_component_as_stub(tmp_path):
+    """Cache entries written by metadata-only loaders (DigiKey/Mouser/legacy
+    EasyEDA) have no pin topology. The resolver MUST flag the resulting
+    ComponentDef as ``pinout_source="stub"`` so the validator's pinout-source
+    check fails closed instead of letting a multi-pin IC fly through as a
+    2-pin passive.
+    """
+    cache = SymbolCache(tmp_path / "symbol-cache")
+    cache.put(
+        "BME688",
+        {
+            "source": "digikey",
+            "footprint": "Package_LGA:LGA-8_3.0x3.0mm_P0.8mm",
+            "manufacturer": "Bosch Sensortec",
+            "description": "Gas + environmental sensor",
+            "digikey_pn": "828-1063-1-ND",
+        },
+    )
+
+    r = SymbolResolver(
+        use_easyeda=False,
+        use_digikey=False,
+        use_mouser=False,
+        use_ic_data=False,
+        cache=cache,
+    )
+    comp, src = r.resolve("BME688")
+    assert src == "cache"
+    assert comp is not None
+    assert comp.pinout_source == "stub", (
+        "cache-rebuilt component without pins must be marked stub so the validator's pinout-source gate can block it"
+    )
+    assert comp.footprint == "Package_LGA:LGA-8_3.0x3.0mm_P0.8mm"
+
+
+def test_cache_hit_with_full_pin_topology_is_trusted(tmp_path):
+    """When the cache payload carries pins + power_pins + bypass_caps (e.g.
+    written via ``component_def_to_cache_payload``), a rebuilt component
+    MUST be treated as trusted (``pinout_source="explicit"``) and retain
+    full topology across sessions.
+    """
+    from circuit_weaver.symbol_cache import component_def_to_cache_payload
+
+    original = ComponentDef(
+        mpn="FAKE-SENSOR-I2C",
+        ref_prefix="U",
+        value="FAKE-SENSOR-I2C",
+        footprint="Package_LGA:LGA-8_3.0x3.0mm_P0.8mm",
+        description="Fake cached sensor",
+        category="sensor",
+        source_manufacturer="ACME",
+        pins=[
+            PinDef("1", "VDD", "power_in", "T"),
+            PinDef("2", "GND", "power_in", "B"),
+            PinDef("3", "SDA", "bidirectional", "L"),
+            PinDef("4", "SCL", "input", "L"),
+            PinDef("5", "CSB", "input", "R"),
+            PinDef("6", "SDO", "output", "R"),
+            PinDef("7", "NC", "passive", "R"),
+            PinDef("8", "VDDIO", "power_in", "T"),
+        ],
+        power_pins={"1": "VDD_3P3", "8": "VDD_3P3", "2": "GND"},
+    )
+
+    cache = SymbolCache(tmp_path / "symbol-cache")
+    cache.put(
+        "FAKE-SENSOR-I2C",
+        component_def_to_cache_payload(original, source="easyeda", lcsc="C000001", manufacturer="ACME"),
+    )
+
+    r = SymbolResolver(
+        use_easyeda=False,
+        use_digikey=False,
+        use_mouser=False,
+        use_ic_data=False,
+        cache=cache,
+    )
+    comp, src = r.resolve("FAKE-SENSOR-I2C")
+    assert src == "cache"
+    assert comp is not None
+    assert comp.pinout_source == "explicit"
+    assert len(comp.pins) == 8
+    assert comp.power_pins == {"1": "VDD_3P3", "8": "VDD_3P3", "2": "GND"}
+    pin_names = {p.name for p in comp.pins}
+    assert {"VDD", "GND", "SDA", "SCL", "VDDIO"}.issubset(pin_names)
+
+
+def test_cache_stub_fails_pinout_source_validator(tmp_path):
+    """End-to-end: a cache-rebuilt stub component triggers the existing
+    ``pinout-source`` validator check, producing an ``unverified-pinout``
+    error that blocks generation. This is the contract the v0.27.0 fix
+    relies on — the validator's gate already exists, but the cache path
+    wasn't setting pinout_source correctly.
+    """
+    from circuit_weaver.validator import run_validation_checks
+
+    cache = SymbolCache(tmp_path / "symbol-cache")
+    cache.put(
+        "MULTI-PIN-IC",
+        {
+            "source": "digikey",
+            "footprint": "Package_QFP:LQFP-48_7x7mm_P0.5mm",
+            "manufacturer": "ACME",
+            "description": "Some 48-pin MCU",
+        },
+    )
+    r = SymbolResolver(
+        use_easyeda=False,
+        use_digikey=False,
+        use_mouser=False,
+        use_ic_data=False,
+        cache=cache,
+    )
+    comp, _ = r.resolve("MULTI-PIN-IC")
+    assert comp is not None
+    comp.source_ref = "U5"
+
+    results = run_validation_checks([comp])
+    pinout_check = next(r for r in results if r.code == "pinout-source")
+    assert pinout_check.status == "FAIL", (
+        "pinout-source validator must reject a stub-flagged cache rebuild so "
+        "multi-pin ICs can't be emitted as 2-pin passives"
+    )
+    assert any("unverified-pinout" in (i.code or "") for i in pinout_check.issues)

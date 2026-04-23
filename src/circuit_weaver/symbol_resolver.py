@@ -184,36 +184,122 @@ class SymbolResolver:
             results.append((mpn, comp, source))
         return results
 
-    def _rebuild_from_cache(self, mpn: str, cached: dict[str, Any]) -> ComponentDef:
-        """Rebuild a minimal ComponentDef from cached index metadata.
+    def _rebuild_from_cache(self, mpn: str, cached: dict[str, Any]) -> ComponentDef | None:
+        """Rebuild a ComponentDef from cached metadata.
+
+        If the cache entry carries a full pin topology (``pins`` list, optional
+        ``pin_nets`` / ``power_pins`` / ``bypass_caps`` / ``straps``), the
+        resulting component is returned as trusted (``pinout_source="explicit"``)
+        so downstream placement uses the real pin map. If the cache only
+        carries distributor metadata (footprint + description + MPN), the
+        component is returned as a stub (``pinout_source="stub"``) so the
+        validator's ``pinout-source`` check blocks generation until the user
+        supplies an explicit ``pin_map`` or sets ``pinout_verified: true``.
+        This mirrors the DigiKey / Mouser stub path.
 
         Args:
             mpn: Manufacturer Part Number.
             cached: Dict from SymbolCache.get() with source, footprint, etc.
 
         Returns:
-            Minimal ComponentDef with cached fields populated.
+            ComponentDef with cached fields populated. Never returns a silently
+            routed 2-pin passive for a multi-pin part — stubs are marked so the
+            validator can fail closed.
         """
-        from .component_db import ComponentDef, PinDef
+        from .component_db import BypassCap, ComponentDef, PinDef, PowerReq, StrapConfig
+
+        raw_pins = cached.get("pins") or []
+        pins: list[PinDef] = []
+        for pin_payload in raw_pins:
+            if isinstance(pin_payload, dict):
+                pins.append(
+                    PinDef(
+                        number=str(pin_payload.get("number", "")),
+                        name=str(pin_payload.get("name", "~")),
+                        electrical_type=str(pin_payload.get("electrical_type", "passive")),
+                        side=str(pin_payload.get("side", "L")),
+                    )
+                )
+            elif isinstance(pin_payload, (list, tuple)) and len(pin_payload) == 4:
+                pins.append(PinDef(*[str(x) for x in pin_payload]))
+
+        pinout_source = "explicit" if pins else "stub"
+        if not pins:
+            # No pin topology in cache — mark as stub and emit minimal
+            # placeholders. Validator will reject these unless the user
+            # explicitly acknowledges the pinout via YAML spec.
+            pins = [PinDef("1", "~", "passive", "L"), PinDef("2", "~", "passive", "R")]
+
+        bypass_caps: list[BypassCap] = []
+        for raw in cached.get("bypass_caps", []) or []:
+            if isinstance(raw, dict):
+                try:
+                    bypass_caps.append(
+                        BypassCap(
+                            pin=str(raw.get("pin", "")),
+                            net=str(raw.get("net", "")),
+                            gnd_net=str(raw.get("gnd_net", "GND")),
+                            value=str(raw.get("value", "")),
+                            footprint=str(raw.get("footprint", "")),
+                            role=str(raw.get("role", "decoupling")),
+                            presentation=str(raw.get("presentation", "topology_local")),
+                        )
+                    )
+                except (TypeError, ValueError) as exc:
+                    log.debug("Cache bypass cap decode failed for %s: %s", mpn, exc)
+
+        straps: list[StrapConfig] = []
+        for raw in cached.get("straps", []) or []:
+            if isinstance(raw, dict):
+                try:
+                    straps.append(
+                        StrapConfig(
+                            pin=str(raw.get("pin", "")),
+                            net=str(raw.get("net", "")),
+                            rail=str(raw.get("rail", "")),
+                            value=str(raw.get("value", "")),
+                            footprint=str(raw.get("footprint", "")),
+                            role=str(raw.get("role", "pull_up")),
+                            presentation=str(raw.get("presentation", "topology_local")),
+                        )
+                    )
+                except (TypeError, ValueError) as exc:
+                    log.debug("Cache strap decode failed for %s: %s", mpn, exc)
+
+        power_reqs: list[PowerReq] = []
+        for raw in cached.get("power_reqs", []) or []:
+            if isinstance(raw, dict):
+                try:
+                    power_reqs.append(
+                        PowerReq(
+                            net=str(raw.get("net", "")),
+                            voltage=float(raw.get("voltage", 0.0)),
+                            max_current_ma=float(raw.get("max_current_ma", raw.get("current_ma", 0.0))),
+                        )
+                    )
+                except (TypeError, ValueError) as exc:
+                    log.debug("Cache power_req decode failed for %s: %s", mpn, exc)
 
         return ComponentDef(
             mpn=mpn,
-            ref_prefix="U",
-            value=mpn,
-            footprint=cached.get("footprint", ""),
-            description=cached.get("description", ""),
-            source_manufacturer=cached.get("manufacturer", ""),
-            digikey_pn=cached.get("digikey_pn", ""),
-            lcsc_pn=cached.get("lcsc", ""),
-            features=[],
+            ref_prefix=str(cached.get("ref_prefix", "U")),
+            value=str(cached.get("value", mpn)),
+            footprint=str(cached.get("footprint", "")),
+            description=str(cached.get("description", "")),
+            category=str(cached.get("category", "digital")),
+            source_manufacturer=str(cached.get("manufacturer", "")),
+            digikey_pn=str(cached.get("digikey_pn", "")),
+            lcsc_pn=str(cached.get("lcsc", "")),
+            features=list(cached.get("features", []) or []),
             annotations=[f"CACHED: from {cached.get('source', 'unknown')} via symbol cache"],
-            pins=[PinDef("1", "~", "passive", "L"), PinDef("2", "~", "passive", "R")],
-            pin_nets={},
-            power_pins={},
-            power_reqs=[],
-            bypass_caps=[],
-            straps=[],
-            explicit_no_connects=set(),
+            pins=pins,
+            pin_nets=dict(cached.get("pin_nets", {}) or {}),
+            power_pins=dict(cached.get("power_pins", {}) or {}),
+            power_reqs=power_reqs,
+            bypass_caps=bypass_caps,
+            straps=straps,
+            explicit_no_connects=set(cached.get("explicit_no_connects", []) or []),
+            pinout_source=pinout_source,
         )
 
     # Module-level once-per-session cache of credential warnings so a
@@ -287,16 +373,19 @@ class SymbolResolver:
                     comp.lcsc_pn = lcsc_code
                     if lcsc_data.get("datasheet_url"):
                         comp.annotations.append(f"Datasheet: {lcsc_data['datasheet_url']}")
+                    # Cache the full component (pins + power map) so the next
+                    # session can reconstruct a trusted ComponentDef instead of
+                    # degrading to a 2-pin stub.
+                    from .symbol_cache import component_def_to_cache_payload
+
                     self._cache.put(
                         mpn,
-                        {
-                            "source": "easyeda",
-                            "footprint": comp.footprint,
-                            "lcsc": lcsc_code,
-                            "manufacturer": lcsc_data.get("manufacturer", ""),
-                            "description": comp.description,
-                            "digikey_pn": "",
-                        },
+                        component_def_to_cache_payload(
+                            comp,
+                            source="easyeda",
+                            lcsc=lcsc_code,
+                            manufacturer=lcsc_data.get("manufacturer", ""),
+                        ),
                     )
                     return comp
         except Exception as exc:
@@ -313,11 +402,7 @@ class SymbolResolver:
         Returns:
             ComponentDef stub from DigiKey, or None if unavailable.
         """
-        missing = tuple(
-            name
-            for name in ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET")
-            if not _get_credential(name)
-        )
+        missing = tuple(name for name in ("DIGIKEY_CLIENT_ID", "DIGIKEY_CLIENT_SECRET") if not _get_credential(name))
         if missing:
             self._warn_credential_missing_once("DigiKey", missing)
             return None

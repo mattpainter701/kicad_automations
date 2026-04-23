@@ -162,11 +162,11 @@ class DesignLogger:
         backend: str = "",
         artifact_path: str = "",
     ) -> None:
-        """Log a research-analyst query.
+        """Log a research workflow query.
 
         Args:
             query_phase: Phase name (project_context, boost_converter, mcu, etc.)
-            query: The query sent to Perplexity
+            query: The query text sent to the active research backend
             status: ok, timeout, error, no_api_key
             result_count: Number of results returned
             backend: Backend used for the research run (sonar-pro, standard)

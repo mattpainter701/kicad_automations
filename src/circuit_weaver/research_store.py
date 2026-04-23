@@ -1,8 +1,8 @@
-"""Persistent store for research-analyst / ``/research`` skill output.
+"""Persistent store for Circuit Weaver research workflow output.
 
-Sprint 37 Task 160 addresses a user-reported bug: the ``research-analyst``
-agent produced no artifacts in the project directory, so users couldn't
-see which parts were researched, what citations backed each choice, or
+Sprint 37 Task 160 addresses a user-reported bug: the research workflow
+produced no artifacts in the project directory, so users couldn't see
+which parts were researched, what citations backed each choice, or
 reproduce the selection later.
 
 Every research run now writes three files under ``{project_dir}/research/``:
@@ -60,7 +60,7 @@ class ResearchFinding:
 
 @dataclass
 class ResearchResult:
-    """Full record of a single research-analyst / ``/research`` invocation."""
+    """Full record of a single persisted research invocation."""
 
     topic: str
     query: str

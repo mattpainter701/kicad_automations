@@ -129,12 +129,17 @@ class DoctorReport:
             lines.append("")
             lines.append("Research backend:")
             effective = self.research_backend.get("effective_backend", "?")
+            depth = self.research_backend.get("effective_depth", "normal")
             env_val = self.research_backend.get("env_value")
+            depth_env_val = self.research_backend.get("depth_env_value")
             has_key = self.research_backend.get("perplexity_key_set")
             lines.append(f"  Selected:           {effective}")
+            lines.append(f"  Research depth:     {depth}")
             lines.append(f"  PERPLEXITY_API_KEY: {'set' if has_key else 'not set'}")
             if env_val:
                 lines.append(f"  CIRCUIT_WEAVER_RESEARCH_BACKEND: {env_val}")
+            if depth_env_val:
+                lines.append(f"  CIRCUIT_WEAVER_RESEARCH_DEPTH:   {depth_env_val}")
             if effective == "standard" and not has_key:
                 lines.append("  (set PERPLEXITY_API_KEY to enable sonar-pro)")
 
@@ -377,7 +382,7 @@ def run_doctor() -> DoctorReport:
         )
     )
 
-    # Research backend selection (Sprint 37 Task 161)
+    # Research workflow selection (backend + depth)
     try:
         from .research import backend_info
 

@@ -44,6 +44,87 @@ _INDEX_FILE = _CACHE_DIR / "index.json"
 _CACHE_MAX_AGE = 30 * 24 * 3600  # 30 days in seconds
 
 
+def component_def_to_cache_payload(
+    comp: Any, *, source: str, lcsc: str = "", digikey_pn: str = "", manufacturer: str = ""
+) -> dict[str, Any]:
+    """Serialize a ComponentDef into a cache-ready dict that preserves pin topology.
+
+    Use this when putting a resolved component into the cache so a future
+    ``SymbolResolver._rebuild_from_cache`` can return a trusted component
+    (``pinout_source="explicit"``) rather than degrading to a 2-pin stub on
+    the next session. Callers without real pin data should continue passing
+    the legacy metadata-only dict to :meth:`SymbolCache.put`.
+    """
+    pins_serialized = []
+    for pin in getattr(comp, "pins", []) or []:
+        pins_serialized.append(
+            {
+                "number": getattr(pin, "number", ""),
+                "name": getattr(pin, "name", "~"),
+                "electrical_type": getattr(pin, "electrical_type", "passive"),
+                "side": getattr(pin, "side", "L"),
+            }
+        )
+
+    bypass_caps_serialized = []
+    for bc in getattr(comp, "bypass_caps", []) or []:
+        bypass_caps_serialized.append(
+            {
+                "pin": getattr(bc, "pin", ""),
+                "net": getattr(bc, "net", ""),
+                "gnd_net": getattr(bc, "gnd_net", "GND"),
+                "value": getattr(bc, "value", ""),
+                "footprint": getattr(bc, "footprint", ""),
+                "role": getattr(bc, "role", "decoupling"),
+                "presentation": getattr(bc, "presentation", "topology_local"),
+            }
+        )
+
+    straps_serialized = []
+    for strap in getattr(comp, "straps", []) or []:
+        straps_serialized.append(
+            {
+                "pin": getattr(strap, "pin", ""),
+                "net": getattr(strap, "net", ""),
+                "rail": getattr(strap, "rail", ""),
+                "value": getattr(strap, "value", ""),
+                "footprint": getattr(strap, "footprint", ""),
+                "role": getattr(strap, "role", "pull_up"),
+                "presentation": getattr(strap, "presentation", "topology_local"),
+            }
+        )
+
+    power_reqs_serialized = []
+    for req in getattr(comp, "power_reqs", []) or []:
+        power_reqs_serialized.append(
+            {
+                "net": getattr(req, "net", ""),
+                "voltage": getattr(req, "voltage", 0.0),
+                "max_current_ma": getattr(req, "max_current_ma", 0.0),
+            }
+        )
+
+    return {
+        "source": source,
+        "footprint": getattr(comp, "footprint", ""),
+        "lcsc": lcsc or getattr(comp, "lcsc_pn", ""),
+        "digikey_pn": digikey_pn or getattr(comp, "digikey_pn", ""),
+        "manufacturer": manufacturer or getattr(comp, "source_manufacturer", ""),
+        "description": getattr(comp, "description", ""),
+        "ref_prefix": getattr(comp, "ref_prefix", "U"),
+        "value": getattr(comp, "value", ""),
+        "category": getattr(comp, "category", "digital"),
+        "features": list(getattr(comp, "features", []) or []),
+        "pins": pins_serialized,
+        "pin_nets": dict(getattr(comp, "pin_nets", {}) or {}),
+        "power_pins": dict(getattr(comp, "power_pins", {}) or {}),
+        "power_reqs": power_reqs_serialized,
+        "bypass_caps": bypass_caps_serialized,
+        "straps": straps_serialized,
+        "explicit_no_connects": list(getattr(comp, "explicit_no_connects", []) or []),
+    }
+
+
 class SymbolCache:
     """30-day TTL cache for symbol resolution results.
 
@@ -100,7 +181,14 @@ class SymbolCache:
         Args:
             mpn: Manufacturer Part Number.
             data: Dict with keys like source, footprint, lcsc, manufacturer,
-                description, digikey_pn (any keys are accepted).
+                description, digikey_pn. Callers that have full pin topology
+                should also include ``pins`` (list of
+                ``{number, name, electrical_type, side}`` dicts) plus optional
+                ``pin_nets``, ``power_pins``, ``power_reqs``, ``bypass_caps``,
+                ``straps``, ``explicit_no_connects``, ``ref_prefix``, ``value``,
+                ``category``, ``features`` so a later
+                ``SymbolResolver._rebuild_from_cache`` can reconstruct a
+                trusted component rather than falling back to a 2-pin stub.
         """
         self._dir.mkdir(parents=True, exist_ok=True)
 
@@ -108,6 +196,7 @@ class SymbolCache:
         entry_path = self._entry_path(mpn)
         payload = dict(data)
         payload["_cached_at"] = time.time()
+        payload.setdefault("_schema_version", 2)
         try:
             entry_path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2),

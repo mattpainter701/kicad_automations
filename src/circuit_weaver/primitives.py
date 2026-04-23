@@ -377,7 +377,7 @@ def sexpr_power_instance(
 
 def sexpr_pwr_flag_lib_entry() -> str:
     """Generate the lib_symbols entry for KiCad's PWR_FLAG symbol."""
-    return '''  (symbol "PWR_FLAG" (power) (pin_names (offset 0)) (exclude_from_sim no)
+    return """  (symbol "PWR_FLAG" (power) (pin_names (offset 0)) (exclude_from_sim no)
     (in_bom yes) (on_board yes)
     (property "Reference" "#FLG" (at 0 1.905 0)
       (effects (font (size 1.27 1.27)) hide)
@@ -392,7 +392,7 @@ def sexpr_pwr_flag_lib_entry() -> str:
       )
     )
   )
-'''
+"""
 
 
 def sexpr_pwr_flag_instance(
@@ -1056,6 +1056,128 @@ def text_annotation(text, x, y, size=1.27, justify: str | None = None):
     )
 
 
+def _dedupe_sheet_elements(
+    instances: list[str],
+    wires: list[str] | None,
+    labels: list[str],
+    no_connects: list[str],
+    junctions: list[str] | None,
+) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
+    """Drop structurally-identical sheet elements before emission.
+
+    Sprint 40 Task 170 — the strap/support placer and topology dispatchers
+    can add a wire, label, or power anchor twice (once via the per-passive
+    endpoint renderer, once via the shared anchor loop). The placer code is
+    the right place for a full root-cause fix, but the schematic should
+    never ship with duplicates regardless of where the duplication was
+    introduced, and new generator work is far more likely to regress this
+    invariant than the dedup itself. So we fail closed here.
+
+    Dedup keys:
+    * instances  — ``(lib_id, ref, at x y rot)``; separately any repeated UUID
+    * wires      — sorted endpoint pair
+    * labels     — ``(label-kind, text, at x y rot)``
+    * no_connects — ``(at x y)``
+    * junctions  — ``(at x y)``
+
+    Two distinct refs at the same coordinate are kept — that's an overlap
+    bug for the placer to flag, not a reason to silently drop a component.
+    """
+    import re
+
+    seen_sym_keys: set[tuple[str, str, str]] = set()
+    seen_uuids: set[str] = set()
+    deduped_instances: list[str] = []
+    for inst in instances:
+        lib_match = re.search(r'\(symbol\s+\(lib_id\s+"([^"]+)"\)\s+\(at\s+([^)]+)\)', inst)
+        ref_match = re.search(r'\(property\s+"Reference"\s+"([^"]+)"', inst)
+        key: tuple[str, str, str]
+        if lib_match:
+            key = (
+                lib_match.group(1),
+                ref_match.group(1) if ref_match else "",
+                lib_match.group(2).strip(),
+            )
+        else:
+            # Fall back to the raw instance text so we at least catch exact
+            # duplicate blobs wholesale.
+            key = ("_raw_", "", inst)
+        if key in seen_sym_keys:
+            continue
+        seen_sym_keys.add(key)
+        # Also strip UUID-level duplicates: KiCad rejects two symbols with
+        # the same UUID, and the placer has been seen to emit identical
+        # instance blobs wholesale (same UUID, same coords).
+        uuid_match = re.search(r'\(uuid\s+"([^"]+)"', inst)
+        if uuid_match:
+            uuid_val = uuid_match.group(1)
+            if uuid_val in seen_uuids:
+                continue
+            seen_uuids.add(uuid_val)
+        deduped_instances.append(inst)
+
+    seen_wire_keys: set[tuple] = set()
+    deduped_wires: list[str] = []
+    for w in wires or []:
+        pts = re.findall(r"\(xy\s+([-0-9.eE]+)\s+([-0-9.eE]+)\)", w)
+        if len(pts) >= 2:
+            try:
+                a = (round(float(pts[0][0]), 4), round(float(pts[0][1]), 4))
+                b = (round(float(pts[1][0]), 4), round(float(pts[1][1]), 4))
+                key_w = tuple(sorted([a, b]))
+            except ValueError:
+                key_w = (w,)
+        else:
+            key_w = (w,)
+        if key_w in seen_wire_keys:
+            continue
+        seen_wire_keys.add(key_w)
+        deduped_wires.append(w)
+
+    seen_label_keys: set[tuple[str, str, str]] = set()
+    deduped_labels: list[str] = []
+    for lab in labels:
+        lab_match = re.search(
+            r'\((global_label|hierarchical_label|label)\s+"([^"]+)".*?\(at\s+([^)]+)\)',
+            lab,
+            re.DOTALL,
+        )
+        if lab_match:
+            key_l = (
+                lab_match.group(1),
+                lab_match.group(2),
+                lab_match.group(3).strip(),
+            )
+        else:
+            key_l = ("_raw_", lab, "")
+        if key_l in seen_label_keys:
+            continue
+        seen_label_keys.add(key_l)
+        deduped_labels.append(lab)
+
+    seen_nc_keys: set[str] = set()
+    deduped_ncs: list[str] = []
+    for nc in no_connects:
+        at_match = re.search(r"\(at\s+([^)]+)\)", nc)
+        key_nc = at_match.group(1).strip() if at_match else nc
+        if key_nc in seen_nc_keys:
+            continue
+        seen_nc_keys.add(key_nc)
+        deduped_ncs.append(nc)
+
+    seen_junc_keys: set[str] = set()
+    deduped_juncs: list[str] = []
+    for j in junctions or []:
+        at_match = re.search(r"\(at\s+([^)]+)\)", j)
+        key_j = at_match.group(1).strip() if at_match else j
+        if key_j in seen_junc_keys:
+            continue
+        seen_junc_keys.add(key_j)
+        deduped_juncs.append(j)
+
+    return deduped_instances, deduped_wires, deduped_labels, deduped_ncs, deduped_juncs
+
+
 def assemble_sheet(
     header,
     lib_symbols,
@@ -1073,6 +1195,17 @@ def assemble_sheet(
 ):
     """Assemble a complete .kicad_sch file from parts."""
     import re
+
+    # Sprint 40 Task 170 — guarantee sheet elements are structurally unique
+    # before emission. Catches any upstream double-emission in the placer /
+    # topology dispatchers / anchor renderer.
+    instances, wires, labels, no_connects, junctions = _dedupe_sheet_elements(
+        list(instances),
+        list(wires) if wires else [],
+        list(labels),
+        list(no_connects),
+        list(junctions) if junctions else [],
+    )
 
     parts = [header]
 

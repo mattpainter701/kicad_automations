@@ -192,9 +192,30 @@ def _footprint_sexpr(
 ) -> str:
     """Generate a minimal footprint S-expression for placement hint.
 
-    net_pads: list of (net_name, net_number) for pads, if available.
+    Sprint 40 Task 171 — this file is a **placement preview**, not a
+    fabrication-ready PCB. It carries reference locations and board outline
+    so the user can review layout before running the KiCad schematic →
+    PCB flow. Previously we fell back to ``SOIC-8_3.9x4.9mm_P1.27mm``
+    when a component had no footprint, and we synthesized two 1.27-pitch
+    SMD pads for every footprint regardless of its real pad count — which
+    produced physically misleading geometry (e.g. an ESP32-S3-WROOM-1
+    module with only two pads).
+
+    Current policy:
+    * When ``footprint`` is provided, emit the real footprint reference and
+      no pads. KiCad's forward-annotation from the schematic is the
+      authoritative source of pads; this file is only a layout hint.
+    * When ``footprint`` is missing, emit a clearly-labelled placeholder
+      (``Placement_Preview:Missing_<ref>``) and still no pads. The file
+      itself ships with a header comment calling out preview status.
+
+    ``net_pads`` is accepted for call-site compatibility but intentionally
+    not emitted — fabricating even one wrong pad here has burned users.
     """
-    fp_lib = footprint if footprint else "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
+    if footprint:
+        fp_lib = footprint
+    else:
+        fp_lib = f"Placement_Preview:Missing_{ref}"
     lines = [
         f'  (footprint "{fp_lib}"',
         '    (layer "F.Cu")',
@@ -206,15 +227,6 @@ def _footprint_sexpr(
         "      (effects (font (size 1.0 1.0) (thickness 0.15)))",
         "    )",
     ]
-    # Add a single pad so the footprint is not empty
-    if net_pads:
-        for pad_num, (net_name, net_idx) in enumerate(net_pads[:2], start=1):
-            lines.append(
-                f'    (pad "{pad_num}" smd rect (at {(pad_num - 1) * 1.27:.2f} 0)'
-                f" (size 0.6 1.0)"
-                f' (layers "F.Cu" "F.Paste" "F.Mask")'
-                f' (net {net_idx} "{net_name}"))'
-            )
     lines.append("  )")
     return "\n".join(lines)
 
@@ -365,9 +377,14 @@ def generate_pcb_placement(
     board_x2 = max(max_x + margin, 50.0)  # minimum 50mm
     board_y2 = max(max_y + margin, 40.0)  # minimum 40mm
 
-    # Build the PCB file
+    # Build the PCB file. The generator name is intentional — "schematic_engine
+    # placement_preview" tells reviewers this is a layout hint, not a
+    # fabrication-ready board. Real footprints and routing come from
+    # forward-annotating the generated schematic through KiCad. Footprints
+    # whose lib_id is ``Placement_Preview:Missing_*`` lacked a binding when
+    # the spec was generated — resolve those in YAML before fab.
     parts = []
-    parts.append('(kicad_pcb (version 20240108) (generator "schematic_engine")')
+    parts.append('(kicad_pcb (version 20240108) (generator "schematic_engine placement_preview")')
     parts.append("  (general (thickness 1.6) (legacy_teardrops no))")
     parts.append(_LAYERS)
     parts.append(_SETUP)

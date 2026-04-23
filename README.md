@@ -297,13 +297,28 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.26.1
+## What's New in v0.27.0
+
+| Sprint | Feature |
+|-|-|
+| 40 | **Cache-rebuilt components no longer ship as silent 2-pin stubs** — `SymbolResolver._rebuild_from_cache` now marks cache hits without real pin topology as `pinout_source="stub"`, so the existing `pinout-source` validator gate catches any multi-pin IC (sensor, MCU, H-bridge, gate driver, regulator) that would otherwise emit as a passive. The EasyEDA tier now persists full pin + power + bypass / strap topology via `symbol_cache.component_def_to_cache_payload()` so round-tripping a part through the cache preserves everything |
+| 40 | **Schematic emission invariant** — `primitives.assemble_sheet` now dedupes structural duplicates before writing (symbol instances, wires, global / hierarchical labels, no-connects, junctions, UUIDs). Catches the placer / topology-dispatcher double-emission class of bug that was causing stacked passives, duplicate wires, and shared-UUID power symbols |
+| 40 | **Placement PCB preview never fabricates footprints or synthetic pads** — the generator field now reads `placement_preview` so reviewers can tell the file apart from fab-ready output; missing footprint bindings emit `Placement_Preview:Missing_<ref>` placeholders instead of the old SOIC-8 fallback; and no synthetic pads are emitted for any component. KiCad's schematic → PCB forward annotation is the authoritative source of pads |
+| 40 | **`generate` enforcement is now deterministic across runs** — structural + implementation category errors always raise, regardless of `require_valid`. `--no-require-valid` now only bypasses soft electrical warnings (dangling dev signals, crystal load-cap tolerance) and the bypass is logged at WARNING level. Two runs on the same spec + cache state always reach the same verdict |
+| 40 | **Report-fidelity diagnostic** — `report.verify_report_fidelity(report_text, components)` flags references to component refs, net names, or annotations that don't exist in the resolved design. Catches the ghost-feature pattern where a report claimed "BME688 I2C + pull-ups" or "LED + current-limit R4" without any backing wires |
+| 40 | **Five-archetype generation regression corpus** — `tests/test_generation_corpus.py` runs `generate_artifacts` end-to-end on LED driver, IoT sensor, motor controller, USB bridge, and FPGA power carrier samples, enforcing all three Sprint 40 invariants. Breadth-guard test keeps the corpus at ≥ 5 archetypes |
+| 39 | **Step 2 IC research stays in the current agent session** across Codex / Claude / OpenCode instead of delegating to a spawned `/research` / `research-analyst` path that could trigger model conflicts; workflow docs and skill prompts now describe the real behavior |
+| 39 | **Research-depth latency selector** — `design-wizard --research-depth {fast,normal}` persists into spec metadata; `doctor` reports the effective depth; Circuit Weaver skill uses a smaller query budget in `fast` mode |
+
+<details><summary>v0.26.1</summary>
 
 | Sprint | Feature |
 |-|-|
 | 38 | **Research workflow is now reproducible end-to-end** — `design-wizard --research-backend` persists the effective backend into spec metadata, `save-research` records the canonical JSON artifact path in `design.log`, and the workflow docs now tell agents to treat `output/research/` as the source of truth |
 | 38 | **Resolver credential diagnostics now match real runtime behavior** — DigiKey checks both `DIGIKEY_CLIENT_ID` and `DIGIKEY_CLIENT_SECRET`, Mouser honors `MOUSER_SEARCH_API_KEY` through the shared credential loader, and `circuit-weaver doctor` now reports both credential states directly |
 | 37 | **Research persistence + backend selection shipped in the CLI** — `circuit-weaver save-research`, `CIRCUIT_WEAVER_RESEARCH_BACKEND`, and `circuit-weaver doctor` backend reporting are now available in the published package |
+
+</details>
 
 <details><summary>v0.25.0</summary>
 

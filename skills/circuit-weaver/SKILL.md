@@ -191,17 +191,37 @@ If user wants to change something, loop back to the relevant question.
 
 ### Step 2 — IC Research & Selection
 
-Before the first query, resolve the effective research backend:
+Before the first query, resolve the effective research settings:
+
+Backend:
 
 - Respect `metadata.research_backend` from a scaffolded spec when present.
 - Otherwise respect `CIRCUIT_WEAVER_RESEARCH_BACKEND={auto,sonar-pro,standard}`.
 - `auto` means: use `sonar-pro` when `PERPLEXITY_API_KEY` is configured, otherwise `standard`.
-- `circuit-weaver doctor` is the source of truth for the effective backend and credential status.
+
+Depth:
+
+- Respect `metadata.research_depth` from a scaffolded spec when present.
+- Otherwise respect `CIRCUIT_WEAVER_RESEARCH_DEPTH={fast,normal}`.
+- `fast` means: latency-first pass. Run one project-context query plus at most 2 targeted
+  block queries. Skip deep alternates, detailed pricing, and connector research unless the
+  user explicitly asks or the block is critical.
+- `normal` means: fuller pass. Run one project-context query plus the standard 3-5 targeted
+  block queries, including alternatives and rough pricing context where useful.
+- `circuit-weaver doctor` is the source of truth for the effective backend, depth, and
+  credential status.
 
 Use the backend consistently for the whole session:
 
-- `sonar-pro` → use the `/research` path.
-- `standard` → use the platform's native web search / web fetch tools instead of `/research`.
+- Keep IC research in the current agent/session. Do **not** spawn a separate
+  research subagent or worker for Step 2.
+- `sonar-pro` → prefer the platform's high-quality research mode **only if it
+  runs in-thread in the current agent**.
+- `standard` → use the platform's native web search / web fetch tools in the
+  current agent.
+- If the premium path would delegate to a subagent, or if it throws a model /
+  tool conflict, skip it and continue with native web tooling in the current
+  agent. Persist the backend that actually ran.
 
 Persist every completed research run with `circuit-weaver save-research`. The saved
 `{project_dir}/research/*.json` files are the source of truth; `design.log` should
@@ -209,18 +229,18 @@ point back to those JSON artifacts for reproducibility.
 
 #### Phase 2a — Project Context
 
-Single broad query to understand the design space:
-
-If backend is `sonar-pro`:
+Single broad query to understand the design space in the current agent session:
 
 ```
-/research "Design a [application description].
+Design a [application description].
   Constraints: [form factor], [power source], [interfaces].
   Find 1-2 existing reference designs, key IC families (MCU, power conversion, sensors),
   typical topologies, and estimated BOM size."
 ```
 
-If backend is `standard`, run the equivalent query with the platform's built-in web tools.
+If `sonar-pro` is available without delegation, use that path for the query.
+Otherwise, run the same query with the platform's built-in web tools and record
+`standard` as the backend you actually used.
 
 After the result is consolidated, persist it:
 
@@ -236,7 +256,17 @@ This grounds subsequent searches in reality.
 
 For each major functional block, run targeted research in parallel:
 
-Based on application type, run 3-5 of these (adapt to your design):
+If research depth is `fast`, run at most 2 of these and prioritize the highest-risk
+blocks first:
+
+- MCU / main SoC
+- Primary power conversion path
+- Primary sensor or interface only if it is novel, safety-critical, or likely to drive the package choice
+
+In `fast` mode, return 1-2 options per block and skip deep alternates, detailed cost tables,
+and non-critical connector lookups unless the user explicitly asks.
+
+If research depth is `normal`, run 3-5 of these (adapt to your design):
 
 ```
 MCU for [interfaces: WiFi, BLE, Ethernet, etc.],
@@ -255,8 +285,10 @@ Connector/interface: [USB/Barrel Jack/JST-PH/etc.] for [application].
   Return: Recommended part with MPN, LCSC cost, pin assignment, typical footprint.
 ```
 
-Run these in parallel where the platform supports it, using `/research` for `sonar-pro`
-and native web tooling for `standard`. Persist each completed query with
+Run these in parallel where the platform supports it, but keep them in the
+current agent/session. Do not offload Step 2 to a research subagent. Use the
+selected backend's same-agent tooling when available; otherwise use native web
+tooling. Persist the backend and depth that actually ran with
 `circuit-weaver save-research --project-dir ./output ...`.
 
 **Log:** `[Step 2b] Targeted research queries:` [list each query]
@@ -670,7 +702,6 @@ This ensures the skill can call them without dealing with subprocess stdin/stdou
 ## Related Skills
 
 - **design_wizard** — Offline wizard variant (no research, no IC selection)
-- **research-analyst** — IC and design research agent
 - **ee** — Electrical engineering formulas and analysis
 - **bom** — BOM management and sourcing
 - **kicad** — Schematic and PCB analysis

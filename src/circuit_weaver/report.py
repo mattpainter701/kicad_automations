@@ -212,6 +212,83 @@ def _validation_section(validation_results) -> str:
     return "\n".join(lines)
 
 
+def verify_report_fidelity(report_text: str, components: list[ComponentDef]) -> dict:
+    """Sprint 40 Task 172 — audit a report for references to components or
+    nets that don't exist in the emitted design.
+
+    Returns a dict with three lists:
+    * ``ghost_refs``  — reference designators named in the report that are
+      not attached to any component in ``components``.
+    * ``ghost_nets``  — net names named in the report that no component
+      connects to.
+    * ``stub_annotations`` — component annotations that mention pin assignments
+      or supporting passives the component doesn't actually carry.
+
+    This is a regression check. The report is allowed to describe design
+    intent, but every reference / net it calls out by name must be present
+    in the emitted schematic. Ghost features are how the IoT AQ audit ended
+    up with a report claiming "BME688 I2C + pull-ups" when the schematic had
+    zero wires for the sensor.
+
+    Not a hard validator today — this is a diagnostic callers can run. The
+    test suite uses it to catch generator regressions; adopting as a
+    generate-time gate is a follow-up once ghost-free templates are
+    confirmed across the Sprint 40 corpus.
+    """
+    import re
+
+    known_refs = {c.source_ref for c in components if c.source_ref}
+    known_nets: set[str] = set()
+    for c in components:
+        known_nets.update(c.all_signal_nets())
+        known_nets.update(c.all_power_nets())
+        for bc in c.bypass_caps:
+            if bc.net:
+                known_nets.add(bc.net)
+            if bc.gnd_net:
+                known_nets.add(bc.gnd_net)
+        for strap in c.straps:
+            if strap.net:
+                known_nets.add(strap.net)
+            if strap.rail:
+                known_nets.add(strap.rail)
+
+    ref_pattern = re.compile(r"(?<![A-Za-z0-9_])([A-Z]{1,3}\d{1,4})(?![A-Za-z0-9_])")
+    net_pattern = re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(VBAT|GND|AGND|DGND|PGND|VCC(?:[A-Z0-9_]+)?|VDD(?:[A-Z0-9_]+)?|"
+        r"SDA|SCL|SWDIO|SWO|SWCLK|NRESET|MOSI|MISO|SCK|TX(?:D\d?)?|RX(?:D\d?)?)"
+        r"(?![A-Za-z0-9_])"
+    )
+
+    mentioned_refs = set(ref_pattern.findall(report_text))
+    mentioned_nets = set(net_pattern.findall(report_text))
+
+    ghost_refs = sorted(mentioned_refs - known_refs)
+    ghost_nets = sorted(mentioned_nets - known_nets)
+
+    stub_annotations = []
+    for c in components:
+        for ann in c.annotations:
+            # If the annotation names a ref that isn't this component and
+            # isn't in the known set, it's a ghost claim.
+            for ann_ref in ref_pattern.findall(ann):
+                if ann_ref != c.source_ref and ann_ref not in known_refs:
+                    stub_annotations.append(
+                        {
+                            "owner": c.source_ref,
+                            "annotation": ann,
+                            "ghost_ref": ann_ref,
+                        }
+                    )
+
+    return {
+        "ghost_refs": ghost_refs,
+        "ghost_nets": ghost_nets,
+        "stub_annotations": stub_annotations,
+    }
+
+
 def generate_report(
     components: list[ComponentDef],
     validation_results=None,
