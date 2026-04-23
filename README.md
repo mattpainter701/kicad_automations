@@ -227,10 +227,11 @@ circuit-weaver discover                             # Auto-detect projects in CW
 circuit-weaver discover --json --depth 2            # JSON output, search 2 levels deep
 circuit-weaver save-research --project-dir ./output --file research.json
 circuit-weaver log-event ./project --type scoring --message "Review done"
+circuit-weaver doctor                               # Check credentials, backends, and tool availability
 
 # ── Design tools ──────────────────────────────────────────────────────────────
 circuit-weaver scaffold --template buck --ref U1   # New spec from template
-circuit-weaver list-templates --verbose             # Browse 30 subcircuit templates
+circuit-weaver list-templates --verbose             # Browse 37 subcircuit templates
 circuit-weaver design-enclosure --board-width 50 --board-height 40 -o enclosure.scad
 circuit-weaver harvest-specs design.yaml           # Download datasheets + extract specs
 circuit-weaver fetch-spice design.yaml             # Fetch SPICE models (TI, ADI, Microchip…)
@@ -368,6 +369,11 @@ kicad_automations/
 │   ├── simulation.py           # Simulation orchestrator (plan → run → score)
 │   ├── spice_netlist.py        # SPICE .cir netlist generator
 │   ├── spice_runner.py         # ngspice subprocess runner with graceful degradation
+│   ├── symbol_resolver.py      # IC symbol resolution chain (EasyEDA → cache → stub)
+│   ├── symbol_cache.py         # Persistent symbol cache with full pin/power map schema
+│   ├── research.py             # Research query orchestration (Perplexity / native web)
+│   ├── research_store.py       # Research artifact persistence (JSON + summary.md)
+│   ├── doctor.py               # Credential + backend diagnostics (circuit-weaver doctor)
 │   ├── logging_bridge.py       # Unified logging: Python logging ↔ DesignLogger bridge
 │   ├── design_logger.py        # Structured JSON Lines workflow logging (13 event types)
 │   ├── project_discovery.py    # Auto-detect circuit projects in directories
