@@ -1,0 +1,168 @@
+project: IoT_Sensor_Node
+company: Demo Corp
+version: ''
+description: "WiFi-enabled environmental sensor \u2014 ESP32 + BME280 with dual-rail\
+  \ power"
+spec_version: mvp_ir_v1
+blocks:
+- id: power:U1:0e9c7d3c
+  section: power
+  kind: template
+  ref: U1
+  required_support:
+    bypass_caps: 4
+    straps: 2
+    power_reqs: 0
+    boundary_ports: 4
+    local_wires: 0
+  part_bindings:
+    mpn: AP62300
+    value: AP62300
+    footprint: SOT-23-6
+    manufacturer: ''
+  type: buck
+  params:
+    vin: 5
+    vout: 3.3
+    iout: 2
+    vin_net: VBUS_5V
+    rail_name: VDD_3P3
+    en_net: VBUS_5V
+  interfaces:
+  - block_id: power:U1:0e9c7d3c
+    name: VBUS_5V
+    direction: input
+    description: ''
+  - block_id: power:U1:0e9c7d3c
+    name: VDD_3P3
+    direction: output
+    description: ''
+  - block_id: power:U1:0e9c7d3c
+    name: GND
+    direction: passive
+    description: ''
+  - block_id: power:U1:0e9c7d3c
+    name: VBUS_5V
+    direction: input
+    description: ''
+- id: power:U2:37f2e0ae
+  section: power
+  kind: template
+  ref: U2
+  required_support:
+    bypass_caps: 2
+    straps: 0
+    power_reqs: 0
+    boundary_ports: 4
+    local_wires: 0
+  part_bindings:
+    mpn: TLV75518
+    value: TLV75518
+    footprint: SOT-23-5
+    manufacturer: ''
+  type: ldo
+  params:
+    vin: 3.3
+    vout: 1.8
+    vin_net: VDD_3P3
+    rail_name: VDD_1P8
+  interfaces:
+  - block_id: power:U2:37f2e0ae
+    name: VDD_3P3
+    direction: input
+    description: ''
+  - block_id: power:U2:37f2e0ae
+    name: VDD_1P8
+    direction: output
+    description: ''
+  - block_id: power:U2:37f2e0ae
+    name: GND
+    direction: passive
+    description: ''
+  - block_id: power:U2:37f2e0ae
+    name: VDD_3P3
+    direction: input
+    description: ''
+- id: digital:U3:a4835554
+  section: digital
+  kind: component
+  ref: U3
+  required_support:
+    bypass_caps: 2
+    straps: 2
+    power_reqs: 1
+    boundary_ports: 0
+    local_wires: 0
+  part_bindings:
+    mpn: ESP32-WROOM-32E
+    value: ESP32-WROOM-32E
+    footprint: RF_Module:ESP32-WROOM-32E
+    manufacturer: ''
+  ic: ESP32-WROOM-32E
+- id: sensors:U4:4477732a
+  section: sensors
+  kind: component
+  ref: U4
+  required_support:
+    bypass_caps: 1
+    straps: 0
+    power_reqs: 1
+    boundary_ports: 0
+    local_wires: 0
+  part_bindings:
+    mpn: BME280
+    value: BME280
+    footprint: Package_LGA:Bosch_LGA-8_2.5x2.5mm
+    manufacturer: ''
+  ic: BME280
+- id: connectors:J1:ddbb8227
+  section: connectors
+  kind: component
+  ref: J1
+  required_support:
+    bypass_caps: 0
+    straps: 2
+    power_reqs: 0
+    boundary_ports: 0
+    local_wires: 0
+  part_bindings:
+    mpn: USB-C-PWR
+    value: USB-C
+    footprint: Connector_USB:USB_C_Receptacle_GCT_USB4085
+    manufacturer: ''
+  ic: USB-C-PWR
+interfaces:
+- block_id: power:U1:0e9c7d3c
+  name: VBUS_5V
+  direction: input
+  description: ''
+- block_id: power:U1:0e9c7d3c
+  name: VDD_3P3
+  direction: output
+  description: ''
+- block_id: power:U1:0e9c7d3c
+  name: GND
+  direction: passive
+  description: ''
+- block_id: power:U1:0e9c7d3c
+  name: VBUS_5V
+  direction: input
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: VDD_3P3
+  direction: input
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: VDD_1P8
+  direction: output
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: GND
+  direction: passive
+  description: ''
+- block_id: power:U2:37f2e0ae
+  name: VDD_3P3
+  direction: input
+  description: ''
+approved_overrides: []
+pcb_constraints: []

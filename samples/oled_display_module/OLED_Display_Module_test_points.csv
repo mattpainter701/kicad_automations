@@ -1,0 +1,7 @@
+TestPoint,Net,Type,Priority
+TP1,GND,ground,high
+TP2,I2C_SCL,data_bus,medium
+TP3,I2C_SDA,data_bus,medium
+TP4,VBUS_5V,power_rail,high
+TP5,VDD_1P8,power_rail,high
+TP6,VDD_3P3,power_rail,high

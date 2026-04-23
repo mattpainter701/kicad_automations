@@ -1,0 +1,11 @@
+TestPoint,Net,Type,Priority
+TP1,AVDD,power_rail,high
+TP2,DVDDIO,power_rail,high
+TP3,GND,ground,high
+TP4,USB_DM_U2,data_bus,medium
+TP5,USB_DP,data_bus,medium
+TP6,USB_DP_U2,data_bus,medium
+TP7,VBUS,power_rail,high
+TP8,VBUS_5V,power_rail,high
+TP9,VDD,power_rail,high
+TP10,VDD_3P3,power_rail,high

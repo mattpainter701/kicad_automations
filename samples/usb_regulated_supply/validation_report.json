@@ -14,8 +14,8 @@
     "presentation": 0
   },
   "metadata": {
-    "project": "FPGA_Power_Carrier",
-    "component_count": 4,
-    "block_count": 4
+    "project": "USB_Regulated_Supply",
+    "component_count": 3,
+    "block_count": 3
   }
 }

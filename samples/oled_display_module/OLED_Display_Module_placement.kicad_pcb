@@ -1,4 +1,4 @@
-(kicad_pcb (version 20240108) (generator "schematic_engine")
+(kicad_pcb (version 20240108) (generator "schematic_engine placement_preview")
   (general (thickness 1.6) (legacy_teardrops no))
   (layers
     (0 "F.Cu" signal)
@@ -121,8 +121,6 @@
     (property "Value" "TLV75518" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 15 "VBUS_5V"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 3 "GND"))
   )
   (footprint "SSD1306_Module"
     (layer "F.Cu")
@@ -133,8 +131,6 @@
     (property "Value" "SSD1306" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 18 "VDD_3P3"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 3 "GND"))
   )
   (footprint "Package_TO_SOT_SMD:SOT-23-8"
     (layer "F.Cu")
@@ -145,8 +141,6 @@
     (property "Value" "TXS0102" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 17 "VDD_1P8"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 18 "VDD_3P3"))
   )
   (footprint "Connector_USB:USB_C_Receptacle_GCT_USB4085"
     (layer "F.Cu")
@@ -157,8 +151,6 @@
     (property "Value" "USB-C" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 15 "VBUS_5V"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 3 "GND"))
   )
   (gr_line (start 0.00 0.00) (end 71.00 0.00) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts"))
   (gr_line (start 71.00 0.00) (end 71.00 70.00) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts"))

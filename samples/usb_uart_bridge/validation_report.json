@@ -1,5 +1,5 @@
 {
-  "profile": "mvp_strict",
+  "profile": "standard",
   "valid": true,
   "categories": {
     "structural": [],
@@ -9,140 +9,160 @@
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'USB_DP_U2' has only one connection (pin J1 on U2) \u2014 likely dangling"
+        "message": "Net 'USB_DP_U2' has only one connection (pin J1 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'USB_DM_U2' has only one connection (pin J2 on U2) \u2014 likely dangling"
+        "message": "Net 'USB_DM_U2' has only one connection (pin J2 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SSRX_P_U2' has only one connection (pin K1 on U2) \u2014 likely dangling"
+        "message": "Net 'SSRX_P_U2' has only one connection (pin K1 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SSRX_N_U2' has only one connection (pin K2 on U2) \u2014 likely dangling"
+        "message": "Net 'SSRX_N_U2' has only one connection (pin K2 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SSTX_P_U2' has only one connection (pin K3 on U2) \u2014 likely dangling"
+        "message": "Net 'SSTX_P_U2' has only one connection (pin K3 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SSTX_N_U2' has only one connection (pin K4 on U2) \u2014 likely dangling"
+        "message": "Net 'SSTX_N_U2' has only one connection (pin K4 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'GPIF_D0_U2' has only one connection (pin C1 on U2) \u2014 likely dangling"
+        "message": "Net 'GPIF_D0_U2' has only one connection (pin C1 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'GPIF_D1_U2' has only one connection (pin C2 on U2) \u2014 likely dangling"
+        "message": "Net 'GPIF_D1_U2' has only one connection (pin C2 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'GPIF_CLK_U2' has only one connection (pin C3 on U2) \u2014 likely dangling"
+        "message": "Net 'GPIF_CLK_U2' has only one connection (pin C3 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'GPIF_CTL0_U2' has only one connection (pin C4 on U2) \u2014 likely dangling"
+        "message": "Net 'GPIF_CTL0_U2' has only one connection (pin C4 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SPI_CLK_U2' has only one connection (pin G1 on U2) \u2014 likely dangling"
+        "message": "Net 'SPI_CLK_U2' has only one connection (pin G1 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SPI_SSN_U2' has only one connection (pin G2 on U2) \u2014 likely dangling"
+        "message": "Net 'SPI_SSN_U2' has only one connection (pin G2 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SPI_MISO_U2' has only one connection (pin G3 on U2) \u2014 likely dangling"
+        "message": "Net 'SPI_MISO_U2' has only one connection (pin G3 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SPI_MOSI_U2' has only one connection (pin G4 on U2) \u2014 likely dangling"
+        "message": "Net 'SPI_MOSI_U2' has only one connection (pin G4 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'RESET_N_U2' has only one connection (pin F1 on U2) \u2014 likely dangling"
+        "message": "Net 'RESET_N_U2' has only one connection (pin F1 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'XTALIN_U2' has only one connection (pin E1 on U2) \u2014 likely dangling"
+        "message": "Net 'XTALIN_U2' has only one connection (pin E1 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'XTALOUT_U2' has only one connection (pin E2 on U2) \u2014 likely dangling"
+        "message": "Net 'XTALOUT_U2' has only one connection (pin E2 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'PMODE2_U2' has only one connection (pin H3 on U2) \u2014 likely dangling"
+        "message": "Net 'PMODE2_U2' has only one connection (pin H3 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'PMODE1_U2' has only one connection (pin H2 on U2) \u2014 likely dangling"
+        "message": "Net 'PMODE1_U2' has only one connection (pin H2 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "D2",
-        "message": "Net 'USB_DP' has only one connection (pin 1 on D2) \u2014 likely dangling"
+        "message": "Net 'USB_DP' has only one connection (pin 1 on D2) \u2014 likely dangling",
+        "suggestion": ""
       }
     ],
     "implementation": [
@@ -151,7 +171,8 @@
         "code": "pin-footprint-mismatch",
         "level": "warning",
         "subject": "U2",
-        "message": "Symbol has 25 pins but footprint 'BGA-121' implies 121 pads \u2014 verify match"
+        "message": "Symbol has 25 pins but footprint 'BGA-121' implies 121 pads \u2014 verify match",
+        "suggestion": ""
       }
     ],
     "presentation": []

@@ -1,7 +1,7 @@
 # IoT_Sensor_Node — Design Report
 
 **Company:** Demo Corp  
-**Date:** 2026-04-02  
+**Date:** 2026-04-22  
 **Components:** 5  
 
 ## Power Tree
@@ -52,11 +52,44 @@
 - Dropout: 0.180V, Pdiss: 0.75W, Iq: 35uA
 - WARNING: Pdiss=0.75W > 500mW — needs heatsink or copper pour
 
+## Fabrication Notes
+
+**PCB Specification:**
+- Layer count: 2-layer sufficient
+- Surface finish: ENIG or HASL lead-free (ENIG preferred for reliability)
+- Solder type: Lead-free (RoHS)
+
+**Assembly Notes:**
+- **Fine-Pitch Components** — Paste stencil required; thermal pad via array recommended
+- **SMT Assembly** — Stencil, pick-and-place, and reflow furnace required
+
+**Design Checklist:**
+- [ ] Gerbers exported and verified with Gerber viewer
+- [ ] Component footprints match datasheets (especially fine-pitch packages)
+- [ ] Thermal vias present under power dissipation components
+- [ ] Solder mask clearance verified (0.1mm min from pad)
+- [ ] Silkscreen text readable (>0.8mm height, >0.15mm width)
+
 ## Circuit Validation
 
-All checks passed — no algebraic circuit issues detected.
-
+- PASS: Pinout verification
 - PASS: Feedback dividers
 - PASS: RC/LC filters
 - PASS: Crystal load caps
 - PASS: Decoupling coverage
+- PASS: Inductor selection
+- PASS: Capacitor voltage ratings
+- **WARN**: Net connectivity
+  - [WARNING] U3 ESP32-WROOM-32E: Net 'UART0_RX' has only one connection (pin 34 on U3) — likely dangling
+  - [WARNING] U3 ESP32-WROOM-32E: Net 'UART0_TX' has only one connection (pin 35 on U3) — likely dangling
+  - [WARNING] U4 BME280: Net 'I2C_SDA' has only one connection (pin 3 on U4) — likely dangling
+  - [WARNING] U4 BME280: Net 'I2C_SCL' has only one connection (pin 4 on U4) — likely dangling
+  - [WARNING] U4 BME280: Net 'BME_SDO' has only one connection (pin 5 on U4) — likely dangling
+- PASS: Enable/shutdown pins
+- **WARN**: Bus completeness
+  - [WARNING] U4 BME280: I2C signal 'I2C_SCL' has no pull-up resistor
+  - [WARNING] U4 BME280: I2C signal 'I2C_SDA' has no pull-up resistor
+- PASS: Pin type conflicts (ERC)
+- PASS: Power budget
+- PASS: Thermal limits
+- PASS: Signal integrity

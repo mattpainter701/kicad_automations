@@ -14,8 +14,8 @@
     "presentation": 0
   },
   "metadata": {
-    "project": "FPGA_Power_Carrier",
-    "component_count": 4,
-    "block_count": 4
+    "project": "LED_Power_Indicator",
+    "component_count": 2,
+    "block_count": 2
   }
 }

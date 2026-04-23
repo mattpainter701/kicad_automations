@@ -1,5 +1,5 @@
 {
-  "profile": "mvp_strict",
+  "profile": "standard",
   "valid": true,
   "categories": {
     "structural": [],
@@ -9,28 +9,32 @@
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'BOOT0' has only one connection (pin 7 on U2) \u2014 likely dangling"
+        "message": "Net 'BOOT0' has only one connection (pin 7 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'RESET_N' has only one connection (pin 44 on U2) \u2014 likely dangling"
+        "message": "Net 'RESET_N' has only one connection (pin 44 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SWDIO' has only one connection (pin 37 on U2) \u2014 likely dangling"
+        "message": "Net 'SWDIO' has only one connection (pin 37 on U2) \u2014 likely dangling",
+        "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U2",
-        "message": "Net 'SWCLK' has only one connection (pin 34 on U2) \u2014 likely dangling"
+        "message": "Net 'SWCLK' has only one connection (pin 34 on U2) \u2014 likely dangling",
+        "suggestion": ""
       }
     ],
     "implementation": [
@@ -39,7 +43,8 @@
         "code": "pin-footprint-mismatch",
         "level": "warning",
         "subject": "U2",
-        "message": "Symbol has 8 pins but footprint 'Package_QFP:LQFP-48_7x7mm_P0.5mm' implies 48 pads \u2014 verify match"
+        "message": "Symbol has 8 pins but footprint 'Package_QFP:LQFP-48_7x7mm_P0.5mm' implies 48 pads \u2014 verify match",
+        "suggestion": ""
       }
     ],
     "presentation": []

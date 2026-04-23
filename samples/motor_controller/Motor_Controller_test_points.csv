@@ -1,0 +1,3 @@
+TestPoint,Net,Type,Priority
+TP1,GND,ground,high
+TP2,VDD_3P3,power_rail,high

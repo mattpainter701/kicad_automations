@@ -1,7 +1,7 @@
 # LED_Power_Indicator — Design Report
 
 **Company:** Demo Corp  
-**Date:** 2026-04-02  
+**Date:** 2026-04-22  
 **Components:** 2  
 
 ## Power Tree
@@ -37,11 +37,38 @@
 - Dropout: 0.180V, Pdiss: 0.85W, Iq: 35uA
 - WARNING: Pdiss=0.85W > 500mW — needs heatsink or copper pour
 
+## Fabrication Notes
+
+**PCB Specification:**
+- Layer count: 2-layer sufficient
+- Surface finish: ENIG or HASL lead-free (ENIG preferred for reliability)
+- Solder type: Lead-free (RoHS)
+
+**Assembly Notes:**
+- **SMT Assembly** — Stencil, pick-and-place, and reflow furnace required
+
+**Design Checklist:**
+- [ ] Gerbers exported and verified with Gerber viewer
+- [ ] Component footprints match datasheets (especially fine-pitch packages)
+- [ ] Thermal vias present under power dissipation components
+- [ ] Solder mask clearance verified (0.1mm min from pad)
+- [ ] Silkscreen text readable (>0.8mm height, >0.15mm width)
+
 ## Circuit Validation
 
 All checks passed — no algebraic circuit issues detected.
 
+- PASS: Pinout verification
 - PASS: Feedback dividers
 - PASS: RC/LC filters
 - PASS: Crystal load caps
 - PASS: Decoupling coverage
+- PASS: Inductor selection
+- PASS: Capacitor voltage ratings
+- PASS: Net connectivity
+- PASS: Enable/shutdown pins
+- PASS: Bus completeness
+- PASS: Pin type conflicts (ERC)
+- PASS: Power budget
+- PASS: Thermal limits
+- PASS: Signal integrity

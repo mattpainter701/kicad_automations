@@ -1,4 +1,4 @@
-(kicad_pcb (version 20240108) (generator "schematic_engine")
+(kicad_pcb (version 20240108) (generator "schematic_engine placement_preview")
   (general (thickness 1.6) (legacy_teardrops no))
   (layers
     (0 "F.Cu" signal)
@@ -119,8 +119,6 @@
     (property "Value" "MCP73831T-2ACI/OT" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 17 "VUSB_5V"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 4 "GND"))
   )
   (footprint "DFN-8-EP"
     (layer "F.Cu")
@@ -131,8 +129,6 @@
     (property "Value" "MAX17048G+T" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 14 "VBAT"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 4 "GND"))
   )
   (footprint "SOT-23-5"
     (layer "F.Cu")
@@ -143,8 +139,6 @@
     (property "Value" "TLV75518" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 14 "VBAT"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 4 "GND"))
   )
   (footprint "RF_Module:ESP32-WROOM-32E"
     (layer "F.Cu")
@@ -155,8 +149,6 @@
     (property "Value" "ESP32-WROOM-32E" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 4 "GND"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 16 "VDD_3P3"))
   )
   (footprint "Connector_USB:USB_C_Receptacle_GCT_USB4085"
     (layer "F.Cu")
@@ -167,8 +159,6 @@
     (property "Value" "USB-C" (at 0 2 0)
       (effects (font (size 1.0 1.0) (thickness 0.15)))
     )
-    (pad "1" smd rect (at 0.00 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 15 "VBUS_5V"))
-    (pad "2" smd rect (at 1.27 0) (size 0.6 1.0) (layers "F.Cu" "F.Paste" "F.Mask") (net 4 "GND"))
   )
   (gr_line (start 0.00 0.00) (end 63.00 0.00) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts"))
   (gr_line (start 63.00 0.00) (end 63.00 70.00) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts"))

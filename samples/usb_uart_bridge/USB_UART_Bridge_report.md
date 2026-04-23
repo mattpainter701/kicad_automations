@@ -1,7 +1,7 @@
 # USB_UART_Bridge — Design Report
 
 **Company:** Demo Corp  
-**Date:** 2026-04-05  
+**Date:** 2026-04-22  
 **Components:** 5  
 
 ## Power Tree
@@ -86,6 +86,7 @@
 
 ## Circuit Validation
 
+- PASS: Pinout verification
 - PASS: Feedback dividers
 - PASS: RC/LC filters
 - PASS: Crystal load caps
@@ -116,3 +117,6 @@
 - PASS: Enable/shutdown pins
 - PASS: Bus completeness
 - PASS: Pin type conflicts (ERC)
+- PASS: Power budget
+- PASS: Thermal limits
+- PASS: Signal integrity

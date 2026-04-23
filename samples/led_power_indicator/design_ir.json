@@ -1,0 +1,109 @@
+{
+  "project": "LED_Power_Indicator",
+  "company": "Demo Corp",
+  "version": "",
+  "description": "Simple 3.3V LDO regulator with power indicator LED",
+  "spec_version": "mvp_ir_v1",
+  "blocks": [
+    {
+      "id": "power:U1:0e9c7d3c",
+      "section": "power",
+      "kind": "template",
+      "ref": "U1",
+      "required_support": {
+        "bypass_caps": 2,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 4,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "TLV75518",
+        "value": "TLV75518",
+        "footprint": "SOT-23-5",
+        "manufacturer": ""
+      },
+      "type": "ldo",
+      "params": {
+        "vin": 5,
+        "vout": 3.3,
+        "vin_net": "VBUS_5V",
+        "rail_name": "VDD_3P3"
+      },
+      "interfaces": [
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VBUS_5V",
+          "direction": "input",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VDD_3P3",
+          "direction": "output",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "GND",
+          "direction": "passive",
+          "description": ""
+        },
+        {
+          "block_id": "power:U1:0e9c7d3c",
+          "name": "VBUS_5V",
+          "direction": "input",
+          "description": ""
+        }
+      ]
+    },
+    {
+      "id": "connectors:J1:add176a8",
+      "section": "connectors",
+      "kind": "component",
+      "ref": "J1",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 2,
+        "power_reqs": 0,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "USB-C-PWR",
+        "value": "USB-C",
+        "footprint": "Connector_USB:USB_C_Receptacle_GCT_USB4085",
+        "manufacturer": ""
+      },
+      "ic": "USB-C-PWR"
+    }
+  ],
+  "interfaces": [
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VBUS_5V",
+      "direction": "input",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VDD_3P3",
+      "direction": "output",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "GND",
+      "direction": "passive",
+      "description": ""
+    },
+    {
+      "block_id": "power:U1:0e9c7d3c",
+      "name": "VBUS_5V",
+      "direction": "input",
+      "description": ""
+    }
+  ],
+  "approved_overrides": [],
+  "pcb_constraints": []
+}

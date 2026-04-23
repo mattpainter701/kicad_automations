@@ -6,26 +6,10 @@
     "electrical": [
       {
         "category": "electrical",
-        "code": "net-connectivity",
+        "code": "floating-input-pin",
         "level": "warning",
-        "subject": "U2",
-        "message": "Net 'I2C_SDA' has only one connection (pin 4 on U2) \u2014 likely dangling",
-        "suggestion": ""
-      },
-      {
-        "category": "electrical",
-        "code": "net-connectivity",
-        "level": "warning",
-        "subject": "U2",
-        "message": "Net 'I2C_SCL' has only one connection (pin 3 on U2) \u2014 likely dangling",
-        "suggestion": ""
-      },
-      {
-        "category": "electrical",
-        "code": "net-connectivity",
-        "level": "warning",
-        "subject": "U2",
-        "message": "Net 'VCOMH_U2' has only one connection (pin 9 on U2) \u2014 likely dangling",
+        "subject": "U3",
+        "message": "28 input/bidirectional pins unconnected (e.g., 4 (SENSOR_VP), 5 (SENSOR_VN), 6 (IO34), ...) \u2014 add to explicit_no_connects or wire as needed",
         "suggestion": ""
       },
       {
@@ -33,7 +17,7 @@
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U3",
-        "message": "Net 'LS_B1_U3' has only one connection (pin 1 on U3) \u2014 likely dangling",
+        "message": "Net 'UART0_RX' has only one connection (pin 34 on U3) \u2014 likely dangling",
         "suggestion": ""
       },
       {
@@ -41,30 +25,38 @@
         "code": "net-connectivity",
         "level": "warning",
         "subject": "U3",
-        "message": "Net 'LS_A1_U3' has only one connection (pin 4 on U3) \u2014 likely dangling",
+        "message": "Net 'UART0_TX' has only one connection (pin 35 on U3) \u2014 likely dangling",
         "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
-        "subject": "U3",
-        "message": "Net 'LS_A2_U3' has only one connection (pin 5 on U3) \u2014 likely dangling",
+        "subject": "U4",
+        "message": "Net 'I2C_SDA' has only one connection (pin 3 on U4) \u2014 likely dangling",
         "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "net-connectivity",
         "level": "warning",
-        "subject": "U3",
-        "message": "Net 'LS_B2_U3' has only one connection (pin 8 on U3) \u2014 likely dangling",
+        "subject": "U4",
+        "message": "Net 'I2C_SCL' has only one connection (pin 4 on U4) \u2014 likely dangling",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U4",
+        "message": "Net 'BME_SDO' has only one connection (pin 5 on U4) \u2014 likely dangling",
         "suggestion": ""
       },
       {
         "category": "electrical",
         "code": "bus-completeness",
         "level": "warning",
-        "subject": "U2",
+        "subject": "U4",
         "message": "I2C signal 'I2C_SCL' has no pull-up resistor",
         "suggestion": ""
       },
@@ -72,7 +64,7 @@
         "category": "electrical",
         "code": "bus-completeness",
         "level": "warning",
-        "subject": "U2",
+        "subject": "U4",
         "message": "I2C signal 'I2C_SDA' has no pull-up resistor",
         "suggestion": ""
       }
@@ -82,13 +74,13 @@
   },
   "summary": {
     "structural": 0,
-    "electrical": 9,
+    "electrical": 8,
     "implementation": 0,
     "presentation": 0
   },
   "metadata": {
-    "project": "OLED_Display_Module",
-    "component_count": 4,
-    "block_count": 4
+    "project": "IoT_Sensor_Node",
+    "component_count": 5,
+    "block_count": 5
   }
 }
