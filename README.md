@@ -71,13 +71,20 @@ Agentic research runs are expected to persist their output into `output/research
 That directory is the source of truth for why an IC was chosen, which citations
 backed it, and which backend produced the result.
 
+For Codex / Claude / OpenCode workflows, Step 2 IC research should stay in the
+current agent session. If a premium-research command would delegate to a
+subagent or fails with a model/tool conflict, use the platform's native web
+tools instead and persist the backend that actually ran.
+
 ```bash
-# Check which backend is active before research starts
+# Check which backend and depth are active before research starts
 circuit-weaver doctor
 
-# Optional: force backend selection for agent workflows
+# Optional: force backend/depth selection for agent workflows
 export CIRCUIT_WEAVER_RESEARCH_BACKEND=standard   # or sonar-pro / auto
+export CIRCUIT_WEAVER_RESEARCH_DEPTH=fast         # or normal
 # PowerShell: $env:CIRCUIT_WEAVER_RESEARCH_BACKEND="standard"
+# PowerShell: $env:CIRCUIT_WEAVER_RESEARCH_DEPTH="fast"
 
 # Persist a completed research result
 circuit-weaver save-research --project-dir ./output --file research.json
@@ -378,7 +385,7 @@ kicad_automations/
 │   ├── si_constraints.py       # Signal integrity constraint solver
 │   ├── api.py                  # FastAPI HTTP server
 │   ├── helpers/placement.py    # KiCad API abstraction, footprint matching utilities
-│   └── subcircuits/            # Reusable circuit template library (30 templates)
+│   └── subcircuits/            # Reusable circuit template library (37 templates)
 ├── tests/                   # Regression test suite (450+ tests)
 ├── skills/                  # Global workflow skills: kicad, bom, digikey, lcsc, ee…
 ├── project-skills/          # Per-project templates: kicad_gen, autoroute, sim…

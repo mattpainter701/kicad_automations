@@ -13,7 +13,7 @@ Circuit Weaver offers **three ways** to design a circuit:
 
 | Path | Command/Trigger | Best For | Speed | Requirements |
 |------|-----------------|----------|-------|--------------|
-| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code (registered globally) | Automatic, AI-driven IC research (Perplexity) | 5–10 min | `pip install circuit-weaver[skills]` + Perplexity API key |
+| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code (registered globally) | Automatic, same-agent IC research (`sonar-pro` or native web) | 5–10 min | `pip install circuit-weaver[skills]` + LLM access |
 | **`design_wizard` skill** | Say "design wizard" in Claude Code (registered globally) | Manual step-by-step control with AI guidance | 10–20 min | `pip install circuit-weaver[skills]` + LLM access |
 | **`circuit-weaver design-wizard` CLI** | Run `circuit-weaver design-wizard` in terminal | Offline, standalone, good for learning | 5–10 min | `pip install circuit-weaver` (no APIs, no agents) |
 
@@ -23,7 +23,7 @@ Circuit Weaver offers **three ways** to design a circuit:
 2. Register skills: `circuit-weaver install-skills`
 3. Choose your path (see table above)
 
-**Recommendation:** Start with `/circuit-weaver` (fastest) if you have a Perplexity API key. Otherwise, use the CLI wizard (fully offline).
+**Recommendation:** Start with `/circuit-weaver` (fastest) if you want automatic same-agent orchestration. If `PERPLEXITY_API_KEY` is configured it can use `sonar-pro`; otherwise it will use native web tooling. Use the CLI wizard if you want a fully offline flow.
 
 ---
 
@@ -147,7 +147,18 @@ worse than a modest chip with great tooling.
 
 **After you confirm the selections**, the wizard researches each IC. The
 effective backend is controlled by `metadata.research_backend` in the scaffolded
-spec or by `CIRCUIT_WEAVER_RESEARCH_BACKEND={auto,sonar-pro,standard}`.
+spec or by `CIRCUIT_WEAVER_RESEARCH_BACKEND={auto,sonar-pro,standard}`. The
+research depth is controlled by `metadata.research_depth` or
+`CIRCUIT_WEAVER_RESEARCH_DEPTH={fast,normal}`.
+
+Keep this research in the current agent session. If a premium-research command
+would delegate to a subagent or hits a model/tool conflict, fall back to the
+platform's native web tools and persist the backend that actually ran.
+
+- **`fast` research depth** — one broad context query plus at most two targeted
+  block queries; optimized for latency, minimal alternates/costing
+- **`normal` research depth** — one broad context query plus the fuller 3-5
+  targeted block queries with alternates and rough pricing context
 
 - **Datasheet highlights** — recommended application circuit, key specs,
   decoupling requirements
@@ -486,7 +497,9 @@ The wizard finds your saved YAML spec and figures out which step you were on:
 | Has ICs, no sourcing data | Step 3 — BOM Assembly |
 | Has full spec, no generated files | Step 4 — Schematic Generation |
 | Has schematics, no review | Step 5 — Design Review |
-| Has reviewed schematics | Step 6 — PCB Layout |
+| Has reviewed schematics, no confidence score | Step 6 — Confidence & Simulation Check |
+| Has confidence score, no PCB layout | Step 7 — PCB Layout Preparation |
+| Has PCB layout, no manufacturing files | Step 8 — Final Review & Next Steps |
 
 ---
 
@@ -581,7 +594,7 @@ on any topic.
 
 ## Advanced Workflows — Auto-Sourcing & Placement Editing
 
-Once you have a working schematic, Circuit Weaver 0.12.0+ offers two powerful shortcuts:
+Once you have a working schematic, Circuit Weaver offers two powerful shortcuts:
 
 ### Auto-Source Components (Task 86)
 
