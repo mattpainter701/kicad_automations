@@ -41,7 +41,21 @@ from .subcircuits.base import BoundaryPort, get_default_registry
 from .validator import run_validation_checks
 
 _STANDARD_PROFILE = "standard"
-_POWER_NET_PREFIXES = ("GND", "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
+_POWER_NET_PREFIXES = (
+    "GND",
+    "AGND",
+    "DGND",
+    "PGND",
+    "VDD",
+    "VCC",
+    "VBAT",
+    "VBUS",
+    "VIN",
+    "VDDA",
+    "VSS",
+    "MGT",
+    "VCCO",
+)
 _PRESENTATION_SVG_MARGIN = 0.5
 
 _ANSI = {
@@ -170,6 +184,7 @@ class CompiledDesign:
     components: list[ComponentDef]
     metadata: dict[str, Any]
     engine_spec: dict[str, Any]
+    repair_actions: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _ensure_profile(profile: str) -> str:
@@ -287,6 +302,66 @@ def _apply_approved_overrides(ir: DesignIR, components: list[ComponentDef]) -> N
             primary.presentation_wiring_policy = PresentationWiringPolicy(support_passives=str(value))
 
 
+def _synthesize_shared_net_interfaces(ir: DesignIR, components: list[ComponentDef]) -> None:
+    """Sprint 41 — auto-declare interfaces on shared signal nets.
+
+    The MVP validator requires every block that touches a non-power
+    signal net shared across blocks to declare an interface for that
+    net (see ``_validate_shared_net_interfaces``). Requiring users to
+    hand-declare every I2C_SDA / UART_TX / SPI_MOSI interface on every
+    participating block becomes boilerplate once bus synthesis picks up
+    — especially because auto_repair's synthetic I2C pull-up block must
+    also declare the same interfaces as the MCU and sensor.
+
+    This pass walks every non-power signal net that appears on two or
+    more blocks and appends a ``DesignInterface`` to each participating
+    block's ``interfaces`` list (if it isn't there already). Directions
+    are best-effort: inputs → input, outputs → output, the mix →
+    bidirectional.
+    """
+    groups = _group_components_by_block_key(components)
+
+    # For each non-power signal net, gather (block_key, direction) tuples.
+    net_contributors: dict[str, dict[str, str]] = {}
+    for block in ir.blocks:
+        block_key = _block_primary_key(block)
+        for comp in groups.get(block_key, []):
+            pin_type_by_num = {pin.number: pin.electrical_type for pin in comp.pins}
+            for pin_num, net in comp.pin_nets.items():
+                if not net or _is_power_net(net):
+                    continue
+                etype = pin_type_by_num.get(pin_num, "bidirectional")
+                if etype == "output":
+                    direction = "output"
+                elif etype == "input":
+                    direction = "input"
+                elif etype in ("power_in", "power_out"):
+                    direction = "passive"
+                else:
+                    direction = "bidirectional"
+                existing = net_contributors.setdefault(net, {}).get(block_key)
+                if existing is None:
+                    net_contributors[net][block_key] = direction
+                elif existing != direction:
+                    net_contributors[net][block_key] = "bidirectional"
+
+    # For each net shared across ≥ 2 blocks, append missing interfaces
+    # to each block.
+    block_by_key = {_block_primary_key(block): block for block in ir.blocks}
+    for net, contributors in net_contributors.items():
+        if len(contributors) < 2:
+            continue
+        for block_key, direction in contributors.items():
+            block = block_by_key.get(block_key)
+            if block is None:
+                continue
+            if any(iface.name == net for iface in block.interfaces):
+                continue
+            block.interfaces.append(
+                DesignInterface(block_id=block.id, name=net, direction=direction).normalized()
+            )
+
+
 def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) -> DesignIR:
     groups = _group_components_by_block_key(components)
     hydrated_blocks = []
@@ -347,13 +422,41 @@ def compile_design_ir(
     *,
     enrich_parts: bool = False,
 ) -> CompiledDesign:
-    """Compile a design spec into normalized IR + resolved engine components."""
+    """Compile a design spec into normalized IR + resolved engine components.
+
+    Applies Sprint 41 generational repairs in the middle of the pipeline:
+    resolve components once so bus participants are visible, call
+    :func:`generational_repair.auto_repair_design` to synthesize missing
+    conditioning blocks (e.g. I2C pull-ups), then re-resolve if any
+    synthetic blocks were added. Users opt out via ``auto_repair: false``
+    at the top of the spec.
+    """
+    from .generational_repair import auto_repair_design
+
     ir = normalize_design_spec(spec)
     engine_spec = design_ir_to_engine_spec(ir)
     components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
     components = copy.deepcopy(components)
+
+    # Auto-repair pass: scan resolved components for trivially-fixable
+    # bus issues and synthesize the missing conditioning blocks. Opt-out
+    # via ``auto_repair: false`` in the spec.
+    repair_enabled = bool(spec.get("auto_repair", True))
+    repaired_ir, repair_actions = auto_repair_design(ir, components, enabled=repair_enabled)
+    repair_records = [action.to_dict() for action in repair_actions]
+    if repair_actions:
+        # Re-compile from the patched IR. The synthetic blocks resolve
+        # through the template registry alongside the user's original
+        # blocks, producing a fresh component list with pull-ups /
+        # conditioning passives in place.
+        ir = repaired_ir
+        engine_spec = design_ir_to_engine_spec(ir)
+        components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
+        components = copy.deepcopy(components)
+
     _apply_block_attributes(ir, components)
     _apply_approved_overrides(ir, components)
+    _synthesize_shared_net_interfaces(ir, components)
     hydrated_ir = _hydrate_ir_from_components(ir, components)
     metadata.update(
         {
@@ -368,6 +471,7 @@ def compile_design_ir(
         components=components,
         metadata=metadata,
         engine_spec=engine_spec,
+        repair_actions=repair_records,
     )
 
 
@@ -1058,6 +1162,7 @@ def validate_design(
         "electrical": [],
         "implementation": [],
         "presentation": [],
+        "placement_readiness": [],
     }
 
     structural, electrical = _validate_block_definitions(compiled.ir)
@@ -1073,7 +1178,8 @@ def validate_design(
     categories["electrical"].extend(_validate_pin_coverage(compiled))
     categories["electrical"].extend(_validate_power_domain_consistency(compiled))
 
-    for result in run_validation_checks(compiled.components):
+    validator_results = list(run_validation_checks(compiled.components))
+    for result in validator_results:
         for issue in result.issues:
             categories["electrical"].append(
                 ValidationMessage(
@@ -1085,6 +1191,23 @@ def validate_design(
                 )
             )
 
+    # Sprint 41 — placement-readiness gate. Re-categorize validator
+    # findings that block PCB placement into a hard-error category,
+    # and append orphan-interface detections derived from the IR.
+    from .placement_readiness import placement_readiness_issues
+
+    for issue in placement_readiness_issues(validator_results, compiled.ir, compiled.components):
+        categories["placement_readiness"].append(
+            ValidationMessage(
+                category="placement_readiness",
+                code=issue.code,
+                level=issue.level,
+                subject=issue.ref or issue.mpn,
+                message=issue.message,
+                suggestion=issue.suggestion,
+            )
+        )
+
     def _has_errors(msgs: list[ValidationMessage]) -> bool:
         return any(m.level == "error" for m in msgs)
 
@@ -1092,6 +1215,7 @@ def validate_design(
         not _has_errors(categories["structural"])
         and not _has_errors(categories["electrical"])
         and not _has_errors(categories["implementation"])
+        and not _has_errors(categories["placement_readiness"])
     )
     if can_check_artifacts:
         with (
@@ -1177,15 +1301,20 @@ def generate_design_checklist(report: ValidationReport, components=None) -> str:
     lines.append(f"**Blocks:** {report.metadata.get('block_count', '?')}")
     lines.append("")
 
-    # Checklist items derived from validation categories
+    # Checklist items derived from validation categories. Sprint 41
+    # placement-blocking items (dangling nets, missing pull-ups,
+    # floating enables, orphan interfaces) now live under the
+    # ``placement_readiness`` category and are hard-gated at
+    # ``generate_artifacts`` time.
     checklist = [
-        ("All power pins connected", "electrical", "floating-power-pin", "missing-power-net"),
+        ("All power pins connected", "placement_readiness", "floating-power-pin", "missing-power-net"),
         ("All bypass caps placed", "electrical", "decoupling"),
-        ("All enable pins driven", "electrical", "floating-enable"),
+        ("All enable pins driven", "placement_readiness", "floating-enable"),
         ("No floating inputs", "electrical", "floating-input-pin"),
-        ("Bus pull-ups present", "electrical", "i2c-missing-pullup"),
+        ("Bus pull-ups present", "placement_readiness", "i2c-missing-pullup"),
         ("No output conflicts", "electrical", "output-conflict"),
-        ("No dangling nets", "electrical", "single-pin-net"),
+        ("No dangling nets", "placement_readiness", "single-pin-net"),
+        ("No orphan interfaces", "placement_readiness", "orphan-interface"),
         ("Crystal load caps matched", "electrical", "crystal-load"),
         ("Feedback dividers correct", "electrical", "feedback-divider"),
         ("All blocks resolved", "structural", "unresolved-block", "unresolved-component"),
@@ -1487,15 +1616,14 @@ def generate_artifacts(
     try:
         report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
 
-        # Sprint 40 Task 173 — generate enforcement is deterministic regardless
-        # of the ``require_valid`` flag. Structural / implementation errors
-        # always block (a missing footprint or a cache stub that bypassed the
-        # pinout-source gate must never ship), while ``--no-require-valid``
-        # only bypasses soft electrical warnings. Without this split the flag
-        # could silently let broken artifacts through, which is how the IoT
-        # AQ audit ended up with a schematic full of `missing-footprint`
-        # errors written to disk.
-        _HARD_ERROR_CATEGORIES = ("structural", "implementation")
+        # Sprint 40 Task 173 + Sprint 41 — generate enforcement is
+        # deterministic regardless of the ``require_valid`` flag.
+        # Structural, implementation, and (Sprint 41) placement-readiness
+        # errors always block. ``--no-require-valid`` only bypasses soft
+        # electrical warnings (crystal-load tolerance, rc/lc-filter
+        # tuning, cap-voltage derating, power-budget hints) — it cannot
+        # paper over a schematic that is physically unfinished.
+        _HARD_ERROR_CATEGORIES = ("structural", "implementation", "placement_readiness")
         hard_errors = [
             msg
             for category in _HARD_ERROR_CATEGORIES
@@ -1510,8 +1638,8 @@ def generate_artifacts(
                 report.summary,
             )
             raise ValueError(
-                f"Design has {len(hard_errors)} structural/implementation error(s) — "
-                "fix these before generation (these are not bypassable via "
+                f"Design has {len(hard_errors)} structural/implementation/placement_readiness "
+                "error(s) — fix these before generation (these are not bypassable via "
                 "--no-require-valid)"
             )
         if require_valid and not report.valid:
@@ -1542,6 +1670,27 @@ def generate_artifacts(
     report_path = output_path / "validation_report.json"
     report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="")
 
+    # Sprint 41 — placement readiness report. Shape is stable; consumed
+    # by the placement pipeline and downstream agents to decide whether
+    # the schematic is ready for forward-annotation.
+    pr_category = report.categories.get("placement_readiness", [])
+    repair_actions = list(getattr(compiled, "repair_actions", []) or [])
+    pr_summary = {
+        "errors": sum(1 for m in pr_category if m.level == "error"),
+        "warnings": sum(1 for m in pr_category if m.level == "warning"),
+        "repairs_applied": len(repair_actions),
+    }
+    placement_ready_payload = {
+        "ready": pr_summary["errors"] == 0,
+        "blocking": [asdict(m) for m in pr_category if m.level == "error"],
+        "auto_repaired": repair_actions,
+        "summary": pr_summary,
+    }
+    placement_ready_path = output_path / "placement_readiness.json"
+    placement_ready_path.write_text(
+        json.dumps(placement_ready_payload, indent=2), encoding="utf-8", newline=""
+    )
+
     result = {
         "output_dir": str(output_path),
         "project": compiled.metadata.get("project", "project"),
@@ -1550,6 +1699,7 @@ def generate_artifacts(
         "validation_report": str(report_path),
         "design_ir": str(ir_path),
         "canonical_spec": str(canonical_spec_path),
+        "placement_readiness": str(placement_ready_path),
         "valid": report.valid,
     }
 

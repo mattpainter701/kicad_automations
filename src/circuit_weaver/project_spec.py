@@ -48,7 +48,7 @@ from .component_db import (
     PinDef,
 )
 from .kicad_lib import KiCadLibrary
-from .subcircuits.base import SubcircuitRegistry, get_default_registry
+from .subcircuits.base import BoundaryPort, SubcircuitRegistry, get_default_registry
 
 
 def _make_stub_component(name: str, category: str, ref: str = "", reason: str = "") -> ComponentDef:
@@ -375,6 +375,121 @@ def _pin_sort_key(pin_number: str) -> tuple[int, int, str]:
     return (2, 0, raw.upper())
 
 
+def _apply_partial_pin_overrides(item: dict, comp: ComponentDef) -> None:
+    """Sprint 41 — surgical overrides on top of registry defaults.
+
+    Three YAML keys are honored, all optional and all merged onto
+    whatever the registry / resolver produced:
+
+    * ``no_connects``: list of pin numbers to mark as intentional
+      no-connects. These pins are removed from ``pin_nets`` /
+      ``power_pins`` (if present) and added to ``explicit_no_connects``
+      so the validator + generator treat them as silent NC.
+    * ``pin_nets_extra``: ``{pin_num: net_name}`` mapping merged into
+      the component's existing ``pin_nets``. Lets users rewire the MCU
+      side of a bus (e.g. ``{"16": "I2C_SDA", "17": "I2C_SCL"}`` on an
+      ESP32) without re-declaring every default pin via the
+      heavier-handed ``pin_map``.
+    * ``power_pins_extra``: ``{pin_num: net_name}`` similarly extends
+      existing ``power_pins``.
+
+    These are additive; they do not reset the registry defaults the way
+    ``pin_map`` does. Conflicting pin numbers in ``pin_nets_extra`` take
+    precedence over registry defaults.
+    """
+    # Track which nets are removed from the component so any template-
+    # declared boundary port for that net can be retired too.
+    dropped_nets: set[str] = set()
+    added_nets: set[str] = set()
+
+    # Intentional no-connects
+    raw_ncs = item.get("no_connects") or []
+    if isinstance(raw_ncs, (list, tuple, set)):
+        for raw in raw_ncs:
+            pin_num = str(raw).strip()
+            if not pin_num:
+                continue
+            old_signal = comp.pin_nets.pop(pin_num, None)
+            old_power = comp.power_pins.pop(pin_num, None)
+            if old_signal:
+                dropped_nets.add(old_signal)
+            if old_power:
+                dropped_nets.add(old_power)
+            comp.explicit_no_connects.add(pin_num)
+
+    # Extra signal pins (merged, not replacing). A pin that was
+    # previously assigned to power_pins is cleared first so the two
+    # dicts never hold the same pin.
+    raw_extra = item.get("pin_nets_extra") or {}
+    if isinstance(raw_extra, dict):
+        for pin_num, net_name in raw_extra.items():
+            p = str(pin_num).strip()
+            n = str(net_name).strip()
+            if not p or not n:
+                continue
+            old_signal = comp.pin_nets.get(p)
+            old_power = comp.power_pins.pop(p, None)
+            if old_signal and old_signal != n:
+                dropped_nets.add(old_signal)
+            if old_power and old_power != n:
+                dropped_nets.add(old_power)
+            comp.pin_nets[p] = n
+            added_nets.add(n)
+            comp.explicit_no_connects.discard(p)
+
+    # Extra power pins (merged, not replacing). Pulls the pin off
+    # ``pin_nets`` so a single pin is never double-assigned.
+    raw_power_extra = item.get("power_pins_extra") or {}
+    if isinstance(raw_power_extra, dict):
+        for pin_num, net_name in raw_power_extra.items():
+            p = str(pin_num).strip()
+            n = str(net_name).strip()
+            if not p or not n:
+                continue
+            old_signal = comp.pin_nets.pop(p, None)
+            old_power = comp.power_pins.get(p)
+            if old_signal and old_signal != n:
+                dropped_nets.add(old_signal)
+            if old_power and old_power != n:
+                dropped_nets.add(old_power)
+            comp.power_pins[p] = n
+            added_nets.add(n)
+            comp.explicit_no_connects.discard(p)
+
+    # Retire stale template boundary ports so placement_readiness's
+    # orphan-interface check doesn't flag a net that the user
+    # legitimately rewired. Only drop ports whose net was removed AND
+    # not replaced — if the same name was reassigned the port is still
+    # valid.
+    still_dropped = dropped_nets - added_nets
+    if still_dropped and comp.template_boundary_ports:
+        comp.template_boundary_ports = [
+            port for port in comp.template_boundary_ports if port.name not in still_dropped
+        ]
+
+    # Added nets become declared interfaces so
+    # ``_validate_shared_net_interfaces`` doesn't complain about the
+    # rewired signals. Direction is a best-guess from the original pin's
+    # electrical type, defaulting to bidirectional for unknowns.
+    if added_nets:
+        existing_port_names = {port.name for port in comp.template_boundary_ports}
+        pin_type_by_num = {pin.number: pin.electrical_type for pin in comp.pins}
+        for pin_num, net_name in {**comp.pin_nets, **comp.power_pins}.items():
+            if net_name not in added_nets or net_name in existing_port_names:
+                continue
+            etype = pin_type_by_num.get(pin_num, "bidirectional")
+            if etype == "output":
+                direction = "output"
+            elif etype == "input":
+                direction = "input"
+            elif etype in ("power_in", "power_out"):
+                direction = "passive"
+            else:
+                direction = "bidirectional"
+            comp.template_boundary_ports.append(BoundaryPort(net_name, direction))
+            existing_port_names.add(net_name)
+
+
 def _apply_pinout_overrides(item: dict, comp: ComponentDef) -> None:
     """Apply YAML-level pinout overrides for a standalone component instance."""
     if "pinout_verified" in item:
@@ -532,6 +647,12 @@ def _resolve_component(
             primary.template_annotations.extend(result.annotations)
             primary.template_boundary_ports.extend(copy.deepcopy(result.boundary_ports))
             primary.template_local_wires.extend(copy.deepcopy(result.local_wires))
+            # Sprint 41 — apply surgical pin overrides (pin_nets_extra,
+            # power_pins_extra, no_connects) to the template's primary
+            # component. Template-emitted ICs often have instance-
+            # scoped default net names ("USB_DP_U2") that need to be
+            # rewired to the project-global bus.
+            _apply_partial_pin_overrides(item, primary)
         for comp in result.components:
             if ref:
                 comp.source_ref = ref
@@ -615,6 +736,7 @@ def _resolve_component(
     if item.get("mpn"):
         instance.source_mpn = str(item["mpn"])
     _apply_pinout_overrides(item, instance)
+    _apply_partial_pin_overrides(item, instance)
     _apply_power_map(item, instance)
     _apply_net_prefix(item, instance)
     _maybe_enrich_component(item, instance, parts_lookup)

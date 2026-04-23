@@ -270,13 +270,14 @@ updated = ingest_pcb_feedback(spec, pcb_feedback)
 
 ### Validation groups
 
-`validate_design` runs four grouped checks and returns a structured `ValidationReport`:
+`validate_design` runs five grouped checks and returns a structured `ValidationReport`:
 
 | Group | What it checks |
 |-|-|
 | `structural` | Topology, block connections, hierarchy integrity |
 | `electrical` | Power rails, ground nets, net continuity |
 | `implementation` | Part bindings, footprint assignments, pinout verification |
+| `placement_readiness` | **Hard-gated** — dangling buses, missing I2C pull-ups, orphan interfaces, floating enables; never bypassable by `--no-require-valid` |
 | `presentation` | Labels, pin numbers, sheet readability |
 
 ### HTTP API

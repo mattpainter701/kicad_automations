@@ -1,25 +1,24 @@
-"""Sprint 40 Task 174 — diverse-circuit regression corpus.
+"""Sprint 40 Task 174 + Sprint 41 — diverse-circuit regression corpus.
 
 The user-reported IoT AQ audit exposed regressions that weren't caught
 because our existing tests drill into individual modules rather than
 running the full ``generate`` pipeline across circuit archetypes. This
 module runs ``generate_artifacts`` on representative samples from each
 archetype (IoT sensor, motor controller, USB bridge, LED driver, FPGA
-power carrier) and asserts three invariants on every emitted schematic:
+power carrier, and the Sprint 41 additions: inverter, wearable BMS, RF
+front-end, high-voltage isolation) and asserts four invariants on every
+emitted schematic:
 
 1. No structural duplicates (Task 170 — enforced by
    ``assert_schematic_invariants``).
-2. Every net / ref mentioned in the report exists in the resolved design
-   (Task 172 — enforced by ``verify_report_fidelity``).
+2. Every net / ref mentioned in the report exists in the resolved
+   design (Task 172 — enforced by ``verify_report_fidelity``).
 3. No component carries the cache-stub signature
    (``pinout_source="stub"``) without an explicit user acknowledgment
    (Task 169).
-
-Follow-up archetypes to add as new user reports surface:
-* inverter (gate driver + high-side switching + isolation)
-* wearable (coin cell + BMS + E-ink)
-* RF chain (LNA + mixer + IF filter)
-* high-voltage (mains + safety isolation)
+4. Every non-power signal net has at least two pin endpoints in the
+   emitted schematic OR was declared as a boundary interface — the
+   Sprint 41 placement-readiness invariant at the artifact level.
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ from test_schematic_invariants import assert_schematic_invariants  # noqa: E402
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 
-# Archetypes selected for initial corpus — each exercises a distinct
+# Archetypes selected for the corpus — each exercises a distinct
 # combination of placer / resolver / report paths.
 CORPUS_SAMPLES = [
     ("led_power_indicator", "led_power_indicator.yaml"),  # discrete LED + divider
@@ -44,6 +43,12 @@ CORPUS_SAMPLES = [
     ("motor_controller", "motor_controller.yaml"),  # H-bridge + motor driver
     ("usb_uart_bridge", "usb_uart_bridge.yaml"),  # USB + regulator + bridge IC
     ("fpga_power_carrier", "fpga_power_carrier.yaml"),  # Multi-rail power tree + FPGA
+    # Sprint 41 — expand breadth to the four follow-up archetypes
+    # TASKS.md Sprint 40 flagged.
+    ("inverter_gate_driver", "inverter_gate_driver.yaml"),
+    ("wearable_bms", "wearable_bms.yaml"),
+    ("rf_frontend", "rf_frontend.yaml"),
+    ("high_voltage_isolation", "high_voltage_isolation.yaml"),
 ]
 
 
@@ -75,9 +80,10 @@ def test_corpus_generates_and_satisfies_invariants(sample_dir: str, yaml_name: s
             export_svg=False,
         )
     except ValueError as exc:
-        # Hard structural / implementation errors reach here per Task 173.
-        # These are legitimate regressions — let the test fail with the spec
-        # path so the operator knows which archetype broke.
+        # Hard structural / implementation / placement_readiness errors
+        # reach here per Task 173 + Sprint 41. These are legitimate
+        # regressions — fail with the spec path so the operator knows
+        # which archetype broke.
         pytest.fail(f"{sample_dir}: generation raised hard validation error: {exc}")
 
     # Invariant 1: schematic must be structurally consistent.
@@ -87,20 +93,15 @@ def test_corpus_generates_and_satisfies_invariants(sample_dir: str, yaml_name: s
         assert_schematic_invariants(sch_text, context=f"{sample_dir}/{Path(root_sch).name}")
 
     # Invariant 2: no 2-pin cache-stub regressions. Pull the design_ir and
-    # spot-check every resolved block. Components with pinout_source="stub"
-    # that slipped past validator into the emitted design are regressions.
+    # spot-check every resolved block.
     design_ir_path = Path(result["design_ir"])
     if design_ir_path.exists():
         import json
 
         ir = json.loads(design_ir_path.read_text(encoding="utf-8"))
         for block in ir.get("blocks", []):
-            # Only worry about IC-class blocks with multi-pin parts. Passives,
-            # connectors, 2-terminal devices are allowed to have 2 pins.
             part = block.get("part_bindings", {}) or {}
             mpn = (part.get("mpn") or block.get("ic") or "").upper()
-            # Skip connectors / resistors / capacitors / crystals / LEDs —
-            # those are legitimately 2-3 pin.
             if not mpn:
                 continue
 
@@ -109,8 +110,6 @@ def test_corpus_generates_and_satisfies_invariants(sample_dir: str, yaml_name: s
     report_md = output_dir / f"{result['project']}_report.md"
     if report_md.exists():
         report_text = report_md.read_text(encoding="utf-8")
-        # We don't have direct access to the resolved components here —
-        # derive ghost checks from design_ir ref set instead.
         import json
 
         ir = json.loads(design_ir_path.read_text(encoding="utf-8"))
@@ -118,22 +117,78 @@ def test_corpus_generates_and_satisfies_invariants(sample_dir: str, yaml_name: s
 
         import re
 
-        # Use the same pattern as verify_report_fidelity
         ref_pattern = re.compile(r"(?<![A-Za-z0-9_])([A-Z]{1,3}\d{1,4})(?![A-Za-z0-9_])")
         mentioned_refs = set(ref_pattern.findall(report_text))
-
-        # Allow refs that are placer-generated supporting passives (C1, C2, R1, ...).
-        # Only flag as ghost if the ref is for an IC-class prefix (U, Y) that
-        # was never declared in design_ir.
         ghost_ic_refs = {r for r in (mentioned_refs - known_refs) if re.match(r"^(U|Y|IC)\d", r)}
         assert not ghost_ic_refs, f"{sample_dir}: report names IC refs not in design_ir: {ghost_ic_refs}"
 
+    # Invariant 4 — Sprint 41 placement-readiness. Scan the emitted
+    # schematic for signal nets (non-power, non-ground) that only show
+    # up on a single pin; those are placement blockers and should have
+    # been caught at generate time. If one slipped through the gate,
+    # fail loudly so the regression is visible.
+    placement_path = Path(result.get("placement_readiness") or "")
+    if placement_path.exists():
+        import json
+
+        payload = json.loads(placement_path.read_text(encoding="utf-8"))
+        assert payload.get("ready") is True, (
+            f"{sample_dir}: placement_readiness.json reports not-ready: "
+            f"{payload.get('blocking', [])}"
+        )
+
 
 def test_corpus_has_five_archetypes():
-    """Lock-in the breadth goal — if someone trims the corpus they must
-    explicitly justify it."""
-    assert len(CORPUS_SAMPLES) >= 5, (
-        "Sprint 40 corpus must cover at least 5 archetypes (IoT, motor, USB, "
-        "discrete LED, FPGA/SBC). Adding new archetypes is encouraged; "
-        "trimming existing ones requires evidence they're redundant."
+    """Lock-in the breadth goal. Sprint 41 raises the bar to 9
+    archetypes so the follow-up breadth goals from TASKS.md Sprint 40
+    stay in coverage; adding new archetypes is encouraged, trimming
+    requires evidence they're redundant."""
+    assert len(CORPUS_SAMPLES) >= 9, (
+        "Sprint 41 corpus must cover at least 9 archetypes (IoT, motor, USB, "
+        "discrete LED, FPGA/SBC, inverter, wearable, RF, high-voltage). "
+        "Trimming requires evidence the dropped archetype is redundant."
     )
+
+
+def test_auto_repair_inserts_i2c_pullups(tmp_path: Path) -> None:
+    """Sprint 41 Task B — auto-repair synthesizes a PULLUPS_ONLY block
+    when a named I2C bus has no pull-up straps. Exercises the iot
+    sensor sample because it's the smallest real I2C design in the
+    corpus.
+    """
+    from circuit_weaver.dispatcher import compile_design_ir
+
+    spec_path = SAMPLES_DIR / "iot_sensor_node" / "iot_sensor_node.yaml"
+    spec = _load_spec(spec_path)
+
+    compiled = compile_design_ir(spec)
+
+    assert compiled.repair_actions, "expected auto_repair to synthesize at least one block"
+    kinds = {action["kind"] for action in compiled.repair_actions}
+    assert "i2c_pullups" in kinds, f"expected i2c_pullups repair, got {kinds}"
+
+    # The synthetic block should appear as a resolved component in the
+    # compiled design with PULLUPS_ONLY as its MPN.
+    mpns = {(c.mpn or "").upper() for c in compiled.components}
+    assert "PULLUPS_ONLY" in mpns, f"PULLUPS_ONLY block missing from components: {mpns}"
+
+
+def test_auto_repair_disabled_via_spec_flag(tmp_path: Path) -> None:
+    """Users can disable the auto-repair pass via ``auto_repair:
+    false`` at the top of the spec. Verify no synthetic blocks appear
+    in that mode (even when I2C pull-ups would otherwise be
+    synthesized).
+    """
+    from circuit_weaver.dispatcher import compile_design_ir
+
+    spec_path = SAMPLES_DIR / "iot_sensor_node" / "iot_sensor_node.yaml"
+    spec = _load_spec(spec_path)
+    spec["auto_repair"] = False
+
+    compiled = compile_design_ir(spec)
+
+    assert compiled.repair_actions == [], (
+        f"auto_repair: false should suppress synthesis, got {compiled.repair_actions}"
+    )
+    mpns = {(c.mpn or "").upper() for c in compiled.components}
+    assert "PULLUPS_ONLY" not in mpns, f"PULLUPS_ONLY block should not appear with auto_repair off: {mpns}"

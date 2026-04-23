@@ -2,6 +2,80 @@
 
 ## [Unreleased]
 
+### Sprint 41 — Circuit Validity Generational Requirements
+
+Completes the generational-requirements story started in Sprint 40. A
+user can now describe a "dynamic and vastly different" circuit in YAML
+and get a guaranteed placement-ready `.kicad_sch` back — dangling
+buses, missing I2C pull-ups, floating enables, orphan interfaces, and
+unverified-stub ICs are either auto-repaired in place or raise a hard
+generation error with a specific fix suggestion.
+
+### Added
+
+- **New `placement_readiness` validation category** (`placement_readiness.py`)
+  that promotes every placement-blocking check — `single-pin-net`,
+  `undriven-net`, `i2c-missing-pullup`, `spi-floating-cs`,
+  `uart-unpaired`, `floating-enable`, `floating-power-pin`,
+  `unverified-pinout`, plus a new `orphan-interface` detector — into a
+  hard category that `generate_artifacts` always blocks on.
+  `_HARD_ERROR_CATEGORIES` is now
+  `{structural, implementation, placement_readiness}`; soft electrical
+  warnings remain bypassable via `--no-require-valid`.
+- **`generational_repair.py`** auto-repair pass. Runs inside
+  `compile_design_ir` after primary resolution, synthesizes a
+  PULLUPS_ONLY I2C bus block when a named I2C bus lacks pull-ups, and
+  records each fix in `placement_readiness.json`. Users opt out via
+  `auto_repair: false` at the top of the spec.
+- **Surgical per-IC YAML overrides** (`project_spec._apply_partial_pin_overrides`):
+  `pin_nets_extra`, `power_pins_extra`, and `no_connects` merge onto
+  registry defaults so users can rewire an MCU's I2C pins or mark an
+  unused UART NC without re-declaring every other pin via `pin_map`.
+  Stale template boundary ports retire automatically when their net is
+  replaced.
+- **`_synthesize_shared_net_interfaces`**: every non-power signal that
+  shares a net across two or more blocks now gets an auto-declared
+  `DesignInterface`, satisfying the MVP's `undeclared-shared-net`
+  gate without user boilerplate.
+- **Four new corpus archetypes** (`samples/`) — `inverter_gate_driver`,
+  `wearable_bms`, `rf_frontend`, `high_voltage_isolation` — closing
+  out the Sprint 40 follow-up archetype list.
+- **`placement_readiness.json`** artifact written alongside
+  `validation_report.json` in every `generate` output. Shape:
+  `{ready: bool, blocking: [...], auto_repaired: [...], summary: {...}}`.
+
+### Changed
+
+- **`_bus_pairs` relaxed** to trigger on any named I2C bus with at
+  least one participant (previously required ≥ 2). A lone sensor on
+  `I2C_SDA` still needs pull-ups; the new detector covers that case.
+- **`_build_net_pin_map` in the validator** now models bypass caps and
+  strap resistors as full 2-terminal elements — a pull-up net no
+  longer reads as single-pin just because the only "real" IC pin on
+  it is the one the strap attaches to.
+- **`_POWER_NET_PREFIXES`** expanded with `VBAT`, `VSS`, `AGND`,
+  `DGND`, `PGND` so battery-only rails aren't flagged as
+  `undeclared-shared-net`.
+- **`design_ir_to_engine_spec`** preserves `block.ic` on template
+  blocks, fixing a pre-existing bug where a user-selected IC (e.g.
+  `ic: CH340G` on a `usb_controller`) silently fell back to the
+  template's first default (CYUSB3014).
+- **Existing samples fixed to be placement-ready**: `iot_sensor_node`,
+  `battery_iot_sensor`, `motor_controller`, `usb_uart_bridge`,
+  `oled_display_module`, and the built-in `examples/iot_sensor.yaml`
+  now use the new surgical overrides to wire their MCU I2C / SWD /
+  UART pins cleanly.
+
+### Tests
+
+- **9-archetype corpus**: `tests/test_generation_corpus.py` now runs
+  `generate_artifacts` over 9 samples and enforces a fourth invariant:
+  `placement_readiness.json` reports `ready: true`. Breadth guard
+  raised from ≥ 5 to ≥ 9.
+- Added `test_auto_repair_inserts_i2c_pullups` and
+  `test_auto_repair_disabled_via_spec_flag` covering Task B directly.
+- Full suite at sprint close: **743 passed, 1 skipped, 0 failed**.
+
 ### Sprint 40 — Generation Quality Regression Repair
 
 Repaired regressions introduced during the dynamic IC designer, placement

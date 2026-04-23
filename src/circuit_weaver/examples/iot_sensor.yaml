@@ -1,11 +1,13 @@
-# Example: IoT sensor board with buck + LDO power, ESP32, BME280
+# Example: IoT sensor board with buck + LDO power, ESP32, BME280.
 # Generate: circuit-weaver generate examples/iot_sensor.yaml -o output/
 #
 # This design demonstrates:
 #   - Dual power rail (5V→3.3V buck, 3.3V→1.8V LDO)
-#   - MCU with I2C sensor interface
+#   - MCU with I2C sensor interface (auto-generated pull-ups)
 #   - USB-C power input with CC resistors
-#   - I2C bus with pull-ups
+#   - Sprint 41 placement-readiness: ESP32 I2C GPIOs wired via
+#     pin_nets_extra; BME280 address-select tied to GND; ESP32 UART0
+#     and BME280 SDO marked NC so the schematic is ready for placement.
 
 project: IoT_Sensor
 company: Demo Corp
@@ -32,10 +34,16 @@ power:
 digital:
   - ic: ESP32-WROOM-32E
     ref: U3
+    pin_nets_extra:
+      "33": I2C_SDA
+      "36": I2C_SCL
+    no_connects: ["34", "35"]
 
 sensors:
   - ic: BME280
     ref: U4
+    power_pins_extra:
+      "5": GND
 
 connectors:
   - ic: USB-C-PWR
