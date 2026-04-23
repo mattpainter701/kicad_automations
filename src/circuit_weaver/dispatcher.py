@@ -888,8 +888,12 @@ def _generate_compiled_artifacts(
     output_dir.mkdir(parents=True, exist_ok=True)
     profile = compiled.metadata.get("presentation_profile", "default")
     pwp = PresentationWiringPolicy(support_passives="topology_local") if profile == "review" else None
+    # Deep-copy components so that in-place mutations from auto_generate_bypass_caps
+    # and annotation appends in the generator don't bleed between validation runs
+    # that reuse the same CompiledDesign object (e.g. the determinism check).
+    components = copy.deepcopy(compiled.components)
     files = generate_from_components(
-        compiled.components,
+        components,
         str(output_dir),
         project_name=compiled.metadata.get("project", "project"),
         company=compiled.metadata.get("company", ""),

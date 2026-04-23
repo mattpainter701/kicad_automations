@@ -38,7 +38,6 @@ assets/demo_humidistat.svg
 samples/*/output/
 samples/*/validate_stderr.txt
 samples/*/samples/
-samples/*/svg/
 .claude/
 
 # Generated project artifacts (re-downloadable / regenerated)

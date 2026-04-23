@@ -1,44 +1,40 @@
-# Motor_Controller — Design Report
+# Zigbee_Humidistat — Design Report
 
-**Company:** Demo Corp  
+**Company:** Demo  
 **Date:** 2026-04-23  
-**Components:** 2  
+**Components:** 3  
 
 ## Power Tree
 
 ```
-  external -> [BST_U1] -> U1:CBST
-  external -> [SW_U1] -> U1:L
-  external -> [VDD_3P3] -> U2, U1:COUT, U2:36
-  external -> [VIN_12V] -> U1, U1:CIN
+  U1 -> [VDD_3P3] -> U2, U3, U1:5, U2:auto, U3:auto
+  external -> [VIN] -> U1
 ```
 
 ## BOM Summary
 
-- **Total ICs:** 2
-- **Total passive instances:** 7
-- **Total pins:** 14
+- **Total ICs:** 3
+- **Total passive instances:** 3
+- **Total pins:** 24
 
 | Category | Count |
 |-|-|
-| mcu | 1 |
+| mcu | 2 |
 | power | 1 |
 
 ### Component List
 
 | Ref | MPN | Value | Category | Pins | Bypass | Straps |
 |-|-|-|-|-|-|-|
-| U1 | AP62300 | AP62300 | power | 6 | 4 | 2 |
-| U2 | STM32F103C8T6 | STM32F103C8T6 | mcu | 8 | 1 | 0 |
+| U1 | AP2112K-3.3TRG1 | AP2112K-3.3 | power | 4 | 1 | 0 |
+| U2 | CH340G | CH340G | mcu | 16 | 1 | 0 |
+| U3 | PULLUPS_ONLY | PULLUPS_ONLY | mcu | 4 | 1 | 0 |
 
 ## Design Rationale
 
-### U1 — AP62300
+### U3 — PULLUPS_ONLY
 
-- VDD_3P3: 3.3V from VIN_12V at 1A
-- Vout = 0.8V * (1 + 316k/100k) = 3.328V
-- L=12uH, Cin=10uF, Cout=3.3uF
-- fsw=600kHz, ripple=0.33A (33%)
+- Unused: SDA(3): NC, SCL(4): NC
 
 ## Fabrication Notes
 
@@ -48,7 +44,6 @@
 - Solder type: Lead-free (RoHS)
 
 **Assembly Notes:**
-- **Fine-Pitch Components** — Paste stencil required; thermal pad via array recommended
 - **SMT Assembly** — Stencil, pick-and-place, and reflow furnace required
 
 **Design Checklist:**
@@ -64,14 +59,12 @@
 - PASS: Feedback dividers
 - PASS: RC/LC filters
 - PASS: Crystal load caps
-- PASS: Decoupling coverage
+- **WARN**: Decoupling coverage
+  - [WARNING] U1 AP2112K-3.3TRG1: VIN has no matching bypass cap
 - PASS: Inductor selection
 - PASS: Capacitor voltage ratings
 - **WARN**: Net connectivity
-  - [WARNING] U2 STM32F103C8T6: Net 'BOOT0' has only one connection (pin 7 on U2) — likely dangling
-  - [WARNING] U2 STM32F103C8T6: Net 'RESET_N' has only one connection (pin 44 on U2) — likely dangling
-  - [WARNING] U2 STM32F103C8T6: Net 'SWDIO' has only one connection (pin 37 on U2) — likely dangling
-  - [WARNING] U2 STM32F103C8T6: Net 'SWCLK' has only one connection (pin 34 on U2) — likely dangling
+  - [WARNING] U1 AP2112K-3.3TRG1: Net 'REG_EN' has only one connection (pin 3 on U1) — likely dangling
 - PASS: Enable/shutdown pins
 - PASS: Bus completeness
 - PASS: Pin type conflicts (ERC)

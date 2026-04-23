@@ -6,7 +6,7 @@
 
   (title_block
     (title "Schematic")
-    (date "2026-04-22")
+    (date "2026-04-23")
     (rev "1.0")
     (company "Demo Corp")
     (comment 1 "USB_Regulated_Supply")

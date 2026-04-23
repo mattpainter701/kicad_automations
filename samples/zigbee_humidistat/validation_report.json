@@ -1,0 +1,86 @@
+{
+  "profile": "standard",
+  "valid": true,
+  "categories": {
+    "structural": [],
+    "electrical": [
+      {
+        "category": "electrical",
+        "code": "floating-input-pin",
+        "level": "warning",
+        "subject": "U2",
+        "message": "9 input/bidirectional pins unconnected (e.g., 3 (RXD), 5 (D_P), 6 (D_N), ...) \u2014 add to explicit_no_connects or wire as needed",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "floating-input-pin",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Pin 3 (SDA) is unconnected \u2014 may need a pull-up/down, driver, or explicit no-connect",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "floating-input-pin",
+        "level": "warning",
+        "subject": "U3",
+        "message": "Pin 4 (SCL) is unconnected \u2014 may need a pull-up/down, driver, or explicit no-connect",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "missing-bypass-cap-for-rail",
+        "level": "warning",
+        "subject": "U1",
+        "message": "Power rail 'VIN' (5.0V) has no bypass cap declared",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "decoupling",
+        "level": "warning",
+        "subject": "U1",
+        "message": "VIN has no matching bypass cap",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "decoupling",
+        "level": "warning",
+        "subject": "U2",
+        "message": "VDD_3P3 on pin 16 has no matching bypass cap",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "decoupling",
+        "level": "warning",
+        "subject": "U3",
+        "message": "VDD_3P3 on pin 1 has no matching bypass cap",
+        "suggestion": ""
+      },
+      {
+        "category": "electrical",
+        "code": "net-connectivity",
+        "level": "warning",
+        "subject": "U1",
+        "message": "Net 'REG_EN' has only one connection (pin 3 on U1) \u2014 likely dangling",
+        "suggestion": ""
+      }
+    ],
+    "implementation": [],
+    "presentation": []
+  },
+  "summary": {
+    "structural": 0,
+    "electrical": 8,
+    "implementation": 0,
+    "presentation": 0
+  },
+  "metadata": {
+    "project": "Zigbee_Humidistat",
+    "component_count": 3,
+    "block_count": 3
+  }
+}

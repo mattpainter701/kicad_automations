@@ -1,0 +1,72 @@
+{
+  "project": "Zigbee_Humidistat",
+  "company": "Demo",
+  "version": "1.0",
+  "description": "Zigbee/BT humidistat \u2014 SHT40 sensor, CC2652R radio, LiPo powered, USB-C charging",
+  "spec_version": "mvp_ir_v1",
+  "blocks": [
+    {
+      "id": "power:U1:2b13ca92",
+      "section": "power",
+      "kind": "component",
+      "ref": "U1",
+      "required_support": {
+        "bypass_caps": 1,
+        "straps": 0,
+        "power_reqs": 1,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "AP2112K-3.3TRG1",
+        "value": "AP2112K-3.3",
+        "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+        "manufacturer": ""
+      },
+      "ic": "AP2112K-3.3TRG1"
+    },
+    {
+      "id": "digital:U2:3c486ed9",
+      "section": "digital",
+      "kind": "component",
+      "ref": "U2",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "CH340G",
+        "value": "CH340G",
+        "footprint": "SOP-16",
+        "manufacturer": ""
+      },
+      "ic": "CH340G"
+    },
+    {
+      "id": "digital:U3:d38465c2",
+      "section": "digital",
+      "kind": "component",
+      "ref": "U3",
+      "required_support": {
+        "bypass_caps": 0,
+        "straps": 0,
+        "power_reqs": 0,
+        "boundary_ports": 0,
+        "local_wires": 0
+      },
+      "part_bindings": {
+        "mpn": "PULLUPS_ONLY",
+        "value": "PULLUPS_ONLY",
+        "footprint": "",
+        "manufacturer": ""
+      },
+      "ic": "PULLUPS_ONLY"
+    }
+  ],
+  "interfaces": [],
+  "approved_overrides": [],
+  "pcb_constraints": []
+}
