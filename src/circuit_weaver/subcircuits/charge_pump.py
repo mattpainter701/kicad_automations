@@ -16,6 +16,7 @@ from typing import Any
 from ..component_db import BypassCap, ComponentDef, PinDef
 from .base import (
     BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -24,51 +25,7 @@ from .base import (
 )
 
 # Known charge pump ICs and their parameters
-CHARGE_PUMP_IC_DATABASE = {
-    "LM2776": {
-        "description": "Inverting Charge Pump -VIN 100mA SOT-23-5",
-        "footprint": "SOT-23-5",
-        "vin_min": 2.7,
-        "vin_max": 5.5,
-        "iout_max": 0.100,
-        "fsw": 1e6,  # 1 MHz fixed
-        "pins": [
-            PinDef("1", "VIN", "power_in", "L"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "VOUT", "power_out", "R"),
-            PinDef("4", "C_FLY_N", "passive", "T"),
-            PinDef("5", "C_FLY_P", "passive", "T"),
-        ],
-        "pin_vin": "1",
-        "pin_gnd": "2",
-        "pin_vout": "3",
-        "pin_cfn": "4",
-        "pin_cfp": "5",
-    },
-    "ICL7660": {
-        "description": "Inverting/Doubling Charge Pump -VIN 10mA SOIC-8",
-        "footprint": "SOIC-8",
-        "vin_min": 1.5,
-        "vin_max": 10.0,
-        "iout_max": 0.010,
-        "fsw": 10e3,  # 10 kHz internal oscillator
-        "pins": [
-            PinDef("1", "NC", "passive", "L"),
-            PinDef("2", "C_FLY_P", "passive", "T"),
-            PinDef("3", "GND", "power_in", "B"),
-            PinDef("4", "C_FLY_N", "passive", "T"),
-            PinDef("5", "VOUT", "power_out", "R"),
-            PinDef("6", "LV", "input", "L"),
-            PinDef("7", "OSC", "input", "L"),
-            PinDef("8", "VIN", "power_in", "T"),
-        ],
-        "pin_vin": "8",
-        "pin_gnd": "3",
-        "pin_vout": "5",
-        "pin_cfp": "2",
-        "pin_cfn": "4",
-    },
-}
+CHARGE_PUMP_IC_DATABASE = LegacyDBProxy("charge_pump")  # backed by ic_data/*.json (Task 178)
 
 
 class ChargePumpTemplate(SubcircuitTemplate):

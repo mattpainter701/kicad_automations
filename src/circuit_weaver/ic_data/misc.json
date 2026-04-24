@@ -1052,7 +1052,8 @@
     "pin_swdclk": "2"
   },
   "BSS138": {
-    "topology": "low_side",
+    "topology": "mosfet_switch",
+    "topology_subtype": "low_side",
     "description": "N-Channel MOSFET 50V 200mA SOT-23",
     "footprint": "Package_TO_SOT_SMD:SOT-23",
     "vds": 50,
@@ -1086,7 +1087,8 @@
     "pin_d": "3"
   },
   "AO3400A": {
-    "topology": "low_side",
+    "topology": "mosfet_switch",
+    "topology_subtype": "low_side",
     "description": "N-Channel MOSFET 30V 5.7A SOT-23",
     "footprint": "Package_TO_SOT_SMD:SOT-23",
     "vds": 30,
@@ -1120,7 +1122,8 @@
     "pin_d": "3"
   },
   "AO3401A": {
-    "topology": "high_side",
+    "topology": "mosfet_switch",
+    "topology_subtype": "high_side",
     "description": "P-Channel MOSFET -30V -4A SOT-23",
     "footprint": "Package_TO_SOT_SMD:SOT-23",
     "vds": -30,
@@ -1491,7 +1494,8 @@
     "pin_lin": "2"
   },
   "AL8861Y-13": {
-    "topology": "buck",
+    "topology": "led_driver",
+    "topology_subtype": "buck",
     "description": "Buck LED Driver 4.5-40V SOT-25",
     "footprint": "Package_TO_SOT_SMD:SOT-23-5",
     "vin_range": [
@@ -1540,7 +1544,8 @@
     "pin_isense": "5"
   },
   "TLC5940NT": {
-    "topology": "linear_sink",
+    "topology": "led_driver",
+    "topology_subtype": "linear_sink",
     "description": "16-Channel PWM LED Driver DIP-28",
     "footprint": "Package_DIP:DIP-28_W7.62mm",
     "vin_range": [
@@ -3087,5 +3092,97 @@
     "rbias_value": 12000.0,
     "pllfilt_value": 1e-06,
     "max_ports": 4
+  },
+  "RP2040": {
+    "topology": "component",
+    "description": "RP2040 Dual-Core ARM Cortex-M0+ MCU QFN-56",
+    "footprint": "Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm",
+    "power_rails": {
+      "IOVDD": 3.3
+    },
+    "pins": [
+      {
+        "number": "1",
+        "name": "IOVDD",
+        "type": "power_in",
+        "side": "T"
+      },
+      {
+        "number": "43",
+        "name": "USB_DP",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "44",
+        "name": "USB_DM",
+        "type": "bidirectional",
+        "side": "L"
+      },
+      {
+        "number": "45",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "46",
+        "name": "~",
+        "type": "no_connect",
+        "side": "R"
+      },
+      {
+        "number": "47",
+        "name": "~",
+        "type": "no_connect",
+        "side": "R"
+      },
+      {
+        "number": "49",
+        "name": "~",
+        "type": "no_connect",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": [
+      "1"
+    ],
+    "pin_gnd": [
+      "45"
+    ]
+  },
+  "ABLS-12.000MHZ-4Y-T": {
+    "topology": "component",
+    "description": "12MHz SMD Crystal 3225-4pin CL=10pF",
+    "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+    "power_rails": {},
+    "pins": [
+      {
+        "number": "1",
+        "name": "XIN",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "GND",
+        "type": "passive",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "XOUT",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "GND",
+        "type": "passive",
+        "side": "B"
+      }
+    ],
+    "pin_vdd": [],
+    "pin_gnd": []
   }
 }

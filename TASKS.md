@@ -2,6 +2,172 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 41 — Resolver + Template UX Follow-ups (Unreleased)
+
+**Goal:** Kill two related failure modes surfaced by a user running the
+design wizard on a novel IC (RP2040-based toy phone): (a) the symbol
+resolver re-hitting remote APIs once per instance for the same
+unresolvable MPN, and (b) `circuit-weaver register-ic` writing a pin map
+that legacy topology templates silently ignore because they only consult
+their hardcoded `*_IC_DATABASE` dict.
+
+### 175. Cache negative resolver results within a process (P1, SMALL) ✅ DONE
+
+A design with 12 identical buttons whose MPN isn't in any tier used to
+hit the DigiKey / Mouser / EasyEDA / cache chain 12 separate times per
+validate, adding ~12 seconds and 12 API quota hits. Once the first
+lookup fails through all tiers, the answer is deterministic for the
+rest of the process — there's no need to re-ask.
+
+- [x] `SymbolResolver` adds a class-level `_unresolved_cache: set[str]`
+  (matching the existing `_cred_warned` pattern). `resolve()` checks
+  it at entry and returns `(None, "unresolved")` without touching
+  tiers.
+- [x] Class method `clear_unresolved_cache()` exposed for tests /
+  long-running processes that want to retry after a transient flap.
+- [x] Regression tests in `test_resolver_chain.py`:
+  `test_unresolved_mpn_is_cached_within_process` (patches DigiKey
+  loader with a call counter, asserts 1 call across 3 repeated
+  lookups, plus clear-and-retry round-trip) and
+  `test_unresolved_cache_does_not_shadow_successful_resolutions` so
+  the cache never masks a hit on the same MPN.
+
+Files: `src/circuit_weaver/symbol_resolver.py`,
+`tests/test_resolver_chain.py`
+
+### 176. Legacy topology templates honor `register-ic` pin maps (P0, MEDIUM) ✅ DONE
+
+`circuit-weaver register-ic` writes to `ic_data/custom.json`, but four
+legacy templates (`usb_controller`, `connector`, `usb_c_connector`,
+`eeprom`) only consulted their own hardcoded `*_IC_DATABASE`. Users
+who registered a new MPN got a misleading "Unknown …" error + silent
+fallback to the template's default IC, so downstream net connectivity
+flagged USB_DP dangling even though the registered IC had pin 43 →
+USB_DP. Fixed by:
+
+- [x] Each of the four templates now has a `_ic_db()` classmethod that
+  returns `merge_into_legacy_db(LEGACY_DB, topology)` — same pattern
+  `audio_amplifier`, `motor_driver`, `protection` already use.
+  `validate_params` and `generate` switched to the merged DB.
+- [x] `USBControllerTemplate.generate()` prefers `pin_usb_dp` /
+  `pin_usb_dm` number fields from ic_data, falling back to the
+  existing `pin.name == "D_P" / "D_N"` match AND adding `USB_DP` /
+  `USB_DM` as accepted pin names (matches the naming used by
+  `register-ic` JSON output and bundled misc.json entries).
+- [x] Regression tests in `test_legacy_template_hotload.py`:
+  `test_usb_controller_hotload_via_register_ic`,
+  `test_usb_controller_generate_wires_registered_ic_usb_pins`
+  (end-to-end: registered MCU's pin 43 → USB_DP net),
+  `test_connector_hotload_via_register_ic`,
+  `test_usb_c_connector_hotload_via_register_ic`,
+  `test_eeprom_hotload_via_register_ic`.
+- [x] Follow-up (Sprint 42): the remaining ~25 legacy templates with
+  hardcoded DBs (buck, boost, ldo, can_transceiver, etc.) have the
+  same structural bug. Migrating all of them is a bigger cleanup;
+  this sprint scopes to the four that the user's toy-phone run
+  actually hit.
+
+Files: `src/circuit_weaver/subcircuits/usb.py`,
+`src/circuit_weaver/subcircuits/connector.py`,
+`src/circuit_weaver/subcircuits/usb_c_connector.py`,
+`src/circuit_weaver/subcircuits/eeprom.py`,
+`tests/test_legacy_template_hotload.py`
+
+### 178. Drain every hardcoded `*_IC_DATABASE` dict into ic_data JSON (P1, LARGE) ✅ DONE
+
+Completes the migration Task 176 started. Every IC pin map,
+footprint, power rail table, and application field belongs in
+`ic_data/*.json` — not in Python dicts baked into subcircuit
+template modules. Eliminates the "user runs `register-ic`, template
+silently ignores it" failure mode generally, not just for the four
+templates Task 176 scoped to.
+
+**Audit results** (84 ICs across 37 `*_IC_DATABASE` dicts in
+`subcircuits/*.py`, bucketed against the current `ic_data/*.json`
+view each template's `merge_into_legacy_db({}, topology)` returns):
+
+- **Bucket A (55 ICs):** JSON matches hardcoded. Safe to drop
+  from Python after migrating the template to the `_ic_db()`
+  pattern.
+- **Bucket B (19 ICs):** JSON diverges on template-specific scalar
+  fields (`vdd_range`, `vin_range`, `supply_range`, `boot_straps`).
+  Hardcoded is the source of truth — overwrite JSON.
+- **Bucket C (10 ICs):** JSON entry has wrong topology
+  (`AT25SF128A` → `component`, `BSS138` → `low_side`, `REF3030`
+  → `series`, etc.), so the template's topology-filtered merge
+  never sees them. Fix: change `topology` to the template's
+  `template_type`, preserve the old value as `topology_subtype`.
+- **Bucket D (0 ICs):** nothing net-new to add to JSON.
+
+Work items:
+
+- [x] Reconciled Bucket B + Bucket C values in `ic_data/*.json` via
+  `scripts/migrate_hardcoded_ics_to_json.py` (one-shot; idempotent
+  if re-run). Bucket C's old subtype (`low_side`, `high_side`,
+  `series`, `shunt`, `buck`, `linear_sink`, `component`) is
+  preserved as `topology_subtype`; templates that used to dispatch
+  on `ic_db["topology"]` now read `ic_db["topology_subtype"]`
+  (`mosfet_switch`, `voltage_reference`, `led_driver`).
+- [x] Deduped 8 MPNs that lived in two JSON files — kept the
+  version with the specific topology (`eeprom`, `connector`,
+  `logic`, `led`, `diode`), removed the generic `component`
+  duplicate so the topology-filtered merge resolves cleanly.
+- [x] Added `LegacyDBProxy` in `subcircuits/base.py`: dict-like
+  view backed by a live `merge_into_legacy_db({}, topology)` call.
+  Templates' module-level `XYZ_IC_DATABASE` variables now bind to a
+  proxy — method bodies that read `db[key]`, `db.get(key)`,
+  `key in db`, or `db.keys()` continue to work without edits.
+  `register_ic()` calls are visible on the next read without an
+  `importlib.reload`.
+- [x] Converted all 38 hardcoded `*_IC_DATABASE` dicts across 35
+  template files: 8 templates that already had `_ic_db()` classmethods
+  (`audio_amplifier`, `connector`, `eeprom`, `motor_driver`,
+  `protection`, `usb` x2, `usb_c_connector`) now start from an
+  empty dict; the remaining 30 bind their module-level name to a
+  `LegacyDBProxy`.
+- [x] `tests/test_template_smoke.py`: 74 tests iterating every
+  template in the default registry, asserting (a) merged IC
+  database is non-empty, (b) `generate()` returns at least one
+  ComponentDef with pins. Covers the 28+ templates the 9-archetype
+  corpus doesn't exercise.
+- [x] Full suite: **825 passed, 1 skipped, 0 failed** (baseline
+  751; +74 smoke tests).
+
+Files: `src/circuit_weaver/subcircuits/base.py`,
+every `src/circuit_weaver/subcircuits/*.py` that carried a
+`*_IC_DATABASE` dict, `src/circuit_weaver/ic_data/*.json`,
+`tests/test_template_smoke.py` (new),
+`scripts/migrate_hardcoded_ics_to_json.py` (new, one-shot).
+
+---
+
+### 177. Placement preview PCB uses KiCad's fixed layer hash (P1, SMALL) ✅ DONE
+
+The layout-hint board `${project}/output/*_placement.kicad_pcb` opened
+in KiCad 10 with:
+
+`error loading pcb: Layer ECO1.User at line 16 is not fixed layer hash`
+
+Root cause: `pcb_export.py` was still emitting a KiCad-5-era hardcoded
+layer table (`B.Cu=31`, `ECO1.User`, `ECO2.User`, no `User.1-User.4`),
+but KiCad 10 validates the fixed-layer hash against its canonical
+2-layer map and rejects the file before loading footprints.
+
+- [x] `pcb_export._LAYERS` updated to KiCad's current fixed 2-layer
+  ids/names (`B.Cu=2`, `Eco1.User`, `Eco2.User`, `User.1-User.4`,
+  etc.), matching a board written by KiCad 10.
+- [x] Regression test in `test_pcb_preview_invariants.py` asserts the
+  preview board contains the KiCad fixed-layer markers and explicitly
+  rejects the legacy `B.Cu=31` / `ECO1.User` spellings that caused the
+  loader failure.
+- [x] Manual verification: the generated preview board now round-trips
+  through KiCad 10 CLI export instead of failing with `Failed to load board`.
+
+Files: `src/circuit_weaver/pcb_export.py`,
+`tests/test_pcb_preview_invariants.py`
+
+---
+
 ## Sprint 40 — Generation Quality Regression Repair (v0.27.0)
 
 **Goal:** Repair regressions introduced while building out the dynamic IC

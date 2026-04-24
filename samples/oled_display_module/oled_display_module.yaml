@@ -1,10 +1,13 @@
-# OLED display module with voltage level shifting
+# OLED display module with voltage level shifting.
 # Demonstrates mixed-voltage I2C communication:
 #   - USB-C 5V input with AP2112K LDO for 3.3V main rail
-#   - SSD1306 OLED display (I2C interface)
-#   - TXS0102 bidirectional level shifter for 1.8V analog rail signals
-#   - All decoupling and pull-ups auto-generated
-# Design notes: I2C operates at 3.3V with standard 4.7k pull-ups; OLED power and signal at 3.3V
+#   - SSD1306 OLED display (I2C interface) with charge-pump caps
+#   - MCP1700-1802E LDO for 1.8V analog rail
+#   - TXS0102 bidirectional level shifter, VDD_1P8 ↔ VDD_3P3
+# Sprint 41 placement-readiness: TXS0102 channels unused in this demo
+# are marked NC; the SSD1306's reset-strap and internal IREF / charge-
+# pump nets stay wired so the template's auto-generated straps and
+# charge-pump caps land on real pins.
 
 project: OLED_Display_Module
 company: Demo Corp
@@ -18,6 +21,13 @@ power:
     vout: 3.3
     vin_net: VBUS_5V
     rail_name: VDD_3P3
+  - type: ldo
+    ic: MCP1700-1802E
+    ref: U4
+    vin: 3.3
+    vout: 1.8
+    vin_net: VDD_3P3
+    rail_name: VDD_1P8
 
 display:
   - type: display_driver
@@ -25,6 +35,9 @@ display:
     ref: U2
     interface: i2c
     vdd_net: VDD_3P3
+    # VCOMH (pin 9) typically takes a 2.2µF cap to GND — omitted from
+    # this placement-preview demo so mark the pin explicit NC.
+    no_connects: ["9"]
 
 digital:
   - type: level_shifter
@@ -32,6 +45,9 @@ digital:
     ref: U3
     vcca_net: VDD_1P8
     vccb_net: VDD_3P3
+    # Two bidirectional channels (A1/B1 and A2/B2) and OE unused in
+    # this placement-preview demo.
+    no_connects: ["1", "4", "5", "7", "8"]
 
 connectors:
   - ic: USB-C-PWR

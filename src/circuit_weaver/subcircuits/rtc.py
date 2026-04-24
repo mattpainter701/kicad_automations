@@ -13,9 +13,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     crystal_load_caps,
@@ -25,70 +26,7 @@ from .base import (
     snap_to_e24,
 )
 
-RTC_IC_DATABASE = {
-    "DS3231": {
-        "description": "Extremely Accurate I2C RTC with Integrated TCXO SOIC-16",
-        "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
-        "has_internal_xtal": True,
-        "vdd_range": (2.3, 5.5),
-        "vbat_min": 2.3,
-        "i2c_addr": 0x68,
-        "pins": [
-            PinDef("1", "32KHZ", "output", "R"),
-            PinDef("2", "VCC", "power_in", "T"),
-            PinDef("3", "INT_N/SQW", "output", "R"),
-            PinDef("4", "RST_N", "input", "L"),
-            PinDef("5", "NC", "passive", "L"),
-            PinDef("6", "NC", "passive", "L"),
-            PinDef("7", "NC", "passive", "L"),
-            PinDef("8", "GND", "power_in", "B"),
-            PinDef("9", "NC", "passive", "R"),
-            PinDef("10", "NC", "passive", "R"),
-            PinDef("11", "NC", "passive", "R"),
-            PinDef("12", "NC", "passive", "R"),
-            PinDef("13", "NC", "passive", "R"),
-            PinDef("14", "VBAT", "power_in", "L"),
-            PinDef("15", "SDA", "bidirectional", "L"),
-            PinDef("16", "SCL", "input", "L"),
-        ],
-        "pin_vcc": "2",
-        "pin_gnd": "8",
-        "pin_vbat": "14",
-        "pin_sda": "15",
-        "pin_scl": "16",
-        "pin_int": "3",
-        "pin_rst": "4",
-        "pin_32k": "1",
-    },
-    "PCF8523": {
-        "description": "Low-Power I2C RTC with Battery Backup SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "has_internal_xtal": False,
-        "xtal_freq": 32768,
-        "xtal_cl": 7e-12,
-        "vdd_range": (1.8, 5.5),
-        "vbat_min": 1.8,
-        "i2c_addr": 0x68,
-        "pins": [
-            PinDef("1", "OSCI", "input", "L"),
-            PinDef("2", "OSCO", "output", "L"),
-            PinDef("3", "VBAT", "power_in", "L"),
-            PinDef("4", "VSS", "power_in", "B"),
-            PinDef("5", "SDA", "bidirectional", "R"),
-            PinDef("6", "SCL", "input", "R"),
-            PinDef("7", "INT_N", "output", "R"),
-            PinDef("8", "VDD", "power_in", "T"),
-        ],
-        "pin_vcc": "8",
-        "pin_gnd": "4",
-        "pin_vbat": "3",
-        "pin_sda": "5",
-        "pin_scl": "6",
-        "pin_int": "7",
-        "pin_osci": "1",
-        "pin_osco": "2",
-    },
-}
+RTC_IC_DATABASE = LegacyDBProxy("rtc")  # backed by ic_data/*.json (Task 178)
 
 
 class RTCTemplate(SubcircuitTemplate):

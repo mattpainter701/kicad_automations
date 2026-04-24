@@ -11,6 +11,7 @@ from typing import Any
 from ..component_db import BypassCap, ComponentDef, PinDef
 from .base import (
     BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -18,93 +19,7 @@ from .base import (
 )
 
 # Known LDO ICs
-LDO_IC_DATABASE = {
-    "TLV75518": {
-        "description": "500mA LDO 1.8V Fixed Low-Noise",
-        "footprint": "SOT-23-5",
-        "vout_fixed": 1.8,
-        "adjustable": False,
-        "iout_max": 0.5,
-        "vdropout": 0.180,
-        "iq_ua": 35,
-        "cin": 1e-6,
-        "cout": 1e-6,
-        "pins": [
-            PinDef("1", "IN", "power_in", "L"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "EN", "input", "L"),
-            PinDef("4", "NC", "passive", "R"),
-            PinDef("5", "OUT", "power_out", "R"),
-        ],
-        "pin_vin": "1",
-        "pin_gnd": "2",
-        "pin_out": "5",
-        "pin_en": "3",
-    },
-    "AMS1117-3.3": {
-        "description": "1A LDO 3.3V Fixed",
-        "footprint": "SOT-223",
-        "vout_fixed": 3.3,
-        "adjustable": False,
-        "iout_max": 1.0,
-        "vdropout": 1.1,
-        "iq_ua": 5000,
-        "cin": 10e-6,
-        "cout": 22e-6,
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "OUT", "power_out", "R"),
-            PinDef("3", "IN", "power_in", "L"),
-            PinDef("4", "OUT", "power_out", "R"),
-        ],
-        "pin_vin": "3",
-        "pin_gnd": "1",
-        "pin_out": "2",
-        "pin_en": None,
-    },
-    "AP2112K-3.3": {
-        "description": "600mA LDO 3.3V Fixed Low-Noise",
-        "footprint": "SOT-23-5",
-        "vout_fixed": 3.3,
-        "adjustable": False,
-        "iout_max": 0.6,
-        "vdropout": 0.250,
-        "iq_ua": 55,
-        "cin": 1e-6,
-        "cout": 1e-6,
-        "pins": [
-            PinDef("1", "OUT", "power_out", "R"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "EN", "input", "L"),
-            PinDef("4", "NC", "passive", "R"),
-            PinDef("5", "IN", "power_in", "L"),
-        ],
-        "pin_vin": "5",
-        "pin_gnd": "2",
-        "pin_out": "1",
-        "pin_en": "3",
-    },
-    "MCP1700-3302E": {
-        "description": "250mA LDO 3.3V Low-Iq",
-        "footprint": "SOT-23",
-        "vout_fixed": 3.3,
-        "adjustable": False,
-        "iout_max": 0.250,
-        "vdropout": 0.178,
-        "iq_ua": 1.6,
-        "cin": 1e-6,
-        "cout": 1e-6,
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "OUT", "power_out", "R"),
-            PinDef("3", "IN", "power_in", "L"),
-        ],
-        "pin_vin": "3",
-        "pin_gnd": "1",
-        "pin_out": "2",
-        "pin_en": None,
-    },
-}
+LDO_IC_DATABASE = LegacyDBProxy("ldo")  # backed by ic_data/*.json (Task 178)
 
 
 class LDOTemplate(SubcircuitTemplate):

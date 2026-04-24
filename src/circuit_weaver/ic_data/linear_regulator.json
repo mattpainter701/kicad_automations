@@ -284,7 +284,8 @@
     "pin_cfn": "4"
   },
   "REF3030": {
-    "topology": "series",
+    "topology": "voltage_reference",
+    "topology_subtype": "series",
     "description": "3.0V Precision Series Voltage Reference SOT-23-3",
     "footprint": "Package_TO_SOT_SMD:SOT-23",
     "vout": 3.0,
@@ -319,7 +320,8 @@
     "pin_gnd": "3"
   },
   "REF3033": {
-    "topology": "series",
+    "topology": "voltage_reference",
+    "topology_subtype": "series",
     "description": "3.3V Precision Series Voltage Reference SOT-23-3",
     "footprint": "Package_TO_SOT_SMD:SOT-23",
     "vout": 3.3,
@@ -354,7 +356,8 @@
     "pin_gnd": "3"
   },
   "LM4040-2.5": {
-    "topology": "shunt",
+    "topology": "voltage_reference",
+    "topology_subtype": "shunt",
     "description": "2.5V Precision Shunt Voltage Reference SOT-23",
     "footprint": "Package_TO_SOT_SMD:SOT-23",
     "vout": 2.5,
@@ -380,7 +383,8 @@
     "pin_anode": "2"
   },
   "LM4040-4.1": {
-    "topology": "shunt",
+    "topology": "voltage_reference",
+    "topology_subtype": "shunt",
     "description": "4.096V Precision Shunt Voltage Reference SOT-23",
     "footprint": "Package_TO_SOT_SMD:SOT-23",
     "vout": 4.096,

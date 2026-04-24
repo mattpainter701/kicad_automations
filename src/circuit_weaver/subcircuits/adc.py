@@ -15,9 +15,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -28,80 +29,7 @@ from .base import (
 )
 
 # Known ADC ICs and their parameters
-ADC_IC_DATABASE = {
-    "ADS1115IDGSR": {
-        "description": "16-bit 860SPS 4-Ch Delta-Sigma ADC I2C MSOP-10",
-        "footprint": "Package_SO:MSOP-10_3x3mm_P0.5mm",
-        "bits": 16,
-        "sps": 860,
-        "interface": "i2c",
-        "max_channels": 4,
-        "needs_external_vref": False,
-        "pins": [
-            PinDef("1", "ADDR", "input", "L"),
-            PinDef("2", "ALERT", "output", "R"),
-            PinDef("3", "GND", "power_in", "B"),
-            PinDef("4", "AIN0", "input", "L"),
-            PinDef("5", "AIN1", "input", "L"),
-            PinDef("6", "AIN2", "input", "L"),
-            PinDef("7", "AIN3", "input", "L"),
-            PinDef("8", "VDD", "power_in", "T"),
-            PinDef("9", "SDA", "bidirectional", "R"),
-            PinDef("10", "SCL", "input", "R"),
-        ],
-        "pin_vdd": "8",
-        "pin_gnd": "3",
-        "pin_sda": "9",
-        "pin_scl": "10",
-        "pin_addr": "1",
-        "pin_alert": "2",
-        "input_pins": ["4", "5", "6", "7"],
-        "input_names": ["AIN0", "AIN1", "AIN2", "AIN3"],
-        "i2c_addr_map": {
-            "GND": "0x48",
-            "VDD": "0x49",
-            "SDA": "0x4A",
-            "SCL": "0x4B",
-        },
-    },
-    "MCP3208-CI/SL": {
-        "description": "12-bit 100kSPS 8-Ch SAR ADC SPI SOIC-16",
-        "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
-        "bits": 12,
-        "sps": 100000,
-        "interface": "spi",
-        "max_channels": 8,
-        "needs_external_vref": True,
-        "pins": [
-            PinDef("1", "CH0", "input", "L"),
-            PinDef("2", "CH1", "input", "L"),
-            PinDef("3", "CH2", "input", "L"),
-            PinDef("4", "CH3", "input", "L"),
-            PinDef("5", "CH4", "input", "L"),
-            PinDef("6", "CH5", "input", "L"),
-            PinDef("7", "CH6", "input", "L"),
-            PinDef("8", "CH7", "input", "L"),
-            PinDef("9", "DGND", "power_in", "B"),
-            PinDef("10", "CS_N", "input", "R"),
-            PinDef("11", "DIN", "input", "R"),
-            PinDef("12", "DOUT", "output", "R"),
-            PinDef("13", "CLK", "input", "R"),
-            PinDef("14", "AGND", "power_in", "B"),
-            PinDef("15", "VREF", "power_in", "T"),
-            PinDef("16", "VDD", "power_in", "T"),
-        ],
-        "pin_vdd": "16",
-        "pin_dgnd": "9",
-        "pin_agnd": "14",
-        "pin_vref": "15",
-        "pin_cs": "10",
-        "pin_din": "11",
-        "pin_dout": "12",
-        "pin_clk": "13",
-        "input_pins": ["1", "2", "3", "4", "5", "6", "7", "8"],
-        "input_names": ["CH0", "CH1", "CH2", "CH3", "CH4", "CH5", "CH6", "CH7"],
-    },
-}
+ADC_IC_DATABASE = LegacyDBProxy("adc")  # backed by ic_data/*.json (Task 178)
 
 
 class ADCTemplate(SubcircuitTemplate):

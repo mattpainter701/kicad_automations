@@ -10,83 +10,17 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     format_resistance,
     snap_to_e24,
 )
 
-OPAMP_IC_DATABASE = {
-    "LM358": {
-        "description": "Dual Op-Amp General Purpose",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "units": 2,
-        "supply_range": (3.0, 32.0),
-        "gbw_mhz": 1.0,
-        "pins": [
-            PinDef("1", "OUT_A", "output", "R"),
-            PinDef("2", "IN-_A", "input", "L"),
-            PinDef("3", "IN+_A", "input", "L"),
-            PinDef("4", "V-", "power_in", "B"),
-            PinDef("5", "IN+_B", "input", "L"),
-            PinDef("6", "IN-_B", "input", "L"),
-            PinDef("7", "OUT_B", "output", "R"),
-            PinDef("8", "V+", "power_in", "T"),
-        ],
-        "pin_vplus": "8",
-        "pin_vminus": "4",
-        "pin_out_a": "1",
-        "pin_inm_a": "2",
-        "pin_inp_a": "3",
-    },
-    "MCP6002": {
-        "description": "Dual Op-Amp Rail-to-Rail 1MHz",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "units": 2,
-        "supply_range": (1.8, 6.0),
-        "gbw_mhz": 1.0,
-        "pins": [
-            PinDef("1", "OUT_A", "output", "R"),
-            PinDef("2", "IN-_A", "input", "L"),
-            PinDef("3", "IN+_A", "input", "L"),
-            PinDef("4", "VSS", "power_in", "B"),
-            PinDef("5", "IN+_B", "input", "L"),
-            PinDef("6", "IN-_B", "input", "L"),
-            PinDef("7", "OUT_B", "output", "R"),
-            PinDef("8", "VDD", "power_in", "T"),
-        ],
-        "pin_vplus": "8",
-        "pin_vminus": "4",
-        "pin_out_a": "1",
-        "pin_inm_a": "2",
-        "pin_inp_a": "3",
-    },
-    "OPA2340": {
-        "description": "Dual Op-Amp Rail-to-Rail CMOS 5.5MHz",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "units": 2,
-        "supply_range": (2.7, 5.5),
-        "gbw_mhz": 5.5,
-        "pins": [
-            PinDef("1", "OUT_A", "output", "R"),
-            PinDef("2", "IN-_A", "input", "L"),
-            PinDef("3", "IN+_A", "input", "L"),
-            PinDef("4", "V-", "power_in", "B"),
-            PinDef("5", "IN+_B", "input", "L"),
-            PinDef("6", "IN-_B", "input", "L"),
-            PinDef("7", "OUT_B", "output", "R"),
-            PinDef("8", "V+", "power_in", "T"),
-        ],
-        "pin_vplus": "8",
-        "pin_vminus": "4",
-        "pin_out_a": "1",
-        "pin_inm_a": "2",
-        "pin_inp_a": "3",
-    },
-}
+OPAMP_IC_DATABASE = LegacyDBProxy("opamp")  # backed by ic_data/*.json (Task 178)
 
 
 class OpAmpTemplate(SubcircuitTemplate):

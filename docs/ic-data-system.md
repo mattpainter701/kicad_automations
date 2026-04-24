@@ -170,11 +170,32 @@ All EE calculation functions are in `subcircuits/base.py` and are reused by both
 
 When the registry looks up a template type (e.g., `"buck"`):
 
-1. **Legacy template class** — if a Python `BuckConverterTemplate` is registered, use it
-2. **JSON IC data** — if JSON files contain ICs with `topology: "buck"`, wrap in `DataDrivenTemplate`
-3. **Not found** — validation error
+1. **Legacy template class** — if a Python `BuckConverterTemplate` is registered, use it. Its IC data comes from `ic_data/*.json` (see "Legacy Template IC Data" below).
+2. **JSON IC data** — if no Python template is registered but the JSON store has ICs with `topology: "buck"`, wrap in `DataDrivenTemplate`.
+3. **Not found** — validation error.
 
-Legacy templates take priority, ensuring backward compatibility. The data-driven path activates for new topologies or when legacy templates are eventually removed.
+Legacy templates take priority because they can implement topology-specific calculations (feedback dividers, crystal load caps, CC resistor sizing, etc.) beyond what a generic `DataDrivenTemplate` does.
+
+### Legacy Template IC Data
+
+As of Sprint 41 Task 178, every legacy template's `*_IC_DATABASE` is a `LegacyDBProxy` — a dict-like view over a live `merge_into_legacy_db({}, topology)` call. Zero IC pin maps are hardcoded in Python; all 88 entries across 37 topologies live in `ic_data/*.json`.
+
+```python
+# src/circuit_weaver/subcircuits/buck.py
+from .base import LegacyDBProxy
+
+BUCK_IC_DATABASE = LegacyDBProxy("buck")  # backed by ic_data/*.json
+
+class BuckConverterTemplate(SubcircuitTemplate):
+    template_type = "buck"
+    def generate(self, params):
+        ic_db = BUCK_IC_DATABASE[params["ic"]]  # live JSON read
+        ...
+```
+
+The proxy implements `__getitem__`, `__contains__`, `get`, `keys`, `items`, `values`, `__iter__`, `__len__`. A `register_ic("MPN", {...})` call is visible on the next read — no process restart needed.
+
+A handful of templates keep an explicit `_ic_db()` classmethod that calls `merge_into_legacy_db(legacy_dict, topology)` — this pattern supports topology-specific overrides (e.g., USB controllers honor explicit `pin_usb_dp` / `pin_usb_dm` number fields). The underlying source of truth is still `ic_data/*.json`.
 
 ## Adding Support for a New IC
 

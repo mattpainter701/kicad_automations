@@ -16,9 +16,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     format_resistance,
@@ -26,48 +27,7 @@ from .base import (
 )
 
 # Known SPI bus ICs / topologies
-SPI_BUS_IC_DATABASE = {
-    "RESISTORS_ONLY": {
-        "description": "SPI bus series termination resistors (no physical IC)",
-        "footprint": "",
-        "ref_prefix": "RP",
-        "has_level_shift": False,
-        "pins": [
-            PinDef("1", "VDD", "power_in", "T"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "MOSI", "bidirectional", "L"),
-            PinDef("4", "MISO", "bidirectional", "L"),
-            PinDef("5", "SCLK", "bidirectional", "L"),
-            PinDef("6", "CS_N", "bidirectional", "L"),
-        ],
-        "pin_vdd": "1",
-        "pin_gnd": "2",
-        "pin_mosi": "3",
-        "pin_miso": "4",
-        "pin_sclk": "5",
-        "pin_cs": "6",
-    },
-    "SN74LVC1T45": {
-        "description": "Single-Bit Level Shifter SOT-23-6 (one per signal)",
-        "footprint": "Package_TO_SOT_SMD:SOT-23-6",
-        "ref_prefix": "U",
-        "has_level_shift": True,
-        "pins": [
-            PinDef("1", "VCCA", "power_in", "L"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "A", "bidirectional", "L"),
-            PinDef("4", "B", "bidirectional", "R"),
-            PinDef("5", "DIR", "input", "L"),
-            PinDef("6", "VCCB", "power_in", "R"),
-        ],
-        "pin_vcca": "1",
-        "pin_gnd": "2",
-        "pin_a": "3",
-        "pin_b": "4",
-        "pin_dir": "5",
-        "pin_vccb": "6",
-    },
-}
+SPI_BUS_IC_DATABASE = LegacyDBProxy("spi_bus")  # backed by ic_data/*.json (Task 178)
 
 
 class SPIBusTemplate(SubcircuitTemplate):

@@ -14,56 +14,7 @@ from .base import (
     SubcircuitTemplate,
 )
 
-TVS_DATABASE = {
-    "SMBJ5.0A": {
-        "description": "TVS Diode 5V Unidirectional SMB",
-        "footprint": "Diode_SMD:D_SMB",
-        "vrwm": 5.0,
-        "vbr_min": 6.4,
-        "vc_max": 9.2,
-        "bidirectional": False,
-        "pins": [
-            PinDef("1", "A", "passive", "L"),
-            PinDef("2", "K", "passive", "R"),
-        ],
-    },
-    "SMBJ12A": {
-        "description": "TVS Diode 12V Unidirectional SMB",
-        "footprint": "Diode_SMD:D_SMB",
-        "vrwm": 12.0,
-        "vbr_min": 13.3,
-        "vc_max": 19.9,
-        "bidirectional": False,
-        "pins": [
-            PinDef("1", "A", "passive", "L"),
-            PinDef("2", "K", "passive", "R"),
-        ],
-    },
-    "SMBJ5.0CA": {
-        "description": "TVS Diode 5V Bidirectional SMB",
-        "footprint": "Diode_SMD:D_SMB",
-        "vrwm": 5.0,
-        "vbr_min": 6.4,
-        "vc_max": 9.2,
-        "bidirectional": True,
-        "pins": [
-            PinDef("1", "A", "passive", "L"),
-            PinDef("2", "K", "passive", "R"),
-        ],
-    },
-    "PESD5V0S1BA": {
-        "description": "ESD Protection Diode 5V SOD-323",
-        "footprint": "Diode_SMD:D_SOD-323",
-        "vrwm": 5.0,
-        "vbr_min": 6.0,
-        "vc_max": 11.0,
-        "bidirectional": True,
-        "pins": [
-            PinDef("1", "A", "passive", "L"),
-            PinDef("2", "K", "passive", "R"),
-        ],
-    },
-}
+TVS_DATABASE: dict[str, dict] = {}  # Migrated to ic_data/*.json (Task 178)
 
 
 class ProtectionTemplate(SubcircuitTemplate):

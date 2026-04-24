@@ -30,9 +30,6 @@ def _extract_symbol_instances(text: str) -> list[tuple[str, str, str, str]]:
     instance. Excludes lib_symbols entries (which live under ``(lib_symbols ...``).
     """
     instances = []
-    depth = 0
-    in_lib_symbols = False
-    lib_depth = -1
 
     # Find start of the body — skip the lib_symbols block so we only see
     # placed instances.

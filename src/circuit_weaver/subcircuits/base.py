@@ -476,6 +476,72 @@ class SubcircuitResult:
 # ================================================================
 
 
+class LegacyDBProxy:
+    """Dict-like view over ic_data entries filtered by topology.
+
+    Subcircuit templates historically kept their IC pin maps,
+    footprints, and application data in module-level ``*_IC_DATABASE``
+    dicts. Sprint 41 Task 178 migrated all 84 entries to
+    ``ic_data/*.json`` so users adding new parts via
+    ``circuit-weaver register-ic`` flow into every template without
+    touching Python. A template's old ``XYZ_IC_DATABASE`` variable is
+    now bound to one of these proxies — method bodies that read
+    ``db[key]``, ``db.get(key)``, ``key in db``, or ``db.keys()``
+    continue to work unchanged because this class implements
+    ``__getitem__``, ``__contains__``, ``keys``, ``items``, ``values``,
+    ``get``, and ``__iter__`` against the live merged view returned
+    by :func:`ic_data.merge_into_legacy_db`.
+
+    Constructing with a ``topology`` string is all that's required.
+    Every access re-reads the merged view so a ``register_ic()`` call
+    is visible on the next read without needing an ``importlib.reload``.
+
+    Example::
+
+        BUCK_IC_DATABASE = LegacyDBProxy("buck")
+        # Anywhere downstream:
+        BUCK_IC_DATABASE["AP62300"]       # -> dict with pins, vref, etc.
+        "NEW_MPN" in BUCK_IC_DATABASE     # -> True as soon as register_ic runs
+    """
+
+    __slots__ = ("_topology",)
+
+    def __init__(self, topology: str) -> None:
+        self._topology = topology
+
+    def _view(self) -> dict[str, dict[str, Any]]:
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db({}, self._topology)
+
+    def __getitem__(self, key: str) -> dict[str, Any]:
+        return self._view()[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._view()
+
+    def __iter__(self):
+        return iter(self._view())
+
+    def __len__(self) -> int:
+        return len(self._view())
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._view().get(key, default)
+
+    def keys(self):
+        return self._view().keys()
+
+    def items(self):
+        return self._view().items()
+
+    def values(self):
+        return self._view().values()
+
+    def __repr__(self) -> str:
+        return f"LegacyDBProxy(topology={self._topology!r}, size={len(self._view())})"
+
+
 class SubcircuitTemplate(ABC):
     """Abstract base for subcircuit templates.
 

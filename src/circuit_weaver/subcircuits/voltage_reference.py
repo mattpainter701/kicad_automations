@@ -16,9 +16,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     format_resistance,
@@ -26,80 +27,7 @@ from .base import (
 )
 
 # Known voltage reference ICs and their parameters
-VREF_IC_DATABASE = {
-    "REF3030": {
-        "description": "3.0V Precision Series Voltage Reference SOT-23-3",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "vout": 3.0,
-        "topology": "series",
-        "accuracy_pct": 0.2,
-        "tempco_ppm": 50,
-        "iq_ua": 100,
-        "iout_max": 0.025,
-        "vin_min": 3.1,
-        "vin_max": 12.0,
-        "pins": [
-            PinDef("1", "IN", "power_in", "L"),
-            PinDef("2", "OUT", "power_out", "R"),
-            PinDef("3", "GND", "power_in", "B"),
-        ],
-        "pin_vin": "1",
-        "pin_vout": "2",
-        "pin_gnd": "3",
-    },
-    "REF3033": {
-        "description": "3.3V Precision Series Voltage Reference SOT-23-3",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "vout": 3.3,
-        "topology": "series",
-        "accuracy_pct": 0.2,
-        "tempco_ppm": 50,
-        "iq_ua": 100,
-        "iout_max": 0.025,
-        "vin_min": 3.4,
-        "vin_max": 12.0,
-        "pins": [
-            PinDef("1", "IN", "power_in", "L"),
-            PinDef("2", "OUT", "power_out", "R"),
-            PinDef("3", "GND", "power_in", "B"),
-        ],
-        "pin_vin": "1",
-        "pin_vout": "2",
-        "pin_gnd": "3",
-    },
-    "LM4040-2.5": {
-        "description": "2.5V Precision Shunt Voltage Reference SOT-23",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "vout": 2.5,
-        "topology": "shunt",
-        "accuracy_pct": 0.1,
-        "tempco_ppm": 100,
-        "iz_min": 0.060e-3,  # 60uA minimum cathode current
-        "iz_max": 0.015,  # 15mA max cathode current
-        "pins": [
-            PinDef("1", "K", "passive", "L"),
-            PinDef("2", "A", "passive", "R"),
-        ],
-        "pin_cathode": "1",
-        "pin_anode": "2",
-    },
-    "LM4040-4.1": {
-        "description": "4.096V Precision Shunt Voltage Reference SOT-23",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "vout": 4.096,
-        "topology": "shunt",
-        "accuracy_pct": 0.1,
-        "tempco_ppm": 100,
-        "iz_min": 0.060e-3,
-        "iz_max": 0.015,
-        "pins": [
-            PinDef("1", "K", "passive", "L"),
-            PinDef("2", "A", "passive", "R"),
-        ],
-        "pin_cathode": "1",
-        "pin_anode": "2",
-    },
-}
+VREF_IC_DATABASE = LegacyDBProxy("voltage_reference")  # backed by ic_data/*.json (Task 178)
 
 
 class VoltageReferenceTemplate(SubcircuitTemplate):
@@ -161,7 +89,7 @@ class VoltageReferenceTemplate(SubcircuitTemplate):
             return errors
 
         ic_db = VREF_IC_DATABASE[ic_name]
-        if ic_db["topology"] == "series":
+        if ic_db.get("topology_subtype", ic_db.get("topology", "")) == "series":
             vin = params.get("vin")
             if vin is not None and vin < ic_db.get("vin_min", 0):
                 errors.append(
@@ -189,7 +117,7 @@ class VoltageReferenceTemplate(SubcircuitTemplate):
         iload = params.get("iload", 0.001)
         vin = params.get("vin", 5.0)
 
-        topology = ic_db["topology"]
+        topology = ic_db.get("topology_subtype", ic_db.get("topology", ""))
 
         if topology == "series":
             return self._generate_series(ic_name, ic_db, ref, vin_net, vref_net, vout)

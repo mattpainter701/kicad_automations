@@ -126,12 +126,12 @@ class TestReviewProfile:
 
 def _load_sample_spec(name: str) -> dict:
     """Load a sample YAML spec by directory name."""
-    from circuit_weaver.dispatcher import _simple_yaml_parse
+    from circuit_weaver.project_spec import _parse_yaml
 
     yaml_path = SAMPLES_DIR / name / f"{name}.yaml"
     if not yaml_path.exists():
         pytest.skip(f"Sample {name} not found at {yaml_path}")
-    return _simple_yaml_parse(yaml_path.read_text(encoding="utf-8"))
+    return _parse_yaml(yaml_path)
 
 
 @pytest.mark.parametrize(

@@ -99,6 +99,13 @@ class SymbolResolver:
         - "mouser" (Tier 7: stub with footprint)
         - "unresolved" (all tiers exhausted)
 
+        Once an MPN fails through every tier in this process, the answer is
+        recorded in a class-level negative cache so subsequent calls return
+        immediately without hitting remote APIs again. A design with N
+        identical unresolvable components therefore incurs 1 lookup, not N.
+        Transient API flaps stay unresolved for the rest of the process —
+        call :meth:`clear_unresolved_cache` to re-enable retries.
+
         Args:
             mpn: Manufacturer Part Number to resolve.
             item: Optional dict from YAML spec (unused for now).
@@ -107,6 +114,11 @@ class SymbolResolver:
         Returns:
             Tuple of (ComponentDef or None, source string).
         """
+        # Fast path: MPN already failed through every tier earlier in this
+        # process. Skip the chain entirely.
+        if mpn in SymbolResolver._unresolved_cache:
+            return None, "unresolved"
+
         # Tier 1: Custom registry
         if self._reg:
             comp = self._reg.get(mpn)
@@ -157,7 +169,9 @@ class SymbolResolver:
                 log.debug("Resolved %s via mouser", mpn)
                 return comp, "mouser"
 
-        # All tiers failed
+        # All tiers failed — record so we don't retry this MPN in the
+        # same process. Tests can reset via clear_unresolved_cache().
+        SymbolResolver._unresolved_cache.add(mpn)
         log.warning("Failed to resolve MPN %s through any tier", mpn)
         return None, "unresolved"
 
@@ -306,6 +320,21 @@ class SymbolResolver:
     # multi-component run doesn't emit the same "DigiKey skipped" line N
     # times. (Sprint 37 Task 156.)
     _cred_warned: set[str] = set()
+
+    # Per-process negative cache of MPNs that exhausted every tier.
+    # A design with 12 identical unresolvable parts triggers 1 lookup,
+    # not 12. (Sprint 41 Task 175.) Cleared via clear_unresolved_cache().
+    _unresolved_cache: set[str] = set()
+
+    @classmethod
+    def clear_unresolved_cache(cls) -> None:
+        """Drop the negative-resolution cache so retries hit the tier chain.
+
+        Tests and long-running processes that need to re-check after a
+        transient remote-API failure can call this to force a full
+        re-resolve on the next call.
+        """
+        cls._unresolved_cache.clear()
 
     @classmethod
     def _warn_credential_missing_once(cls, tier: str, missing: tuple[str, ...]) -> None:

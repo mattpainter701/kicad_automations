@@ -15,8 +15,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -28,32 +29,7 @@ from .base import (
 )
 
 # Known crystal packages and their pin definitions
-CRYSTAL_IC_DATABASE = {
-    "HC-49S": {
-        "description": "Through-hole crystal HC-49S 2-pin",
-        "footprint": "Crystal:Crystal_HC49-U_Vertical",
-        "pins": [
-            PinDef("1", "XTAL1", "passive", "L"),
-            PinDef("2", "XTAL2", "passive", "R"),
-        ],
-        "pin_xtal1": "1",
-        "pin_xtal2": "2",
-        "gnd_pins": [],
-    },
-    "ABM8G": {
-        "description": "SMD ceramic crystal 3.2x1.5mm 4-pin",
-        "footprint": "Crystal:Crystal_SMD_3215-4Pin_3.2x1.5mm",
-        "pins": [
-            PinDef("1", "XTAL1", "passive", "L"),
-            PinDef("2", "GND", "passive", "B"),
-            PinDef("3", "XTAL2", "passive", "R"),
-            PinDef("4", "GND", "passive", "B"),
-        ],
-        "pin_xtal1": "1",
-        "pin_xtal2": "3",
-        "gnd_pins": ["2", "4"],
-    },
-}
+CRYSTAL_IC_DATABASE = LegacyDBProxy("crystal_oscillator")  # backed by ic_data/*.json (Task 178)
 
 
 class CrystalOscillatorTemplate(SubcircuitTemplate):

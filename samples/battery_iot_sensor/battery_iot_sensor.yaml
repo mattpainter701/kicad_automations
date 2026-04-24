@@ -1,10 +1,15 @@
-# Battery-backed IoT sensor node with on-board charger
+# Battery-backed IoT sensor node with on-board charger.
 # Demonstrates a complete battery-powered IoT system:
-#   - USB-C charging with MCP73831 Li-Po charger (0.5A)
+#   - USB-C charging with MCP73831 Li-Po charger (0.5A, STAT LED omitted
+#     in this minimal demo)
 #   - Battery voltage monitoring via MAX17048 fuel gauge IC
 #   - LDO for stable 3.3V logic rail from 3.7V battery
 #   - ESP32-WROOM-32E WiFi/BLE module
-# Design notes: USB-C VBUS power enables charging via dedicated charger IC; internal battery supplies system when unplugged; fuel gauge provides real-time charge/energy estimates via I2C (external pull-ups in final design)
+# Design notes: USB-C VBUS_5V feeds the charger; internal battery
+# supplies system when unplugged; fuel gauge provides real-time
+# charge/energy estimates via I2C. Sprint 41 placement-readiness is
+# satisfied via surgical pin overrides for the ESP32 UART0 and the
+# MCP73831 STAT output.
 
 project: Battery_IoT_Sensor
 company: Demo Corp
@@ -15,8 +20,11 @@ power:
     ic: MCP73831T-2ACI/OT
     ref: U1
     ichg: 0.5
-    vin_net: VUSB_5V
+    vin_net: VBUS_5V
     bat_net: VBAT
+    # STAT is a charge-status open-drain output; no LED in this demo
+    # so mark as explicit NC.
+    no_connects: ["1"]
   - type: battery_monitor
     ic: MAX17048G+T
     ref: U2
@@ -32,6 +40,10 @@ power:
 digital:
   - ic: ESP32-WROOM-32E
     ref: U4
+    pin_nets_extra:
+      "33": I2C_SDA
+      "36": I2C_SCL
+    no_connects: ["34", "35"]
 
 connectors:
   - ic: USB-C-PWR

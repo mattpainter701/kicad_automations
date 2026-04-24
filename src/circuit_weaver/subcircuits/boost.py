@@ -15,8 +15,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     boost_inductor,
@@ -32,52 +33,7 @@ from .base import (
 )
 
 # Known boost converter ICs and their parameters
-BOOST_IC_DATABASE = {
-    "TPS61230A": {
-        "description": "5.5A Switch Boost Converter SOT-23-6",
-        "footprint": "SOT-23-6",
-        "vref": 0.5,
-        "fsw": 2.5e6,  # 2.5 MHz typical
-        "iout_max": 5.5,  # 5.5A switch current
-        "pins": [
-            PinDef("1", "VIN", "power_in", "L"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "EN", "input", "L"),
-            PinDef("4", "SW", "output", "T"),
-            PinDef("5", "FB", "input", "R"),
-            PinDef("6", "VOUT", "power_out", "R"),
-        ],
-        "pin_vin": "1",
-        "pin_gnd": "2",
-        "pin_en": "3",
-        "pin_sw": "4",
-        "pin_fb": "5",
-        "pin_vout": "6",
-        "r_fbb_default": 1e6,  # 1M bottom resistor
-    },
-    "MT3608": {
-        "description": "2A Switch Boost Converter SOT-23-6",
-        "footprint": "SOT-23-6",
-        "vref": 0.6,
-        "fsw": 1.2e6,  # 1.2 MHz typical
-        "iout_max": 2.0,  # 2A switch current
-        "pins": [
-            PinDef("1", "SW", "output", "T"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "IN", "power_in", "L"),
-            PinDef("4", "FB", "input", "R"),
-            PinDef("5", "EN", "input", "L"),
-            PinDef("6", "NC", "passive", "R"),
-        ],
-        "pin_vin": "3",
-        "pin_gnd": "2",
-        "pin_en": "5",
-        "pin_sw": "1",
-        "pin_fb": "4",
-        "pin_vout": None,  # no dedicated VOUT pin
-        "r_fbb_default": 100e3,  # 100k bottom resistor
-    },
-}
+BOOST_IC_DATABASE = LegacyDBProxy("boost")  # backed by ic_data/*.json (Task 178)
 
 
 class BoostConverterTemplate(SubcircuitTemplate):

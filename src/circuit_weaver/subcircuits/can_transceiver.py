@@ -12,9 +12,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -26,58 +27,7 @@ from .base import (
 )
 
 # Known CAN transceiver ICs
-CAN_TRANSCEIVER_IC_DATABASE = {
-    "SN65HVD230": {
-        "description": "CAN Transceiver 3.3V 1Mbps SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "vdd": 3.3,
-        "speed_mbps": 1,
-        "pins": [
-            PinDef("1", "D", "input", "L"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "VCC", "power_in", "T"),
-            PinDef("4", "R", "output", "L"),
-            PinDef("5", "VREF", "output", "R"),
-            PinDef("6", "CANL", "bidirectional", "R"),
-            PinDef("7", "CANH", "bidirectional", "R"),
-            PinDef("8", "RS", "input", "L"),
-        ],
-        "pin_txd": "1",
-        "pin_gnd": "2",
-        "pin_vcc": "3",
-        "pin_rxd": "4",
-        "pin_vref": "5",
-        "pin_canl": "6",
-        "pin_canh": "7",
-        "pin_rs": "8",
-        "rs_highspeed_to_gnd": True,
-    },
-    "MCP2551-I/SN": {
-        "description": "CAN Transceiver 5V 1Mbps SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "vdd": 5.0,
-        "speed_mbps": 1,
-        "pins": [
-            PinDef("1", "TXD", "input", "L"),
-            PinDef("2", "VSS", "power_in", "B"),
-            PinDef("3", "VDD", "power_in", "T"),
-            PinDef("4", "RXD", "output", "L"),
-            PinDef("5", "VREF", "output", "R"),
-            PinDef("6", "CANL", "bidirectional", "R"),
-            PinDef("7", "CANH", "bidirectional", "R"),
-            PinDef("8", "RS", "input", "L"),
-        ],
-        "pin_txd": "1",
-        "pin_gnd": "2",
-        "pin_vcc": "3",
-        "pin_rxd": "4",
-        "pin_vref": "5",
-        "pin_canl": "6",
-        "pin_canh": "7",
-        "pin_rs": "8",
-        "rs_highspeed_to_gnd": True,
-    },
-}
+CAN_TRANSCEIVER_IC_DATABASE = LegacyDBProxy("can_transceiver")  # backed by ic_data/*.json (Task 178)
 
 
 class CANTransceiverTemplate(SubcircuitTemplate):

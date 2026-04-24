@@ -15,8 +15,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -27,65 +28,7 @@ from .base import (
 )
 
 # Known MOSFET ICs and their parameters
-MOSFET_IC_DATABASE = {
-    "BSS138": {
-        "description": "N-Channel MOSFET 50V 200mA SOT-23",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "vds": 50,
-        "id_max": 0.2,
-        "rdson": 3.5,
-        "vgs_th_min": 0.8,
-        "vgs_th_max": 1.5,
-        "polarity": "n",
-        "topology": "low_side",
-        "pins": [
-            PinDef("1", "G", "input", "L"),
-            PinDef("2", "S", "passive", "B"),
-            PinDef("3", "D", "passive", "T"),
-        ],
-        "pin_g": "1",
-        "pin_s": "2",
-        "pin_d": "3",
-    },
-    "AO3400A": {
-        "description": "N-Channel MOSFET 30V 5.7A SOT-23",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "vds": 30,
-        "id_max": 5.7,
-        "rdson": 0.026,
-        "vgs_th_min": 0.65,
-        "vgs_th_max": 1.45,
-        "polarity": "n",
-        "topology": "low_side",
-        "pins": [
-            PinDef("1", "G", "input", "L"),
-            PinDef("2", "S", "passive", "B"),
-            PinDef("3", "D", "passive", "T"),
-        ],
-        "pin_g": "1",
-        "pin_s": "2",
-        "pin_d": "3",
-    },
-    "AO3401A": {
-        "description": "P-Channel MOSFET -30V -4A SOT-23",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "vds": -30,
-        "id_max": -4.0,
-        "rdson": 0.044,
-        "vgs_th_min": -0.5,
-        "vgs_th_max": -1.3,
-        "polarity": "p",
-        "topology": "high_side",
-        "pins": [
-            PinDef("1", "G", "input", "L"),
-            PinDef("2", "S", "passive", "T"),
-            PinDef("3", "D", "passive", "B"),
-        ],
-        "pin_g": "1",
-        "pin_s": "2",
-        "pin_d": "3",
-    },
-}
+MOSFET_IC_DATABASE = LegacyDBProxy("mosfet_switch")  # backed by ic_data/*.json (Task 178)
 
 
 class MOSFETSwitchTemplate(SubcircuitTemplate):
@@ -199,7 +142,7 @@ class MOSFETSwitchTemplate(SubcircuitTemplate):
         # Look up MOSFET parameters
         ic_db = MOSFET_IC_DATABASE.get(ic_name, MOSFET_IC_DATABASE["BSS138"])
         polarity = ic_db["polarity"]
-        topology = ic_db["topology"]
+        topology = ic_db.get("topology_subtype", ic_db.get("topology", ""))
 
         # ---- Local net names (unique per instance) ----
         gate_internal_net = f"GINT_{ref}"

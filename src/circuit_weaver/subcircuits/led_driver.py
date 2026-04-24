@@ -16,8 +16,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -31,79 +32,7 @@ from .base import (
 )
 
 # Known LED driver ICs and their parameters
-LED_DRIVER_IC_DATABASE = {
-    "AL8861Y-13": {
-        "description": "Buck LED Driver 4.5-40V SOT-25",
-        "footprint": "Package_TO_SOT_SMD:SOT-23-5",
-        "topology": "buck",
-        "vin_range": (4.5, 40.0),
-        "vsense": 0.1,
-        "fsw": 500e3,  # 500 kHz typical
-        "has_inductor": True,
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "VIN", "power_in", "L"),
-            PinDef("3", "SW", "output", "T"),
-            PinDef("4", "ADJ", "input", "R"),
-            PinDef("5", "ISENSE", "input", "B"),
-        ],
-        "pin_vin": "2",
-        "pin_gnd": "1",
-        "pin_sw": "3",
-        "pin_adj": "4",
-        "pin_isense": "5",
-    },
-    "TLC5940NT": {
-        "description": "16-Channel PWM LED Driver DIP-28",
-        "footprint": "Package_DIP:DIP-28_W7.62mm",
-        "topology": "linear_sink",
-        "vin_range": (3.0, 5.5),
-        "vsense_formula": "iref",
-        "has_inductor": False,
-        "pins": [
-            PinDef("1", "OUT0", "output", "R"),
-            PinDef("2", "OUT1", "output", "R"),
-            PinDef("3", "OUT2", "output", "R"),
-            PinDef("4", "OUT3", "output", "R"),
-            PinDef("5", "OUT4", "output", "R"),
-            PinDef("6", "OUT5", "output", "R"),
-            PinDef("7", "OUT6", "output", "R"),
-            PinDef("8", "OUT7", "output", "R"),
-            PinDef("9", "OUT8", "output", "R"),
-            PinDef("10", "OUT9", "output", "R"),
-            PinDef("11", "OUT10", "output", "R"),
-            PinDef("12", "OUT11", "output", "R"),
-            PinDef("13", "OUT12", "output", "R"),
-            PinDef("14", "GND", "power_in", "B"),
-            PinDef("15", "OUT13", "output", "R"),
-            PinDef("16", "OUT14", "output", "R"),
-            PinDef("17", "OUT15", "output", "R"),
-            PinDef("18", "GSCLK", "input", "L"),
-            PinDef("19", "DCPRG", "input", "L"),
-            PinDef("20", "IREF", "input", "R"),
-            PinDef("21", "VCC", "power_in", "T"),
-            PinDef("22", "VPRG", "input", "L"),
-            PinDef("23", "BLANK", "input", "L"),
-            PinDef("24", "XLAT", "input", "L"),
-            PinDef("25", "SCLK", "input", "L"),
-            PinDef("26", "SIN", "input", "L"),
-            PinDef("27", "SOUT", "output", "R"),
-            PinDef("28", "XERR", "output", "R"),
-        ],
-        "pin_vcc": "21",
-        "pin_gnd": "14",
-        "pin_iref": "20",
-        "pin_sclk": "25",
-        "pin_sin": "26",
-        "pin_blank": "23",
-        "pin_xlat": "24",
-        "pin_gsclk": "18",
-        "pin_sout": "27",
-        "pin_dcprg": "19",
-        "pin_vprg": "22",
-        "pin_xerr": "28",
-    },
-}
+LED_DRIVER_IC_DATABASE = LegacyDBProxy("led_driver")  # backed by ic_data/*.json (Task 178)
 
 
 class LEDDriverTemplate(SubcircuitTemplate):
@@ -176,7 +105,7 @@ class LEDDriverTemplate(SubcircuitTemplate):
             return errors
 
         ic_db = LED_DRIVER_IC_DATABASE[ic_name]
-        if ic_db["topology"] == "buck":
+        if ic_db.get("topology_subtype", ic_db.get("topology", "")) == "buck":
             vin = params.get("vin", 12)
             vled = params.get("vled", 3.0)
             num_leds = params.get("num_leds", 1)
@@ -209,7 +138,7 @@ class LEDDriverTemplate(SubcircuitTemplate):
 
         ic_db = LED_DRIVER_IC_DATABASE.get(ic_name, LED_DRIVER_IC_DATABASE["AL8861Y-13"])
 
-        if ic_db["topology"] == "buck":
+        if ic_db.get("topology_subtype", ic_db.get("topology", "")) == "buck":
             return self._generate_buck(ic_name, ic_db, iled, vled, num_leds, vin, ref, vin_net)
         else:
             return self._generate_linear_sink(ic_name, ic_db, iled, ref, vin_net)

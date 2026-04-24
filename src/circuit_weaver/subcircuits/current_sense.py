@@ -15,9 +15,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     format_resistance,
@@ -44,56 +45,7 @@ def _rsense_footprint(power_w: float) -> str:
 
 
 # Known current sense amplifier ICs
-CURRENT_SENSE_IC_DATABASE = {
-    "INA219": {
-        "description": "High-Side Current/Power Monitor I2C MSOP-8",
-        "footprint": "Package_SO:MSOP-8_3x3mm_P0.65mm",
-        "ref_prefix": "U",
-        "vsense_max": 0.320,  # ±320 mV full-scale (PGA=1)
-        "gain": 1,  # configurable via PGA register
-        "has_i2c": True,
-        "has_analog_out": False,
-        "pins": [
-            PinDef("1", "A1", "input", "L"),
-            PinDef("2", "A0", "input", "L"),
-            PinDef("3", "SDA", "bidirectional", "R"),
-            PinDef("4", "SCL", "input", "R"),
-            PinDef("5", "GND", "power_in", "B"),
-            PinDef("6", "VS", "power_in", "T"),
-            PinDef("7", "IN_N", "input", "L"),
-            PinDef("8", "IN_P", "input", "L"),
-        ],
-        "pin_vs": "6",
-        "pin_gnd": "5",
-        "pin_inp": "8",
-        "pin_inn": "7",
-        "pin_sda": "3",
-        "pin_scl": "4",
-        "pin_a0": "2",
-        "pin_a1": "1",
-    },
-    "INA180A1": {
-        "description": "High-Side Current Sense Amp x20 Gain SOT-23-5",
-        "footprint": "Package_TO_SOT_SMD:SOT-23-5",
-        "ref_prefix": "U",
-        "vsense_max": 0.100,  # 100 mV max differential input
-        "gain": 20,  # fixed 20 V/V
-        "has_i2c": False,
-        "has_analog_out": True,
-        "pins": [
-            PinDef("1", "OUT", "output", "R"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "VS", "power_in", "T"),
-            PinDef("4", "IN_N", "input", "L"),
-            PinDef("5", "IN_P", "input", "L"),
-        ],
-        "pin_vs": "3",
-        "pin_gnd": "2",
-        "pin_inp": "5",
-        "pin_inn": "4",
-        "pin_out": "1",
-    },
-}
+CURRENT_SENSE_IC_DATABASE = LegacyDBProxy("current_sense")  # backed by ic_data/*.json (Task 178)
 
 
 class CurrentSenseTemplate(SubcircuitTemplate):

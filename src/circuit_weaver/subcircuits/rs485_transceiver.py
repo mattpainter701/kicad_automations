@@ -13,9 +13,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     format_capacitance,
@@ -25,56 +26,7 @@ from .base import (
 )
 
 # Known RS-485 transceiver ICs
-RS485_TRANSCEIVER_IC_DATABASE = {
-    "SP3485EN-L/TR": {
-        "description": "RS-485 Transceiver 3.3V 10Mbps SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "vdd": 3.3,
-        "speed_mbps": 10,
-        "pins": [
-            PinDef("1", "RO", "output", "L"),
-            PinDef("2", "RE_N", "input", "L"),
-            PinDef("3", "DE", "input", "L"),
-            PinDef("4", "DI", "input", "L"),
-            PinDef("5", "GND", "power_in", "B"),
-            PinDef("6", "A", "bidirectional", "R"),
-            PinDef("7", "B", "bidirectional", "R"),
-            PinDef("8", "VCC", "power_in", "T"),
-        ],
-        "pin_ro": "1",
-        "pin_re_n": "2",
-        "pin_de": "3",
-        "pin_di": "4",
-        "pin_gnd": "5",
-        "pin_a": "6",
-        "pin_b": "7",
-        "pin_vcc": "8",
-    },
-    "MAX485ESA+": {
-        "description": "RS-485 Transceiver 5V 2.5Mbps SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "vdd": 5.0,
-        "speed_mbps": 2.5,
-        "pins": [
-            PinDef("1", "RO", "output", "L"),
-            PinDef("2", "RE_N", "input", "L"),
-            PinDef("3", "DE", "input", "L"),
-            PinDef("4", "DI", "input", "L"),
-            PinDef("5", "GND", "power_in", "B"),
-            PinDef("6", "A", "bidirectional", "R"),
-            PinDef("7", "B", "bidirectional", "R"),
-            PinDef("8", "VCC", "power_in", "T"),
-        ],
-        "pin_ro": "1",
-        "pin_re_n": "2",
-        "pin_de": "3",
-        "pin_di": "4",
-        "pin_gnd": "5",
-        "pin_a": "6",
-        "pin_b": "7",
-        "pin_vcc": "8",
-    },
-}
+RS485_TRANSCEIVER_IC_DATABASE = LegacyDBProxy("rs485_transceiver")  # backed by ic_data/*.json (Task 178)
 
 
 class RS485TransceiverTemplate(SubcircuitTemplate):

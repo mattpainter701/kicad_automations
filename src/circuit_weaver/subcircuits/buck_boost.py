@@ -15,8 +15,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     buck_boost_inductor,
@@ -32,89 +33,7 @@ from .base import (
 )
 
 # Known buck-boost converter ICs and their parameters
-BUCK_BOOST_IC_DATABASE = {
-    "TPS63020": {
-        "description": "Buck-Boost Converter 2A QFN-14",
-        "footprint": "Package_DFN_QFN:QFN-14-1EP_3.5x3.5mm_P0.5mm_EP2.05x2.05mm",
-        "vref": 0.5,
-        "fsw": 2.4e6,  # 2.4 MHz typical
-        "vin_range": (1.8, 5.5),
-        "vout_range": (1.2, 5.5),
-        "iout_max_buck": 2.0,
-        "iout_max_boost": 1.3,
-        "pins": [
-            PinDef("1", "VINA", "power_in", "L"),
-            PinDef("2", "VINA", "power_in", "L"),
-            PinDef("3", "EN", "input", "L"),
-            PinDef("4", "PS_SYNC", "input", "L"),
-            PinDef("5", "VAUX", "power_out", "L"),
-            PinDef("6", "L1", "passive", "T"),
-            PinDef("7", "L2", "passive", "T"),
-            PinDef("8", "PG", "output", "R"),
-            PinDef("9", "FB", "input", "R"),
-            PinDef("10", "GND", "power_in", "B"),
-            PinDef("11", "VOUTA", "power_out", "R"),
-            PinDef("12", "VOUTA", "power_out", "R"),
-            PinDef("13", "GND", "power_in", "B"),
-            PinDef("14", "EPAD", "power_in", "B"),
-        ],
-        "pin_vin": "1",
-        "pin_gnd": "10",
-        "pin_epad": "14",
-        "pin_en": "3",
-        "pin_fb": "9",
-        "pin_pg": "8",
-        "pin_l1": "6",
-        "pin_l2": "7",
-        "pin_vout": "11",
-        "pin_vaux": "5",
-        "pin_ps_sync": "4",
-        # Additional power pins that share nets
-        "pin_vin2": "2",
-        "pin_vout2": "12",
-        "pin_gnd2": "13",
-        "has_vaux": True,
-        "r_fbb_default": 1e6,  # 1M bottom resistor
-    },
-    "TPS63000": {
-        "description": "Buck-Boost Converter 800mA QFN-10",
-        "footprint": "Package_DFN_QFN:QFN-10-1EP_2x2mm_P0.4mm_EP0.6x0.6mm",
-        "vref": 0.5,
-        "fsw": 1.5e6,  # 1.5 MHz typical
-        "vin_range": (1.8, 5.5),
-        "vout_range": (1.2, 5.5),
-        "iout_max_buck": 0.8,
-        "iout_max_boost": 0.5,
-        "pins": [
-            PinDef("1", "VINA", "power_in", "L"),
-            PinDef("2", "VINB", "power_in", "L"),
-            PinDef("3", "L1", "passive", "T"),
-            PinDef("4", "L2", "passive", "T"),
-            PinDef("5", "EN", "input", "L"),
-            PinDef("6", "VOUTA", "power_out", "R"),
-            PinDef("7", "VOUTB", "power_out", "R"),
-            PinDef("8", "FB", "input", "R"),
-            PinDef("9", "PS_SYNC", "input", "L"),
-            PinDef("10", "GND", "power_in", "B"),
-        ],
-        "pin_vin": "1",
-        "pin_vin2": "2",
-        "pin_gnd": "10",
-        "pin_epad": None,
-        "pin_en": "5",
-        "pin_fb": "8",
-        "pin_pg": None,
-        "pin_l1": "3",
-        "pin_l2": "4",
-        "pin_vout": "6",
-        "pin_vout2": "7",
-        "pin_vaux": None,
-        "pin_ps_sync": "9",
-        "pin_gnd2": None,
-        "has_vaux": False,
-        "r_fbb_default": 1e6,  # 1M bottom resistor
-    },
-}
+BUCK_BOOST_IC_DATABASE = LegacyDBProxy("buck_boost")  # backed by ic_data/*.json (Task 178)
 
 
 class BuckBoostConverterTemplate(SubcircuitTemplate):

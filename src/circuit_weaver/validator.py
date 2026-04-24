@@ -431,18 +431,28 @@ def _build_net_pin_map(components: list[ComponentDef]) -> dict[str, list[tuple[s
             if net:
                 ptype = pin_types.get(pin_num, "power_in")
                 net_map.setdefault(net, []).append((ref, pin_num, ptype))
-        # Bypass caps connect two nets (net ↔ gnd_net)
+        # Bypass caps connect two nets (net ↔ gnd_net). Each cap is a
+        # 2-terminal element — record BOTH terminals under each net so
+        # a standalone cap contributes two endpoints to net continuity,
+        # not one (else a reset-pull-cap makes RES_N look single-pin).
         for bc in comp.bypass_caps:
+            cap_id = f"C_{ref}_{bc.pin}"
             if bc.net:
                 net_map.setdefault(bc.net, []).append((ref, bc.pin, "passive"))
+                net_map[bc.net].append((cap_id, "1", "passive"))
             if bc.gnd_net:
                 net_map.setdefault(bc.gnd_net, []).append((ref, bc.pin, "passive"))
-        # Straps connect pin to rail
+                net_map[bc.gnd_net].append((cap_id, "2", "passive"))
+        # Straps connect pin to rail. Also 2-terminal: both the signal
+        # net and the rail net see the strap resistor as an endpoint.
         for strap in comp.straps:
+            strap_id = f"R_{ref}_{strap.pin}"
             if strap.net:
                 net_map.setdefault(strap.net, []).append((ref, strap.pin, "passive"))
+                net_map[strap.net].append((strap_id, "1", "passive"))
             if strap.rail:
                 net_map.setdefault(strap.rail, []).append((ref, strap.pin, "passive"))
+                net_map[strap.rail].append((strap_id, "2", "passive"))
     return net_map
 
 

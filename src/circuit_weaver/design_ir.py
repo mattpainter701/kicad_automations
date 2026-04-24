@@ -219,6 +219,23 @@ def _normalize_block(raw: dict[str, Any], *, default_section: str, index: int) -
         for key, value in raw.items():
             if key not in _BLOCK_RESERVED_KEYS:
                 params.setdefault(key, copy.deepcopy(value))
+    else:
+        # Sprint 41 — component blocks also carry surgical pin overrides
+        # (pin_map, pin_nets_extra, power_pins_extra, no_connects,
+        # pinout_verified). Stash any of these in params so they round-
+        # trip through the canonical IR and reach _resolve_component.
+        _COMPONENT_PIN_OVERRIDES = (
+            "pin_map",
+            "pin_nets_extra",
+            "power_pins_extra",
+            "no_connects",
+            "pinout_verified",
+            "power_map",
+            "lcsc",
+        )
+        for key in _COMPONENT_PIN_OVERRIDES:
+            if key in raw and key not in params:
+                params[key] = copy.deepcopy(raw[key])
     interfaces = [
         _normalize_interface_dict(iface, block_id=block_id or ref) for iface in raw.get("interfaces", []) or []
     ]
@@ -396,8 +413,19 @@ def design_ir_to_engine_spec(ir: DesignIR) -> dict[str, Any]:
         if block.kind == "template":
             item = copy.deepcopy(block.params)
             item["type"] = block.template_type
+            # Preserve the explicit ``ic`` selection so templates that
+            # support multiple IC variants (e.g. usb_controller's
+            # CH340G / CYUSB3014 / FT232) honor the user's choice
+            # instead of falling back to the template default.
+            if block.ic:
+                item["ic"] = block.ic
         else:
             item = {"ic": block.ic}
+            # Sprint 41 — propagate surgical pin overrides captured at
+            # normalization time into the engine spec so _resolve_component
+            # can honor them.
+            if block.params:
+                item.update(copy.deepcopy(block.params))
         if block.ref:
             item["ref"] = block.ref
         if block.value:

@@ -15,9 +15,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     format_resistance,
@@ -32,46 +33,7 @@ _I2C_TRISE_MAX = {
 }
 
 # Known I2C bus ICs and their parameters
-I2C_BUS_IC_DATABASE = {
-    "PULLUPS_ONLY": {
-        "description": "I2C pull-up resistor network (no physical IC)",
-        "footprint": "",
-        "ref_prefix": "RP",
-        "pins": [
-            PinDef("1", "VDD", "power_in", "T"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "SDA", "bidirectional", "L"),
-            PinDef("4", "SCL", "bidirectional", "R"),
-        ],
-        "pin_vdd": "1",
-        "pin_gnd": "2",
-        "pin_sda": "3",
-        "pin_scl": "4",
-        "needs_external_pullups": True,
-        "has_level_shift": False,
-    },
-    "PCA9306": {
-        "description": "Dual Bidirectional I2C Level Shifter SOT-23-6",
-        "footprint": "Package_TO_SOT_SMD:SOT-23-6",
-        "ref_prefix": "U",
-        "pins": [
-            PinDef("1", "VREF1", "power_in", "L"),
-            PinDef("2", "SCL1", "bidirectional", "L"),
-            PinDef("3", "SDA1", "bidirectional", "L"),
-            PinDef("4", "SDA2", "bidirectional", "R"),
-            PinDef("5", "SCL2", "bidirectional", "R"),
-            PinDef("6", "VREF2", "power_in", "R"),
-        ],
-        "pin_vref1": "1",
-        "pin_scl1": "2",
-        "pin_sda1": "3",
-        "pin_sda2": "4",
-        "pin_scl2": "5",
-        "pin_vref2": "6",
-        "needs_external_pullups": False,
-        "has_level_shift": True,
-    },
-}
+I2C_BUS_IC_DATABASE = LegacyDBProxy("i2c_bus")  # backed by ic_data/*.json (Task 178)
 
 
 def _calc_pullup_resistance(speed_hz: float, c_bus_f: float) -> float:

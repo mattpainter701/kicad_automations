@@ -13,8 +13,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -26,77 +27,7 @@ from .base import (
 )
 
 # Known display driver ICs and their parameters
-DISPLAY_DRIVER_IC_DATABASE = {
-    "SSD1306": {
-        "description": "128x64 OLED Driver with Charge Pump",
-        "footprint": "SSD1306_Module",
-        "vdd_range": (1.65, 3.3),
-        "display_type": "oled",
-        "resolution": "128x64",
-        "has_charge_pump": True,
-        "has_backlight": False,
-        "riref_default": 910e3,  # 910k for default segment current
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "VDD", "power_in", "T"),
-            PinDef("3", "SCL", "input", "R"),
-            PinDef("4", "SDA", "bidirectional", "R"),
-            PinDef("5", "RES_N", "input", "L"),
-            PinDef("6", "DC", "input", "L"),
-            PinDef("7", "CS_N", "input", "L"),
-            PinDef("8", "IREF", "input", "R"),
-            PinDef("9", "VCOMH", "power_out", "R"),
-            PinDef("10", "VCC", "power_in", "T"),
-            PinDef("11", "C1P", "passive", "T"),
-            PinDef("12", "C2P", "passive", "T"),
-        ],
-        "pin_vdd": "2",
-        "pin_gnd": "1",
-        "pin_scl": "3",
-        "pin_sda": "4",
-        "pin_res_n": "5",
-        "pin_dc": "6",
-        "pin_cs_n": "7",
-        "pin_iref": "8",
-        "pin_vcomh": "9",
-        "pin_vcc": "10",
-        "pin_c1p": "11",
-        "pin_c2p": "12",
-        "pin_bl": None,
-    },
-    "ST7789V": {
-        "description": "240x320 SPI TFT LCD Driver",
-        "footprint": "ST7789_Module",
-        "vdd_range": (1.65, 3.3),
-        "display_type": "lcd",
-        "resolution": "240x320",
-        "has_charge_pump": False,
-        "has_backlight": True,
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "VDD", "power_in", "T"),
-            PinDef("3", "SCL", "input", "R"),
-            PinDef("4", "SDA", "input", "R"),
-            PinDef("5", "RES_N", "input", "L"),
-            PinDef("6", "DC", "input", "L"),
-            PinDef("7", "CS_N", "input", "L"),
-            PinDef("8", "BL", "input", "L"),
-        ],
-        "pin_vdd": "2",
-        "pin_gnd": "1",
-        "pin_scl": "3",
-        "pin_sda": "4",
-        "pin_res_n": "5",
-        "pin_dc": "6",
-        "pin_cs_n": "7",
-        "pin_bl": "8",
-        "pin_iref": None,
-        "pin_vcomh": None,
-        "pin_vcc": None,
-        "pin_c1p": None,
-        "pin_c2p": None,
-    },
-}
+DISPLAY_DRIVER_IC_DATABASE = LegacyDBProxy("display_driver")  # backed by ic_data/*.json (Task 178)
 
 
 class DisplayDriverTemplate(SubcircuitTemplate):

@@ -1,0 +1,43 @@
+# Sprint 41 corpus — wearable battery-management system.
+# Demonstrates a coin-cell / Li-Po powered wearable:
+#   - USB-C input with MCP73831 Li-Po charger
+#   - MAX17048 fuel gauge on the battery rail
+#   - MCP1700 LDO dropping 3.7V battery to 1.8V logic
+#   - nRF52840 BLE SoC as the host with SWD / RESET tied off
+
+project: Wearable_BMS
+company: Demo Corp
+description: BLE wearable with Li-Po charging and fuel-gauge monitoring
+
+power:
+  - type: battery_charger
+    ic: MCP73831T-2ACI/OT
+    ref: U1
+    ichg: 0.2
+    vin_net: VBUS_5V
+    bat_net: VBAT
+    no_connects: ["1"]
+  - type: battery_monitor
+    ic: MAX17048G+T
+    ref: U2
+    bat_net: VBAT
+  - type: ldo
+    ic: MCP1700-3302E
+    ref: U3
+    vin: 3.7
+    vout: 1.8
+    vin_net: VBAT
+    rail_name: VDD_1P8
+
+digital:
+  - ic: nRF52840-QIAA
+    ref: U4
+    # DCC is the DC/DC mode input; tie directly to VDD for the
+    # placement-preview. Programming pins stay no-connect.
+    power_pins_extra:
+      "13": VBAT
+    no_connects: ["18", "19", "20"]
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1

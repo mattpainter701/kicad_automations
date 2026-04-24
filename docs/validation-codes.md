@@ -1,8 +1,32 @@
 # Validation Codes
 
-Circuit Weaver's validation pipeline runs 10 check categories. Each produces a `ValidationCheckResult` with status `PASS`, `WARN`, or `FAIL` and zero or more `ValidationIssue` items.
+Circuit Weaver's validation pipeline runs a set of check categories. Each produces a `ValidationCheckResult` with status `PASS`, `WARN`, or `FAIL` and zero or more `ValidationIssue` items.
 
 In `--strict` mode, warnings are promoted to errors.
+
+## Hard-Gated Categories
+
+Three validation categories are **hard-gated** at generation time — `generate_artifacts` always blocks on errors in any of them, regardless of `--no-require-valid`:
+
+| Category | Purpose |
+|-|-|
+| `structural` | IR integrity: every block has a ref, every interface has a target. |
+| `implementation` | Resolution results: footprints bound, symbols complete, pins consistent. |
+| `placement_readiness` | **Sprint 41** — schematic is physically wired enough to forward-annotate to a PCB. |
+
+`placement_readiness` promotes the following previously-soft codes:
+
+- `single-pin-net` — a non-power signal net terminates at a single pin.
+- `undriven-net` — a net has only input-side contributors and no driver.
+- `i2c-missing-pullup` — an I2C_SDA / I2C_SCL net has no pull-up strap.
+- `spi-floating-cs` — a chip-select pin is unhandled.
+- `uart-unpaired` — a TX net has no matching RX (or vice versa).
+- `floating-enable` — a regulator enable is unconnected (the part won't start).
+- `floating-power-pin` — an IC power pin has no rail assignment.
+- `unverified-pinout` — a stub-pinout IC lacks an explicit pin_map / `pinout_verified: true`.
+- `orphan-interface` — **new Sprint 41** — a block declared an interface whose net no other block consumes.
+
+`--no-require-valid` still bypasses **soft** electrical warnings: crystal-load tolerance, rc/lc-filter cutoff hints, cap-voltage derating hints, power-budget definition gaps, thermal margin warnings, signal-integrity termination hints.
 
 ## Check Categories
 

@@ -143,6 +143,63 @@ def test_project_spec_uses_symbol_resolver_chain():
     assert len(comp.pins) > 0
 
 
+def test_unresolved_mpn_is_cached_within_process():
+    """Sprint 41 Task 175: when an MPN fails through every tier, the
+    negative result is cached in ``SymbolResolver._unresolved_cache`` so
+    a second lookup within the same process returns immediately without
+    re-hitting the DigiKey / Mouser loaders.
+
+    A design with N identical unresolvable parts (the toy_phone
+    TS-1187A-B-A-B button matrix case) therefore triggers 1 API round
+    trip, not N. Transient flaps stay unresolved until the caller
+    explicitly calls :meth:`SymbolResolver.clear_unresolved_cache`.
+    """
+    SymbolResolver.clear_unresolved_cache()
+
+    digikey_calls = {"n": 0}
+
+    def _counting_digikey(self, mpn):  # matches the bound-method signature
+        digikey_calls["n"] += 1
+        return None  # loader unable to resolve
+
+    with patch.object(SymbolResolver, "_resolve_digikey", _counting_digikey):
+        r = SymbolResolver(use_easyeda=False, use_mouser=False, use_ic_data=False)
+        first = r.resolve("TS-1187A-B-A-B")
+        second = r.resolve("TS-1187A-B-A-B")
+        third = r.resolve("TS-1187A-B-A-B")
+
+    assert first == (None, "unresolved")
+    assert second == (None, "unresolved")
+    assert third == (None, "unresolved")
+    assert digikey_calls["n"] == 1, (
+        f"first lookup should hit DigiKey once; repeat lookups should be served from the "
+        f"negative cache without re-invoking the loader. Observed {digikey_calls['n']} calls."
+    )
+
+    # clear_unresolved_cache() re-enables retries.
+    SymbolResolver.clear_unresolved_cache()
+    with patch.object(SymbolResolver, "_resolve_digikey", _counting_digikey):
+        r.resolve("TS-1187A-B-A-B")
+    assert digikey_calls["n"] == 2, "clear_unresolved_cache() should allow the next lookup to hit the loader again"
+
+
+def test_unresolved_cache_does_not_shadow_successful_resolutions():
+    """Negative-cache hits must never mask an MPN that was previously
+    resolved — the cache only stores exhausted-every-tier failures.
+    """
+    SymbolResolver.clear_unresolved_cache()
+
+    r = SymbolResolver(use_easyeda=False, use_digikey=False, use_mouser=False)
+    # DS3231 is in bundled ic_data.
+    comp, src = r.resolve("DS3231")
+    assert comp is not None
+    assert src == "ic_data"
+    assert "DS3231" not in SymbolResolver._unresolved_cache, (
+        "successful resolutions must not poison the negative cache — that would block a cold-run "
+        "retry after a transient cache miss"
+    )
+
+
 def test_digikey_tier_logs_missing_credential_once(caplog):
     """Sprint 37 Task 156: when DIGIKEY_CLIENT_ID is absent the DigiKey
     tier must log ONE informative INFO line per session, then silently

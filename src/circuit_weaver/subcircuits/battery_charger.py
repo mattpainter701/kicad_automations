@@ -15,8 +15,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -26,55 +27,7 @@ from .base import (
 )
 
 # Known battery charger ICs and their parameters
-CHARGER_IC_DATABASE = {
-    "MCP73831T-2ACI/OT": {
-        "description": "500mA Li-Ion/LiPo Charger SOT-23-5",
-        "footprint": "SOT-23-5",
-        "vcell": 4.2,
-        "ichg_max": 0.5,
-        "k_prog": 1000,  # Rprog = K_prog / Ichg
-        "pins": [
-            PinDef("1", "STAT", "output", "R"),
-            PinDef("2", "VSS", "power_in", "B"),
-            PinDef("3", "VBAT", "power_out", "R"),
-            PinDef("4", "VDD", "power_in", "L"),
-            PinDef("5", "PROG", "input", "R"),
-        ],
-        "pin_vdd": "4",
-        "pin_gnd": "2",
-        "pin_bat": "3",
-        "pin_prog": "5",
-        "pin_stat": "1",
-        "pin_temp": None,
-        "pin_ce": None,
-        "has_temp_pin": False,
-    },
-    "TP4056": {
-        "description": "1A Li-Ion/LiPo Charger SOP-8",
-        "footprint": "SOP-8",
-        "vcell": 4.2,
-        "ichg_max": 1.0,
-        "k_prog": 1200,  # Rprog = K_prog / Ichg
-        "pins": [
-            PinDef("1", "TEMP", "input", "L"),
-            PinDef("2", "PROG", "input", "R"),
-            PinDef("3", "GND", "power_in", "B"),
-            PinDef("4", "VCC", "power_in", "L"),
-            PinDef("5", "STDBY", "output", "R"),
-            PinDef("6", "CHRG", "output", "R"),
-            PinDef("7", "BAT", "power_out", "R"),
-            PinDef("8", "CE", "input", "L"),
-        ],
-        "pin_vdd": "4",
-        "pin_gnd": "3",
-        "pin_bat": "7",
-        "pin_prog": "2",
-        "pin_stat": "6",
-        "pin_temp": "1",
-        "pin_ce": "8",
-        "has_temp_pin": True,
-    },
-}
+CHARGER_IC_DATABASE = LegacyDBProxy("battery_charger")  # backed by ic_data/*.json (Task 178)
 
 
 class BatteryChargerTemplate(SubcircuitTemplate):

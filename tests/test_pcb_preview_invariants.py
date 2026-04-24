@@ -173,3 +173,49 @@ def test_preview_pcb_self_identifies_in_generator_field(tmp_path):
     assert "placement_preview" in pcb_text, (
         "placement .kicad_pcb must self-identify as a preview in the generator field"
     )
+
+
+def test_preview_pcb_uses_kicad_fixed_layer_ids(tmp_path):
+    """The preview board must use KiCad's fixed 2-layer hash, not the
+    legacy KiCad-5-era table. The old table used ``B.Cu=31`` and
+    ``ECO1.User``/``ECO2.User``, which KiCad 10 rejects with a
+    ``not fixed layer hash`` error when opening the placement board.
+    """
+    from circuit_weaver.pcb_export import generate_pcb_placement
+
+    comps = [_make_component(mpn="X", ref="U1", footprint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", pin_count=8)]
+    generate_pcb_placement(comps, tmp_path, project_name="layer_hash_test")
+    pcb_text = (tmp_path / "layer_hash_test_placement.kicad_pcb").read_text(encoding="utf-8")
+
+    expected_markers = [
+        '(0 "F.Cu" signal)',
+        '(2 "B.Cu" signal)',
+        '(9 "F.Adhes" user "F.Adhesive")',
+        '(11 "B.Adhes" user "B.Adhesive")',
+        '(13 "F.Paste" user)',
+        '(15 "B.Paste" user)',
+        '(5 "F.SilkS" user "F.Silkscreen")',
+        '(7 "B.SilkS" user "B.Silkscreen")',
+        '(1 "F.Mask" user)',
+        '(3 "B.Mask" user)',
+        '(17 "Dwgs.User" user "User.Drawings")',
+        '(19 "Cmts.User" user "User.Comments")',
+        '(21 "Eco1.User" user "User.Eco1")',
+        '(23 "Eco2.User" user "User.Eco2")',
+        '(25 "Edge.Cuts" user)',
+        '(27 "Margin" user)',
+        '(31 "F.CrtYd" user "F.Courtyard")',
+        '(29 "B.CrtYd" user "B.Courtyard")',
+        '(35 "F.Fab" user)',
+        '(33 "B.Fab" user)',
+        '(39 "User.1" user)',
+        '(41 "User.2" user)',
+        '(43 "User.3" user)',
+        '(45 "User.4" user)',
+    ]
+    for marker in expected_markers:
+        assert marker in pcb_text, f"missing KiCad fixed-layer marker: {marker}"
+
+    assert '(31 "B.Cu" signal)' not in pcb_text
+    assert "ECO1.User" not in pcb_text
+    assert "ECO2.User" not in pcb_text

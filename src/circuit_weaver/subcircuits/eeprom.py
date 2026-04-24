@@ -19,57 +19,7 @@ from .base import (
     SubcircuitTemplate,
 )
 
-EEPROM_IC_DATABASE = {
-    "24LC256": {
-        "description": "256Kbit I2C EEPROM SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "interface": "i2c",
-        "capacity_kbit": 256,
-        "i2c_base_addr": 0x50,
-        "vdd_range": (2.5, 5.5),
-        "pins": [
-            PinDef("1", "A0", "input", "L"),
-            PinDef("2", "A1", "input", "L"),
-            PinDef("3", "A2", "input", "L"),
-            PinDef("4", "VSS", "power_in", "B"),
-            PinDef("5", "SDA", "bidirectional", "R"),
-            PinDef("6", "SCL", "input", "R"),
-            PinDef("7", "WP", "input", "L"),
-            PinDef("8", "VCC", "power_in", "T"),
-        ],
-        "pin_vcc": "8",
-        "pin_gnd": "4",
-        "pin_sda": "5",
-        "pin_scl": "6",
-        "pin_wp": "7",
-        "pin_addr": ["1", "2", "3"],
-    },
-    "AT25SF128A": {
-        "description": "128Mbit SPI NOR Flash SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "interface": "spi",
-        "capacity_kbit": 131072,
-        "vdd_range": (2.3, 3.6),
-        "pins": [
-            PinDef("1", "CS_N", "input", "L"),
-            PinDef("2", "SO/IO1", "bidirectional", "R"),
-            PinDef("3", "WP_N/IO2", "input", "L"),
-            PinDef("4", "GND", "power_in", "B"),
-            PinDef("5", "SI/IO0", "input", "L"),
-            PinDef("6", "SCK", "input", "L"),
-            PinDef("7", "HOLD_N/IO3", "input", "L"),
-            PinDef("8", "VCC", "power_in", "T"),
-        ],
-        "pin_vcc": "8",
-        "pin_gnd": "4",
-        "pin_cs": "1",
-        "pin_so": "2",
-        "pin_wp": "3",
-        "pin_si": "5",
-        "pin_sck": "6",
-        "pin_hold": "7",
-    },
-}
+EEPROM_IC_DATABASE: dict[str, dict] = {}  # Migrated to ic_data/*.json (Task 178)
 
 
 class EEPROMTemplate(SubcircuitTemplate):
@@ -158,14 +108,21 @@ class EEPROMTemplate(SubcircuitTemplate):
         },
     ]
 
+    @classmethod
+    def _ic_db(cls) -> dict[str, dict[str, Any]]:
+        """Hardcoded DB merged with ic_data 'eeprom' entries so parts
+        registered via ``circuit-weaver register-ic`` are accepted.
+        """
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db(EEPROM_IC_DATABASE, "eeprom")
+
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
         ic_name = params.get("ic", "24LC256")
-        if ic_name not in EEPROM_IC_DATABASE:
-            errors.append(
-                f"Unknown EEPROM IC '{ic_name}'. "
-                f"Available: {', '.join(EEPROM_IC_DATABASE)}"
-            )
+        db = self._ic_db()
+        if ic_name not in db:
+            errors.append(f"Unknown EEPROM IC '{ic_name}'. Available: {', '.join(db)}")
         addr = params.get("i2c_addr_offset", 0)
         if not isinstance(addr, int) or addr < 0 or addr > 7:
             errors.append(f"i2c_addr_offset must be 0-7, got {addr}")
@@ -173,15 +130,14 @@ class EEPROMTemplate(SubcircuitTemplate):
 
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
         ic_name = params.get("ic", "24LC256")
-        ic_db = EEPROM_IC_DATABASE.get(ic_name, EEPROM_IC_DATABASE["24LC256"])
+        db = self._ic_db()
+        ic_db = db.get(ic_name, db["24LC256"])
 
         if ic_db["interface"] == "i2c":
             return self._generate_i2c(ic_name, ic_db, params)
         return self._generate_spi(ic_name, ic_db, params)
 
-    def _generate_i2c(
-        self, ic_name: str, ic_db: dict, params: dict[str, Any]
-    ) -> SubcircuitResult:
+    def _generate_i2c(self, ic_name: str, ic_db: dict, params: dict[str, Any]) -> SubcircuitResult:
         ref = params.get("ref", "U")
         vdd_net = params.get("vdd_net", "VDD_3P3")
         sda_net = params.get("sda_net", "I2C_SDA")
@@ -258,15 +214,12 @@ class EEPROMTemplate(SubcircuitTemplate):
             components=[ic_comp],
             boundary_ports=ports,
             annotations=[
-                f"EEPROM {ic_name}: {ic_db['capacity_kbit']}Kbit, "
-                f"I2C 0x{actual_addr:02X}",
+                f"EEPROM {ic_name}: {ic_db['capacity_kbit']}Kbit, I2C 0x{actual_addr:02X}",
             ],
             primary_category="digital",
         )
 
-    def _generate_spi(
-        self, ic_name: str, ic_db: dict, params: dict[str, Any]
-    ) -> SubcircuitResult:
+    def _generate_spi(self, ic_name: str, ic_db: dict, params: dict[str, Any]) -> SubcircuitResult:
         ref = params.get("ref", "U")
         vdd_net = params.get("vdd_net", "VDD_3P3")
         cs_net = params.get("cs_net", f"FLASH_CS_{ref}")

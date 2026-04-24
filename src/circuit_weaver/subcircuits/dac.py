@@ -16,9 +16,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -30,58 +31,7 @@ from .base import (
 )
 
 # Known DAC ICs and their parameters
-DAC_IC_DATABASE = {
-    "MCP4725A0T": {
-        "description": "12-bit I2C DAC SOT-23-6",
-        "footprint": "Package_TO_SOT_SMD:SOT-23-6",
-        "bits": 12,
-        "interface": "i2c",
-        "channels": 1,
-        "has_external_vref": False,
-        "i2c_addr_a0_gnd": "0x60",
-        "i2c_addr_a0_vdd": "0x61",
-        "pins": [
-            PinDef("1", "VOUT", "output", "R"),
-            PinDef("2", "VSS", "power_in", "B"),
-            PinDef("3", "VDD", "power_in", "T"),
-            PinDef("4", "SDA", "bidirectional", "R"),
-            PinDef("5", "SCL", "input", "R"),
-            PinDef("6", "A0", "input", "L"),
-        ],
-        "pin_vdd": "3",
-        "pin_gnd": "2",
-        "pin_vout": "1",
-        "pin_sda": "4",
-        "pin_scl": "5",
-        "pin_a0": "6",
-    },
-    "DAC8552IDGK": {
-        "description": "Dual 16-bit SPI DAC MSOP-8",
-        "footprint": "Package_SO:MSOP-8_3x3mm_P0.65mm",
-        "bits": 16,
-        "interface": "spi",
-        "channels": 2,
-        "has_external_vref": True,
-        "pins": [
-            PinDef("1", "VOUTA", "output", "R"),
-            PinDef("2", "VOUTB", "output", "R"),
-            PinDef("3", "GND", "power_in", "B"),
-            PinDef("4", "VREF", "power_in", "T"),
-            PinDef("5", "DIN", "input", "L"),
-            PinDef("6", "SCLK", "input", "L"),
-            PinDef("7", "SYNC_N", "input", "L"),
-            PinDef("8", "VDD", "power_in", "T"),
-        ],
-        "pin_vdd": "8",
-        "pin_gnd": "3",
-        "pin_vref": "4",
-        "pin_vouta": "1",
-        "pin_voutb": "2",
-        "pin_din": "5",
-        "pin_sclk": "6",
-        "pin_sync": "7",
-    },
-}
+DAC_IC_DATABASE = LegacyDBProxy("dac")  # backed by ic_data/*.json (Task 178)
 
 
 class DACTemplate(SubcircuitTemplate):

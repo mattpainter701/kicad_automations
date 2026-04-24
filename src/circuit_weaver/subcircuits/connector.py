@@ -19,63 +19,7 @@ from .base import (
     SubcircuitTemplate,
 )
 
-CONNECTOR_DATABASE = {
-    "BARREL_JACK_2.1MM": {
-        "description": "DC Barrel Jack 2.1mm Center-Positive",
-        "footprint": "Connector_BarrelJack:BarrelJack_Horizontal",
-        "connector_type": "power",
-        "pins": [
-            PinDef("1", "TIP", "passive", "R"),
-            PinDef("2", "RING", "passive", "L"),
-            PinDef("3", "SWITCH", "passive", "L"),
-        ],
-        "pin_positive": "1",
-        "pin_negative": "2",
-        "pin_switch": "3",
-    },
-    "PIN_HEADER_2P": {
-        "description": "2-Pin 2.54mm Pin Header",
-        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
-        "connector_type": "generic",
-        "pins": [
-            PinDef("1", "P1", "passive", "R"),
-            PinDef("2", "P2", "passive", "R"),
-        ],
-    },
-    "PIN_HEADER_4P": {
-        "description": "4-Pin 2.54mm Pin Header",
-        "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
-        "connector_type": "generic",
-        "pins": [
-            PinDef("1", "P1", "passive", "R"),
-            PinDef("2", "P2", "passive", "R"),
-            PinDef("3", "P3", "passive", "R"),
-            PinDef("4", "P4", "passive", "R"),
-        ],
-    },
-    "JST_PH_2P": {
-        "description": "JST PH 2-Pin Connector (Battery/Sensor)",
-        "footprint": "Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical",
-        "connector_type": "power",
-        "pins": [
-            PinDef("1", "P1", "passive", "R"),
-            PinDef("2", "P2", "passive", "R"),
-        ],
-        "pin_positive": "1",
-        "pin_negative": "2",
-    },
-    "JST_PH_4P": {
-        "description": "JST PH 4-Pin Connector (I2C Sensor)",
-        "footprint": "Connector_JST:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical",
-        "connector_type": "signal",
-        "pins": [
-            PinDef("1", "VCC", "passive", "R"),
-            PinDef("2", "GND", "passive", "R"),
-            PinDef("3", "SDA", "passive", "R"),
-            PinDef("4", "SCL", "passive", "R"),
-        ],
-    },
-}
+CONNECTOR_DATABASE: dict[str, dict] = {}  # Migrated to ic_data/*.json (Task 178)
 
 
 class ConnectorTemplate(SubcircuitTemplate):
@@ -127,19 +71,27 @@ class ConnectorTemplate(SubcircuitTemplate):
         },
     ]
 
+    @classmethod
+    def _ic_db(cls) -> dict[str, dict[str, Any]]:
+        """Hardcoded DB merged with ic_data 'connector' entries so parts
+        registered via ``circuit-weaver register-ic`` are accepted.
+        """
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db(CONNECTOR_DATABASE, "connector")
+
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
         ic_name = params.get("ic", "BARREL_JACK_2.1MM")
-        if ic_name not in CONNECTOR_DATABASE:
-            errors.append(
-                f"Unknown connector '{ic_name}'. "
-                f"Available: {', '.join(CONNECTOR_DATABASE)}"
-            )
+        db = self._ic_db()
+        if ic_name not in db:
+            errors.append(f"Unknown connector '{ic_name}'. Available: {', '.join(db)}")
         return errors
 
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
         ic_name = params.get("ic", "BARREL_JACK_2.1MM")
-        ic_db = CONNECTOR_DATABASE.get(ic_name, CONNECTOR_DATABASE["BARREL_JACK_2.1MM"])
+        db = self._ic_db()
+        ic_db = db.get(ic_name, db["BARREL_JACK_2.1MM"])
         ref = params.get("ref", "J")
         positive_net = params.get("positive_net", "VIN")
         negative_net = params.get("negative_net", "GND")
@@ -198,11 +150,7 @@ class ConnectorTemplate(SubcircuitTemplate):
 
         else:
             # Generic connectors: user provides signal_nets
-            signal_list = (
-                [s.strip() for s in signal_nets_str.split(",") if s.strip()]
-                if signal_nets_str
-                else []
-            )
+            signal_list = [s.strip() for s in signal_nets_str.split(",") if s.strip()] if signal_nets_str else []
             for i, pin in enumerate(ic_db["pins"]):
                 if i < len(signal_list):
                     net = signal_list[i]

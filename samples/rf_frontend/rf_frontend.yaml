@@ -1,0 +1,36 @@
+# Sprint 41 corpus — RF / radio front-end archetype (placement-preview).
+# Demonstrates a minimal RF-focused board topology:
+#   - USB-C 5V input + AP2112K LDO → clean 3.3V analog rail
+#   - nRF52840 SoC with integrated 2.4 GHz radio + BLE
+#   - SMA edge-launch connector for off-board RF measurement
+# The RF path (SoC → SMA) is declared via an explicit interface so the
+# placement_readiness gate is satisfied without additional passives.
+
+project: RF_Frontend
+company: Demo Corp
+description: 2.4 GHz RF front-end with nRF52840
+
+power:
+  - type: ldo
+    ic: AP2112K-3.3
+    ref: U1
+    vin: 5
+    vout: 3.3
+    vin_net: VBUS_5V
+    rail_name: VDD_3P3
+
+digital:
+  - ic: nRF52840-QIAA
+    ref: U2
+    power_pins_extra:
+      "13": VDD_3P3
+    # pin 32 is the ANT output on nRF52840; wire it to the SMA center.
+    pin_nets_extra:
+      "32": RF_IN
+    no_connects: ["18", "19", "20"]
+
+connectors:
+  - ic: USB-C-PWR
+    ref: J1
+  - ic: SMA-EDGE
+    ref: J2

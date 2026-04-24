@@ -16,8 +16,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -27,59 +28,7 @@ from .base import (
 )
 
 # Known power mux ICs and their parameters
-POWER_MUX_IC_DATABASE = {
-    "TPS2113ADRBR": {
-        "description": "Auto-Switching Power Mux 2.8-5.5V 1A SON-8",
-        "footprint": "SON-8",
-        "vin_min": 2.8,
-        "vin_max": 5.5,
-        "iout_max": 1.0,
-        "ilim_formula_k": 375.0,  # Ilim = 375 / Rlim(kohm), so Rlim(ohm) = 375000 / Ilim(A)
-        "pins": [
-            PinDef("1", "IN1", "power_in", "L"),
-            PinDef("2", "D1", "input", "L"),
-            PinDef("3", "D2", "input", "L"),
-            PinDef("4", "IN2", "power_in", "L"),
-            PinDef("5", "GND", "power_in", "B"),
-            PinDef("6", "ILIM2", "input", "R"),
-            PinDef("7", "OUT", "power_out", "R"),
-            PinDef("8", "ILIM1", "input", "R"),
-        ],
-        "pin_in1": "1",
-        "pin_in2": "4",
-        "pin_gnd": "5",
-        "pin_out": "7",
-        "pin_ilim1": "8",
-        "pin_ilim2": "6",
-        "pin_d1": "2",
-        "pin_d2": "3",
-        "has_ilim": True,
-    },
-    "LTC4357CMS8": {
-        "description": "Ideal Diode OR Controller MSOP-8",
-        "footprint": "MSOP-8",
-        "vin_min": 9.0,
-        "vin_max": 80.0,
-        "iout_max": 10.0,  # limited by external MOSFET
-        "pins": [
-            PinDef("1", "VIN", "power_in", "L"),
-            PinDef("2", "GATE", "output", "R"),
-            PinDef("3", "SOURCE", "input", "R"),
-            PinDef("4", "GND", "power_in", "B"),
-            PinDef("5", "SHDN_N", "input", "L"),
-            PinDef("6", "VIN", "power_in", "L"),
-            PinDef("7", "VIN", "power_in", "L"),
-            PinDef("8", "VIN", "power_in", "L"),
-        ],
-        "pin_vin": "1",
-        "pin_vin_extra": ["6", "7", "8"],
-        "pin_gnd": "4",
-        "pin_gate": "2",
-        "pin_source": "3",
-        "pin_shdn": "5",
-        "has_ilim": False,
-    },
-}
+POWER_MUX_IC_DATABASE = LegacyDBProxy("power_mux")  # backed by ic_data/*.json (Task 178)
 
 
 class PowerMuxTemplate(SubcircuitTemplate):

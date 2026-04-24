@@ -1,1 +1,272 @@
-{}
+{
+  "74HC595D": {
+    "topology": "logic",
+    "description": "8-bit Serial-In Parallel-Out Shift Register SOIC-16",
+    "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
+    "power_rails": {
+      "VCC": 5.0
+    },
+    "pins": [
+      {
+        "number": "1",
+        "name": "QB",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "QC",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "QD",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "QE",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "QF",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "QG",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "QH",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "8",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "9",
+        "name": "QH_S",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "10",
+        "name": "SRCLR",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "11",
+        "name": "SRCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "12",
+        "name": "RCLK",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "13",
+        "name": "OE",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "14",
+        "name": "SER",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "15",
+        "name": "QA",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "16",
+        "name": "VCC",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vdd": [
+      "16"
+    ],
+    "pin_gnd": [
+      "8"
+    ]
+  },
+  "SJ-3523-SMT-TR": {
+    "topology": "connector",
+    "description": "3.5mm TRS Audio Jack SMT 3-pin",
+    "footprint": "Connector_Audio:Jack_3.5mm_CUI_SJ-3523-SMT_Vertical",
+    "power_rails": {},
+    "pins": [
+      {
+        "number": "1",
+        "name": "TIP",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "RING",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "SLEEVE",
+        "type": "passive",
+        "side": "B"
+      }
+    ],
+    "pin_vdd": [],
+    "pin_gnd": [
+      "3"
+    ]
+  },
+  "S2B-PH-K-S(LF)(SN)": {
+    "topology": "connector",
+    "description": "JST PH 2-pin SMD connector",
+    "footprint": "Connector_JST:JST_PH_S2B-PH-K_1x02_P2.00mm_Horizontal",
+    "power_rails": {},
+    "pins": [
+      {
+        "number": "1",
+        "name": "Pin1",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "Pin2",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": [],
+    "pin_gnd": []
+  },
+  "SS12D00G4": {
+    "topology": "connector",
+    "description": "SPDT Slide Switch SMD",
+    "footprint": "Button_Switch_SMD:SW_Slide_1P2T_CK_OS102011MA1QN1",
+    "power_rails": {},
+    "pins": [
+      {
+        "number": "1",
+        "name": "A",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "COM",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "B",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": [],
+    "pin_gnd": []
+  },
+  "19-217/GHC-YR1S2/3T": {
+    "topology": "led",
+    "description": "Green LED 0603 SMD Vf=2.0V",
+    "footprint": "LED_SMD:LED_0603_1608Metric",
+    "power_rails": {},
+    "pins": [
+      {
+        "number": "A",
+        "name": "A",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "K",
+        "name": "K",
+        "type": "passive",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": [],
+    "pin_gnd": []
+  },
+  "1N4148W": {
+    "topology": "diode",
+    "description": "Signal Diode SOD-323",
+    "footprint": "Diode_SMD:D_SOD-323",
+    "power_rails": {},
+    "pins": [
+      {
+        "number": "A",
+        "name": "A",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "K",
+        "name": "K",
+        "type": "passive",
+        "side": "L"
+      }
+    ],
+    "pin_vdd": [],
+    "pin_gnd": []
+  },
+  "TL3342F160QG": {
+    "topology": "connector",
+    "description": "SMD Tactile Switch 6x6mm 4-pin",
+    "footprint": "Button_SMD:SW_Push_1P1T_NO_Pad_6x6mm",
+    "power_rails": {},
+    "pins": [
+      {
+        "number": "1",
+        "name": "P1A",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "P1B",
+        "type": "passive",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "P2A",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "P2B",
+        "type": "passive",
+        "side": "R"
+      }
+    ],
+    "pin_vdd": [],
+    "pin_gnd": []
+  }
+}

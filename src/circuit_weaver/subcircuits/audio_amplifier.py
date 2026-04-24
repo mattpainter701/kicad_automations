@@ -28,68 +28,7 @@ from .base import (
 )
 
 # Known audio amplifier ICs and their parameters
-AUDIO_AMP_IC_DATABASE = {
-    "PAM8302AASCR": {
-        "description": "Class-D Mono Audio Amp 2.5W Filterless MSOP-8",
-        "footprint": "MSOP-8",
-        "vdd_min": 2.0,
-        "vdd_max": 5.5,
-        "output_power_w": 2.5,
-        "speaker_impedance": 4,
-        "gain_db": 24,
-        "filterless": True,
-        "interface": "analog",
-        "r_in": 20e3,  # typical input impedance
-        "pins": [
-            PinDef("1", "SD_N", "input", "L"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "VDD", "power_in", "T"),
-            PinDef("4", "VO_P", "output", "R"),
-            PinDef("5", "IN_P", "input", "L"),
-            PinDef("6", "IN_N", "input", "L"),
-            PinDef("7", "GND", "power_in", "B"),
-            PinDef("8", "VO_N", "output", "R"),
-        ],
-        "pin_vdd": "3",
-        "pin_gnd": "2",
-        "pin_sd": "1",
-        "pin_inp": "5",
-        "pin_inn": "6",
-        "pin_vop": "4",
-        "pin_von": "8",
-    },
-    "MAX98357AETE+T": {
-        "description": "I2S Class-D Mono Audio Amp 3.2W Filterless QFN-16",
-        "footprint": "QFN-16",
-        "vdd_min": 2.5,
-        "vdd_max": 5.5,
-        "output_power_w": 3.2,
-        "speaker_impedance": 4,
-        "gain_db": 0,  # gain set by GAIN pin strapping
-        "filterless": True,
-        "interface": "i2s",
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "VDD", "power_in", "T"),
-            PinDef("3", "DIN", "input", "L"),
-            PinDef("4", "BCLK", "input", "L"),
-            PinDef("5", "LRCLK", "input", "L"),
-            PinDef("6", "SD_MODE", "input", "L"),
-            PinDef("7", "GAIN", "input", "L"),
-            PinDef("8", "OUTP", "output", "R"),
-            PinDef("9", "OUTN", "output", "R"),
-        ],
-        "pin_vdd": "2",
-        "pin_gnd": "1",
-        "pin_din": "3",
-        "pin_bclk": "4",
-        "pin_lrclk": "5",
-        "pin_sd_mode": "6",
-        "pin_gain": "7",
-        "pin_outp": "8",
-        "pin_outn": "9",
-    },
-}
+AUDIO_AMP_IC_DATABASE: dict[str, dict] = {}  # Migrated to ic_data/*.json (Task 178)
 
 
 class AudioAmplifierTemplate(SubcircuitTemplate):

@@ -17,9 +17,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     format_resistance,
@@ -27,60 +28,7 @@ from .base import (
 )
 
 # Known relay driver ICs and their parameters
-RELAY_DRIVER_IC_DATABASE = {
-    "ULN2003A": {
-        "description": "7-Channel Darlington Driver SOIC-16",
-        "footprint": "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
-        "channels": 7,
-        "has_internal_diode": True,
-        "has_internal_base_r": True,
-        "vce_sat": 0.9,  # V at 350 mA
-        "iout_per_ch": 0.5,  # 500 mA per channel
-        "pins": [
-            PinDef("1", "IN1", "input", "L"),
-            PinDef("2", "IN2", "input", "L"),
-            PinDef("3", "IN3", "input", "L"),
-            PinDef("4", "IN4", "input", "L"),
-            PinDef("5", "IN5", "input", "L"),
-            PinDef("6", "IN6", "input", "L"),
-            PinDef("7", "IN7", "input", "L"),
-            PinDef("8", "GND", "power_in", "B"),
-            PinDef("9", "COM", "power_in", "T"),
-            PinDef("10", "OUT7", "output", "R"),
-            PinDef("11", "OUT6", "output", "R"),
-            PinDef("12", "OUT5", "output", "R"),
-            PinDef("13", "OUT4", "output", "R"),
-            PinDef("14", "OUT3", "output", "R"),
-            PinDef("15", "OUT2", "output", "R"),
-            PinDef("16", "OUT1", "output", "R"),
-        ],
-        "pin_gnd": "8",
-        "pin_com": "9",
-        # Input pins 1-7, output pins 16 down to 10 (OUT1=16, OUT7=10)
-        "in_pins": ["1", "2", "3", "4", "5", "6", "7"],
-        "out_pins": ["16", "15", "14", "13", "12", "11", "10"],
-    },
-    "DISCRETE_NPN": {
-        "description": "NPN BJT Relay Driver SOT-23 (2N2222 equivalent)",
-        "footprint": "Package_TO_SOT_SMD:SOT-23",
-        "channels": 1,
-        "has_internal_diode": False,
-        "has_internal_base_r": False,
-        "vce_sat": 0.3,
-        "iout_per_ch": 0.8,  # typical small SOT-23 NPN
-        "beta_min": 100,
-        "pins": [
-            PinDef("1", "B", "input", "L"),
-            PinDef("2", "E", "passive", "B"),
-            PinDef("3", "C", "passive", "T"),
-        ],
-        "pin_b": "1",
-        "pin_e": "2",
-        "pin_c": "3",
-        "in_pins": ["1"],
-        "out_pins": ["3"],
-    },
-}
+RELAY_DRIVER_IC_DATABASE = LegacyDBProxy("relay_driver")  # backed by ic_data/*.json (Task 178)
 
 
 class RelayDriverTemplate(SubcircuitTemplate):

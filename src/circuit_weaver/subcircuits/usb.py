@@ -11,12 +11,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
+from ..component_db import BypassCap, ComponentDef, StrapConfig
 from .base import (
     FP_0402C,
     FP_0402R,
     FP_0805C,
     BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -28,148 +29,14 @@ from .base import (
 # USB Controller IC Database
 # ================================================================
 
-USB_CONTROLLER_IC_DATABASE = {
-    "CYUSB3014": {
-        "description": "USB 3.0 SuperSpeed Controller (FX3) 121-BGA",
-        "footprint": "BGA-121",
-        "power_rails": {
-            "VDD": 1.2,  # core supply
-            "VBUS": 5.0,  # USB bus power
-            "DVDDIO": 1.8,  # digital I/O supply
-            "AVDD": 1.2,  # analog supply
-        },
-        "pins": [
-            # Power
-            PinDef("A1", "VDD", "power_in", "L"),
-            PinDef("A2", "DVDDIO", "power_in", "L"),
-            PinDef("A11", "GND", "power_in", "B"),
-            PinDef("B1", "AVDD", "power_in", "L"),
-            PinDef("B11", "VBUS", "power_in", "L"),
-            # USB 3.0 SS
-            PinDef("K1", "SSRX_P", "input", "R"),
-            PinDef("K2", "SSRX_N", "input", "R"),
-            PinDef("K3", "SSTX_P", "output", "R"),
-            PinDef("K4", "SSTX_N", "output", "R"),
-            # USB 2.0
-            PinDef("J1", "D_P", "bidirectional", "R"),
-            PinDef("J2", "D_N", "bidirectional", "R"),
-            # GPIF II bus (directly exposed as data bus)
-            PinDef("C1", "GPIF_D0", "bidirectional", "T"),
-            PinDef("C2", "GPIF_D1", "bidirectional", "T"),
-            PinDef("C3", "GPIF_CLK", "output", "T"),
-            PinDef("C4", "GPIF_CTL0", "output", "T"),
-            # Boot mode pins
-            PinDef("H1", "PMODE0", "input", "L"),
-            PinDef("H2", "PMODE1", "input", "L"),
-            PinDef("H3", "PMODE2", "input", "L"),
-            # SPI
-            PinDef("G1", "SPI_CLK", "output", "R"),
-            PinDef("G2", "SPI_SSN", "output", "R"),
-            PinDef("G3", "SPI_MISO", "input", "R"),
-            PinDef("G4", "SPI_MOSI", "output", "R"),
-            # Reset
-            PinDef("F1", "RESET_N", "input", "L"),
-            # Clock
-            PinDef("E1", "XTALIN", "input", "L"),
-            PinDef("E2", "XTALOUT", "output", "L"),
-        ],
-        "pin_vdd": ["A1"],
-        "pin_power_rails": {
-            "VDD": ["A1"],
-            "DVDDIO": ["A2"],
-            "AVDD": ["B1"],
-            "VBUS": ["B11"],
-        },
-        "pin_gnd": ["A11"],
-        "boot_straps": {
-            # SPI slave boot: PMODE[2:0] = 1,0,Z (VDD, GND, float)
-            "spi_slave": {
-                "PMODE2": ("VDD", "pull_up"),  # 10k to VDD
-                "PMODE1": ("GND", "pull_down"),  # 10k to GND
-                # PMODE0 left floating (no strap)
-            },
-        },
-        "data_buses": ["GPIF", "SPI"],
-    },
-    "CH340G": {
-        "description": "USB-UART Bridge SOP-16",
-        "footprint": "SOP-16",
-        "power_rails": {
-            "VCC": 3.3,  # supply
-        },
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "TXD", "output", "R"),
-            PinDef("3", "RXD", "input", "R"),
-            PinDef("4", "V3", "power_out", "R"),
-            PinDef("5", "D_P", "bidirectional", "L"),
-            PinDef("6", "D_N", "bidirectional", "L"),
-            PinDef("7", "XI", "input", "L"),
-            PinDef("8", "XO", "output", "L"),
-            PinDef("9", "CTS_N", "input", "R"),
-            PinDef("10", "DSR_N", "input", "R"),
-            PinDef("11", "RI_N", "input", "R"),
-            PinDef("12", "DCD_N", "input", "R"),
-            PinDef("13", "DTR_N", "output", "R"),
-            PinDef("14", "RTS_N", "output", "R"),
-            PinDef("15", "R232", "input", "L"),
-            PinDef("16", "VCC", "power_in", "L"),
-        ],
-        "pin_vdd": ["16"],
-        "pin_gnd": ["1"],
-        "boot_straps": {},
-        "data_buses": ["UART"],
-    },
-}
+USB_CONTROLLER_IC_DATABASE: dict[str, dict] = {}  # Migrated to ic_data/*.json (Task 178)
 
 
 # ================================================================
 # USB Hub IC Database
 # ================================================================
 
-USB_HUB_IC_DATABASE = {
-    "USB2514B": {
-        "description": "4-Port USB 2.0 Hub Controller QFN-36",
-        "footprint": "QFN-36",
-        "power_rails": {
-            "VDD33": 3.3,  # 3.3V core + I/O
-        },
-        "pins": [
-            # Power
-            PinDef("1", "VDD33", "power_in", "L"),
-            PinDef("36", "GND", "power_in", "B"),
-            # Upstream port
-            PinDef("2", "USBDM0", "bidirectional", "L"),
-            PinDef("3", "USBDP0", "bidirectional", "L"),
-            # Downstream port 1
-            PinDef("4", "USBDM1", "bidirectional", "R"),
-            PinDef("5", "USBDP1", "bidirectional", "R"),
-            # Downstream port 2
-            PinDef("6", "USBDM2", "bidirectional", "R"),
-            PinDef("7", "USBDP2", "bidirectional", "R"),
-            # Downstream port 3
-            PinDef("8", "USBDM3", "bidirectional", "R"),
-            PinDef("9", "USBDP3", "bidirectional", "R"),
-            # Downstream port 4
-            PinDef("10", "USBDM4", "bidirectional", "R"),
-            PinDef("11", "USBDP4", "bidirectional", "R"),
-            # Bias and PLL
-            PinDef("12", "RBIAS", "passive", "B"),
-            PinDef("13", "PLLFILT", "passive", "B"),
-            # Reset
-            PinDef("14", "RESET_N", "input", "L"),
-            # Config
-            PinDef("15", "TEST", "input", "B"),
-            PinDef("16", "XTALIN", "input", "L"),
-            PinDef("17", "XTALOUT", "output", "L"),
-        ],
-        "pin_vdd": ["1"],
-        "pin_gnd": ["36"],
-        "rbias_value": 12e3,  # 12k to GND (datasheet requirement)
-        "pllfilt_value": 1e-6,  # 1uF PLL filter cap to GND
-        "max_ports": 4,
-    },
-}
+USB_HUB_IC_DATABASE = LegacyDBProxy("usb_hub")  # backed by ic_data/*.json (Task 178)
 
 
 class USBControllerTemplate(SubcircuitTemplate):
@@ -226,13 +93,25 @@ class USBControllerTemplate(SubcircuitTemplate):
         },
     ]
 
+    @classmethod
+    def _ic_db(cls) -> dict[str, dict[str, Any]]:
+        """Hardcoded DB merged with ic_data 'usb_controller' entries so
+        parts registered via ``circuit-weaver register-ic`` are accepted
+        by :meth:`validate_params` / :meth:`generate`. Same pattern as
+        :class:`AudioAmplifierTemplate`, :class:`MotorDriverTemplate`,
+        :class:`ProtectionTemplate`. Legacy hardcoded entries win on
+        collision (per :func:`merge_into_legacy_db`).
+        """
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db(USB_CONTROLLER_IC_DATABASE, "usb_controller")
+
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
         ic_name = params.get("ic")
-        if ic_name and ic_name not in USB_CONTROLLER_IC_DATABASE:
-            errors.append(
-                f"Unknown USB controller IC '{ic_name}'. Available: {', '.join(USB_CONTROLLER_IC_DATABASE.keys())}"
-            )
+        db = self._ic_db()
+        if ic_name and ic_name not in db:
+            errors.append(f"Unknown USB controller IC '{ic_name}'. Available: {', '.join(db.keys())}")
         mode = params.get("mode", "device")
         if mode not in ("device", "host"):
             errors.append(f"Invalid mode '{mode}'. Must be 'device' or 'host'.")
@@ -253,7 +132,8 @@ class USBControllerTemplate(SubcircuitTemplate):
             usb_dm_net: str — USB D- net (default: "USB_DM_{ref}")
         """
         ic_name = params.get("ic", "CYUSB3014")
-        ic_db = USB_CONTROLLER_IC_DATABASE.get(ic_name, USB_CONTROLLER_IC_DATABASE["CYUSB3014"])
+        db = self._ic_db()
+        ic_db = db.get(ic_name, db["CYUSB3014"])
         ref = params.get("ref", "U")
         mode = params.get("mode", "device")
         data_bus = params.get("data_bus")
@@ -286,11 +166,23 @@ class USBControllerTemplate(SubcircuitTemplate):
 
         # ---- Signal pin assignments ----
         pin_nets = {}
-        # USB D+/D- connections
+        # USB D+/D- connections. Prefer explicit pin_usb_dp / pin_usb_dm
+        # number fields (what ic_data entries and `circuit-weaver register-ic`
+        # produce), then fall back to name matching on D_P/D_N or USB_DP/
+        # USB_DM so both hardcoded legacy entries and JSON-sourced entries
+        # wire correctly.
+        dp_pin = str(ic_db.get("pin_usb_dp", "")).strip()
+        dm_pin = str(ic_db.get("pin_usb_dm", "")).strip()
+        if dp_pin:
+            pin_nets[dp_pin] = usb_dp_net
+        if dm_pin:
+            pin_nets[dm_pin] = usb_dm_net
         for pin in ic_db["pins"]:
-            if pin.name == "D_P":
+            if pin.number in pin_nets:
+                continue
+            if pin.name in ("D_P", "USB_DP"):
                 pin_nets[pin.number] = usb_dp_net
-            elif pin.name == "D_N":
+            elif pin.name in ("D_N", "USB_DM"):
                 pin_nets[pin.number] = usb_dm_net
 
         # Wire all remaining non-power, non-boot-mode signal pins to named nets.

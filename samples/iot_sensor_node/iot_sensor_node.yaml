@@ -1,5 +1,8 @@
 # Complex: ESP32 IoT sensor node with dual-rail power and BME280
-# Demonstrates a full system — USB-C input, buck + LDO power, MCU, environmental sensor
+# Demonstrates a full system — USB-C input, buck + LDO power, MCU, environmental sensor.
+# Uses Sprint 41 pin_nets_extra / no_connects surgical overrides to wire the
+# ESP32 to the BME280 over I2C and silence unused UART0 pins so the design
+# meets the placement_readiness gate.
 project: IoT_Sensor_Node
 company: Demo Corp
 description: WiFi-enabled environmental sensor — ESP32 + BME280 with dual-rail power
@@ -25,10 +28,22 @@ power:
 digital:
   - ic: ESP32-WROOM-32E
     ref: U3
+    # IO21 + IO22 are the canonical ESP32 I2C pins; wire them to the
+    # shared bus that the BME280 uses.
+    pin_nets_extra:
+      "33": I2C_SDA
+      "36": I2C_SCL
+    # UART0 (pins 34/35) is reserved for programming; no header in this
+    # design, so mark intentional no-connect instead of leaving dangling.
+    no_connects: ["34", "35"]
 
 sensors:
   - ic: BME280
     ref: U4
+    # SDO selects the I2C address (tied to GND → 0x76). Route to GND so
+    # the schematic is placement-ready rather than dangling on BME_SDO.
+    power_pins_extra:
+      "5": GND
 
 connectors:
   - ic: USB-C-PWR

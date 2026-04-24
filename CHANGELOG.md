@@ -2,6 +2,155 @@
 
 ## [Unreleased]
 
+### Sprint 41 — Resolver + Template UX Follow-ups
+
+Two related failure modes surfaced by a user running the design wizard
+on a novel IC (RP2040-based toy phone):
+
+### Fixed
+
+- **`SymbolResolver` now caches negative resolutions for the life of the
+  process** (Task 175). A design with N identical unresolvable parts
+  triggers 1 tier-chain walk, not N. The toy_phone 12-button matrix
+  (`TS-1187A-B-A-B`) went from 12 DigiKey round trips per validate to
+  1. `SymbolResolver.clear_unresolved_cache()` exposed for
+  long-running callers that want to retry after a transient flap.
+- **Legacy topology templates now honor `register-ic` pin maps**
+  (Task 176). `USBControllerTemplate`, `ConnectorTemplate`,
+  `USBCConnectorTemplate`, and `EEPROMTemplate` previously only
+  consulted their own hardcoded `*_IC_DATABASE`. Registering a novel
+  MPN (e.g. RP2040 as a `usb_controller`) silently fell back to the
+  template's default IC, so the net-connectivity validator flagged
+  `USB_DP` dangling even though the user's registered pin map put
+  pin 43 on USB_DP. Each template now merges `ic_data` entries
+  matching its topology via `merge_into_legacy_db()` — same pattern
+  `audio_amplifier` / `motor_driver` / `protection` use.
+  `USBControllerTemplate.generate()` also honors explicit
+  `pin_usb_dp` / `pin_usb_dm` number fields from the JSON
+  registration, falling back to `D_P` / `D_N` / `USB_DP` / `USB_DM`
+  pin-name matching. Remaining ~25 legacy templates with hardcoded
+  DBs tracked as Sprint 42 cleanup.
+- **Placement preview `.kicad_pcb` files now use KiCad's fixed 2-layer
+  hash** (Task 177). `pcb_export.py` had been emitting a KiCad-5-era
+  hardcoded layer table (`B.Cu=31`, `ECO1.User`, `ECO2.User`) that
+  KiCad 10 rejects on load with `Layer ECO1.User ... is not fixed layer
+  hash`. The placement board now uses KiCad's canonical layer ids and
+  names (`B.Cu=2`, `Eco1.User`, `Eco2.User`, plus `User.1-User.4`),
+  so `*_placement.kicad_pcb` opens again as the intended layout hint.
+
+### Tests
+
+- Added `test_unresolved_mpn_is_cached_within_process` and
+  `test_unresolved_cache_does_not_shadow_successful_resolutions` in
+  `tests/test_resolver_chain.py` (Task 175).
+- Added `test_usb_controller_hotload_via_register_ic`,
+  `test_usb_controller_generate_wires_registered_ic_usb_pins`,
+  `test_connector_hotload_via_register_ic`,
+  `test_usb_c_connector_hotload_via_register_ic`,
+  `test_eeprom_hotload_via_register_ic` in
+  `tests/test_legacy_template_hotload.py` (Task 176).
+- Added `test_preview_pcb_uses_kicad_fixed_layer_ids` in
+  `tests/test_pcb_preview_invariants.py` (Task 177).
+- Added `tests/test_template_smoke.py` — 74 tests iterating every
+  template in the default registry, asserting (a) merged IC DB is
+  non-empty, (b) `generate()` returns at least one ComponentDef.
+  Covers the 28+ templates the 9-archetype corpus doesn't exercise
+  (Task 178).
+- Full suite: **825 passed, 1 skipped, 0 failed**.
+
+### Fixed (continued)
+
+- **Every hardcoded `*_IC_DATABASE` dict drained into
+  `ic_data/*.json`** (Task 178). All 84 IC entries across 37 legacy
+  subcircuit-template databases now live in JSON, tagged with the
+  correct topology so every template's merge view resolves them.
+  New `subcircuits.base.LegacyDBProxy` provides a dict-like shim so
+  existing template code reading `XYZ_IC_DATABASE[key]` / `.get()` /
+  `in` / `.keys()` works unchanged against a live JSON view —
+  `register_ic()` entries become visible on the next access, no
+  process restart needed. Subtype info that used to ride on
+  `topology` (`low_side`/`high_side`, `series`/`shunt`, `buck`/
+  `linear_sink`) is preserved as `topology_subtype`; the 3 templates
+  that dispatched on it (`mosfet_switch`, `voltage_reference`,
+  `led_driver`) now read the new field. 8 duplicate MPNs living in
+  two JSON files (including `AT25SF128A` as both `component` and
+  `eeprom`) deduped — topology-specific entry wins, generic
+  `component` copy removed.
+
+### Sprint 41 — Circuit Validity Generational Requirements
+
+Completes the generational-requirements story started in Sprint 40. A
+user can now describe a "dynamic and vastly different" circuit in YAML
+and get a guaranteed placement-ready `.kicad_sch` back — dangling
+buses, missing I2C pull-ups, floating enables, orphan interfaces, and
+unverified-stub ICs are either auto-repaired in place or raise a hard
+generation error with a specific fix suggestion.
+
+### Added
+
+- **New `placement_readiness` validation category** (`placement_readiness.py`)
+  that promotes every placement-blocking check — `single-pin-net`,
+  `undriven-net`, `i2c-missing-pullup`, `spi-floating-cs`,
+  `uart-unpaired`, `floating-enable`, `floating-power-pin`,
+  `unverified-pinout`, plus a new `orphan-interface` detector — into a
+  hard category that `generate_artifacts` always blocks on.
+  `_HARD_ERROR_CATEGORIES` is now
+  `{structural, implementation, placement_readiness}`; soft electrical
+  warnings remain bypassable via `--no-require-valid`.
+- **`generational_repair.py`** auto-repair pass. Runs inside
+  `compile_design_ir` after primary resolution, synthesizes a
+  PULLUPS_ONLY I2C bus block when a named I2C bus lacks pull-ups, and
+  records each fix in `placement_readiness.json`. Users opt out via
+  `auto_repair: false` at the top of the spec.
+- **Surgical per-IC YAML overrides** (`project_spec._apply_partial_pin_overrides`):
+  `pin_nets_extra`, `power_pins_extra`, and `no_connects` merge onto
+  registry defaults so users can rewire an MCU's I2C pins or mark an
+  unused UART NC without re-declaring every other pin via `pin_map`.
+  Stale template boundary ports retire automatically when their net is
+  replaced.
+- **`_synthesize_shared_net_interfaces`**: every non-power signal that
+  shares a net across two or more blocks now gets an auto-declared
+  `DesignInterface`, satisfying the MVP's `undeclared-shared-net`
+  gate without user boilerplate.
+- **Four new corpus archetypes** (`samples/`) — `inverter_gate_driver`,
+  `wearable_bms`, `rf_frontend`, `high_voltage_isolation` — closing
+  out the Sprint 40 follow-up archetype list.
+- **`placement_readiness.json`** artifact written alongside
+  `validation_report.json` in every `generate` output. Shape:
+  `{ready: bool, blocking: [...], auto_repaired: [...], summary: {...}}`.
+
+### Changed
+
+- **`_bus_pairs` relaxed** to trigger on any named I2C bus with at
+  least one participant (previously required ≥ 2). A lone sensor on
+  `I2C_SDA` still needs pull-ups; the new detector covers that case.
+- **`_build_net_pin_map` in the validator** now models bypass caps and
+  strap resistors as full 2-terminal elements — a pull-up net no
+  longer reads as single-pin just because the only "real" IC pin on
+  it is the one the strap attaches to.
+- **`_POWER_NET_PREFIXES`** expanded with `VBAT`, `VSS`, `AGND`,
+  `DGND`, `PGND` so battery-only rails aren't flagged as
+  `undeclared-shared-net`.
+- **`design_ir_to_engine_spec`** preserves `block.ic` on template
+  blocks, fixing a pre-existing bug where a user-selected IC (e.g.
+  `ic: CH340G` on a `usb_controller`) silently fell back to the
+  template's first default (CYUSB3014).
+- **Existing samples fixed to be placement-ready**: `iot_sensor_node`,
+  `battery_iot_sensor`, `motor_controller`, `usb_uart_bridge`,
+  `oled_display_module`, and the built-in `examples/iot_sensor.yaml`
+  now use the new surgical overrides to wire their MCU I2C / SWD /
+  UART pins cleanly.
+
+### Tests
+
+- **9-archetype corpus**: `tests/test_generation_corpus.py` now runs
+  `generate_artifacts` over 9 samples and enforces a fourth invariant:
+  `placement_readiness.json` reports `ready: true`. Breadth guard
+  raised from ≥ 5 to ≥ 9.
+- Added `test_auto_repair_inserts_i2c_pullups` and
+  `test_auto_repair_disabled_via_spec_flag` covering Task B directly.
+- Full suite at sprint close: **743 passed, 1 skipped, 0 failed**.
+
 ### Sprint 40 — Generation Quality Regression Repair
 
 Repaired regressions introduced during the dynamic IC designer, placement

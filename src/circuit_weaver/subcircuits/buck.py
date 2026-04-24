@@ -15,9 +15,10 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     buck_inductor,
@@ -35,55 +36,7 @@ from .base import (
 )
 
 # Known buck converter ICs and their parameters
-BUCK_IC_DATABASE = {
-    "AP62300": {
-        "description": "3A Sync Buck Regulator SOT-23-6",
-        "footprint": "SOT-23-6",
-        "vref": 0.8,
-        "fsw": 600e3,  # 600 kHz typical
-        "iout_max": 3.0,
-        "pins": [
-            PinDef("1", "GND", "power_in", "B"),
-            PinDef("2", "SW", "output", "T"),
-            PinDef("3", "VIN", "power_in", "L"),
-            PinDef("4", "FB", "input", "R"),
-            PinDef("5", "EN", "input", "L"),
-            PinDef("6", "BST", "passive", "T"),
-        ],
-        "pin_vin": "3",
-        "pin_gnd": "1",
-        "pin_sw": "2",
-        "pin_fb": "4",
-        "pin_en": "5",
-        "pin_bst": "6",
-        "r_fbb_default": 100e3,  # 100k bottom resistor (DS41958)
-    },
-    "TPS62088": {
-        "description": "2A Sync Buck 3MHz SOT-583-8",
-        "footprint": "SOT-583-8",
-        "vref": 0.6,
-        "fsw": 3e6,  # 3 MHz
-        "iout_max": 2.0,
-        "pins": [
-            PinDef("1", "VIN", "power_in", "L"),
-            PinDef("2", "GND", "power_in", "B"),
-            PinDef("3", "EN", "input", "L"),
-            PinDef("4", "FB", "input", "R"),
-            PinDef("5", "SW", "output", "T"),
-            PinDef("6", "PG", "output", "R"),
-            PinDef("7", "VOS", "input", "R"),
-            PinDef("8", "EPAD", "power_in", "B"),
-        ],
-        "pin_vin": "1",
-        "pin_gnd": "2",
-        "pin_gnd_extra": ["8"],
-        "pin_sw": "5",
-        "pin_fb": "4",
-        "pin_en": "3",
-        "pin_bst": None,  # internal bootstrap
-        "r_fbb_default": 200e3,
-    },
-}
+BUCK_IC_DATABASE = LegacyDBProxy("buck")  # backed by ic_data/*.json (Task 178)
 
 
 class BuckConverterTemplate(SubcircuitTemplate):

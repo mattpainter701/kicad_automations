@@ -270,13 +270,14 @@ updated = ingest_pcb_feedback(spec, pcb_feedback)
 
 ### Validation groups
 
-`validate_design` runs four grouped checks and returns a structured `ValidationReport`:
+`validate_design` runs five grouped checks and returns a structured `ValidationReport`:
 
 | Group | What it checks |
 |-|-|
 | `structural` | Topology, block connections, hierarchy integrity |
 | `electrical` | Power rails, ground nets, net continuity |
 | `implementation` | Part bindings, footprint assignments, pinout verification |
+| `placement_readiness` | **Hard-gated** — dangling buses, missing I2C pull-ups, orphan interfaces, floating enables; never bypassable by `--no-require-valid` |
 | `presentation` | Labels, pin numbers, sheet readability |
 
 ### HTTP API
@@ -297,7 +298,17 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.27.0
+## What's New in v0.28.0 (unreleased)
+
+| Sprint | Feature |
+|-|-|
+| 41 | **Every hardcoded `*_IC_DATABASE` dict drained into `ic_data/*.json`** — 84 IC entries across 37 subcircuit templates now live in JSON. New `subcircuits.base.LegacyDBProxy` provides a dict-like shim over `merge_into_legacy_db({}, topology)` so existing template code keeps working. `register_ic()` entries are visible to every template immediately — no more "I registered RP2040, why doesn't the usb_controller template see it?" |
+| 41 | **`SymbolResolver` caches negative resolutions per process** — a design with N identical unresolvable parts (the toy-phone 12-button matrix case) now triggers 1 tier-chain walk, not N. `SymbolResolver.clear_unresolved_cache()` exposed for long-running callers |
+| 41 | **Placement preview PCB uses KiCad 10 fixed layer ids** — `*_placement.kicad_pcb` opens cleanly again after KiCad 10 started rejecting `ECO1.User` / `ECO2.User` as "not fixed layer hash" |
+| 41 | **74-test every-template smoke regression net** — iterates every template in the default registry, asserts `generate()` returns a valid ComponentDef with pins. Covers the 28+ templates the 9-archetype corpus doesn't exercise |
+| 41 | **Circuit Validity Generational Requirements** — new `placement_readiness` validation category promotes placement-blocking checks (dangling buses, missing I2C pull-ups, floating enables, orphan interfaces, unverified-stub ICs) into a hard category that `generate_artifacts` always blocks on. `generational_repair.py` auto-synthesizes missing PULLUPS_ONLY blocks; opt out via `auto_repair: false` in the spec |
+
+<details><summary>v0.27.0</summary>
 
 | Sprint | Feature |
 |-|-|
@@ -309,6 +320,8 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 | 40 | **Five-archetype generation regression corpus** — `tests/test_generation_corpus.py` runs `generate_artifacts` end-to-end on LED driver, IoT sensor, motor controller, USB bridge, and FPGA power carrier samples, enforcing all three Sprint 40 invariants. Breadth-guard test keeps the corpus at ≥ 5 archetypes |
 | 39 | **Step 2 IC research stays in the current agent session** across Codex / Claude / OpenCode instead of delegating to a spawned `/research` / `research-analyst` path that could trigger model conflicts; workflow docs and skill prompts now describe the real behavior |
 | 39 | **Research-depth latency selector** — `design-wizard --research-depth {fast,normal}` persists into spec metadata; `doctor` reports the effective depth; Circuit Weaver skill uses a smaller query budget in `fast` mode |
+
+</details>
 
 <details><summary>v0.26.1</summary>
 

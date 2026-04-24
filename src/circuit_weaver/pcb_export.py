@@ -19,29 +19,37 @@ from pathlib import Path
 
 from .component_db import ComponentDef
 
-# KiCad standard 2-layer board (F.Cu + B.Cu) with mask/silk/paste/fab layers
+# KiCad 10 validates fixed layers against canonical ids/names when loading a
+# board. The older KiCad 5-era numbering/casing used here previously emitted
+# B.Cu=31 and ECO1.User/ECO2.User, which triggers "not fixed layer hash" load
+# failures for placement preview boards. Keep this table aligned with a board
+# freshly written by KiCad 10.
 _LAYERS = """\
   (layers
     (0 "F.Cu" signal)
-    (31 "B.Cu" signal)
-    (32 "B.Adhes" user "B.Adhesive")
-    (33 "F.Adhes" user "F.Adhesive")
-    (34 "B.Paste" user)
-    (35 "F.Paste" user)
-    (36 "B.SilkS" user "B.Silkscreen")
-    (37 "F.SilkS" user "F.Silkscreen")
-    (38 "B.Mask" user "B.Mask")
-    (39 "F.Mask" user "F.Mask")
-    (40 "Dwgs.User" user "User.Drawings")
-    (41 "Cmts.User" user "User.Comments")
-    (42 "ECO1.User" user "User.Eco1")
-    (43 "ECO2.User" user "User.Eco2")
-    (44 "Edge.Cuts" user)
-    (45 "Margin" user)
-    (46 "B.CrtYd" user "B.Courtyard")
-    (47 "F.CrtYd" user "F.Courtyard")
-    (48 "B.Fab" user "B.Fab")
-    (49 "F.Fab" user "F.Fab")
+    (2 "B.Cu" signal)
+    (9 "F.Adhes" user "F.Adhesive")
+    (11 "B.Adhes" user "B.Adhesive")
+    (13 "F.Paste" user)
+    (15 "B.Paste" user)
+    (5 "F.SilkS" user "F.Silkscreen")
+    (7 "B.SilkS" user "B.Silkscreen")
+    (1 "F.Mask" user)
+    (3 "B.Mask" user)
+    (17 "Dwgs.User" user "User.Drawings")
+    (19 "Cmts.User" user "User.Comments")
+    (21 "Eco1.User" user "User.Eco1")
+    (23 "Eco2.User" user "User.Eco2")
+    (25 "Edge.Cuts" user)
+    (27 "Margin" user)
+    (31 "F.CrtYd" user "F.Courtyard")
+    (29 "B.CrtYd" user "B.Courtyard")
+    (35 "F.Fab" user)
+    (33 "B.Fab" user)
+    (39 "User.1" user)
+    (41 "User.2" user)
+    (43 "User.3" user)
+    (45 "User.4" user)
   )"""
 
 _SETUP = """\

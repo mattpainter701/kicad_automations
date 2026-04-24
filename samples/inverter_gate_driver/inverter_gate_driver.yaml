@@ -1,0 +1,32 @@
+# Sprint 41 corpus — inverter control board (placement-preview).
+# Covers the control-side archetype of a grid-tie / motor inverter:
+# a 24V input, buck converter powering the MCU, and a second LDO for
+# a clean analog rail used by current-sense / isolated feedback.
+# Power-stage MOSFETs and gate drivers live on a separate board.
+
+project: Inverter_Gate_Driver
+company: Demo Corp
+description: Inverter control board — 24V → 3.3V buck + 1.8V analog LDO
+
+power:
+  - type: buck
+    ic: AP62300
+    ref: U1
+    vin: 24
+    vout: 3.3
+    iout: 1
+    vin_net: VIN_24V
+    rail_name: VDD_3P3
+    en_net: VIN_24V
+  - type: ldo
+    ic: MCP1700-3302E
+    ref: U2
+    vin: 3.3
+    vout: 1.8
+    vin_net: VDD_3P3
+    rail_name: VDD_1P8_ANALOG
+
+digital:
+  - ic: STM32F103C8T6
+    ref: U3
+    no_connects: ["7", "34", "37", "44"]

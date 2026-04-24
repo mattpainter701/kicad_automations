@@ -13,8 +13,9 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
-    FP_0402R,
     BoundaryPort,
+    FP_0402R,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -26,65 +27,7 @@ from .base import (
 )
 
 # Known battery fuel gauge ICs and their parameters
-BATTERY_MONITOR_IC_DATABASE = {
-    "MAX17048G+T": {
-        "description": "ModelGauge Li-Ion Fuel Gauge DFN-8",
-        "footprint": "DFN-8-EP",
-        "vdd_range": (2.5, 4.5),
-        "i2c_addr": "0x36",
-        "method": "ModelGauge (voltage-based)",
-        "has_rsense": False,
-        "pins": [
-            PinDef("1", "CTG", "input", "B"),
-            PinDef("2", "CELL", "input", "L"),
-            PinDef("3", "VDD", "power_in", "T"),
-            PinDef("4", "GND", "power_in", "B"),
-            PinDef("5", "GND", "power_in", "B"),
-            PinDef("6", "QSTRT", "input", "L"),
-            PinDef("7", "SDA", "bidirectional", "R"),
-            PinDef("8", "SCL", "input", "R"),
-        ],
-        "pin_vdd": "3",
-        "pin_gnd": "4",
-        "pin_cell": "2",
-        "pin_ctg": "1",
-        "pin_qstrt": "6",
-        "pin_sda": "7",
-        "pin_scl": "8",
-        # Extra GND pins wired in power_pins
-        "extra_gnd_pins": ["5"],
-    },
-    "BQ27441-G1A": {
-        "description": "Impedance Track Li-Ion Fuel Gauge DSBGA-12",
-        "footprint": "DSBGA-12",
-        "vdd_range": (2.6, 4.5),
-        "i2c_addr": "0x55",
-        "method": "Impedance Track (coulomb counting)",
-        "has_rsense": True,
-        "rsense_default": 0.010,  # 10 milliohm
-        "pins": [
-            PinDef("1", "VDD", "power_in", "T"),
-            PinDef("2", "SDA", "bidirectional", "R"),
-            PinDef("3", "SCL", "input", "R"),
-            PinDef("4", "GPOUT", "output", "R"),
-            PinDef("5", "VSS", "power_in", "B"),
-            PinDef("6", "SRP", "input", "L"),
-            PinDef("7", "SRN", "input", "L"),
-            PinDef("8", "BAT", "power_in", "L"),
-            PinDef("9", "BIN", "input", "L"),
-        ],
-        "pin_vdd": "1",
-        "pin_gnd": "5",
-        "pin_sda": "2",
-        "pin_scl": "3",
-        "pin_gpout": "4",
-        "pin_srp": "6",
-        "pin_srn": "7",
-        "pin_bat": "8",
-        "pin_bin": "9",
-        "extra_gnd_pins": [],
-    },
-}
+BATTERY_MONITOR_IC_DATABASE = LegacyDBProxy("battery_monitor")  # backed by ic_data/*.json (Task 178)
 
 
 class BatteryMonitorTemplate(SubcircuitTemplate):

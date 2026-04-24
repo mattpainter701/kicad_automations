@@ -17,10 +17,11 @@ from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
+    BoundaryPort,
     FP_0402C,
     FP_0402R,
     FP_0805C,
-    BoundaryPort,
+    LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
@@ -32,58 +33,7 @@ from .base import (
 )
 
 # Known instrumentation amplifier ICs and their parameters
-SENSOR_FRONTEND_IC_DATABASE = {
-    "INA128PA": {
-        "description": "Precision Instrumentation Amplifier SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "supply_range": (4.5, 36.0),  # single-supply V range
-        "gain_formula": "ina128",  # G = 1 + 50000 / Rg
-        "r_internal": 50000.0,  # 50k internal feedback resistance
-        "pins": [
-            PinDef("1", "RG_N", "input", "L"),
-            PinDef("2", "IN_N", "input", "L"),
-            PinDef("3", "IN_P", "input", "L"),
-            PinDef("4", "V_NEG", "power_in", "B"),
-            PinDef("5", "REF", "input", "R"),
-            PinDef("6", "VOUT", "output", "R"),
-            PinDef("7", "V_POS", "power_in", "T"),
-            PinDef("8", "RG_P", "input", "L"),
-        ],
-        "pin_vpos": "7",
-        "pin_vneg": "4",
-        "pin_inp": "3",
-        "pin_inn": "2",
-        "pin_vout": "6",
-        "pin_ref": "5",
-        "pin_rg_p": "8",
-        "pin_rg_n": "1",
-    },
-    "AD8421BRZ": {
-        "description": "Low Noise Precision Instrumentation Amplifier SOIC-8",
-        "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
-        "supply_range": (4.6, 36.0),
-        "gain_formula": "ad8421",  # G = 1 + 9900 / Rg
-        "r_internal": 9900.0,  # 9.9k internal feedback resistance
-        "pins": [
-            PinDef("1", "RG_N", "input", "L"),
-            PinDef("2", "IN_N", "input", "L"),
-            PinDef("3", "IN_P", "input", "L"),
-            PinDef("4", "V-", "power_in", "B"),
-            PinDef("5", "REF", "input", "R"),
-            PinDef("6", "VOUT", "output", "R"),
-            PinDef("7", "V+", "power_in", "T"),
-            PinDef("8", "RG_P", "input", "L"),
-        ],
-        "pin_vpos": "7",
-        "pin_vneg": "4",
-        "pin_inp": "3",
-        "pin_inn": "2",
-        "pin_vout": "6",
-        "pin_ref": "5",
-        "pin_rg_p": "8",
-        "pin_rg_n": "1",
-    },
-}
+SENSOR_FRONTEND_IC_DATABASE = LegacyDBProxy("sensor_frontend")  # backed by ic_data/*.json (Task 178)
 
 
 class SensorFrontendTemplate(SubcircuitTemplate):

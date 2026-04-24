@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 import sys
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="Bad certificate in Windows certificate store",
+    category=UserWarning,
+    module="ssl",
+)
 
 from . import __version__
 from .dispatcher import main as mvp_main

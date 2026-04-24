@@ -27,62 +27,7 @@ from .base import (
 )
 
 # USB Type-C connector variants
-USB_C_CONNECTOR_DATABASE = {
-    "USB4125-GF-A": {
-        "description": "USB Type-C Receptacle 16-Pin Mid-Mount",
-        "footprint": "USB_C_Receptacle_GCT_USB4125",
-        "pins": [
-            PinDef("A1", "GND", "power_in", "B"),
-            PinDef("A4", "VBUS", "power_in", "T"),
-            PinDef("A5", "CC1", "bidirectional", "L"),
-            PinDef("A6", "DP1", "bidirectional", "R"),
-            PinDef("A7", "DN1", "bidirectional", "R"),
-            PinDef("A8", "SBU1", "bidirectional", "R"),
-            PinDef("A9", "VBUS", "power_in", "T"),
-            PinDef("A12", "GND", "power_in", "B"),
-            PinDef("B1", "GND", "power_in", "B"),
-            PinDef("B4", "VBUS", "power_in", "T"),
-            PinDef("B5", "CC2", "bidirectional", "L"),
-            PinDef("B6", "DN2", "bidirectional", "R"),
-            PinDef("B7", "DP2", "bidirectional", "R"),
-            PinDef("B8", "SBU2", "bidirectional", "R"),
-            PinDef("B9", "VBUS", "power_in", "T"),
-            PinDef("B12", "GND", "power_in", "B"),
-        ],
-        "pin_vbus": ["A4", "A9", "B4", "B9"],
-        "pin_gnd": ["A1", "A12", "B1", "B12"],
-        "pin_cc1": "A5",
-        "pin_cc2": "B5",
-        "pin_dp1": "A6",
-        "pin_dn1": "A7",
-        "pin_dp2": "B7",
-        "pin_dn2": "B6",
-        "pin_sbu1": "A8",
-        "pin_sbu2": "B8",
-    },
-    "USB_C_SIMPLE": {
-        "description": "USB Type-C Receptacle 6-Pin (USB 2.0 Only)",
-        "footprint": "USB_C_Receptacle_USB2Only",
-        "pins": [
-            PinDef("A1", "GND", "power_in", "B"),
-            PinDef("A4", "VBUS", "power_in", "T"),
-            PinDef("A5", "CC1", "bidirectional", "L"),
-            PinDef("A6", "DP", "bidirectional", "R"),
-            PinDef("A7", "DN", "bidirectional", "R"),
-            PinDef("B5", "CC2", "bidirectional", "L"),
-        ],
-        "pin_vbus": ["A4"],
-        "pin_gnd": ["A1"],
-        "pin_cc1": "A5",
-        "pin_cc2": "B5",
-        "pin_dp1": "A6",
-        "pin_dn1": "A7",
-        "pin_dp2": None,
-        "pin_dn2": None,
-        "pin_sbu1": None,
-        "pin_sbu2": None,
-    },
-}
+USB_C_CONNECTOR_DATABASE: dict[str, dict] = {}  # Migrated to ic_data/*.json (Task 178)
 
 
 class USBCConnectorTemplate(SubcircuitTemplate):
@@ -161,11 +106,21 @@ class USBCConnectorTemplate(SubcircuitTemplate):
         },
     ]
 
+    @classmethod
+    def _ic_db(cls) -> dict[str, dict[str, Any]]:
+        """Hardcoded DB merged with ic_data 'usb_c_connector' entries so
+        parts registered via ``circuit-weaver register-ic`` are accepted.
+        """
+        from ..ic_data import merge_into_legacy_db
+
+        return merge_into_legacy_db(USB_C_CONNECTOR_DATABASE, "usb_c_connector")
+
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
         ic_name = params.get("ic", "USB4125-GF-A")
-        if ic_name not in USB_C_CONNECTOR_DATABASE:
-            errors.append(f"Unknown USB-C connector '{ic_name}'. Available: {', '.join(USB_C_CONNECTOR_DATABASE)}")
+        db = self._ic_db()
+        if ic_name not in db:
+            errors.append(f"Unknown USB-C connector '{ic_name}'. Available: {', '.join(db)}")
         role = params.get("role", "device")
         if role not in ("device", "source"):
             errors.append(f"role must be 'device' or 'source', got '{role}'")
@@ -185,7 +140,8 @@ class USBCConnectorTemplate(SubcircuitTemplate):
             usb3: bool -- expose USB3 pairs (default: False)
         """
         ic_name = params.get("ic", "USB4125-GF-A")
-        ic_db = USB_C_CONNECTOR_DATABASE.get(ic_name, USB_C_CONNECTOR_DATABASE["USB4125-GF-A"])
+        db = self._ic_db()
+        ic_db = db.get(ic_name, db["USB4125-GF-A"])
         ref = params.get("ref", "J")
         role = params.get("role", "device")
         vbus_net = params.get("vbus_net", "VBUS")
