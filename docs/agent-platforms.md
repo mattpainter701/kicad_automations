@@ -9,13 +9,14 @@ Circuit Weaver supports four agent surfaces directly from this repo: Claude Code
 | Claude Code | `CLAUDE.md` or explicit skill references | `~/.claude/skills` | Existing `.claude` compatibility path |
 | Codex | `AGENTS.md` | `~/.codex/skills` | Root `AGENTS.md` plus canonical `skills/` and `project-skills/` sources |
 | OpenCode | `AGENTS.md` + `opencode.json` | `~/.config/opencode/skills` | `.opencode/agents` and `.agents/skills` |
-| Kilo | `AGENTS.md` + `opencode.json` | `~/.kilo/skills` | Same `.opencode/agents` and `.agents/skills` assets as OpenCode |
+| Kilo | `AGENTS.md` + `kilo.json` | `~/.kilo/skills` | `.kilo/commands/`, `.opencode/agents/`, and `.agents/skills/` |
 
 ## Repo Files That Matter
 
 - `AGENTS.md` is the shared repo-level instruction file for Codex, OpenCode, and Kilo.
-- `opencode.json` adds shared OpenCode/Kilo instructions and keeps `rules/kicad.md` in scope.
+- `kilo.json` adds Kilo instructions (`AGENTS.md`, `rules/kicad.md`), agent definitions, and skill path configuration.
 - `.opencode/agents/` contains OpenCode/Kilo subagent definitions derived from the reviewer prompts in `agents/`.
+- `.kilo/commands/` contains Kilo slash commands (/validate, /generate, /review, /audit-bom, /simulate, /discover, /confidence).
 - `.agents/skills/` contains repo-local compatibility entrypoints for the canonical global skills under `skills/`.
 - `skills/` remains the source of truth for global workflow skills.
 - `project-skills/` remains the source of truth for downstream project templates.

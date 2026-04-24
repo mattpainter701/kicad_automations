@@ -51,6 +51,15 @@ bom/orders/
 mempalace.yaml
 entities.json
 
+# Local coding tool configs / caches
+.kilo/
+.mypy_cache/
+.code-review-graph/
+.wt-*/
+
+# Local session memory
+memory/
+
 # Workflow logs (Sprint 37 Task 159) — regenerated on every run
 circuit-weaver.log
 design.log

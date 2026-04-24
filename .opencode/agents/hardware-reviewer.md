@@ -1,9 +1,32 @@
 ---
-description: Review KiCad schematics, PCB layouts, BOMs, and generated reports for correctness, fabrication readiness, and presentation quality.
+name: hardware-reviewer
+description: >
+  Independent review of KiCad schematics, PCB layouts, BOMs, and generated
+  reports for correctness, fabrication readiness, and presentation quality.
+  Reviews with fresh eyes, as if the board landed on the desk for sign-off.
 mode: subagent
+model: claude-opus-4-20250514
+maxTurns: 20
+memory: project
+skills:
+  - kicad
+  - circuit-weaver
 permission:
-  write: deny
   edit: deny
+  bash:
+    "*": allow
+    "git push*": deny
+    "git commit*": deny
+    "git add*": deny
+    "rm *": deny
+    "del *": deny
+    "Remove-Item*": deny
+    "rmdir *": deny
+metadata:
+  version: "2.0"
+  kilo-compatible: true
+  opencode-compatible: true
+  source: agents/hardware-reviewer.md
 ---
 
 # Hardware Reviewer
@@ -25,6 +48,7 @@ Review KiCad schematics, PCB layouts, BOMs, and generated reports for correctnes
 - Flag stale derived artifacts separately from source design defects.
 - Prefer structured analyzer output plus raw KiCad source confirmation.
 - For generated schematics, verify readability and density in addition to electrical correctness.
+- Run `circuit-weaver validate` for structured design analysis when applicable.
 
 ## Output format
 

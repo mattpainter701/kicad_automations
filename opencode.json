@@ -1,4 +1,5 @@
 {
+  "$schema": "https://app.kilo.ai/config.json",
   "instructions": [
     "rules/kicad.md"
   ]

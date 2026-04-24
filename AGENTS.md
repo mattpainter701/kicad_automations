@@ -12,7 +12,7 @@ Circuit Weaver has two layers:
 | Claude Code | `.claude/skills` compatibility path plus installer targets |
 | Codex | `AGENTS.md` plus global installs to `~/.codex/skills` |
 | OpenCode | `AGENTS.md`, `opencode.json`, `.opencode/agents`, and `.agents/skills` |
-| Kilo | Same repo entrypoints as OpenCode |
+| Kilo | `kilo.json`, `AGENTS.md`, `.kilo/commands/`, `.opencode/agents/`, `.agents/skills/` |
 
 Installers do not assume a default platform. Always pass an explicit platform flag or explicit destination path.
 
@@ -41,7 +41,28 @@ Installers do not assume a default platform. Always pass an explicit platform fl
 - Keep upstream generic. Project-specific wrappers, BOMs, pin maps, symbol libraries, footprint libraries, generated KiCad artifacts, and local integration tests belong downstream.
 - Keep README/install docs synchronized with the actual installer target lists and supported skill directories.
 
+## Kilo Commands
+
+Slash commands live in `.kilo/commands/` and are auto-discovered by Kilo:
+
+| Command | Description | Agent |
+|---|---|---|
+| `/validate` | Validate a design YAML against the IR schema | general |
+| `/generate` | Generate KiCad artifacts from a design YAML | general |
+| `/review` | Run independent hardware design review | hardware-reviewer |
+| `/audit-bom` | Audit BOM for ordering readiness | bom-auditor |
+| `/simulate` | Run SPICE simulation on a design | general |
+| `/discover` | Discover circuit-weaver projects in workspace | general |
+| `/confidence` | Generate confidence report with simulation scoring | general |
+
+## Kilo Config
+
+`kilo.json` at repo root defines agent definitions, skill paths, and instructions. It references:
+- `AGENTS.md` for platform-agnostic workflow guidance
+- `rules/kicad.md` for KiCad-specific rules
+- `skills/` and `project-skills/` directories as skill sources
+
 ## Documentation Sync
 
-- If you add or rename a skill, update `install.sh`, `install.ps1`, `README.md`, and `docs/agent-platforms.md` together.
+- If you add or rename a skill or command, update `install.sh`, `install.ps1`, `README.md`, and `docs/agent-platforms.md` together.
 - OpenCode/Kilo project skill directories require kebab-case skill IDs. Source templates under `project-skills/` keep underscore directory names; installer targets for `.opencode/skills`, `.kilo/skills`, and `.agents/skills` convert those names on copy.

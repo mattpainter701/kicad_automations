@@ -1,27 +1,38 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Install Circuit Weaver globally on Windows (Python + Claude Code skills)
+    Install Circuit Weaver globally on Windows (Python + Claude Code + Kilo skills)
 
 .DESCRIPTION
-    Installs the circuit-weaver Python package and registers the /circuit-weaver skill
-    with Claude Code for use in any project.
+    Installs the circuit-weaver Python package and registers skills with
+    Claude Code and/or Kilo CLI for use in any project.
 
 .PARAMETER Platform
-    Target platform(s): 'claude' (Claude Code), 'python' (CLI only), 'all' (default)
+    Target platform(s): 'claude' (Claude Code), 'kilo' (Kilo CLI), 'python' (CLI only),
+    or 'all' (default). Comma-separated lists supported (e.g. 'claude,kilo').
+
+.PARAMETER ProjectPlatform
+    Install project-level templates into downstream-agent skill directories.
+    Values: 'agents' (shared .agents/skills), 'kilo' (.kilo/skills),
+    'claude' (.claude/skills), or comma-separated combinations.
 
 .EXAMPLE
     ./install.ps1
     ./install.ps1 -Platform claude
+    ./install.ps1 -Platform kilo
+    ./install.ps1 -Platform claude,kilo
     ./install.ps1 -Platform all
+    ./install.ps1 -ProjectPlatform kilo
 #>
 
 param(
-    [ValidateSet('claude', 'python', 'all')]
-    [string]$Platform = 'all'
+    [string]$Platform = 'all',
+    [string]$ProjectPlatform = ''
 )
 
 $ErrorActionPreference = 'Stop'
+
+$Platforms = if ($Platform -eq 'all') { @('python', 'claude', 'kilo') } else { $Platform -split ',' }
 
 Write-Host "Circuit Weaver Installation" -ForegroundColor Cyan
 Write-Host "===========================" -ForegroundColor Cyan
@@ -54,10 +65,11 @@ if ($null -eq $CurrentPath -or -not $CurrentPath.Contains($PythonScripts)) {
     Write-Host "[OK] Python Scripts already in PATH" -ForegroundColor Green
 }
 
-# Step 3: Install Claude Code skill (if requested)
-if ($Platform -eq 'claude' -or $Platform -eq 'all') {
-    Write-Host "[3/3] Installing Claude Code skill..." -ForegroundColor Yellow
+# Step 3: Install platform skills
+Write-Host "[3/3] Installing platform skills..." -ForegroundColor Yellow
 
+# --- Claude Code ---
+if ($Platforms -contains 'claude') {
     $SkillsDir = "$env:USERPROFILE\.claude\skills\circuit-weaver"
     $SkillFile = "skills/circuit-weaver/SKILL.md"
 
@@ -69,11 +81,63 @@ if ($Platform -eq 'claude' -or $Platform -eq 'all') {
 
     mkdir -Force $SkillsDir | Out-Null
     Copy-Item -Path $SkillFile -Destination $SkillsDir -Force
-    Write-Host "[OK] /circuit-weaver skill installed to $SkillsDir" -ForegroundColor Green
-    Write-Host "" -ForegroundColor Yellow
-    Write-Host "IMPORTANT: Restart Claude Code completely (close all windows) for the skill to be discovered." -ForegroundColor Yellow
-} else {
-    Write-Host "[3/3] Skipping Claude Code skill" -ForegroundColor Yellow
+    Write-Host "[OK] /circuit-weaver skill installed to Claude Code ($SkillsDir)" -ForegroundColor Green
+}
+
+# --- Kilo CLI ---
+if ($Platforms -contains 'kilo') {
+    $KiloSkillsDir = "$env:USERPROFILE\.kilo\skills\circuit-weaver"
+    $SkillFile = "skills/circuit-weaver/SKILL.md"
+
+    if (-not (Test-Path $SkillFile)) {
+        Write-Host "[FAIL] SKILL.md not found at $SkillFile" -ForegroundColor Red
+        exit 1
+    }
+
+    mkdir -Force $KiloSkillsDir | Out-Null
+    Copy-Item -Path $SkillFile -Destination $KiloSkillsDir -Force
+
+    # Install kilo.json to Kilo config directory
+    $KiloConfigDir = "$env:USERPROFILE\.config\kilo"
+    if (Test-Path "kilo.json") {
+        mkdir -Force $KiloConfigDir | Out-Null
+        Copy-Item -Path "kilo.json" -Destination "$KiloConfigDir\kilo.json" -Force
+        Write-Host "[OK] kilo.json installed to $KiloConfigDir" -ForegroundColor Green
+    }
+
+    # Install .kilo/commands to Kilo commands directory
+    if (Test-Path ".kilo\commands") {
+        $KiloCommandsDir = "$KiloConfigDir\commands"
+        mkdir -Force $KiloCommandsDir | Out-Null
+        Copy-Item -Path ".kilo\commands\*" -Destination $KiloCommandsDir -Force
+        Write-Host "[OK] Kilo commands installed to $KiloCommandsDir" -ForegroundColor Green
+    }
+
+    Write-Host "[OK] /circuit-weaver skill installed to Kilo ($KiloSkillsDir)" -ForegroundColor Green
+}
+
+# --- Project-level templates ---
+if ($ProjectPlatform) {
+    $ProjectPlatforms = $ProjectPlatform -split ','
+    $ProjectSkills = Get-ChildItem -Path "project-skills" -Directory
+
+    foreach ($pps in $ProjectPlatforms) {
+        $baseDir = switch ($pps) {
+            'kilo'   { ".kilo\skills" }
+            'agents' { ".agents\skills" }
+            'claude' { ".claude\skills" }
+            default  { ".agents\skills" }
+        }
+
+        foreach ($skill in $ProjectSkills) {
+            $srcSkillFile = Join-Path $skill.FullName "SKILL.md"
+            $kebabName = $skill.Name -replace '_', '-'
+            $destDir = Join-Path $baseDir $kebabName
+            mkdir -Force $destDir | Out-Null
+            Copy-Item -Path $srcSkillFile -Destination (Join-Path $destDir "SKILL.md") -Force
+        }
+        Write-Host "[OK] Project templates installed to $baseDir" -ForegroundColor Green
+    }
 }
 
 # Done
@@ -83,8 +147,13 @@ Write-Host "======================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Verify: circuit-weaver --version" -ForegroundColor White
-Write-Host "  2. (Claude Code only) Restart Claude Code completely" -ForegroundColor White
-Write-Host "  3. Try: /circuit-weaver in any Claude Code project" -ForegroundColor White
+if ($Platforms -contains 'kilo') {
+    Write-Host "  2. (Kilo) Restart Kilo CLI for skills and commands to be discovered" -ForegroundColor White
+}
+if ($Platforms -contains 'claude') {
+    Write-Host "  2. (Claude Code) Restart Claude Code completely" -ForegroundColor White
+}
+Write-Host "  3. Try: /validate, /generate, /review in any circuit-weaver project" -ForegroundColor White
 Write-Host ""
 Write-Host "Optional: Set Perplexity API key for IC research" -ForegroundColor Cyan
 Write-Host "  `$env:PERPLEXITY_API_KEY = 'pplx-xxx...'" -ForegroundColor White
