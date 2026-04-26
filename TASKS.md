@@ -2,7 +2,7 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
-## Sprint 41 — Resolver + Template UX Follow-ups (Unreleased)
+## Sprint 41 — Resolver + Template UX Follow-ups (Released in v0.28.0) ✅ DONE
 
 **Goal:** Kill two related failure modes surfaced by a user running the
 design wizard on a novel IC (RP2040-based toy phone): (a) the symbol

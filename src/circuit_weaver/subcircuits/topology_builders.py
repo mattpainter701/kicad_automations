@@ -419,7 +419,11 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     # Auto-detect additional power pins by name from the pin list
     import re as _re
     _GND_RE = _re.compile(r"^(GND|VSS|VEE|PGND|SGND|COM|V[-_]NEG|VMINUS|VNEG|V\-|EPAD)$")
-    _VDD_RE = _re.compile(r"^(VDD|VCC|VIN|VBAT|VSYS|VDDO|VCCA|VCCB|VCCIO|VS|VAUX|AVDD|DVDD|V[-_]POS|VPLUS|VPOS|V\+|AVDDH|AVDDL|DVDDH|DVDDL|VB|VM|VCP|IN1|IN2|VOUT|VBUS|DVDDIO|VDDL|VDDA)$")
+    _VDD_RE = _re.compile(
+        r"^(VDD|VCC|VIN|VBAT|VSYS|VDDO|VCCA|VCCB|VCCIO|VS|VAUX|AVDD|DVDD|"
+        r"V[-_]POS|VPLUS|VPOS|V\+|AVDDH|AVDDL|DVDDH|DVDDL|VB|VM|VCP|IN1|IN2|"
+        r"VOUT|VBUS|DVDDIO|VDDL|VDDA)$"
+    )
     for pin in pins:
         if pin.number in power_pins:
             continue
@@ -427,7 +431,12 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         if pin.electrical_type == "power_in":
             if _GND_RE.match(name_upper) or name_upper.startswith("GND"):
                 power_pins[pin.number] = "GND"
-            elif _VDD_RE.match(name_upper) or name_upper.startswith("VDD") or name_upper.startswith("VCC") or "VDD" in name_upper or "VCC" in name_upper or "VIN" in name_upper or "VBAT" in name_upper or "VSYS" in name_upper or "VAUX" in name_upper or "VBUS" in name_upper or "VM" in name_upper or "VB" in name_upper or "VCP" in name_upper or "VS" in name_upper or "VOUT" in name_upper or name_upper in ("IN1", "IN2"):
+            elif _VDD_RE.match(name_upper) or any(
+                t in name_upper for t in (
+                    "VDD", "VCC", "VIN", "VBAT", "VSYS", "VAUX", "VBUS",
+                    "VM", "VB", "VCP", "VS", "VOUT",
+                )
+            ) or name_upper in ("IN1", "IN2"):
                 power_pins[pin.number] = vdd_net
 
     # Wire all non-power signal pins to per-instance boundary ports
@@ -445,7 +454,10 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         pin_nets[pin.number] = net_name
 
     bypass_caps = [
-        BypassCap(str(raw_vdd) if raw_vdd else "VDD", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
+        BypassCap(
+            str(raw_vdd) if raw_vdd else "VDD", vdd_net, "GND", "100nF",
+            FP_0402C, role="decoupling", presentation="topology_local",
+        ),
     ]
 
     # Detect ref_prefix based on topology / component type

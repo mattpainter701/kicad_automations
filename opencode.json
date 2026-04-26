@@ -1,10 +1,28 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": ["@xtruder/opencode-claude-max-plugin"],
+  "model": "deepseek/deepseek-v4-flash",
   "instructions": [
     "AGENTS.md",
     "rules/kicad.md"
   ],
   "skills": [".agents/skills"],
-  "agents": [".opencode/agents"]
+  "agents": [".opencode/agents"],
+  "agent": {
+    "build": {
+      "description": "Default development agent with full tool access",
+      "mode": "primary",
+      "model": "deepseek/deepseek-v4-flash"
+    },
+    "plan": {
+      "description": "Planning and analysis agent (read-only, no edits)",
+      "mode": "primary",
+      "model": "deepseek/deepseek-v4-flash",
+      "permission": {
+        "edit": "deny",
+        "write": "deny",
+        "bash": "ask"
+      }
+    }
+  }
 }

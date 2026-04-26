@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-04-26
+
 ### Sprint 41 — Resolver + Template UX Follow-ups
 
 Two related failure modes surfaced by a user running the design wizard
