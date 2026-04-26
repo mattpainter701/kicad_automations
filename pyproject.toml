@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuit-weaver"
-version = "0.28.1"
+version = "0.28.2"
 description = "Programmatic circuit design, validation, and KiCad artifact generation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -43,7 +43,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-circuit_weaver = ["_bundled_skills/**"]
+circuit_weaver = ["_bundled_skills/**", "ic_data/*.json"]
 
 [tool.ruff]
 target-version = "py310"
