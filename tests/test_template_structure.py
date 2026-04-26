@@ -56,6 +56,17 @@ def _build_params(template) -> dict[str, object]:
             params[key] = spec["default"]
         elif spec.get("required"):
             params[key] = f"{key.upper()}_TEST"
+
+    # DataDrivenTemplate may have empty param_schema but still need params
+    # for its underlying builder. Inject known required params by topology.
+    from circuit_weaver.subcircuits.base import DataDrivenTemplate
+    if isinstance(template, DataDrivenTemplate) and not params:
+        topo = template._topology
+        if topo in ("buck", "boost", "buck_boost"):
+            params.update({"vin": 12.0, "vout": 3.3, "iout": 1.0})
+        elif topo == "ldo":
+            params.update({"vin": 5.0, "vout": 3.3, "iout": 0.5})
+
     return params
 
 
@@ -867,12 +878,12 @@ def test_data_driven_ldo_parity():
 
 
 def test_data_driven_template_via_registry():
-    """DataDrivenTemplate should be findable via the registry fallback."""
+    """DataDrivenTemplate should be findable via the registry."""
     from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
 
     # Create a fresh registry with NO legacy templates
     reg = SubcircuitRegistry()
-    # The fallback should find "buck" from JSON IC data
+    # Data-driven path should find "buck" from JSON IC data
     tmpl = reg.get("buck")
     assert tmpl is not None
     assert isinstance(tmpl, DataDrivenTemplate)
@@ -880,6 +891,35 @@ def test_data_driven_template_via_registry():
     result = tmpl.generate({"vin": 12, "vout": 3.3, "iout": 1.0})
     assert len(result.components) > 0
     assert result.components[0].mpn == "AP62300"
+
+
+def test_registry_prefers_data_driven_for_verified_topologies():
+    """Verified topologies (buck, boost, buck_boost, ldo) use data-driven first."""
+    from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
+    from circuit_weaver.subcircuits.buck import BuckConverterTemplate
+
+    reg = SubcircuitRegistry()
+    reg.register(BuckConverterTemplate())
+
+    tmpl = reg.get("buck")
+    assert tmpl is not None
+    assert isinstance(tmpl, DataDrivenTemplate)
+    assert tmpl.template_type == "buck"
+
+
+def test_registry_prefers_legacy_for_unported_topologies():
+    """Unported topologies still use legacy first to avoid regressions."""
+    from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
+    from circuit_weaver.subcircuits.rtc import RTCTemplate
+
+    reg = SubcircuitRegistry()
+    reg.register(RTCTemplate())
+
+    # rtc is NOT in _DATA_DRIVEN_FIRST, so legacy wins
+    tmpl = reg.get("rtc")
+    assert tmpl is not None
+    assert not isinstance(tmpl, DataDrivenTemplate)
+    assert isinstance(tmpl, RTCTemplate)
 
 
 def test_register_custom_ic():

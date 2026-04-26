@@ -12,8 +12,8 @@ warnings.filterwarnings(
     module="ssl",
 )
 
-from . import __version__
-from .dispatcher import main as mvp_main
+from . import __version__  # noqa: E402
+from .dispatcher import main as mvp_main  # noqa: E402
 
 
 def main() -> None:

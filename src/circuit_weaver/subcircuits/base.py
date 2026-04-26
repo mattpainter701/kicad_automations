@@ -681,9 +681,15 @@ class SubcircuitRegistry:
     """Registry of available subcircuit templates, queryable by type name.
 
     Resolution order:
-    1. Legacy template classes (registered via register())
-    2. Data-driven templates from JSON IC data store
+    1. Data-driven templates from JSON IC data store (for topologies with
+       dedicated builders: buck, boost, buck_boost, ldo)
+    2. Legacy template classes (registered via register()) — fallback for
+       all other topologies until their builders are ported.
     """
+
+    # Topologies whose data-driven builder is known to produce output
+    # equivalent to the legacy template (verified by parity tests).
+    _DATA_DRIVEN_FIRST = {"buck", "boost", "buck_boost", "ldo"}
 
     def __init__(self):
         self._templates: dict[str, SubcircuitTemplate] = {}
@@ -695,13 +701,19 @@ class SubcircuitRegistry:
     def get(self, type_name: str) -> SubcircuitTemplate | None:
         """Look up a template by type name (e.g., 'buck', 'ldo').
 
-        Checks legacy templates first, then falls back to data-driven
-        templates from the JSON IC data store.
+        For verified topologies (buck, boost, buck_boost, ldo) the data-driven
+        builder is used first. For all other topologies the legacy class is
+        used first to avoid regressions until dedicated builders are ported.
         """
+        if type_name in self._DATA_DRIVEN_FIRST:
+            dd = self._get_data_driven(type_name)
+            if dd is not None:
+                return dd
+            return self._templates.get(type_name)
+
+        # Legacy-first for unported topologies
         if type_name in self._templates:
             return self._templates[type_name]
-
-        # Data-driven fallback
         return self._get_data_driven(type_name)
 
     def _get_data_driven(self, type_name: str) -> DataDrivenTemplate | None:

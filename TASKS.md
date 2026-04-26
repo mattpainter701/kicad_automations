@@ -168,6 +168,220 @@ Files: `src/circuit_weaver/pcb_export.py`,
 
 ---
 
+## Legacy Template Migration Backlog (Tasks 179–185)
+
+**Goal:** Replace the 35 legacy Python `*Template` classes in
+`subcircuits/` with the data-driven path (`DataDrivenTemplate` +
+`topology_builders.py` + `ic_data/*.json`). The IC dictionaries were
+drained to JSON in Sprint 41 (Task 178); the generation code path has
+not been changed yet — the registry still resolves legacy-first, so
+`DataDrivenTemplate` never fires for any registered topology.
+
+**Completion state of each phase is gated on the previous phase.**
+Do not skip the audit (179) or the priority flip (180) — downstream
+deletion tasks assume both are done.
+
+---
+
+### 179. Audit: per-template verdict table (P1, MEDIUM)
+
+Research task. No code changes. Produces the decision table that
+gates tasks 181–184.
+
+For each of the 35 legacy templates:
+1. Instantiate the legacy template and call `generate()` on a real IC
+   from its merged `_ic_db()`. Record: component count, component
+   types, passive values, net assignments.
+2. Instantiate `DataDrivenTemplate(template_type=topo)` backed by the
+   same IC and call `generate()` via `topology_builders.get_builder()`.
+   Record the same fields.
+3. Classify:
+   - **A — Delete safe:** outputs are equivalent within 5% on passive
+     values; no topology-specific passive calculation in legacy
+     `generate()` that `build_generic` doesn't replicate.
+   - **B — Port first:** legacy `generate()` has custom pin-wiring or
+     passive calculation not present in any builder; must add a
+     topology-specific builder function before deleting.
+   - **C — Complex:** 400+ line template with multiple IC sub-modes
+     (e.g. `usb.py` handles both `usb_controller` and `usb_hub`); plan
+     as a dedicated task per topology.
+
+- [ ] Run audit across all 35 templates; write verdict table to
+  `docs/legacy_template_audit.md` with columns: template file,
+  topology, line count, verdict (A/B/C), notes on custom logic to port.
+- [ ] Flag any template whose `generate()` references fields not yet
+  present in the IC data JSON (would cause silent regression if
+  deleted before the JSON is updated).
+
+Files: `docs/legacy_template_audit.md` (new, research output only)
+
+---
+
+### 180. Flip registry resolution order (P1, SMALL)
+
+Depends on: 179 (audit complete — no surprises before flipping).
+
+The current `SubcircuitRegistry.get()` checks legacy `_templates` dict
+first; `DataDrivenTemplate` only fires for topologies with no legacy
+class registered. Flip the order: data-driven first, legacy as
+fallback. This is the minimal change that activates the new path
+without deleting anything.
+
+- [ ] In `SubcircuitRegistry.get()`: call `_get_data_driven()` first;
+  if it returns a template, use it. Fall through to `_templates` only
+  if ic_data returns nothing for that topology.
+- [ ] Add test asserting a topology that has ic_data JSON entries uses
+  `DataDrivenTemplate`, not the legacy class, after the flip.
+- [ ] Confirm full test suite passes with no changes to legacy
+  templates (legacy path now only fires when ic_data has no entries,
+  which should not happen for any topology after Task 178).
+
+Files: `src/circuit_weaver/subcircuits/base.py`,
+`tests/test_template_structure.py`
+
+---
+
+### 181. Delete specialized topology legacy classes (P1, MEDIUM)
+
+Depends on: 179, 180.
+
+The four topologies with dedicated builders in `topology_builders.py`
+(`buck` → `build_switching_regulator`, `boost` →
+`build_switching_regulator`, `buck_boost` →
+`build_switching_regulator`, `ldo` → `build_linear_regulator`) are the
+lowest-risk deletions. The builder logic already exists; this task
+verifies parity then removes the dead files.
+
+- [ ] Write output-parity tests for each topology: call
+  `DataDrivenTemplate.generate()` and legacy `XTemplate.generate()`
+  on the same IC+params; assert component count matches, passive
+  values agree within 5%, and all net assignments are identical.
+- [ ] Fix any gaps in `topology_builders.py` uncovered by the parity
+  tests (e.g. a passive net or boundary port the legacy class emits
+  that `build_switching_regulator` doesn't).
+- [ ] Remove `buck.py`, `boost.py`, `buck_boost.py`, `ldo.py` from
+  `subcircuits/`. Remove their imports and `reg.register()` calls from
+  `_build_default_registry()`.
+- [ ] Remove the four classes from the existing legacy smoke tests;
+  confirm smoke suite still passes.
+
+Files: `subcircuits/buck.py`, `subcircuits/boost.py`,
+`subcircuits/buck_boost.py`, `subcircuits/ldo.py` (deleted),
+`subcircuits/base.py`, `subcircuits/topology_builders.py`,
+`tests/test_template_parity_switching.py` (new),
+`tests/test_template_parity_linear.py` (new)
+
+---
+
+### 182. Port and delete thin generic templates (P2, MEDIUM)
+
+Depends on: 179, 180. Can run after 181 in parallel.
+
+Audit verdict-A templates — those where `build_generic` already
+produces equivalent output and the legacy `generate()` has no custom
+passive calculation. Expected members (confirm against audit):
+`protection.py`, `connector.py`, `mosfet_switch.py`,
+`wireless_module.py`, `rtc.py`, `battery_charger.py`,
+`battery_monitor.py`, `charge_pump.py`, `voltage_reference.py`,
+`can_transceiver.py`, `rs485_transceiver.py`, `crystal_oscillator.py`,
+`driver.py` (gate_driver + level_shifter).
+
+For each:
+- [ ] Write a parity test (same pattern as 181).
+- [ ] If any verdict-A template turns out to have non-trivial logic
+  (audit miss), move it to task 183 rather than forcing it here.
+- [ ] Delete the template file; remove from `_build_default_registry()`.
+
+Files: ~13 template files (deleted), `subcircuits/base.py`,
+`tests/test_template_parity_generic_thin.py` (new)
+
+---
+
+### 183. Port and delete medium generic templates (P2, LARGE)
+
+Depends on: 179, 180, 182.
+
+Audit verdict-B templates where custom wiring logic must be ported to
+`topology_builders.py` before deletion. Expected members (confirm
+against audit): `opamp.py`, `spi_bus.py`, `sensor_frontend.py`,
+`power_mux.py`, `ethernet.py`, `clock.py`, `eeprom.py`,
+`audio_amplifier.py`, `display_driver.py`, `usb_c_connector.py`.
+
+For each:
+- [ ] Extract the topology-specific logic from `generate()` into a new
+  builder function `build_<topology>()` in `topology_builders.py`; add
+  it to `TOPOLOGY_BUILDERS`.
+- [ ] Write parity test.
+- [ ] Delete legacy file; remove from `_build_default_registry()`.
+
+Files: ~10 template files (deleted), `subcircuits/topology_builders.py`,
+`subcircuits/base.py`, `tests/test_template_parity_generic_medium.py` (new)
+
+---
+
+### 184. Port and delete complex generic templates (P2, LARGE)
+
+Depends on: 179, 180, 183.
+
+Audit verdict-C templates — the large, multi-mode files. Work each as
+a sub-item:
+
+- [ ] `usb.py` (536 L, two topologies: `usb_controller` + `usb_hub`):
+  port both modes to `topology_builders.py`; preserve the
+  `pin_usb_dp`/`pin_usb_dm` wiring logic that Sprint 41 fixed.
+- [ ] `adc.py` (523 L): port; verify differential-input and SAR/sigma-
+  delta mode variants produce correct pin wiring.
+- [ ] `motor_driver.py` (477 L): port; H-bridge vs single-half-bridge
+  variants; verify direction/enable/PWM net assignments.
+- [ ] `dac.py` (467 L): port; verify reference/output net wiring.
+- [ ] `current_sense.py` (467 L): port; verify sense resistor value
+  calculation and Rsense net assignments.
+- [ ] `led_driver.py` (405 L): port; verify `topology_subtype`
+  dispatch (Task 178 introduced this field; builder must read it).
+- [ ] `relay_driver.py` (399 L): port; coil/flyback/contact net wiring.
+- [ ] `i2c_bus.py` (394 L): port; pull-up network and bus topology.
+
+For each sub-item: parity test → port → delete → remove from registry.
+
+Files: 8 template files (deleted), `subcircuits/topology_builders.py`,
+`subcircuits/base.py`, `tests/test_template_parity_generic_complex.py` (new)
+
+---
+
+### 185. Final cleanup (P1, SMALL)
+
+Depends on: 181, 182, 183, 184 (all legacy templates deleted).
+
+- [ ] Remove `_build_default_registry()` from `base.py`. Remove the
+  `DEFAULT_REGISTRY` global and `get_default_registry()` lazy-loader;
+  callers receive a plain `SubcircuitRegistry` seeded only by
+  `DataDrivenTemplate` on first lookup.
+- [ ] Update the 3 import sites that currently pull from the legacy
+  registry: `dispatcher.py`, `api.py`, `project_spec.py`. Remove
+  `BoundaryPort` imports if they're no longer needed; keep
+  `SubcircuitRegistry` and `SubcircuitResult` (still used).
+- [ ] Rewrite `tests/test_legacy_template_hotload.py` →
+  `tests/test_data_driven_hotload.py`. The invariant being tested
+  (`register_ic()` makes a new IC visible to generation) must be
+  preserved; the test now calls `DataDrivenTemplate.generate()`
+  instead of the legacy class's `generate()`. Delete the legacy file.
+- [ ] Delete `subcircuits/topology_builders.py` is NOT part of this
+  task — it becomes the primary generation code path and stays.
+- [ ] `subcircuits/__init__.py`: remove re-exports of now-deleted
+  symbols; keep `SubcircuitRegistry`, `SubcircuitResult`,
+  `SubcircuitTemplate` (base class still needed for
+  `DataDrivenTemplate`).
+- [ ] Confirm: `py -m pytest --tb=short -q` passes with no legacy-
+  path test failures.
+
+Files: `subcircuits/base.py`, `subcircuits/__init__.py`,
+`src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/api.py`,
+`src/circuit_weaver/project_spec.py`,
+`tests/test_legacy_template_hotload.py` (deleted),
+`tests/test_data_driven_hotload.py` (new)
+
+---
+
 ## Sprint 40 — Generation Quality Regression Repair (v0.27.0)
 
 **Goal:** Repair regressions introduced while building out the dynamic IC

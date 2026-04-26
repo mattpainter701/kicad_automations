@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, PinDef
+from ..component_db import BypassCap, ComponentDef
 from .base import (
     FP_0805C,
     BoundaryPort,

@@ -1,6 +1,10 @@
 {
-  "$schema": "https://app.kilo.ai/config.json",
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@xtruder/opencode-claude-max-plugin"],
   "instructions": [
+    "AGENTS.md",
     "rules/kicad.md"
-  ]
+  ],
+  "skills": [".agents/skills"],
+  "agents": [".opencode/agents"]
 }

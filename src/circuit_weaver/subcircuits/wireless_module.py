@@ -15,12 +15,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
+from ..component_db import BypassCap, ComponentDef, StrapConfig
 from .base import (
-    BoundaryPort,
     FP_0402C,
     FP_0402R,
     FP_0805C,
+    BoundaryPort,
     LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,

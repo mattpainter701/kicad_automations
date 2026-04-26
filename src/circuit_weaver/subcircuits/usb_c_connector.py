@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
+from ..component_db import BypassCap, ComponentDef, StrapConfig
 from .base import (
     FP_0402C,
     FP_0402R,

@@ -128,6 +128,23 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
     for extra in ic_data.get("pin_gnd_extra", []):
         power_pins[str(extra)] = "GND"
 
+    # Auto-detect additional power pins from pin list (VIN2, VOUT2, EPAD, etc.)
+    pins = _pins_from_data(ic_data)
+    for pin in pins:
+        if pin.number in power_pins:
+            continue
+        name_upper = pin.name.upper()
+        if pin.electrical_type == "power_in":
+            if name_upper in ("GND", "VSS", "VEE", "PGND", "SGND", "EPAD"):
+                power_pins[pin.number] = "GND"
+            elif name_upper in ("VIN", "VINA", "VINB", "VBAT"):
+                power_pins[pin.number] = vin_net
+            elif name_upper in ("VOUT", "VOUTA", "VOUTB"):
+                power_pins[pin.number] = rail_name
+        elif pin.electrical_type == "power_out":
+            if name_upper in ("VOUT", "VOUTA", "VOUTB", "VAUX"):
+                power_pins[pin.number] = rail_name
+
     pin_nets: dict[str, str] = {}
     if pin_sw:
         pin_nets[pin_sw] = sw_net
@@ -137,6 +154,14 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
         pin_nets[pin_en] = en_net
     if pin_bst:
         pin_nets[pin_bst] = bst_net
+
+    # Mark any unused input/bidirectional pins as explicit no-connect
+    explicit_no_connects: set[str] = set()
+    for pin in pins:
+        if pin.number in power_pins or pin.number in pin_nets:
+            continue
+        if pin.electrical_type in ("input", "bidirectional"):
+            explicit_no_connects.add(pin.number)
 
     bypass_caps = [
         BypassCap(
@@ -221,14 +246,16 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
         bypass_caps=bypass_caps,
         straps=straps,
         annotations=annotations,
+        explicit_no_connects=explicit_no_connects,
     )
 
     ports = [
         BoundaryPort(vin_net, "input"),
         BoundaryPort(rail_name, "output"),
         BoundaryPort("GND", "passive"),
-        BoundaryPort(en_net, "input"),
     ]
+    if pin_en:
+        ports.append(BoundaryPort(en_net, "input"))
 
     topo_label = {"buck": "Buck", "boost": "Boost", "buck_boost": "Buck-Boost"}[topology]
     return SubcircuitResult(
@@ -347,35 +374,92 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
 def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     """Fallback builder for ICs without specialized topology logic.
 
-    Assigns power pins, adds standard decoupling, and exports boundary ports.
+    Assigns power pins, wires all non-power signal pins to boundary ports,
+    adds standard decoupling, and exports boundary ports.
     Works for: protection, connectors, EEPROM, RTC, display, wireless, etc.
     """
     ic_name = params.get("ic", ic_data.get("_mpn", "UNKNOWN"))
     ref = params.get("ref", "U")
     vdd_net = params.get("vdd_net", "VDD_3P3")
 
-    pin_gnd = _pin_role(ic_data, "gnd")
-    pin_vdd = _pin_role(ic_data, "vdd") or _pin_role(ic_data, "vcc") or _pin_role(ic_data, "vin")
+    pins = _pins_from_data(ic_data)
+
+    # Read raw pin_vdd / pin_gnd from ic_data (may be list or scalar)
+    raw_vdd = ic_data.get("pin_vdd") or ic_data.get("pin_vcc") or ic_data.get("pin_vin")
+    raw_gnd = ic_data.get("pin_gnd")
 
     power_pins: dict[str, str] = {}
-    if pin_vdd:
-        power_pins[pin_vdd] = vdd_net
-    if pin_gnd:
-        power_pins[pin_gnd] = "GND"
 
-    # Handle multiple GND pins
+    # Handle pin_vdd as list or scalar
+    if raw_vdd:
+        if isinstance(raw_vdd, list):
+            for p in raw_vdd:
+                power_pins[str(p)] = vdd_net
+        else:
+            power_pins[str(raw_vdd)] = vdd_net
+
+    # Handle pin_gnd as list or scalar
+    if raw_gnd:
+        if isinstance(raw_gnd, list):
+            for p in raw_gnd:
+                power_pins[str(p)] = "GND"
+        else:
+            power_pins[str(raw_gnd)] = "GND"
+
+    # Handle multiple GND pins (pin_gnd_extra as list or scalar)
     for key in ic_data:
         if key.startswith("pin_gnd") and key != "pin_gnd":
             extras = ic_data[key]
             if isinstance(extras, list):
                 for p in extras:
                     power_pins[str(p)] = "GND"
+            else:
+                power_pins[str(extras)] = "GND"
+
+    # Auto-detect additional power pins by name from the pin list
+    import re as _re
+    _GND_RE = _re.compile(r"^(GND|VSS|VEE|PGND|SGND|COM|V[-_]NEG|VMINUS|VNEG|V\-|EPAD)$")
+    _VDD_RE = _re.compile(r"^(VDD|VCC|VIN|VBAT|VSYS|VDDO|VCCA|VCCB|VCCIO|VS|VAUX|AVDD|DVDD|V[-_]POS|VPLUS|VPOS|V\+|AVDDH|AVDDL|DVDDH|DVDDL|VB|VM|VCP|IN1|IN2|VOUT|VBUS|DVDDIO|VDDL|VDDA)$")
+    for pin in pins:
+        if pin.number in power_pins:
+            continue
+        name_upper = pin.name.upper()
+        if pin.electrical_type == "power_in":
+            if _GND_RE.match(name_upper) or name_upper.startswith("GND"):
+                power_pins[pin.number] = "GND"
+            elif _VDD_RE.match(name_upper) or name_upper.startswith("VDD") or name_upper.startswith("VCC") or "VDD" in name_upper or "VCC" in name_upper or "VIN" in name_upper or "VBAT" in name_upper or "VSYS" in name_upper or "VAUX" in name_upper or "VBUS" in name_upper or "VM" in name_upper or "VB" in name_upper or "VCP" in name_upper or "VS" in name_upper or "VOUT" in name_upper or name_upper in ("IN1", "IN2"):
+                power_pins[pin.number] = vdd_net
+
+    # Wire all non-power signal pins to per-instance boundary ports
+    pin_nets: dict[str, str] = {}
+    power_types = {"power_in", "power_out"}
+    for pin in pins:
+        if pin.number in power_pins:
+            continue
+        if pin.electrical_type in power_types:
+            continue
+        # Skip NC / reserved pins
+        if pin.name.upper().startswith("NC") or pin.name.upper().startswith("RESERVED"):
+            continue
+        net_name = f"{pin.name}_{ref}"
+        pin_nets[pin.number] = net_name
 
     bypass_caps = [
-        BypassCap("C_VDD", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
+        BypassCap(str(raw_vdd) if raw_vdd else "VDD", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
     ]
 
-    ref_prefix = ic_data.get("ref_prefix", "U")
+    # Detect ref_prefix based on topology / component type
+    detected_ref_prefix = "U"
+    topo = ic_data.get("topology", "")
+    if ic_data.get("connector_type"):
+        detected_ref_prefix = "J"
+    elif topo == "crystal_oscillator" or "crystal" in ic_data.get("description", "").lower():
+        detected_ref_prefix = "Y"
+    elif topo == "protection":
+        detected_ref_prefix = "D"
+    elif topo in ("mosfet_switch",):
+        detected_ref_prefix = "Q"
+    ref_prefix = ic_data.get("ref_prefix", detected_ref_prefix)
     ic_comp = ComponentDef(
         mpn=ic_name,
         ref_prefix=ref_prefix,
@@ -383,9 +467,9 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         footprint=ic_data.get("footprint", ""),
         description=ic_data.get("description", ""),
         category=ic_data.get("category", "digital"),
-        pins=_pins_from_data(ic_data),
+        pins=pins,
         power_pins=power_pins,
-        pin_nets={},
+        pin_nets=pin_nets,
         bypass_caps=bypass_caps,
         annotations=[f"{ic_data.get('description', ic_name)}"],
     )
@@ -395,6 +479,8 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         BoundaryPort(vdd_net, "input"),
         BoundaryPort("GND", "passive"),
     ]
+    for pin_num, net_name in pin_nets.items():
+        ports.append(BoundaryPort(net_name, "bidirectional"))
 
     return SubcircuitResult(
         components=[ic_comp],
