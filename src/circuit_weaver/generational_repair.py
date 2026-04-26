@@ -33,12 +33,13 @@ _logger = logging.getLogger(__name__)
 
 _I2C_SDA_RE = re.compile(r"(?:^|_)(SDA|I2C.*DAT|I2C\d*SDA)(?:$|_)", re.IGNORECASE)
 _I2C_SCL_RE = re.compile(r"(?:^|_)(SCL|I2C.*CLK|I2C\d*SCL)(?:$|_)", re.IGNORECASE)
-_GROUND_PREFIXES = ("GND", "AGND", "DGND", "PGND", "VSS", "GNDA", "GNDD")
 
 
 def _is_ground(net: str) -> bool:
+    """Return True if *net* is a ground net by name convention."""
     upper = (net or "").upper()
-    return any(upper == p or upper.startswith(f"{p}_") for p in _GROUND_PREFIXES)
+    from .subcircuits.base import GROUND_NET_PREFIXES
+    return any(upper == p or upper.startswith(f"{p}_") for p in GROUND_NET_PREFIXES)
 
 
 @dataclass

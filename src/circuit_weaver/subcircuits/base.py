@@ -11,11 +11,32 @@ E-series and provide common EE equations (feedback dividers, filters, etc.).
 from __future__ import annotations
 
 import math
+import threading as _threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..component_db import ComponentDef
+
+# ================================================================
+# Shared net-name constants (used by topology_builders,
+# placement_readiness, generational_repair — single source of truth)
+# ================================================================
+POWER_NET_PREFIXES = (
+    "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO",
+    "VBAT", "VSYS", "VAUX", "VS", "VM", "VB", "VCP", "VOUT",
+)
+GROUND_NET_PREFIXES = ("GND", "AGND", "DGND", "PGND", "VSS", "GNDA", "GNDD")
+
+
+def _is_power_net(net: str) -> bool:
+    """Return True if *net* is a power or ground net by name convention."""
+    upper = (net or "").upper()
+    for p in (*POWER_NET_PREFIXES, *GROUND_NET_PREFIXES):
+        if upper == p or upper.startswith(f"{p}_"):
+            return True
+    return False
+
 
 # ================================================================
 # E-series standard resistor/capacitor values
@@ -829,12 +850,15 @@ def _build_default_registry() -> SubcircuitRegistry:
     return reg
 
 
+_REGISTRY_LOCK = _threading.Lock()
 DEFAULT_REGISTRY = None
 
 
 def get_default_registry() -> SubcircuitRegistry:
-    """Get the default subcircuit registry (lazy-loaded)."""
+    """Get the default subcircuit registry (lazy-loaded, thread-safe)."""
     global DEFAULT_REGISTRY
     if DEFAULT_REGISTRY is None:
-        DEFAULT_REGISTRY = _build_default_registry()
+        with _REGISTRY_LOCK:
+            if DEFAULT_REGISTRY is None:
+                DEFAULT_REGISTRY = _build_default_registry()
     return DEFAULT_REGISTRY

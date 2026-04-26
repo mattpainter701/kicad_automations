@@ -14,10 +14,13 @@ Usage:
     generate_pcb_placement(components, output_path, "MyBoard")
 """
 
+import logging
 import re
 from pathlib import Path
 
 from .component_db import ComponentDef
+
+_logger = logging.getLogger(__name__)
 
 # KiCad 10 validates fixed layers against canonical ids/names when loading a
 # board. The older KiCad 5-era numbering/casing used here previously emitted
@@ -196,7 +199,6 @@ def _footprint_sexpr(
     footprint: str,
     x: float,
     y: float,
-    net_pads: list[tuple[str, int]] | None = None,
 ) -> str:
     """Generate a minimal footprint S-expression for placement hint.
 
@@ -217,8 +219,7 @@ def _footprint_sexpr(
       (``Placement_Preview:Missing_<ref>``) and still no pads. The file
       itself ships with a header comment calling out preview status.
 
-    ``net_pads`` is accepted for call-site compatibility but intentionally
-    not emitted — fabricating even one wrong pad here has burned users.
+    Zero pads are emitted — KiCad's forward-annotation is authoritative.
     """
     if footprint:
         fp_lib = footprint
@@ -364,13 +365,7 @@ def generate_pcb_placement(
             else:
                 ref = _next_ref(comp.ref_prefix or "U")
 
-            # Collect net-pad associations for the first couple of power pins
-            net_pads = []
-            for pin_num, net_name in list(comp.power_pins.items())[:2]:
-                if net_name in net_map:
-                    net_pads.append((net_name, net_map[net_name]))
-
-            footprints.append(_footprint_sexpr(ref, comp.value, comp.footprint, cx, cy, net_pads))
+            footprints.append(_footprint_sexpr(ref, comp.value, comp.footprint, cx, cy))
             placements[ref] = (cx, cy, 0.0, "top")  # x, y in mm, rotation 0°, layer F.Cu
 
             max_x = max(max_x, cx + fw)
@@ -438,11 +433,11 @@ def generate_pcb_placement(
     pcb_file = output_path / f"{project_name}_placement.kicad_pcb"
     pcb_file.write_text("\n".join(parts), encoding="utf-8")
 
-    print(f"  PCB placement hint: {pcb_file}")
-    print(
-        f"    Board: {board_x2:.1f} x {board_y2:.1f} mm, "
-        f"{len(footprints)} footprints, {len(net_names)} nets, "
-        f"{sum(len(v) for v in net_classes.values())} net-class assignments"
+    _logger.info("PCB placement hint: %s", pcb_file)
+    _logger.info(
+        "Board: %.1f x %.1f mm, %d footprints, %d nets, %d net-class assignments",
+        board_x2, board_y2, len(footprints), len(net_names),
+        sum(len(v) for v in net_classes.values()),
     )
 
     return str(pcb_file), placements

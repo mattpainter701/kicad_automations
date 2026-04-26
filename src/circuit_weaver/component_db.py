@@ -1277,7 +1277,7 @@ def _builtin_components():
                 PinDef("3", "EN", "input", "L"),
                 PinDef("5", "VOUT", "power_out", "R"),
             ],
-            pin_nets={"3": "REG_EN"},
+            pin_nets={},
             power_pins={"1": "VIN", "2": "GND", "5": "VDD_3P3"},
             power_reqs=[PowerReq("VIN", 5.0, 600)],
             bypass_caps=[BypassCap("5", "VDD_3P3", "GND", "10uF", "Capacitor_SMD:C_0805_2012Metric")],
@@ -1321,7 +1321,7 @@ def _builtin_components():
                 PinDef("8", "FB", "input", "R"),
                 PinDef("10", "GND", "power_in", "B"),
             ],
-            pin_nets={"2": "REG_EN", "8": "FB"},
+            pin_nets={"8": "FB"},
             power_pins={"1": "VIN", "7": "VDD_3P3", "10": "GND"},
             power_reqs=[PowerReq("VIN", 5.0, 2000)],
         )
@@ -1344,7 +1344,7 @@ def _builtin_components():
                 PinDef("10", "FB", "input", "R"),
                 PinDef("14", "GND", "power_in", "B"),
             ],
-            pin_nets={"5": "REG_EN", "10": "FB"},
+            pin_nets={"10": "FB"},
             power_pins={"3": "VIN", "7": "VDD_3P3", "14": "GND"},
             power_reqs=[PowerReq("VIN", 5.0, 2000)],
         )

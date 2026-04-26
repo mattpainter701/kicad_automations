@@ -112,16 +112,16 @@ def _orphan_interface_issues(compiled_ir: "DesignIR", components) -> list[tuple[
             if strap.rail:
                 net_to_refs.setdefault(strap.rail, set()).add(ref)
 
+    from .subcircuits.base import _is_power_net
+
     orphans: list[tuple[str, str, str]] = []
-    _power_prefixes = ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO", "GND", "AGND", "DGND", "PGND")
     for block in compiled_ir.blocks:
         block_ref = block.ref or block.id
         for iface in block.interfaces:
             net = (iface.name or "").strip()
             if not net:
                 continue
-            upper = net.upper()
-            if any(upper == p or upper.startswith(f"{p}_") for p in _power_prefixes):
+            if _is_power_net(net):
                 continue
             consumers = net_to_refs.get(net, set())
             # The block itself is allowed to appear in consumers; we need

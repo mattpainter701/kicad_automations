@@ -15,6 +15,8 @@ from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from .base import (
     FP_0402C,
     FP_0402R,
+    GROUND_NET_PREFIXES,
+    POWER_NET_PREFIXES,
     BoundaryPort,
     SubcircuitResult,
     boost_inductor,
@@ -55,8 +57,72 @@ def _pin_role(ic_data: dict, role: str) -> str | None:
 
 
 def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
-    """Build a switching regulator subcircuit from IC data + design params."""
+    """Build a switching regulator subcircuit, dispatching by topology."""
     topology = ic_data.get("topology", "buck")
+    if topology == "boost":
+        return _build_boost(ic_data, params)
+    elif topology == "buck_boost":
+        return _build_buck_boost(ic_data, params)
+    return _build_buck(ic_data, params)
+
+
+def _build_buck(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build a buck (step-down) regulator."""
+    vin = params["vin"]
+    vout = params["vout"]
+    iout = params["iout"]
+    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
+    ripple_ratio = params.get("ripple_ratio", 0.3)
+    l_raw = buck_inductor(vin, vout, fsw, iout, ripple_ratio)
+    l_val = snap_ind(l_raw)
+    if fsw > 0 and l_val > 0:
+        d = vout / vin
+        delta_il = (vin - vout) * d / (fsw * l_val)
+    else:
+        delta_il = iout * 0.3
+    return _build_switching_core(ic_data, params, "buck", l_val, delta_il)
+
+
+def _build_boost(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build a boost (step-up) regulator."""
+    vin = params["vin"]
+    vout = params["vout"]
+    iout = params["iout"]
+    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
+    ripple_ratio = params.get("ripple_ratio", 0.3)
+    l_raw = boost_inductor(vin, vout, fsw, iout, ripple_ratio)
+    l_val = snap_ind(l_raw)
+    if fsw > 0 and l_val > 0:
+        d = 1.0 - vin / vout if vout > vin else 0.5
+        delta_il = vin * d / (fsw * l_val)
+    else:
+        delta_il = iout * 0.3
+    return _build_switching_core(ic_data, params, "boost", l_val, delta_il)
+
+
+def _build_buck_boost(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build a buck-boost (inverting/step-up-down) regulator."""
+    vin = params["vin"]
+    vout = params["vout"]
+    iout = params["iout"]
+    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
+    ripple_ratio = params.get("ripple_ratio", 0.3)
+    vin_min = params.get("vin_min", vin * 0.8)
+    l_raw = buck_boost_inductor(vin_min, vout, fsw, iout, ripple_ratio)
+    l_val = snap_ind(l_raw)
+    if fsw > 0 and l_val > 0:
+        d = 1.0 - vin_min / vout if vout > vin_min else 0.5
+        delta_il = vin_min * d / (fsw * l_val)
+    else:
+        delta_il = iout * 0.3
+    return _build_switching_core(ic_data, params, "buck_boost", l_val, delta_il)
+
+
+def _build_switching_core(
+    ic_data: dict, params: dict[str, Any], topology: str,
+    l_val: float, delta_il: float,
+) -> SubcircuitResult:
+    """Shared core: feedback, caps, pins, and component assembly for switching regulators."""
     vin = params["vin"]
     vout = params["vout"]
     iout = params["iout"]
@@ -65,43 +131,19 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
     rail_name = params.get("rail_name") or f"VDD_{vout:.1f}V".replace(".", "P")
     vin_net = params.get("vin_net", "VIN")
     en_net = params.get("en_net", vin_net)
-    ripple_ratio = params.get("ripple_ratio", 0.3)
     vout_ripple = params.get("vout_ripple", 0.020)
+    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
 
     vref = ic_data.get("vref", 0.8)
-    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
     r_fbb = params.get("r_fbb", ic_data.get("r_fbb_default", 100e3))
 
-    # Calculate feedback divider
+    # Feedback divider
     r_fbt_raw = feedback_divider_top(vout, vref, r_fbb)
     r_fbt = snap_to_e96(r_fbt_raw)
     r_fbb_snapped = snap_to_e96(r_fbb)
     actual_vout = feedback_divider_vout(r_fbt, r_fbb_snapped, vref)
 
-    # Calculate inductor
-    if topology == "boost":
-        l_raw = boost_inductor(vin, vout, fsw, iout, ripple_ratio)
-    elif topology == "buck_boost":
-        vin_min = params.get("vin_min", vin * 0.8)
-        l_raw = buck_boost_inductor(vin_min, vout, fsw, iout, ripple_ratio)
-    else:
-        l_raw = buck_inductor(vin, vout, fsw, iout, ripple_ratio)
-    l_val = snap_ind(l_raw)
-
-    # Ripple current with actual inductor value
-    if fsw > 0 and l_val > 0:
-        if topology == "buck":
-            d = vout / vin
-            delta_il = (vin - vout) * d / (fsw * l_val)
-        elif topology == "boost":
-            d = 1.0 - vin / vout if vout > vin else 0.5
-            delta_il = vin * d / (fsw * l_val)
-        else:  # buck_boost
-            vin_min = params.get("vin_min", vin * 0.8)
-            d = 1.0 - vin_min / vout if vout > vin_min else 0.5
-            delta_il = vin_min * d / (fsw * l_val)
-    else:
-        delta_il = iout * 0.3
+    # Output capacitor
     cout_raw = buck_output_cap(abs(delta_il), fsw, vout_ripple)
     cout_val = snap_cap(cout_raw)
     cin_val = 22e-6 if iout > 2.0 else 10e-6
@@ -165,64 +207,40 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
 
     bypass_caps = [
         BypassCap(
-            "CIN",
-            vin_net,
-            "GND",
-            format_capacitance(cin_val),
-            cap_footprint(cin_val),
-            role="input_cap",
-            presentation="topology_local",
+            "CIN", vin_net, "GND",
+            format_capacitance(cin_val), cap_footprint(cin_val),
+            role="input_cap", presentation="topology_local",
         ),
         BypassCap(
-            "COUT",
-            rail_name,
-            "GND",
-            format_capacitance(cout_val),
-            cap_footprint(cout_val),
-            role="output_cap",
-            presentation="topology_local",
+            "COUT", rail_name, "GND",
+            format_capacitance(cout_val), cap_footprint(cout_val),
+            role="output_cap", presentation="topology_local",
         ),
         BypassCap(
-            "L",
-            sw_net,
-            rail_name,
-            format_inductance(l_val),
-            ind_footprint(l_val, iout),
-            role="inductor",
-            presentation="topology_local",
+            "L", sw_net, rail_name,
+            format_inductance(l_val), ind_footprint(l_val, iout),
+            role="inductor", presentation="topology_local",
         ),
     ]
     if pin_bst:
         bypass_caps.append(
             BypassCap(
-                "CBST",
-                bst_net,
-                sw_net,
-                format_capacitance(cbst_val),
-                FP_0402C,
-                role="bootstrap_cap",
-                presentation="topology_local",
+                "CBST", bst_net, sw_net,
+                format_capacitance(cbst_val), FP_0402C,
+                role="bootstrap_cap", presentation="topology_local",
             ),
         )
 
     straps = [
         StrapConfig(
-            "FBT",
-            fb_net,
-            rail_name,
-            format_resistance(r_fbt),
-            FP_0402R,
-            role="feedback_top",
-            presentation="topology_local",
+            "FBT", fb_net, rail_name,
+            format_resistance(r_fbt), FP_0402R,
+            role="feedback_top", presentation="topology_local",
         ),
         StrapConfig(
-            "FBB",
-            fb_net,
-            "GND",
-            format_resistance(r_fbb_snapped),
-            FP_0402R,
-            role="feedback_bottom",
-            presentation="topology_local",
+            "FBB", fb_net, "GND",
+            format_resistance(r_fbb_snapped), FP_0402R,
+            role="feedback_bottom", presentation="topology_local",
         ),
     ]
 
@@ -417,26 +435,23 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
                 power_pins[str(extras)] = "GND"
 
     # Auto-detect additional power pins by name from the pin list
-    import re as _re
-    _GND_RE = _re.compile(r"^(GND|VSS|VEE|PGND|SGND|COM|V[-_]NEG|VMINUS|VNEG|V\-|EPAD)$")
-    _VDD_RE = _re.compile(
-        r"^(VDD|VCC|VIN|VBAT|VSYS|VDDO|VCCA|VCCB|VCCIO|VS|VAUX|AVDD|DVDD|"
-        r"V[-_]POS|VPLUS|VPOS|V\+|AVDDH|AVDDL|DVDDH|DVDDL|VB|VM|VCP|IN1|IN2|"
-        r"VOUT|VBUS|DVDDIO|VDDL|VDDA)$"
-    )
     for pin in pins:
         if pin.number in power_pins:
             continue
         name_upper = pin.name.upper()
         if pin.electrical_type == "power_in":
-            if _GND_RE.match(name_upper) or name_upper.startswith("GND"):
+            if any(
+                name_upper == p or name_upper.startswith(f"{p}_") or name_upper == p
+                for p in GROUND_NET_PREFIXES
+            ) or name_upper in ("VEE", "SGND", "COM", "V-", "EPAD"):
                 power_pins[pin.number] = "GND"
-            elif _VDD_RE.match(name_upper) or any(
-                t in name_upper for t in (
-                    "VDD", "VCC", "VIN", "VBAT", "VSYS", "VAUX", "VBUS",
-                    "VM", "VB", "VCP", "VS", "VOUT",
-                )
-            ) or name_upper in ("IN1", "IN2"):
+            elif any(
+                name_upper == p or name_upper.startswith(f"{p}_") or p in name_upper
+                for p in POWER_NET_PREFIXES
+            ) or name_upper in (
+                "IN1", "IN2", "VPLUS", "VPOS", "V+", "AVDDH", "AVDDL",
+                "DVDDH", "DVDDL", "DVDDIO", "VDDL", "VDDA",
+            ):
                 power_pins[pin.number] = vdd_net
 
     # Wire all non-power signal pins to per-instance boundary ports
