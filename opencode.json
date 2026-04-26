@@ -1,13 +1,18 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@xtruder/opencode-claude-max-plugin"],
   "model": "deepseek/deepseek-v4-flash",
+  "plugin": [
+    "@xtruder/opencode-claude-max-plugin",
+    "oh-my-openagent",
+    "opencode-agent-skills",
+    "opencode-agent-memory",
+    "@gotgenes/opencode-agent-identity"
+  ],
   "instructions": [
     "AGENTS.md",
     "rules/kicad.md"
   ],
-  "skills": [".agents/skills"],
-  "agents": [".opencode/agents"],
+  "skills": { "paths": [".agents/skills"] },
   "agent": {
     "build": {
       "description": "Default development agent with full tool access",
