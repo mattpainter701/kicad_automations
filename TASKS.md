@@ -185,31 +185,30 @@ Files: `src/circuit_weaver/pcb_export.py`,
 
 ---
 
-## Sprint 43 — Schematic Density & Readability (v0.29.0) ✅ DONE
+## Sprint 43 — Schematic Density & Readability (v0.29.1) ✅ DONE
 
 **Goal:** Address the schematic density and readability gaps identified in the 2026-04-26 research run. Schematic generation currently has no automatic sheet splitting (only paper-size promotion to A0), no label collision prevention, no annotation overlap detection, and unbounded lane routing counters. This sprint adds proactive density mitigation.
 
-### T195. Auto sheet splitting when single sheet exceeds density threshold (P0, MEDIUM) ✅ DONE
+### T195. Density-scaled grid spacing (P0, MEDIUM) ✅ DONE — v0.29.1
 
-`allocator.partition_review_sheets()` currently only splits when explicit
-`presentation_group` is set on components AND total pins >= 220. Designs that
-exceed component density without `presentation_group` annotations land on a
-single sheet that gets promoted to A0 — and even A0 may overflow with a
-WARNING. Add automatic splitting when component count or total pin count
-exceeds thresholds, regardless of `presentation_group`.
+**Replaces** the v0.29.0 auto-sheet-splitting approach (reverted).
+Instead of splitting dense sheets into sub-sheets, scale inter-component
+row/column gaps so components spread across the available page area.
+The placer already handles paper auto-promotion — this ensures content
+uses the full sheet instead of clustering in a corner.
 
-- [x] Add `_auto_partition_dense_sheet()` in `allocator.py` that splits a
-  sheet into chunks when `len(components) > 18` OR `total_pins > 280`
-  AND no explicit presentation_group partition fired.
-- [x] Splits use ref-prefix locality (Us together, Js together, then mix)
-  and respect connection density (parent ICs get their bypass caps and
-  straps).
-- [x] Sub-sheets named `{base}_2`, `{base}_3` etc. with title suffix
-  ` (cont.)`.
-- [x] Tests in `tests/test_allocator.py` covering 20-IC sheets,
-  80-passive sheets, presentation_group + auto fallthrough.
+- [x] New function `_density_scaled_gaps()` in `placer.py` computes
+  component footprint area vs available page area and scales
+  base gaps up to 3.0x with a target fill of ~35%.
+- [x] Scale clamped at 1.0x (no compression) and 3.0x (max spread).
+  Gaps return base values when < 3 components or fill > 35%.
+- [x] Wired into `_build_layout()` for all three component groups:
+  connectors, regulators, and other ICs.
+- [x] Output values grid-snapped via existing `snap()` call.
+- [x] 5 tests in `tests/test_density_scaling.py`.
 
-Files: `src/circuit_weaver/allocator.py`, `tests/test_allocator.py`
+Files: `src/circuit_weaver/placer.py`,
+`tests/test_density_scaling.py`
 
 ### T196. Label collision avoidance pass (P1, MEDIUM) — DEFERRED to Sprint 44
 

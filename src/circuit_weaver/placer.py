@@ -219,6 +219,56 @@ def _rowwise_gap_profile(
     return col_gap, row_gap
 
 
+def _density_scaled_gaps(
+    components: list[ComponentDef],
+    base_col_gap: float,
+    base_row_gap: float,
+    paper_width: float,
+    usable_height: float,
+    x_start: float = 0.0,
+) -> tuple[float, float]:
+    """Scale inter-component gaps so components spread across the available page area.
+
+    When a sheet has many components on a large paper size, fixed gap values
+    leave them clustered in a corner with 80%+ whitespace. This function
+    computes the natural footprint area vs available page area and scales
+    gaps so the layout fills ~30-40% of the sheet — enough to spread
+    components out but not so much that they lose visual cohesion.
+
+    The scaling is clamped between 1.0x (no spreading for small sheets) and
+    3.0x (maximum spreading for very large sparse sheets). Returns
+    (col_gap, row_gap) snapped to the KiCad grid.
+    """
+    if len(components) < 3:
+        return base_col_gap, base_row_gap
+
+    # Total component footprint area (approximate)
+    total_fp_area = 0.0
+    for comp in components:
+        w, h = component_block_size(comp)
+        total_fp_area += w * h
+
+    # Available page area (less headers/title block)
+    avail_w = max(1.0, paper_width - x_start - 20.0)
+    avail_h = max(1.0, usable_height)
+    page_area = avail_w * avail_h
+
+    # Natural fill fraction: what fraction of paper area do components
+    # occupy with default gaps? (~5-15% for most designs)
+    fill_fraction = total_fp_area / page_area if page_area > 0 else 0.0
+
+    # Target fill: spread components to ~35% of page for best readability.
+    # If they already fill more, don't compress.
+    if fill_fraction <= 0 or fill_fraction >= 0.35:
+        return base_col_gap, base_row_gap
+
+    # Scale gaps to expand the content area toward the target fill.
+    # Since area ∝ gap² (grid spacing affects both axes), we take sqrt.
+    scale = min(3.0, max(1.0, math.sqrt(0.35 / fill_fraction) * 0.7))
+
+    return snap(base_col_gap * scale), snap(base_row_gap * scale)
+
+
 def _component_local_extents(comp: ComponentDef) -> tuple[float, float, float, float]:
     """Return (left, right, top, bottom) extents from the symbol origin in mm."""
     symbol_sexpr = _component_symbol_sexpr(comp)
@@ -1232,7 +1282,7 @@ def layout_sheet(
     )
 
     def _build_layout(paper: str) -> SheetLayout:
-        pw, _ = PAPER_SIZES.get(paper, PAPER_SIZES["A3"])
+        pw, ph = PAPER_SIZES.get(paper, PAPER_SIZES["A3"])
         layout = SheetLayout(
             name=sheet_alloc.name,
             title=sheet_alloc.title,
@@ -1247,36 +1297,47 @@ def layout_sheet(
         x_limit = snap(pw - margin)
         section_top = y_start
 
+        # Density-scaled gap helper: spreads components across available
+        # page area when the sheet is large but the component count is
+        # modest — avoids corner-clustering. (T201)
+        usable_h = ph - TITLE_BLOCK_H - margin
+
         if connectors and (not (regulators or other_ics) or connector_heavy):
             # Connector-heavy sheets need width-first packing; a single-column
             # connector rail forces A0/A1 pages even when most of the page is blank.
+            conn_col_gap, conn_row_gap = _density_scaled_gaps(
+                connectors, _CONNECTOR_GAP, _CONNECTOR_GAP, pw, usable_h, margin,
+            )
             conn_max_cols = _preferred_max_cols(
                 connectors,
                 margin,
                 x_limit,
-                col_gap=_CONNECTOR_GAP,
+                col_gap=conn_col_gap,
             )
             placed, bottom = _layout_components_rowwise(
                 connectors,
                 margin,
                 y_start,
                 x_limit,
-                col_gap=_CONNECTOR_GAP,
-                row_gap=_CONNECTOR_GAP,
+                col_gap=conn_col_gap,
+                row_gap=conn_row_gap,
                 max_cols=conn_max_cols,
             )
             layout.placed_ics.extend(placed)
             section_top = snap(bottom + _SECTION_GAP)
             main_x_start = margin
         elif connectors:
+            conn_col_gap, conn_row_gap = _density_scaled_gaps(
+                connectors, _CONNECTOR_GAP, _CONNECTOR_GAP, pw, usable_h, margin,
+            )
             connector_col_w = max(component_block_size(comp)[0] for comp in connectors)
             placed, _ = _layout_components_rowwise(
                 connectors,
                 margin,
                 y_start,
                 snap(margin + connector_col_w),
-                col_gap=_CONNECTOR_GAP,
-                row_gap=_CONNECTOR_GAP,
+                col_gap=conn_col_gap,
+                row_gap=conn_row_gap,
                 max_cols=1,
             )
             layout.placed_ics.extend(placed)
@@ -1291,6 +1352,9 @@ def layout_sheet(
                 else None
             )
             reg_col_gap, reg_row_gap = _rowwise_gap_profile(regulators)
+            reg_col_gap, reg_row_gap = _density_scaled_gaps(
+                regulators, reg_col_gap, reg_row_gap, pw, usable_h, main_x_start,
+            )
             placed, bottom = _layout_components_rowwise(
                 regulators,
                 main_x_start,
@@ -1306,6 +1370,9 @@ def layout_sheet(
         if other_ics:
             other_max_cols = _preferred_max_cols(other_ics, main_x_start, x_limit)
             other_col_gap, other_row_gap = _rowwise_gap_profile(other_ics)
+            other_col_gap, other_row_gap = _density_scaled_gaps(
+                other_ics, other_col_gap, other_row_gap, pw, usable_h, main_x_start,
+            )
             placed, bottom = _layout_components_rowwise(
                 other_ics,
                 main_x_start,
