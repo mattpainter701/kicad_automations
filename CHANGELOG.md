@@ -1,10 +1,74 @@
 # Changelog
 
-## [Unreleased]
+## [0.29.0] - 2026-04-27
+
+### Sprint 43 — Schematic Density & Readability
+
+Generated schematics had no automatic sheet splitting (only paper-size
+promotion to A0), no annotation overlap detection, and unbounded lane
+routing counters that drifted wires arbitrarily far from dense IC
+faces. This release ships proactive density mitigation across the
+allocator and generator.
 
 ### Added
 
-- **Design wizard workflow**: New "Start from a sample design" option [3] (Step 0.3) — lists 13 bundled sample designs, copies the selected one to a new working project, renames YAML and spec. Auto-detection now separates real user projects from bundled samples.
+- **Auto sheet splitting for density-overloaded sheets** (Task 195).
+  `allocator.partition_review_sheets()` now runs a two-pass strategy:
+  presentation-group partitioning first (existing behavior), then an
+  auto-partition fallback that splits sheets exceeding 18 components or
+  280 total pins regardless of explicit `presentation_group`. Splits
+  use ref-prefix locality (ICs together, connectors together, then
+  passives) and chunk to ~12 components per sub-sheet. Continuation
+  sub-sheets are named `{base}_2`, `{base}_3` etc. with title suffix
+  `(cont. N)`. New helpers: `_is_density_overload()`,
+  `_auto_partition_dense_sheet()`, `_ref_prefix_bucket()`. Configurable
+  via module-level `_AUTO_PARTITION_MAX_COMPONENTS`,
+  `_AUTO_PARTITION_MAX_PINS`, `_AUTO_PARTITION_TARGET_COMPONENTS`.
+- **Design wizard "start from sample" workflow**: New Step 0.3 option
+  lists 13 bundled sample designs, copies the selected one to a new
+  working project, renames YAML and spec. Auto-detection now separates
+  real user projects from bundled samples.
+
+### Changed
+
+- **Annotation emission now prevents per-IC text block overlap** (Task
+  197). When a new annotation block in `generator.py` would overlap an
+  already-placed block on the same sheet, the Y position shifts down
+  by 3.81mm increments (max 6 shifts, ~22.9mm total) until clear, or
+  drops the overflow lines if no slot works in the search window.
+  Bounding rectangles are estimated from line text width + line count.
+  Soft layout improvement only; does not change connectivity or
+  component positions.
+- **Lane routing counters now wrap with modulo** (Task 198).
+  `_reserve_lane()` previously incremented the lane counter
+  monotonically without bound — a sheet with 50 lane allocations on
+  one IC face placed the 50th lane at ~194mm from the obstacle. Lane
+  index is now capped at 6 (`_LANE_INDEX_MAX`); beyond that lanes
+  recycle inner positions and the box-bypass detours in
+  `_route_local_connection` resolve any conflicts. Practical
+  readability ceiling now ~26.7mm from any IC face.
+
+### Deferred
+
+- **Label collision avoidance** (Task 196) deferred to Sprint 44.
+  Implementation requires careful wire-endpoint coordination — moving
+  a label without moving the connected wire endpoint disconnects the
+  net (KiCad uses point coincidence). Scoped for a dedicated sprint
+  with full design review.
+
+### Tests
+
+- Added `tests/test_allocator.py` — 8 tests covering
+  density-overload detection (component and pin thresholds), auto
+  partitioning of dense sheets, continuation-sheet naming
+  (`(cont. N)`), preservation of modest sheets below the threshold,
+  and interaction with explicit `presentation_group` partitioning.
+
+### Files
+
+`src/circuit_weaver/allocator.py`, `src/circuit_weaver/generator.py`,
+`tests/test_allocator.py`, `pyproject.toml`,
+`src/circuit_weaver/__init__.py`, `tests/test_bootstrap.py`
 
 ## [0.28.0] - 2026-04-26
 

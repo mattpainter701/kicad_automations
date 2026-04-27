@@ -185,6 +185,84 @@ Files: `src/circuit_weaver/pcb_export.py`,
 
 ---
 
+## Sprint 43 — Schematic Density & Readability (v0.29.0) ✅ DONE
+
+**Goal:** Address the schematic density and readability gaps identified in the 2026-04-26 research run. Schematic generation currently has no automatic sheet splitting (only paper-size promotion to A0), no label collision prevention, no annotation overlap detection, and unbounded lane routing counters. This sprint adds proactive density mitigation.
+
+### T195. Auto sheet splitting when single sheet exceeds density threshold (P0, MEDIUM) ✅ DONE
+
+`allocator.partition_review_sheets()` currently only splits when explicit
+`presentation_group` is set on components AND total pins >= 220. Designs that
+exceed component density without `presentation_group` annotations land on a
+single sheet that gets promoted to A0 — and even A0 may overflow with a
+WARNING. Add automatic splitting when component count or total pin count
+exceeds thresholds, regardless of `presentation_group`.
+
+- [x] Add `_auto_partition_dense_sheet()` in `allocator.py` that splits a
+  sheet into chunks when `len(components) > 18` OR `total_pins > 280`
+  AND no explicit presentation_group partition fired.
+- [x] Splits use ref-prefix locality (Us together, Js together, then mix)
+  and respect connection density (parent ICs get their bypass caps and
+  straps).
+- [x] Sub-sheets named `{base}_2`, `{base}_3` etc. with title suffix
+  ` (cont.)`.
+- [x] Tests in `tests/test_allocator.py` covering 20-IC sheets,
+  80-passive sheets, presentation_group + auto fallthrough.
+
+Files: `src/circuit_weaver/allocator.py`, `tests/test_allocator.py`
+
+### T196. Label collision avoidance pass (P1, MEDIUM) — DEFERRED to Sprint 44
+
+`generator.py` emits labels at fixed stub lengths with no collision check.
+Implementation requires careful wire-endpoint coordination — moving a label
+without moving the connected wire endpoint creates a disconnected schematic
+(KiCad uses point coincidence for wire-label connectivity). Deferred to a
+dedicated sprint with full design review.
+
+Scope when undeferred: regex-parse labels and wires, build endpoint index,
+detect collisions (label centers within 3mm AND same orientation axis),
+shift the later label along its wire-stub direction (extending the wire) by
+2.54mm increments until clear, update both label and wire s-expressions.
+
+### T197. Annotation overlap prevention (P2, SMALL) ✅ DONE
+
+Per-IC annotations stack at `placed.x + 5` with 3mm pitch downward; on busy
+sheets, annotations from adjacent ICs collide. Add y-axis offset when an
+annotation would overlap with an already-placed annotation.
+
+- [x] Track placed annotation rectangles per sheet during emission.
+- [x] When new annotation rect overlaps existing, shift Y down by
+  3.81mm increments until clear (max 5 shifts, then drop overflow
+  lines).
+- [x] Wire into the annotation emission path in `generator.py`.
+
+Files: `src/circuit_weaver/generator.py`
+
+### T198. Recycle lane routing counters (P2, SMALL) ✅ DONE
+
+`_lane_route_candidates()` increments lane counters monotonically without
+recycling. With 50 lane allocations on one IC face, the 50th lane sits
+194mm away from the obstacle. Cap lane index at 6 and wrap with modulo.
+
+- [x] Cap `lane_index` at `_LANE_INDEX_MAX = 6` then wrap.
+- [x] Test confirms lane allocations don't exceed
+  `_LOCAL_ROUTE_LANE_BASE + 6 * _LOCAL_ROUTE_LANE_PITCH = ~26.7mm`
+  from the obstacle face on a 50-pin IC.
+
+Files: `src/circuit_weaver/generator.py`,
+`tests/test_schematic_invariants.py`
+
+### T199. Update CHANGELOG and bump to v0.29.0 (P1, XS) ✅ DONE
+
+- [x] Add `## [0.29.0]` entry summarising T195-T198.
+- [x] Bump `__version__` to 0.29.0 in `src/circuit_weaver/__init__.py`,
+  `pyproject.toml`, `tests/test_bootstrap.py`.
+
+Files: `CHANGELOG.md`, `pyproject.toml`,
+`src/circuit_weaver/__init__.py`, `tests/test_bootstrap.py`
+
+---
+
 ## Sprint 42 — Backlog: Architecture & Quality Gates (Unplanned)
 
 **Goal:** Address the top findings from the 2026-04-26 codebase research gap analysis. P0 items block quality enforcement; P1 items reduce maintenance risk.

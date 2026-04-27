@@ -83,6 +83,11 @@ _POWER_NET_PREFIXES = ("VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO")
 _LOCAL_ROUTE_CLEARANCE = snap(2.54)
 _LOCAL_ROUTE_LANE_PITCH = snap(3.81)
 _LOCAL_ROUTE_LANE_BASE = snap(3.81)
+# T198 — Cap lane index so dense connectors don't drift wires unboundedly.
+# At index 6, the lane sits ~26.7mm from the obstacle face, which is the
+# practical readability ceiling. Beyond that, lanes wrap (and routing falls
+# back to the box-bypass detours in `_route_local_connection`).
+_LANE_INDEX_MAX = 6
 
 # Pin names that are safe to no-connect without warning.
 _NC_PIN_NAME_PATTERNS = re.compile(r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE)
@@ -845,12 +850,19 @@ def _lane_bucket_value(point: tuple[float, float], side: str) -> int:
 
 
 def _reserve_lane(route_state: dict[str, dict], side: str, point: tuple[float, float]) -> int:
-    """Reserve or reuse a routing lane index for a side/position bucket."""
+    """Reserve or reuse a routing lane index for a side/position bucket.
+
+    Lane indices are capped at ``_LANE_INDEX_MAX`` and wrap with modulo so
+    that a sheet with 50 connections from the same IC face does not drift
+    the 50th lane to ~194mm away. Wrapping reuses inner lanes; conflicts
+    among same-bucket connections are resolved by the box-bypass detours
+    in `_route_local_connection`. (T198)
+    """
     lane_cache = route_state.setdefault("lane_cache", {})
     lane_next = route_state.setdefault("lane_next", {"left": 0, "right": 0, "top": 0, "bottom": 0})
     bucket_key = (side, _lane_bucket_value(point, side))
     if bucket_key not in lane_cache:
-        lane_cache[bucket_key] = lane_next[side]
+        lane_cache[bucket_key] = lane_next[side] % (_LANE_INDEX_MAX + 1)
         lane_next[side] += 1
     return lane_cache[bucket_key]
 
@@ -2355,23 +2367,78 @@ def _render_sheet(
             _label_fn(name)(port_anchor_x, port_y, 0, name, wires, labels, shape=direction)
 
     # --- Annotations (design rationale text near ICs) ---
+    # T197 — Track placed annotation rectangles per sheet so per-IC blocks
+    # from adjacent ICs don't overlap. When a new annotation block would
+    # collide with an already-placed one, shift it down by 3.81mm steps
+    # (max 6 shifts) until clear, or drop the overflow lines if no slot
+    # works. This is a soft layout improvement only; it does not change
+    # connectivity or component positions.
     annotation_texts = []
+    placed_ann_rects: list[tuple[float, float, float, float]] = []  # (x_min, y_min, x_max, y_max)
+
+    def _ann_rect_for_block(
+        x: float,
+        y: float,
+        lines: list[str],
+        char_width: float = 1.5,
+    ) -> tuple[float, float, float, float]:
+        """Estimate bounding rect for a block of annotation lines."""
+        max_chars = max((len(line) for line in lines), default=10)
+        block_w = max(20.0, max_chars * char_width)
+        block_h = max(3.0, len(lines) * 3.0)
+        return (x - 1.0, y - 1.5, x + block_w, y + block_h)
+
+    def _rect_overlaps(
+        a: tuple[float, float, float, float],
+        b: tuple[float, float, float, float],
+    ) -> bool:
+        return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
+
+    def _find_clear_y(
+        start_y: float,
+        x: float,
+        lines: list[str],
+        max_shifts: int = 6,
+        step: float = 3.81,
+    ) -> float | None:
+        """Find a Y offset where the annotation block doesn't overlap any placed rect."""
+        for shift in range(max_shifts + 1):
+            candidate_y = start_y + shift * step
+            candidate_rect = _ann_rect_for_block(x, candidate_y, lines)
+            if not any(_rect_overlaps(candidate_rect, existing) for existing in placed_ann_rects):
+                return candidate_y
+        return None
+
     for placed in layout.placed_ics:
         explanation_lines = component_explanation_lines(placed.comp, placed.ref)
-        if explanation_lines:
-            ann_x = snap(placed.x + 5)
-            ann_y = component_annotation_start_y(placed.comp, placed.y)
-            for i, line in enumerate(explanation_lines[:5]):
-                line_x = ann_x if i == 0 else snap(ann_x + 1.27)
-                line_size = 1.1 if i == 0 else 1.0
-                annotation_texts.append(text_annotation(line, line_x, ann_y + i * 3.0, size=line_size))
+        if not explanation_lines:
+            continue
+        ann_x = snap(placed.x + 5)
+        ann_y_start = component_annotation_start_y(placed.comp, placed.y)
+        lines = list(explanation_lines[:5])
+        clear_y = _find_clear_y(ann_y_start, ann_x, lines)
+        if clear_y is None:
+            # No clear slot found within the search window; drop overflow lines
+            # rather than emit colliding text.
+            continue
+        ann_y = clear_y
+        rect = _ann_rect_for_block(ann_x, ann_y, lines)
+        placed_ann_rects.append(rect)
+        for i, line in enumerate(lines):
+            line_x = ann_x if i == 0 else snap(ann_x + 1.27)
+            line_size = 1.1 if i == 0 else 1.0
+            annotation_texts.append(text_annotation(line, line_x, ann_y + i * 3.0, size=line_size))
 
     # --- Sheet-level annotations (from allocator) ---
     if layout.sheet_annotations:
         ann_x = snap(20)
-        ann_y = snap(25)
-        for i, line in enumerate(layout.sheet_annotations):
-            annotation_texts.append(text_annotation(line, ann_x, ann_y + i * 3.0, size=1.27))
+        ann_y_start = snap(25)
+        sheet_lines = list(layout.sheet_annotations)
+        clear_y = _find_clear_y(ann_y_start, ann_x, sheet_lines)
+        if clear_y is not None:
+            placed_ann_rects.append(_ann_rect_for_block(ann_x, clear_y, sheet_lines))
+            for i, line in enumerate(sheet_lines):
+                annotation_texts.append(text_annotation(line, ann_x, clear_y + i * 3.0, size=1.27))
 
     # --- Add power symbol lib entries for any power symbols used ---
     if power_lib_names:

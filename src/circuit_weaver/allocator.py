@@ -123,6 +123,13 @@ def pick_paper_size(num_components: int, total_pins: int) -> str:
 _PASSIVE_PREFIXES = {"R", "C", "L", "D", "F", "FB", "Y", "FL"}
 _REVIEW_PARTITION_MIN_TOTAL_PINS = 220
 
+# Auto-partition thresholds (T195) — when a single sheet exceeds either
+# threshold AND has no presentation_group partitioning, split into chunks
+# by ref-prefix locality so we don't ship single-A0 monsters.
+_AUTO_PARTITION_MAX_COMPONENTS = 18
+_AUTO_PARTITION_MAX_PINS = 280
+_AUTO_PARTITION_TARGET_COMPONENTS = 12  # target chunk size after partition
+
 
 def _base_sheet_name(sheet_name: str) -> str:
     return sheet_name.split("_", 1)[0]
@@ -324,11 +331,133 @@ def _partition_sheet_for_review(sheet: SheetAllocation) -> list[SheetAllocation]
     return partitioned
 
 
+def _is_density_overload(sheet: SheetAllocation) -> bool:
+    """A sheet is density-overloaded if it would produce an unreadable single sheet."""
+    n = len(sheet.components)
+    pins = sum(len(c.pins) for c in sheet.components)
+    return n > _AUTO_PARTITION_MAX_COMPONENTS or pins > _AUTO_PARTITION_MAX_PINS
+
+
+def _ref_prefix_bucket(comp: ComponentDef) -> str:
+    """Group components by ref-prefix family for locality during auto-partition."""
+    prefix = (comp.ref_prefix or "").upper()
+    if prefix in {"U", "IC"}:
+        return "ic"
+    if prefix in {"J", "P", "X"}:
+        return "connector"
+    if prefix in _PASSIVE_PREFIXES:
+        return "passive"
+    return "other"
+
+
+def _auto_partition_dense_sheet(sheet: SheetAllocation) -> list[SheetAllocation]:
+    """Split a dense sheet into chunks based on ref-prefix locality.
+
+    Triggered when a sheet exceeds component or pin thresholds and the
+    explicit presentation-group partitioner produced no split. Splits the
+    sheet into roughly ``_AUTO_PARTITION_TARGET_COMPONENTS``-sized chunks,
+    grouping by ref-prefix family (ICs together, connectors together, then
+    passives) to preserve visual locality.
+    """
+    if not _is_density_overload(sheet):
+        return [sheet]
+
+    # Bucket components by ref-prefix family, preserving original order within bucket.
+    buckets: dict[str, list[ComponentDef]] = {}
+    bucket_order: list[str] = []
+    for comp in sheet.components:
+        bucket = _ref_prefix_bucket(comp)
+        if bucket not in buckets:
+            buckets[bucket] = []
+            bucket_order.append(bucket)
+        buckets[bucket].append(comp)
+
+    # Concatenate buckets in a stable order (ICs first, then connectors, then others/passives).
+    bucket_priority = {"ic": 0, "connector": 1, "other": 2, "passive": 3}
+    ordered_components: list[ComponentDef] = []
+    for bucket in sorted(bucket_order, key=lambda b: bucket_priority.get(b, 9)):
+        ordered_components.extend(buckets[bucket])
+
+    # Greedy chunking — keep chunks balanced by component count and pin total.
+    target = max(1, _AUTO_PARTITION_TARGET_COMPONENTS)
+    chunks: list[list[ComponentDef]] = []
+    current: list[ComponentDef] = []
+    current_pins = 0
+    pin_target = max(60, _AUTO_PARTITION_MAX_PINS // 2)
+    for comp in ordered_components:
+        comp_pins = len(comp.pins)
+        if current and (
+            len(current) >= target
+            or current_pins + comp_pins > pin_target
+        ):
+            chunks.append(current)
+            current = []
+            current_pins = 0
+        current.append(comp)
+        current_pins += comp_pins
+    if current:
+        chunks.append(current)
+
+    if len(chunks) <= 1:
+        return [sheet]
+
+    partitioned: list[SheetAllocation] = []
+    for idx, comps in enumerate(chunks):
+        chunk_bypass: list = []
+        chunk_straps: list = []
+        for c in comps:
+            chunk_bypass.extend(c.bypass_caps)
+            chunk_straps.extend(c.straps)
+
+        if idx == 0:
+            name = sheet.name
+            title = sheet.title
+            annotations = list(sheet.sheet_annotations)
+        else:
+            name = f"{sheet.name}_{idx + 1}"
+            title = f"{sheet.title} (cont. {idx + 1})"
+            annotations = []
+
+        total_pins = sum(len(c.pins) for c in comps)
+        partitioned.append(
+            SheetAllocation(
+                name=name,
+                title=title,
+                paper=pick_paper_size(len(comps), total_pins),
+                components=list(comps),
+                bypass_caps=chunk_bypass,
+                straps=chunk_straps,
+                sheet_annotations=annotations,
+                presentation_wiring_policy=sheet.presentation_wiring_policy,
+            )
+        )
+
+    print(
+        f"  Auto-partitioned dense sheet '{sheet.name}' "
+        f"({len(sheet.components)} parts, {sum(len(c.pins) for c in sheet.components)} pins) into "
+        + ", ".join(f"{part.name} ({len(part.components)} parts)" for part in partitioned)
+    )
+    return partitioned
+
+
 def partition_review_sheets(sheets: list[SheetAllocation]) -> list[SheetAllocation]:
-    """Split very large review sheets by declared presentation groups."""
+    """Split very large review sheets, first by declared presentation groups, then by density.
+
+    Two-pass strategy:
+
+    1. Explicit partitioning by `presentation_group` field on components
+       (when set, groups are honored verbatim).
+    2. Auto-partition fallback: if a sheet still has too many components
+       or pins after step 1, split by ref-prefix locality (T195).
+    """
     result: list[SheetAllocation] = []
     for sheet in sheets:
-        result.extend(_partition_sheet_for_review(sheet))
+        # Step 1: presentation-group partition (existing behavior).
+        review_partitions = _partition_sheet_for_review(sheet)
+
+        # Step 2: auto-partition any sub-sheet that's still density-overloaded.
+        for sub in review_partitions:
+            result.extend(_auto_partition_dense_sheet(sub))
     return result
 
 
