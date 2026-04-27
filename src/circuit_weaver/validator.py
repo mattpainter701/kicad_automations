@@ -495,6 +495,23 @@ def _validate_net_connectivity(components: list[ComponentDef]) -> list[Validatio
                 )
             )
 
+    # Check for power-to-ground shorts within a single net
+    _vdd_like = {"VDD", "VCC", "VBUS", "VIN", "VDDA", "VBAT", "VSYS", "MGT", "VCCO", "VAUX"}
+    _gnd_like = {"GND", "AGND", "DGND", "PGND", "VSS", "GNDA", "GNDD"}
+    for net, pins in net_map.items():
+        upper = net.upper()
+        is_vdd = upper in _vdd_like or any(upper.startswith(f"{p}_") for p in _vdd_like)
+        is_gnd = upper in _gnd_like or any(upper.startswith(f"{p}_") for p in _gnd_like)
+        if is_vdd and is_gnd:
+            refs = ", ".join(f"{ref}:{pnum}" for ref, pnum, _ in pins)
+            issues.append(
+                _issue(
+                    _find_comp(components, pins[0][0]),
+                    "vdd-to-gnd-short",
+                    f"Net '{net}' carries both VDD and GND — likely a power-to-ground short: {refs}",
+                )
+            )
+
     return issues
 
 

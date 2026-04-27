@@ -644,6 +644,24 @@ class SubcircuitTemplate(ABC):
 
         return errors
 
+    def _validate_unknown_params(self, params: dict[str, Any]) -> list[str]:
+        """Detect params passed to a template that are not in its param_schema."""
+        schema = getattr(self, "param_schema", [])
+        if not schema:
+            return []
+        known = {spec.get("name", "") for spec in schema if spec.get("name")}
+        unknown = [
+            k for k in params
+            if k not in known and k not in (
+                "ic", "ref", "type", "section", "template",
+                "no_connects", "pin_nets_extra", "power_pins_extra",
+                "interfaces", "terminal",
+            )
+        ]
+        if unknown:
+            return ["Unknown parameter(s): " + ", ".join(unknown)]
+        return []
+
     def get_param_schema(self) -> list[dict[str, Any]]:
         """Return a copy of the template's declared parameter schema."""
         return [dict(item) for item in getattr(self, "param_schema", [])]

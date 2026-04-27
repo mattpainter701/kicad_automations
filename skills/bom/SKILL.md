@@ -27,23 +27,23 @@ Use `<skill-path>` to reference the BOM skill directory.
 
 ```bash
 # Analyze schematic (JSON output, recursive sub-sheets)
-python3 <skill-path>/scripts/bom_manager.py analyze path/to/schematic.kicad_sch --json --recursive
+python <skill-path>/scripts/bom_manager.py analyze path/to/schematic.kicad_sch --json --recursive
 
 # Export BOM tracking CSV (creates new or merges with existing)
-python3 <skill-path>/scripts/bom_manager.py export path/to/schematic.kicad_sch -o bom/bom.csv --recursive
+python <skill-path>/scripts/bom_manager.py export path/to/schematic.kicad_sch -o bom/bom.csv --recursive
 
 # Generate per-distributor order files (5 boards + 2 spares/line)
-python3 <skill-path>/scripts/bom_manager.py order bom/bom.csv --boards 5 --spares 2
+python <skill-path>/scripts/bom_manager.py order bom/bom.csv --boards 5 --spares 2
 
 # Quick single-distributor order (bypasses Chosen_Distributor column)
-python3 <skill-path>/scripts/bom_manager.py order bom/bom.csv --distributor digikey
+python <skill-path>/scripts/bom_manager.py order bom/bom.csv --distributor digikey
 
 # Write properties to schematic (dry-run first, then apply)
 echo '{"R1": {"MPN": "RC0805FR-0710KL", "Manufacturer": "Yageo"}}' \
-  | python3 <skill-path>/scripts/edit_properties.py path/to/schematic.kicad_sch --dry-run
+  | python <skill-path>/scripts/edit_properties.py path/to/schematic.kicad_sch --dry-run
 
 # Sync datasheet URLs from index.json back into schematic Datasheet properties
-python3 <skill-path>/scripts/sync_datasheet_urls.py path/to/schematic.kicad_sch --recursive --dry-run
+python <skill-path>/scripts/sync_datasheet_urls.py path/to/schematic.kicad_sch --recursive --dry-run
 ```
 
 ## Workflow
@@ -57,7 +57,7 @@ Skip steps that don't apply. Common shortcuts:
 ### Step 1: Understand the Project
 
 ```bash
-python3 <skill-path>/scripts/bom_manager.py analyze path/to/schematic.kicad_sch --json --recursive
+python <skill-path>/scripts/bom_manager.py analyze path/to/schematic.kicad_sch --json --recursive
 ```
 
 The output tells you the project's field naming convention, which distributors are populated, what's missing, and the preferred distributor. Also look for an existing BOM tracking CSV in the project directory or `bom/` folder.
@@ -69,9 +69,9 @@ The script covers common patterns, but some projects use internal key systems or
 **Do this immediately.** Datasheets are essential context for validation and part selection. Run the preferred distributor's sync first; if some fail, try others — they share the same `datasheets/` directory and skip already-downloaded parts.
 
 ```bash
-python3 <digikey-skill-path>/scripts/sync_datasheets_digikey.py path/to/schematic.kicad_sch --recursive
-python3 <lcsc-skill-path>/scripts/sync_datasheets_lcsc.py path/to/schematic.kicad_sch --recursive
-python3 <element14-skill-path>/scripts/sync_datasheets_element14.py path/to/schematic.kicad_sch --recursive
+python <digikey-skill-path>/scripts/sync_datasheets_digikey.py path/to/schematic.kicad_sch --recursive
+python <lcsc-skill-path>/scripts/sync_datasheets_lcsc.py path/to/schematic.kicad_sch --recursive
+python <element14-skill-path>/scripts/sync_datasheets_element14.py path/to/schematic.kicad_sch --recursive
 ```
 
 DigiKey is best (direct PDF URLs). element14 is reliable (no bot protection). LCSC works for LCSC-only parts. Mouser is a last resort (often blocks downloads).
@@ -83,7 +83,7 @@ DigiKey is best (direct PDF URLs). element14 is reliable (no bot protection). LC
 Re-sync after writing new MPNs (Step 5) — the scripts are idempotent. Then backfill Datasheet URLs into the schematic:
 
 ```bash
-python3 <skill-path>/scripts/sync_datasheet_urls.py path/to/schematic.kicad_sch --recursive
+python <skill-path>/scripts/sync_datasheet_urls.py path/to/schematic.kicad_sch --recursive
 ```
 
 This reads `datasheets/index.json` and writes discovered datasheet URLs into empty schematic `Datasheet` properties. Opportunistic — only fills blanks. If a schematic already has a different URL, it warns about the mismatch without overwriting (use `--overwrite` to replace). Run with `--dry-run` first to preview.
@@ -120,7 +120,7 @@ If unsaved KiCad work exists, ask them to save first (Ctrl+S), then run the scri
 
 ```bash
 echo '{"R1": {"MPN": "RC0805FR-0710KL", "Manufacturer": "Yageo", "DigiKey": "311-10.0KCRCT-ND"}}' \
-  | python3 <skill-path>/scripts/edit_properties.py path/to/schematic.kicad_sch
+  | python <skill-path>/scripts/edit_properties.py path/to/schematic.kicad_sch
 ```
 
 **Backups:** By default, no `.bak` file is created (git tracks changes). Pass `--backup` if the schematic is not in a git repo or has uncommitted changes the user wants to preserve.
@@ -132,7 +132,7 @@ echo '{"R1": {"MPN": "RC0805FR-0710KL", "Manufacturer": "Yageo", "DigiKey": "311
 ### Step 6: Update the BOM Tracking CSV
 
 ```bash
-python3 <skill-path>/scripts/bom_manager.py export path/to/schematic.kicad_sch -o bom/bom.csv --recursive
+python <skill-path>/scripts/bom_manager.py export path/to/schematic.kicad_sch -o bom/bom.csv --recursive
 ```
 
 CSV columns are dynamic — only distributors the project uses get columns. Base columns: Reference, Qty, Value, Footprint, MPN, Manufacturer. Each active distributor gets a PN column + stock column. Tail columns: Chosen_Distributor, Datasheet, Validated, DNP, Notes.
@@ -177,10 +177,10 @@ For large BOMs (50+ parts), focus on power components, critical signal paths, an
 
 ```bash
 # Using Chosen_Distributor column, 5 boards + 2 spares
-python3 <skill-path>/scripts/bom_manager.py order bom/bom.csv -o bom/orders/ --boards 5 --spares 2
+python <skill-path>/scripts/bom_manager.py order bom/bom.csv -o bom/orders/ --boards 5 --spares 2
 
 # Or quick single-distributor order
-python3 <skill-path>/scripts/bom_manager.py order bom/bom.csv --distributor digikey
+python <skill-path>/scripts/bom_manager.py order bom/bom.csv --distributor digikey
 ```
 
 `--boards` multiplies all quantities. `--spares` adds a flat extra per line after multiplication. `--distributor` bypasses Chosen_Distributor — generates an order for all parts with that distributor's PN.
@@ -264,10 +264,10 @@ The `kicad` skill also creates analyzer JSON and design review markdown reports 
 
 ```bash
 # Remove downloaded datasheets (re-downloadable)
-rm -rf datasheets/
+rm -r datasheets/
 
 # Remove order files (regenerate before ordering)
-rm -rf bom/orders/
+rm -r bom/orders/
 
 # Remove schematic backups
 rm -f *.bak

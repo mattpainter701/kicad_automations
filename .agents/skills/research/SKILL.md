@@ -9,6 +9,7 @@ This is a repository-local compatibility entrypoint for the global Research skil
 
 Immediately read and follow `~/.claude/skills/research/SKILL.md`.
 Treat that file as the source of truth for workflow steps, scripts, credentials, and models.
+Do NOT run all CLI commands at once. The canonical skill places each command at a specific workflow step — follow the step-by-step instructions, not a flat list.
 
 The script `~/.claude/scripts/perplexity_search.py` is the backend. It loads `PERPLEXITY_API_KEY` from `~/.config/secrets.env` automatically.
 

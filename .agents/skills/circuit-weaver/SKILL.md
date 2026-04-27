@@ -8,10 +8,4 @@ This is a repository-local compatibility entrypoint for the canonical Circuit We
 Immediately read and follow `skills/circuit-weaver/SKILL.md` relative to the repo root.
 Treat that file as the source of truth for workflow steps, agents, CLI subcommands, and design generation logic.
 
-Key CLI commands available:
-- `circuit-weaver discover` — Auto-detect projects in current directory
-- `circuit-weaver validate design.yaml --enhanced` — Run full validation with cross-reference audit
-- `circuit-weaver simulate design.yaml -o ./sims` — Run SPICE simulations
-- `circuit-weaver confidence design.yaml --run-sims` — Full design readiness score (0-100)
-- `circuit-weaver generate design.yaml -o ./output` — Generate schematic artifacts
-- `circuit-weaver log-event <dir> --type <type> --message <msg>` — Log structured events
+Do NOT run all CLI commands at once. The canonical skill places each command at a specific workflow step — follow the step-by-step instructions, not a flat list.

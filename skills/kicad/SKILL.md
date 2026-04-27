@@ -46,13 +46,13 @@ For deep validation of extracted circuits against datasheets (verifying values, 
 
 This skill includes Python scripts that extract comprehensive structured JSON from KiCad files in a single pass. Run these first, then reason about the output.
 
-Read analyzer JSON output directly with the Read tool rather than writing ad-hoc extraction scripts. The JSON schema has specific field names (documented below) that are easy to get wrong in custom code. To extract a specific section: `python3 -c "import json; d=json.load(open('file.json')); print(json.dumps(d['key'], indent=2))"`.
+Read analyzer JSON output directly with the Read tool rather than writing ad-hoc extraction scripts. The JSON schema has specific field names (documented below) that are easy to get wrong in custom code. To extract a specific section: `python -c "import json; d=json.load(open('file.json')); print(json.dumps(d['key'], indent=2))"`.
 
 In all commands below, `<skill-path>` refers to this skill's base directory (shown at the top of this file when loaded).
 
 ### Schematic Analyzer
 ```bash
-python3 <skill-path>/scripts/analyze_schematic.py <file.kicad_sch>
+python <skill-path>/scripts/analyze_schematic.py <file.kicad_sch>
 ```
 Outputs structured JSON (~60-220KB depending on board complexity) with:
 - **Components & BOM**: inventory with reference, value, footprint, lib_id, type classification, MPN, datasheet; deduplicated BOM with quantities
@@ -95,8 +95,8 @@ See `references/schematic-analysis.md` Step 2 for the full verification checklis
 
 ### PCB Layout Analyzer
 ```bash
-python3 <skill-path>/scripts/analyze_pcb.py <file.kicad_pcb>
-python3 <skill-path>/scripts/analyze_pcb.py <file.kicad_pcb> --proximity  # add crosstalk analysis
+python <skill-path>/scripts/analyze_pcb.py <file.kicad_pcb>
+python <skill-path>/scripts/analyze_pcb.py <file.kicad_pcb> --proximity  # add crosstalk analysis
 ```
 Outputs structured JSON (~50-300KB depending on board complexity) with:
 - **Core**: footprint inventory (pads, courtyards, net assignments, extended attrs, schematic cross-reference), track/via statistics, zone summaries, board outline/dimensions, routing completeness
@@ -116,7 +116,7 @@ Add `--full` to include individual track/via coordinates. Supports KiCad 5 legac
 
 ### Gerber & Drill Analyzer
 ```bash
-python3 <skill-path>/scripts/analyze_gerbers.py <gerber_directory/>
+python <skill-path>/scripts/analyze_gerbers.py <gerber_directory/>
 ```
 Outputs: layer identification (X2 attributes), component/net/pin mapping (KiCad 6+ TO attributes), aperture function classification, trace width distribution, board dimensions, drill classification (via/component/mounting), layer completeness, alignment verification, pad type summary (SMD/THT ratio). Add `--full` for complete pin-to-net connectivity dump. ~10KB JSON.
 
@@ -209,10 +209,10 @@ Datasheets are what separate a consistency check from a correctness check. Witho
 **Automated sync (preferred):** Run datasheet sync scripts early in the workflow. They download datasheets for all components with MPNs into a shared `datasheets/` directory with an `index.json` manifest. Run the preferred source first; if some parts fail, try others — they share the same directory and skip already-downloaded files.
 
 ```bash
-python3 <digikey-skill-path>/scripts/sync_datasheets_digikey.py <file.kicad_sch>
-python3 <lcsc-skill-path>/scripts/sync_datasheets_lcsc.py <file.kicad_sch>
-python3 <element14-skill-path>/scripts/sync_datasheets_element14.py <file.kicad_sch>
-python3 <mouser-skill-path>/scripts/sync_datasheets_mouser.py <file.kicad_sch>
+python <digikey-skill-path>/scripts/sync_datasheets_digikey.py <file.kicad_sch>
+python <lcsc-skill-path>/scripts/sync_datasheets_lcsc.py <file.kicad_sch>
+python <element14-skill-path>/scripts/sync_datasheets_element14.py <file.kicad_sch>
+python <mouser-skill-path>/scripts/sync_datasheets_mouser.py <file.kicad_sch>
 ```
 
 DigiKey is best (direct PDF URLs). element14 is reliable (no bot protection). LCSC works for LCSC-only parts. Mouser is a last resort (often blocks downloads).

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuit-weaver"
-version = "0.28.2"
+version = "0.28.3"
 description = "Programmatic circuit design, validation, and KiCad artifact generation"
 readme = "README.md"
 requires-python = ">=3.10"

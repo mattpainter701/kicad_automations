@@ -216,6 +216,16 @@ def register_ic(mpn: str, data: dict[str, Any], *, persist: bool = True) -> None
     # lock itself for lazy init and holding it here would deadlock.
     db = _get_db()
     with _db_lock:
+        existing = db.get(mpn)
+        if existing is not None:
+            old_pins = len(existing.get("pins", []))
+            new_pins = len(data.get("pins", []))
+            old_topo = existing.get("topology", "?")
+            new_topo = data.get("topology", "?")
+            _logger.warning(
+                "Registering IC %s: overwriting existing entry (topology %s→%s, pins %d→%d)",
+                mpn, old_topo, new_topo, old_pins, new_pins,
+            )
         db[mpn] = data
     if persist:
         path = _write_custom(mpn, data)

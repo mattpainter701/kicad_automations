@@ -12,7 +12,4 @@ This is a repository-local compatibility entrypoint for the canonical simulation
 Immediately read and follow `project-skills/sim/SKILL.md` relative to the repo root.
 Treat that file as the source of truth for simulation workflows, CLI commands, and setup.
 
-Key CLI commands available:
-- `circuit-weaver simulate design.yaml -o ./sims` — Run SPICE simulations
-- `circuit-weaver confidence design.yaml --run-sims` — Full design readiness check
-- `circuit-weaver fetch-spice design.yaml` — Download SPICE models from manufacturers
+Do NOT run all CLI commands at once. The canonical skill places each command at a specific workflow step — follow the step-by-step instructions, not a flat list.

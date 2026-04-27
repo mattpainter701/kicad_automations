@@ -45,6 +45,7 @@ _PROMOTE_CODES: dict[str, str] = {
     "floating-enable": "Tie the enable pin to VIN via a pull-up, or add it to explicit_no_connects.",
     "floating-power-pin": "Route every power pin to its intended rail before placement.",
     "unverified-pinout": "Provide an explicit pin_map or set pinout_verified: true.",
+    "vdd-to-gnd-short": "A power net is shorted to ground — check your net assignments.",
 }
 
 

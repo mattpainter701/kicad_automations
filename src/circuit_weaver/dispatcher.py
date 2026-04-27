@@ -547,9 +547,10 @@ def _validate_block_definitions(ir: DesignIR) -> tuple[list[ValidationMessage], 
             # Run template-specific validation + schema-driven validation
             custom_errors = template.validate_params(params)
             schema_errors = template._validate_params_from_schema(params)
+            unknown_errors = template._validate_unknown_params(params)
             # Deduplicate (custom validators may overlap with schema checks)
             seen: set[str] = set()
-            for error in custom_errors + schema_errors:
+            for error in custom_errors + schema_errors + unknown_errors:
                 if error not in seen:
                     seen.add(error)
                     electrical.append(
@@ -4125,7 +4126,11 @@ def _run_design_wizard(
 
     project_dir = Path(project_dir)
     project_dir.mkdir(parents=True, exist_ok=True)
-    logger = DesignLogger(project_dir)
+    from .logging_bridge import get_design_logger as _get_design_logger
+    from .logging_bridge import init_logging as _init_logging
+
+    _init_logging(project_dir)
+    logger = _get_design_logger()
 
     print("\n" + "=" * 80)
     print("Circuit Weaver Design Wizard")
@@ -4149,7 +4154,11 @@ def _run_design_wizard(
     # Create project folder + initialize logger IMMEDIATELY
     project_dir = Path(project_name)
     project_dir.mkdir(parents=True, exist_ok=True)
-    logger = DesignLogger(project_dir)  # Re-initialize with actual project dir
+    from .logging_bridge import get_design_logger, init_logging
+
+    init_logging(project_dir)
+    logger = get_design_logger()
+    assert logger is not None
 
     print(f"✓ Project folder created: {project_dir.resolve()}")
     print(f"✓ Logfile created: {project_dir / 'design.log'}")
