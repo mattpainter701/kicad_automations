@@ -38,10 +38,6 @@ jobs:
             case "$spec" in */canonical_spec.yaml) continue ;; esac
             # Skip nested output copies under samples/*/samples/
             case "$spec" in */samples/*) continue ;; esac
-            # Skip zigbee_humidistat — v0.28.1 known issue: template-generated
-            # pin_nets not reaching the validator (AP2112K-3.3 EN pin wiring).
-            # Tracked in TASKS.md Sprint 42.
-            case "$spec" in */zigbee_humidistat/*) continue ;; esac
             echo "::group::Validating $spec"
             if python -m circuit_weaver validate "$spec"; then
               echo "PASS: $spec"

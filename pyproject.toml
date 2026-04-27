@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuit-weaver"
-version = "0.29.1"
+version = "0.30.0"
 description = "Programmatic circuit design, validation, and KiCad artifact generation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,6 +35,7 @@ all = ["circuit-weaver[api,yaml,lookup]"]
 
 [project.scripts]
 circuit-weaver = "circuit_weaver.__main__:main"
+circuit-weaver-mcp = "circuit_weaver.mcp_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

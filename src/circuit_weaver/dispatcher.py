@@ -29,10 +29,12 @@ from .design_ir import (
     DesignBlock,
     DesignInterface,
     DesignIR,
-    design_ir_to_engine_spec,
     design_ir_to_spec,
-    normalize_design_spec,
     semantic_diff,
+)
+from .design_loader import (
+    CompiledDesign,
+    compile_design_ir,
 )
 from .design_logger import DesignLogger
 from .generator import generate_from_components
@@ -178,13 +180,6 @@ class ConstraintFeedbackReport:
         }
 
 
-@dataclass
-class CompiledDesign:
-    ir: DesignIR
-    components: list[ComponentDef]
-    metadata: dict[str, Any]
-    engine_spec: dict[str, Any]
-    repair_actions: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _ensure_profile(profile: str) -> str:
@@ -417,62 +412,6 @@ def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) ->
     )
 
 
-def compile_design_ir(
-    spec: dict[str, Any],
-    *,
-    enrich_parts: bool = False,
-) -> CompiledDesign:
-    """Compile a design spec into normalized IR + resolved engine components.
-
-    Applies Sprint 41 generational repairs in the middle of the pipeline:
-    resolve components once so bus participants are visible, call
-    :func:`generational_repair.auto_repair_design` to synthesize missing
-    conditioning blocks (e.g. I2C pull-ups), then re-resolve if any
-    synthetic blocks were added. Users opt out via ``auto_repair: false``
-    at the top of the spec.
-    """
-    from .generational_repair import auto_repair_design
-
-    ir = normalize_design_spec(spec)
-    engine_spec = design_ir_to_engine_spec(ir)
-    components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
-    components = copy.deepcopy(components)
-
-    # Auto-repair pass: scan resolved components for trivially-fixable
-    # bus issues and synthesize the missing conditioning blocks. Opt-out
-    # via ``auto_repair: false`` in the spec.
-    repair_enabled = bool(spec.get("auto_repair", True))
-    repaired_ir, repair_actions = auto_repair_design(ir, components, enabled=repair_enabled)
-    repair_records = [action.to_dict() for action in repair_actions]
-    if repair_actions:
-        # Re-compile from the patched IR. The synthetic blocks resolve
-        # through the template registry alongside the user's original
-        # blocks, producing a fresh component list with pull-ups /
-        # conditioning passives in place.
-        ir = repaired_ir
-        engine_spec = design_ir_to_engine_spec(ir)
-        components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
-        components = copy.deepcopy(components)
-
-    _apply_block_attributes(ir, components)
-    _apply_approved_overrides(ir, components)
-    _synthesize_shared_net_interfaces(ir, components)
-    hydrated_ir = _hydrate_ir_from_components(ir, components)
-    metadata.update(
-        {
-            "project": hydrated_ir.metadata.get("project", metadata.get("project", "project")),
-            "company": hydrated_ir.metadata.get("company", metadata.get("company", "")),
-            "version": hydrated_ir.metadata.get("version", metadata.get("version", "")),
-            "description": hydrated_ir.metadata.get("description", metadata.get("description", "")),
-        }
-    )
-    return CompiledDesign(
-        ir=hydrated_ir,
-        components=components,
-        metadata=metadata,
-        engine_spec=engine_spec,
-        repair_actions=repair_records,
-    )
 
 
 def _validate_block_definitions(ir: DesignIR) -> tuple[list[ValidationMessage], list[ValidationMessage]]:

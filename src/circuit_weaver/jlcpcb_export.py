@@ -208,6 +208,113 @@ def write_jlcpcb_readme(project_name: str, output_path: Path) -> None:
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def _detect_price_breaks(bom_rows: list[dict]) -> list[dict]:
+    """Query LCSC pricing for each BOM row and detect price breaks.
+
+    For each row with an LCSC part number, attempts to fetch pricing at
+    standard quantity tiers (1, 10, 100). Returns price-break alerts
+    where ordering higher quantity reduces per-unit cost by > 20%.
+
+    Returns list of alert dicts:
+        {
+            "designators": str,
+            "lcsc_pn": str,
+            "price_1": float,    # price at qty 1
+            "price_10": float,   # price at qty 10 (or same as qty 1)
+            "price_100": float,  # price at qty 100 (or same as qty 1)
+            "savings_pct_100": float,  # savings % at qty 100 vs qty 1
+        }
+    """
+    alerts: list[dict] = []
+
+    for row in bom_rows:
+        lcsc_pn = row.get("lcsc_pn", "")
+        if not lcsc_pn:
+            continue
+
+        try:
+            from .parts_lookup import PartsLookup
+
+            lookup = PartsLookup()
+            result = lookup.lookup_by_lcsc(lcsc_pn)
+            if not result:
+                continue
+
+            # Extract pricing from LCSC result
+            prices = result.get("prices", {}) or {}
+            price_1 = _parse_price(prices.get("1", prices.get("qty_1", "")))
+            price_10 = _parse_price(prices.get("10", prices.get("qty_10", "")))
+            price_100 = _parse_price(prices.get("100", prices.get("qty_100", "")))
+
+            # Fall back to price field if-tiered data unavailable
+            single_price = result.get("price", 0)
+            if not price_1 and single_price:
+                price_1 = float(single_price)
+
+            if price_1:
+                price_10 = price_10 or price_1
+                price_100 = price_100 or price_1
+
+                savings_100 = 0.0
+                if price_1 > 0 and price_100 < price_1:
+                    savings_100 = round((1 - price_100 / price_1) * 100, 1)
+
+                if savings_100 >= 20:
+                    alerts.append({
+                        "designators": row.get("designators", ""),
+                        "lcsc_pn": lcsc_pn,
+                        "price_1": price_1,
+                        "price_10": price_10,
+                        "price_100": price_100,
+                        "savings_pct_100": savings_100,
+                    })
+        except Exception:
+            continue
+
+    return alerts
+
+
+def _parse_price(raw: str | float | int | None) -> float:
+    """Parse a price string to float, returning 0.0 on failure."""
+    if raw is None:
+        return 0.0
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    try:
+        return float(str(raw).strip().replace("$", "").replace(",", ""))
+    except (ValueError, AttributeError):
+        return 0.0
+
+
+def _append_price_breaks(readme_path: Path, alerts: list[dict]) -> None:
+    """Append price-break cost-saving tips to the assembly README."""
+    lines = [
+        "",
+        "=" * 60,
+        "PRICE-BREAK ALERTS — Cost-saving opportunities",
+        "=" * 60,
+        "",
+        "The following components have significant price breaks at higher quantity:",
+        "",
+    ]
+    for alert in sorted(alerts, key=lambda a: -a["savings_pct_100"]):
+        refs = alert["designators"]
+        pn = alert["lcsc_pn"]
+        p1 = alert["price_1"]
+        p100 = alert["price_100"]
+        savings = alert["savings_pct_100"]
+        lines.append(f"  {refs} ({pn}):")
+        lines.append(f"    \u2022 ${p1:.4f} @ qty 1")
+        lines.append(f"    \u2022 ${p100:.4f} @ qty 100 (save {savings:.0f}%)")
+        lines.append("")
+
+    try:
+        with open(readme_path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+    except OSError:
+        pass
+
+
 def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bool = False) -> dict[str, Any]:
     """Export JLCPCB BOM and CPL files.
 
@@ -243,7 +350,10 @@ def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bo
         # Step 3: Group BOM by (value, footprint, lcsc_pn)
         bom_rows = group_bom_rows(components)
 
-        # Step 4: Write files
+        # Step 4: Detect price breaks
+        price_breaks = _detect_price_breaks(bom_rows)
+
+        # Step 5: Write files
         bom_path = output_dir / "bom_jlcpcb.csv"
         cpl_path = output_dir / "cpl_jlcpcb.csv"
         readme_path = output_dir / "README.txt"
@@ -251,6 +361,10 @@ def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bo
         write_jlcpcb_bom(bom_rows, bom_path)
         write_jlcpcb_cpl(components, placements, cpl_path)
         write_jlcpcb_readme(project_name, readme_path)
+
+        # Append price-break tips to README
+        if price_breaks:
+            _append_price_breaks(readme_path, price_breaks)
 
         # Count missing LCSC numbers
         missing_lcsc = sum(1 for row in bom_rows if not row["has_lcsc"])
@@ -262,6 +376,7 @@ def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bo
             "component_count": len(components),
             "bom_rows": len(bom_rows),
             "missing_lcsc": missing_lcsc,
+            "price_breaks": len(price_breaks),
         }
 
     except Exception as e:

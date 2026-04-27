@@ -1,5 +1,96 @@
 # Changelog
 
+## [0.30.0] - 2026-04-27
+
+### Sprint 44 — CI Gate Repair & Label Collision Prevention
+
+Generated schematics previously could have overlapping labels on dense
+sheets, the CI gate was blind to sample regressions (zigbee_humidistat
+skipped), and several code quality items from the Sprint 42 backlog
+remained unaddressed. This release closes all of those gaps.
+
+### Added
+
+- **Validate-all regression gate** (T186): `test_corpus_validate_no_hard_errors`
+  parametrized test asserting zero hard errors across all 9 corpus samples.
+  All 14+1 sample YAMLs now validate clean.
+- **Label collision avoidance pass** (T196):
+  `primitives._resolve_label_collisions()` detects overlapping label
+  bounding boxes on the same orientation axis and shifts labels along
+  their wire-stub direction by 2.54mm increments, extending the
+  connecting wire. Same-name labels are skipped. Wired into
+  `assemble_sheet()` before dedup.
+- **VUSB power rail detection** (T186): Added `VUSB` to
+  `POWER_NET_PREFIXES` in `subcircuits/base.py`.
+- **Sourcing auditor alternate suggestion** (T189):
+  `sourcing_auditor._suggest_alternates()` queries LCSC/DigiKey for
+  functionally similar parts when a component has CRITICAL/WARNING
+  risk level.
+- **JLCPCB price-break detection** (T192): `_detect_price_breaks()`
+  in `jlcpcb_export.py` queries LCSC pricing and flags components
+  where ordering qty 100 saves ≥ 20% vs qty 1. Alerts appended to
+  assembly README.
+- **MCP server for AI agent tool access** (T194):
+  `src/circuit_weaver/mcp_server.py` — FastMCP-based server exposing
+  `validate_design`, `generate_artifacts`, `discover_projects`, and
+  `research_component` tools. Entry point: `circuit-weaver-mcp`.
+- **Wire-crossing minimization** (T193): `_count_wire_crossings()`
+  in `placer.py` counts horizontal/vertical wire intersections and
+  penalises crossing-dense placements via `_layout_score()`.
+  `_bus_net_groups()` detects bus signal groups (4+ numbered nets
+  with shared prefix) for future parallel routing.
+- **18 new regression tests** for `datasheet_parser.py` covering
+  thermal, voltage, and parametric regex extraction (T190).
+- **12 new regression tests** for `generational_repair.py` covering
+  I2C pull-up auto-repair pipeline (T191).
+
+### Changed
+
+- **`design_loader.py`** extracted from `dispatcher.py` (T187):
+  `compile_design_ir()` and its 300-line support pipeline moved to
+  a new module. Backward-compatible import re-exported from dispatcher.
+- **`sexpr_builder.py`** extracted from `generator.py` (T188):
+  symbol property normalizers and S-expression balance validator
+  moved to a new module. Backward-compatible imports from generator.
+- **`zigbee_humidistat.yaml`** (T186): Added `pin_nets_extra` for
+  EN/IN pins, USB-C-PWR connector block to drive VUSB.
+- **CI `validate-design.yml`** (T186): Removed zigbee_humidistat skip.
+- **`_layout_score()`** in `placer.py` (T193): Now includes a
+  wire-crossing penalty term in the placement score.
+
+### Fixed
+
+- **VUSB now recognized as a power rail** by `_is_power_net()`
+  (T186). Previously caused `orphan-interface` and `undriven-net`
+  errors on USB-powered designs without a modeled connector.
+
+### Tests
+
+- Added `test_corpus_validate_no_hard_errors` (9 parametrized cases).
+- Added `tests/test_datasheet_parser.py` (18 tests).
+- Added `tests/test_generational_repair.py` (12 tests).
+- Full suite: **853 passed, 19 skipped, 0 failed**. Ruff clean.
+
+### Files
+
+`src/circuit_weaver/design_loader.py` (new),
+`src/circuit_weaver/sexpr_builder.py` (new),
+`src/circuit_weaver/mcp_server.py` (new),
+`tests/test_datasheet_parser.py` (new),
+`tests/test_generational_repair.py` (new),
+`src/circuit_weaver/subcircuits/base.py`,
+`src/circuit_weaver/dispatcher.py`,
+`src/circuit_weaver/generator.py`,
+`src/circuit_weaver/placer.py`,
+`src/circuit_weaver/primitives.py`,
+`src/circuit_weaver/jlcpcb_export.py`,
+`src/circuit_weaver/sourcing_auditor.py`,
+`samples/zigbee_humidistat/zigbee_humidistat.yaml`,
+`.github/workflows/validate-design.yml`,
+`pyproject.toml`, `tests/test_generator_guards.py`
+
+---
+
 ## [0.29.1] - 2026-04-27
 
 ### Sprint 43 — Schematic Density & Readability

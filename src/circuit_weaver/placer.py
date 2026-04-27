@@ -801,11 +801,75 @@ def _layout_score(layout: SheetLayout) -> tuple[float, float, int]:
         else 0.0
     )
     paper_rank = _PAPER_ORDER.index(layout.paper)
+    # Sprint 44 T193 — penalise wire crossings (scaled to 0.0-0.1 range)
+    wire_xing_penalty = _count_wire_crossings(layout) * 0.001
     return (
-        paper_rank + utilization_penalty * 10.0 + aspect_penalty,
+        paper_rank + utilization_penalty * 10.0 + aspect_penalty + wire_xing_penalty,
         -metrics["utilization"],
         paper_rank,
     )
+
+
+def _count_wire_crossings(layout: SheetLayout) -> int:
+    """Estimate the number of schematic wire crossings.
+
+    Collects all horizontal and vertical wire segments and counts
+    how many perpendicular pairs intersect. This is a heuristic —
+    it does not account for junction-connected wires or bus spines
+    — but provides a useful optimization signal for the placement
+    scoring function.
+    """
+    horiz: list[tuple[float, float, float]] = []  # (y, x1, x2) with x1 < x2
+    vert: list[tuple[float, float, float]] = []   # (x, y1, y2) with y1 < y2
+
+    for x1, y1, x2, y2 in layout.local_wires:
+        x1, y1, x2, y2 = snap(x1), snap(y1), snap(x2), snap(y2)
+
+        if x1 == x2 and y1 == y2:
+            continue
+
+        if x1 == x2:
+            y_lo, y_hi = (y1, y2) if y1 < y2 else (y2, y1)
+            vert.append((x1, y_lo, y_hi))
+        elif y1 == y2:
+            x_lo, x_hi = (x1, x2) if x1 < x2 else (x2, x1)
+            horiz.append((y1, x_lo, x_hi))
+
+    crossings = 0
+    for h_y, h_x1, h_x2 in horiz:
+        for v_x, v_y1, v_y2 in vert:
+            if v_y1 < h_y < v_y2 and h_x1 < v_x < h_x2:
+                crossings += 1
+                if crossings > 100:
+                    return crossings
+
+    return crossings
+
+
+def _bus_net_groups(components: list) -> dict[str, list[str]]:
+    """Detect bus signal groups from component pin nets.
+
+    Returns dict mapping bus name (e.g. 'ADDR', 'DATA') to sorted
+    list of net names (e.g. ['ADDR0', 'ADDR1', ...]) for buses with
+    4+ members.
+    """
+    all_nets: set[str] = set()
+    for comp in components:
+        for net in (comp.pin_nets or {}).values():
+            if net:
+                all_nets.add(net)
+
+    groups: dict[str, list[str]] = {}
+    bus_re = re.compile(r"^([A-Z][A-Z0-9_]*?)(\d+)$")
+    for net in sorted(all_nets):
+        m = bus_re.match(net)
+        if m:
+            prefix = m.group(1)
+            groups.setdefault(prefix, []).append(net)
+
+    return {k: sorted(v) for k, v in groups.items() if len(v) >= 4}
+
+
 
 
 def _passive_pin_side(pc: PlacedComponent, pin_point: tuple[float, float, int] | None) -> str:

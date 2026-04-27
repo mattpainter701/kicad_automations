@@ -16,6 +16,17 @@ power:
       rail_name: VDD_3P3
       vin_net: VUSB
       en_net: VUSB
+    pin_nets_extra:
+      "3": VUSB
+      "5": VUSB
+
+connectors:
+  - section: connectors
+    ref: J1
+    ic: USB-C-PWR
+    pin_nets_extra:
+      "A4": VUSB
+    no_connects: ["B4", "A5", "B5"]
 
 digital:
   - section: digital

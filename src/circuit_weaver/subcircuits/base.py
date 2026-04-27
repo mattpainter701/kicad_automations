@@ -25,6 +25,7 @@ from ..component_db import ComponentDef
 POWER_NET_PREFIXES = (
     "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO",
     "VBAT", "VSYS", "VAUX", "VS", "VM", "VB", "VCP", "VOUT",
+    "VUSB",
 )
 GROUND_NET_PREFIXES = ("GND", "AGND", "DGND", "PGND", "VSS", "GNDA", "GNDD")
 
@@ -721,9 +722,14 @@ class SubcircuitRegistry:
 
     Resolution order:
     1. Data-driven templates from JSON IC data store (for topologies with
-       dedicated builders: buck, boost, buck_boost, ldo)
+        dedicated builders: buck, boost, buck_boost, ldo)
     2. Legacy template classes (registered via register()) — fallback for
-       all other topologies until their builders are ported.
+        all other topologies until their builders are ported.
+
+    NOTE (Sprint 44 T180 reverted): The full data-driven-first flip is
+    gated on T181-T185 (builder parity for all topologies). The data-driven
+    builders still produce different boundary port names for verdict-B and
+    verdict-C topologies, breaking sample validations.
     """
 
     # Topologies whose data-driven builder is known to produce output

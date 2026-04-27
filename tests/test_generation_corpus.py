@@ -192,3 +192,35 @@ def test_auto_repair_disabled_via_spec_flag(tmp_path: Path) -> None:
     )
     mpns = {(c.mpn or "").upper() for c in compiled.components}
     assert "PULLUPS_ONLY" not in mpns, f"PULLUPS_ONLY block should not appear with auto_repair off: {mpns}"
+
+
+@pytest.mark.parametrize("sample_dir,yaml_name", CORPUS_SAMPLES)
+def test_corpus_validate_no_hard_errors(sample_dir: str, yaml_name: str) -> None:
+    """Sprint 44 T186 — every corpus sample must validate with zero
+    hard errors (structural + implementation + placement_readiness).
+    Soft electrical warnings (floating inputs, decoupling, pin-footprint
+    mismatches) are acceptable for minimal sample designs.
+    """
+    from circuit_weaver.dispatcher import validate_design
+
+    spec_path = SAMPLES_DIR / sample_dir / yaml_name
+    if not spec_path.exists():
+        pytest.skip(f"Sample spec not available: {spec_path}")
+
+    spec = _load_spec(spec_path)
+    report = validate_design(spec)
+
+    hard_categories = ("structural", "implementation", "placement_readiness")
+    hard_errors: list[str] = []
+    for cat in hard_categories:
+        for issue in report.categories.get(cat, []):
+            level = getattr(issue, "level", None)
+            code = getattr(issue, "code", "?")
+            msg = getattr(issue, "message", "?")
+            if level == "error":
+                hard_errors.append(f"{code}: {msg}")
+
+    assert not hard_errors, (
+        f"{sample_dir}: validate found {len(hard_errors)} hard error(s): "
+        + "; ".join(hard_errors)
+    )

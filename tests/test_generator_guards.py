@@ -7,12 +7,12 @@ import pytest
 
 from circuit_weaver import dispatcher as dispatcher_module
 from circuit_weaver.dispatcher import ValidationReport, generate_artifacts
-from circuit_weaver.generator import _validate_sexpr_balance
+from circuit_weaver.sexpr_builder import validate_sexpr_balance
 
 
 def test_validate_sexpr_balance_warns_on_early_extra_close(caplog):
-    with caplog.at_level(logging.WARNING, logger="circuit_weaver.generator"):
-        valid = _validate_sexpr_balance(")(", "broken.kicad_sch")
+    with caplog.at_level(logging.WARNING, logger="circuit_weaver.sexpr_builder"):
+        valid = validate_sexpr_balance(")(", "broken.kicad_sch")
 
     assert not valid
     assert "broken.kicad_sch" in caplog.text

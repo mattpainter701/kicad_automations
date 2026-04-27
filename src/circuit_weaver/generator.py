@@ -39,6 +39,7 @@ from .placer import (
     reset_ref_counters,
 )
 from .primitives import (
+    ANNOTATION_MARGIN_X,
     PAPER_SIZES,
     TITLE_BLOCK_H,
     assemble_sheet,
@@ -55,16 +56,36 @@ from .primitives import (
     passive_pin_xy,
     pin_connection_point,
     place_component,
+    place_passive,
+    sexpr_bus_label,
+    sexpr_global_label,
     sexpr_header,
+    sexpr_hierarchical_label,
+    sexpr_junction,
     sexpr_no_connect,
+    sexpr_power_instance,
+    sexpr_power_lib_entry,
     sexpr_pwr_flag_instance,
     sexpr_pwr_flag_lib_entry,
+    sexpr_safe,
+    sexpr_bus_entry,
+    sexpr_bus,
     sexpr_sheet_pin,
     sexpr_wire,
     sheet_title_text,
     snap,
     text_annotation,
+    text_width_mm,
     uid,
+)
+from .sexpr_builder import (
+    _pin_side_to_kicad as pin_side_to_kicad,
+    adjust_symbol_y_coordinates as _adjust_symbol_y_coordinates,
+    validate_sexpr_balance as _validate_sexpr_balance,
+    clean_symbol_properties,
+    normalize_symbol_property_x,
+    normalize_symbol_all_coordinates,
+    validate_sexpr_balance,
 )
 from .validator import run_validation_checks
 
@@ -404,237 +425,6 @@ def _component_features(comp: ComponentDef) -> list[str]:
         if any(_keyword_in_text(haystack, keyword) for keyword in keywords):
             features.append(label)
     return _dedupe_preserve_order(features)
-
-
-def _clean_symbol_properties(sym_sexpr: str) -> str:
-    """Remove vendor-specific properties with out-of-bounds coordinates.
-
-    Properties like "Arrow Part Number", "Arrow Price/Stock", etc. often have
-    coordinates with extreme negative values (e.g. -994.92) that cause content
-    to spill above the page boundary when the symbol is placed on a sheet.
-
-    This function removes property blocks that have Y coordinates outside the
-    reasonable schematic range [0, +400] mm. Properties with Y < 0 are almost
-    certainly vendor metadata that should not be on the schematic.
-    """
-    # Remove property blocks line-by-line, tracking unmatched parens
-    lines = sym_sexpr.split("\n")
-    filtered = []
-    i = 0
-
-    while i < len(lines):
-        line = lines[i]
-
-        # Check if line contains a property definition with (at coordinates
-        if "(property " in line:
-            # Extract coordinates from this line or following lines
-            at_match = re.search(r"\(at\s+([-\d.]+)\s+([-\d.]+)", line)
-
-            if at_match:
-                y = float(at_match.group(2))
-                # Skip properties with Y < 0 or Y > 400
-                if y < 0 or y > 400:
-                    # Skip this property line
-                    # Property blocks typically span multiple lines ending with ')'
-                    # Keep skipping lines until we find the closing paren
-                    paren_count = line.count("(") - line.count(")")
-                    i += 1
-                    while i < len(lines) and paren_count > 0:
-                        paren_count += lines[i].count("(") - lines[i].count(")")
-                        i += 1
-                    continue
-
-        filtered.append(line)
-        i += 1
-
-    return "\n".join(filtered)
-
-
-def _normalize_symbol_property_x(sym_sexpr: str) -> str:
-    """Normalize property X coordinates to 0 in symbol definitions.
-
-    All properties in symbol lib_symbols should have X=0 (properties are
-    displayed relative to the symbol origin, not at absolute screen coords).
-    This fixes corruption from library extraction where properties inherit
-    absolute coordinates from KiCad's internal symbol cache.
-    """
-
-    # For each (property ...) block, find (at X Y angle) and set X to 0
-    def fix_property_x(m):
-        key, rest, y, angle = m.group(1), m.group(2), m.group(3), m.group(4)
-        return f'(property "{key}"{rest}(at 0 {y} {angle})'
-
-    # Pattern: (property "NAME" ... (at X Y angle)
-    # Matches property declarations with at coordinates on same or next line
-    pattern = r'\(property\s+"([^"]+)"([^(]*)\(at\s+[-\d.]+\s+([-\d.]+)\s+(\d+)\)'
-    return re.sub(pattern, fix_property_x, sym_sexpr)
-
-
-def _adjust_symbol_y_coordinates(sym_sexpr: str) -> str:
-    """Adjust symbol Y coordinates so the minimum Y is >= 0.
-
-    This ensures that when a symbol is placed at Y >= 0 on a sheet,
-    all its geometry (pins, properties, rectangles) will have Y >= 0.
-    """
-    lines = sym_sexpr.split("\n")
-
-    # Extract all Y coordinates from the symbol
-    y_values = []
-    pattern = re.compile(r"\(at\s+[\d.-]+\s+([\d.-]+)")
-    for line in lines:
-        for match in pattern.finditer(line):
-            y_values.append(float(match.group(1)))
-
-    # Also check rectangle coordinates
-    rect_pattern = re.compile(r"\(rectangle\s+\(start\s+[\d.-]+\s+([\d.-]+)\)\s+\(end\s+[\d.-]+\s+([\d.-]+)\)")
-    for line in lines:
-        for match in rect_pattern.finditer(line):
-            y_values.append(float(match.group(1)))
-            y_values.append(float(match.group(2)))
-
-    if not y_values:
-        return sym_sexpr
-
-    min_y = min(y_values)
-    if min_y >= 0:
-        return sym_sexpr  # No adjustment needed
-
-    # Shift all Y coordinates up by -min_y
-    y_offset = -min_y
-    adjusted_lines = []
-
-    for line in lines:
-        # Adjust Y coordinates in (at x y angle) expressions
-        def adjust_at(m):
-            x, y, rest = m.group(1), float(m.group(2)), m.group(3)
-            new_y = y + y_offset
-            return f"(at {x} {new_y:.2f}{rest}"
-
-        adjusted = re.sub(r"\(at\s+([\d.-]+)\s+([\d.-]+)(\s+\d+)?", adjust_at, line)
-
-        # Adjust Y coordinates in rectangles
-        def adjust_rect_y(val_str):
-            val = float(val_str)
-            return f"{val + y_offset:.2f}"
-
-        def adjust_rect(m):
-            start_y = adjust_rect_y(m.group(1))
-            end_y = adjust_rect_y(m.group(2))
-            return f"(rectangle (start {m.group(3)} {start_y}) (end {m.group(4)} {end_y})"
-
-        adjusted = re.sub(
-            r"\(rectangle\s+\(start\s+([\d.-]+)\s+([\d.-]+)\)\s+\(end\s+([\d.-]+)\s+([\d.-]+)\)",
-            lambda m: (
-                f"(rectangle (start {m.group(1)} {adjust_rect_y(m.group(2))}) "
-                f"(end {m.group(3)} {adjust_rect_y(m.group(4))})"
-            ),
-            adjusted,
-        )
-
-        adjusted_lines.append(adjusted)
-
-    return "\n".join(adjusted_lines)
-
-
-def _normalize_symbol_all_coordinates(sym_sexpr: str) -> str:
-    """Normalize ALL coordinates in a symbol to be relative (centered at origin).
-
-    This handles extracted symbols with absolute coordinates in:
-    - Properties: (property ... (at X Y angle)) → (at 0 Y angle)
-    - Pins: (pin ... (at X Y angle)) → (at 0 Y angle)
-    - Polylines: (xy X Y) → relative coordinates
-    - Rectangles: (start X Y) (end X Y) → relative
-    - Circles: (xy X Y) → relative
-
-    This fixes corruption from KiCad library extraction where symbols inherit
-    absolute cache coordinates instead of symbol-relative coordinates.
-    """
-    lines = sym_sexpr.split("\n")
-
-    # First pass: collect all geometric coordinates to find bounds
-    all_coords = []
-
-    # Find all (at X Y ...) coordinates (properties, pins)
-    for line in lines:
-        for match in re.finditer(r"\(at\s+([-\d.]+)\s+([-\d.]+)", line):
-            x, y = float(match.group(1)), float(match.group(2))
-            all_coords.append((x, y))
-
-    # Find all (xy X Y) coordinates (polylines, circles)
-    for line in lines:
-        for match in re.finditer(r"\(xy\s+([-\d.]+)\s+([-\d.]+)\)", line):
-            x, y = float(match.group(1)), float(match.group(2))
-            all_coords.append((x, y))
-
-    # Find rectangle coordinates
-    for line in lines:
-        for match in re.finditer(
-            r"\(rectangle\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)",
-            line,
-        ):
-            all_coords.append((float(match.group(1)), float(match.group(2))))
-            all_coords.append((float(match.group(3)), float(match.group(4))))
-
-    if not all_coords:
-        return sym_sexpr
-
-    # Calculate bounding box
-    min_x = min(c[0] for c in all_coords)
-    min_y = min(c[1] for c in all_coords)
-    max_x = max(c[0] for c in all_coords)
-    max_y = max(c[1] for c in all_coords)
-
-    # Center the symbol by offsetting to origin
-    # For power symbols, we want them centered around 0,0
-    center_x = (min_x + max_x) / 2
-    center_y = (min_y + max_y) / 2
-
-    # Only normalize if the symbol is off-center
-    if abs(center_x) < 0.01 and abs(center_y) < 0.01:
-        return sym_sexpr  # Already normalized
-
-    x_offset = -center_x
-    y_offset = -center_y
-
-    # Second pass: apply offsets to all coordinates
-    normalized_lines = []
-    for line in lines:
-        adjusted = line
-
-        # Adjust (at X Y angle) expressions
-        def adjust_at(m):
-            x = float(m.group(1)) + x_offset
-            y = float(m.group(2)) + y_offset
-            angle_part = m.group(3) if m.lastindex >= 3 else ""
-            return f"(at {x:.2f} {y:.2f}{angle_part}"
-
-        adjusted = re.sub(r"\(at\s+([-\d.]+)\s+([-\d.]+)(\s+\d+)?", adjust_at, adjusted)
-
-        # Adjust (xy X Y) expressions
-        def adjust_xy(m):
-            x = float(m.group(1)) + x_offset
-            y = float(m.group(2)) + y_offset
-            return f"(xy {x:.2f} {y:.2f})"
-
-        adjusted = re.sub(r"\(xy\s+([-\d.]+)\s+([-\d.]+)\)", adjust_xy, adjusted)
-
-        # Adjust rectangle coordinates
-        def adjust_rect(m):
-            start_x = float(m.group(1)) + x_offset
-            start_y = float(m.group(2)) + y_offset
-            end_x = float(m.group(3)) + x_offset
-            end_y = float(m.group(4)) + y_offset
-            return f"(rectangle (start {start_x:.2f} {start_y:.2f}) (end {end_x:.2f} {end_y:.2f})"
-
-        adjusted = re.sub(
-            r"\(rectangle\s+\(start\s+([-\d.]+)\s+([-\d.]+)\)\s+\(end\s+([-\d.]+)\s+([-\d.]+)\)",
-            adjust_rect,
-            adjusted,
-        )
-
-        normalized_lines.append(adjusted)
-
-    return "\n".join(normalized_lines)
 
 
 def _render_symbol_name_and_sexpr(comp: ComponentDef) -> tuple[str, str]:
@@ -1942,47 +1732,6 @@ def _bus_entry_angle_for_side(side: str) -> int:
 def _should_render_bus_group(group_name: str, nets_in_group: list[str]) -> bool:
     """Return True when a classified net group should render as a bus."""
     return len(nets_in_group) >= 4 and group_name != "_misc"
-
-
-def _validate_sexpr_balance(content: str, filename: str) -> bool:
-    """Warn if parentheses are unbalanced in a generated S-expression file.
-
-    Counts only parens outside of string literals.  Issues a _logger.warning
-    rather than raising so generation still proceeds — a warning is captured
-    in the log file while stdout keeps working as before.
-    """
-    depth = 0
-    min_depth = 0
-    in_string = False
-    escape_next = False
-    for ch in content:
-        if escape_next:
-            escape_next = False
-            continue
-        if ch == "\\" and in_string:
-            escape_next = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            min_depth = min(min_depth, depth)
-
-    valid = depth == 0 and min_depth >= 0 and not in_string
-    if not valid:
-        _logger.warning(
-            "S-expression balance check FAILED for %s: depth=%d, min_depth=%d, in_string=%s",
-            filename,
-            depth,
-            min_depth,
-            in_string,
-        )
-    return valid
 
 
 def _render_sheet(

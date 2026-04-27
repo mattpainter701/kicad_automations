@@ -22,6 +22,15 @@ from .parts_lookup import PartsLookup
 log = logging.getLogger(__name__)
 
 
+def _append_alternates(lines: list[str], finding: "AuditFinding") -> None:
+    """Append alternate part suggestions to a report line list."""
+    for alt in finding.suggested_alternates:
+        mpn_alt = alt.get("mpn", "?")
+        mfr = alt.get("manufacturer", "?")
+        stock_n = alt.get("stock", 0)
+        lines.append(f"    Alternate: {mpn_alt} ({mfr}) \u2014 stock: {stock_n}")
+
+
 @dataclass
 class AuditFinding:
     """A single audit finding for a component."""
@@ -82,6 +91,52 @@ def _query_digikey_lifecycle(mpn: str) -> str:
     # Full implementation would use DigiKey API
     # This is a stub that can be enhanced later
     return "Unknown"
+
+
+def _suggest_alternates(mpn: str, max_results: int = 3) -> list[dict]:
+    """Search for functionally similar alternate parts via LCSC/DigiKey.
+
+    Returns a list of dicts with keys: mpn, manufacturer, description,
+    package, stock. Empty list if no alternates found.
+    """
+    if not mpn:
+        return []
+
+    try:
+        lookup = PartsLookup()
+        result = lookup.lookup(mpn)
+        if not result:
+            return []
+
+        # Use the result description/package to search for alternates.
+        # The PartsLookup already surfaces similar parts from LCSC search.
+        description = result.get("description", "")
+
+        # Build a keyword search from the description
+        keywords = (description or mpn).split()[:4]
+        if not keywords:
+            return []
+
+        alt_result = lookup.lookup(" ".join(keywords))
+        if not alt_result:
+            return []
+
+        # Collect alternates with different MPN
+        alt_mpn = alt_result.get("mpn", "")
+        if alt_mpn and alt_mpn.upper() != mpn.upper():
+            return [
+                {
+                    "mpn": alt_mpn,
+                    "manufacturer": alt_result.get("manufacturer", ""),
+                    "description": alt_result.get("description", ""),
+                    "package": alt_result.get("package", ""),
+                    "stock": alt_result.get("stock", 0),
+                }
+            ]
+    except Exception:
+        log.warning("Alternate suggestion failed for %s", mpn, exc_info=True)
+
+    return []
 
 
 def _classify_risk_level(
@@ -210,7 +265,7 @@ def audit_bom(spec: dict, lcsc_only: bool = False) -> AuditReport:
             stock=stock,
             lead_time_weeks=lead_time,
             lifecycle_status=lifecycle,
-            suggested_alternates=[],  # TODO: Implement alternate suggestion logic
+            suggested_alternates=_suggest_alternates(mpn) if risk_level in ("CRITICAL", "WARNING") else [],
         )
 
         findings.append(finding)
@@ -259,6 +314,7 @@ def audit_report_text(report: AuditReport) -> str:
                 lines.append(f"  {finding.ref}: {finding.mpn or finding.lcsc_pn}")
                 for issue in finding.issues:
                     lines.append(f"    - {issue}")
+                _append_alternates(lines, finding)
         lines.append("")
 
     if report.warning_count > 0:
@@ -268,6 +324,7 @@ def audit_report_text(report: AuditReport) -> str:
                 lines.append(f"  {finding.ref}: {finding.mpn or finding.lcsc_pn}")
                 for issue in finding.issues:
                     lines.append(f"    - {issue}")
+                _append_alternates(lines, finding)
         lines.append("")
 
     if report.recommendations:

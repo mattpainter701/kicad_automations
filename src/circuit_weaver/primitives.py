@@ -1024,6 +1024,180 @@ def place_passive(
 # ================================================================
 # Sheet assembly
 # ================================================================
+
+# Label collision avoidance constants
+_COLLISION_CLEARANCE_MM = 3.0  # minimum separation between label bounding boxes
+_COLLISION_SHIFT_MM = 2.54  # increment to extend wire stub when avoiding collision
+_COLLISION_MAX_SHIFTS = 5  # maximum shifts per label before giving up
+
+# Regex patterns for label and wire parsing
+_LABEL_RE = re.compile(
+    r'\((global_label|hierarchical_label|label)\s+"([^"]+)"\s+\(shape\s+\w+\)\s+\(at\s+([-\d.]+)\s+([-\d.]+)\s+(\d+)\)'
+)
+_WIRE_RE = re.compile(
+    r'\(wire\s+\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\)'
+)
+
+
+def _boxes_overlap(
+    ax1: float, ay1: float, ax2: float, ay2: float,
+    bx1: float, by1: float, bx2: float, by2: float,
+) -> bool:
+    """Return True if axis-aligned bounding boxes overlap."""
+    return not (ax2 <= bx1 or bx2 <= ax1 or ay2 <= by1 or by2 <= ay1)
+
+
+def _same_axis(angle_a: int, angle_b: int) -> bool:
+    """Return True if two label angles share the same orientation axis."""
+    horiz = {0, 180}
+    vert = {90, 270}
+    a = angle_a % 360
+    b = angle_b % 360
+    return (a in horiz and b in horiz) or (a in vert and b in vert)
+
+
+def _shift_direction(angle: int) -> tuple[float, float]:
+    """Return (dx, dy) unit vector for extending a label away from its pin."""
+    a = angle % 360
+    if a == 0:
+        return (-1.0, 0.0)  # label is left of pin, shift further left
+    elif a == 180:
+        return (1.0, 0.0)  # label is right of pin, shift further right
+    elif a == 90:
+        return (0.0, -1.0)  # label is below pin, shift further down
+    elif a == 270:
+        return (0.0, 1.0)  # label is above pin, shift further up
+    return (0.0, 0.0)
+
+
+def _resolve_label_collisions(
+    labels: list[str],
+    wires: list[str],
+) -> tuple[list[str], list[str]]:
+    """Detect and resolve label collisions by extending wire stubs.
+
+    Labels that share the same orientation axis and have overlapping
+    bounding boxes are shifted further from their associated pins by
+    2.54mm increments, and the connecting wire is extended to match.
+    Max 5 shifts per label.
+    """
+    if len(labels) < 2:
+        return labels, wires
+
+    # --- Parse labels ---
+    parsed_labels: list[dict] = []
+    for i, lab in enumerate(labels):
+        m = _LABEL_RE.search(lab)
+        if not m:
+            continue
+        kind = m.group(1)
+        text = m.group(2)
+        x = float(m.group(3))
+        y = float(m.group(4))
+        angle = int(m.group(5))
+        left, top, right, bottom = _label_bbox(x, y, text, angle)
+        parsed_labels.append({
+            "idx": i, "kind": kind, "text": text,
+            "x": x, "y": y, "angle": angle,
+            "bbox": (left, top, right, bottom),
+            "shifts": 0,
+        })
+
+    # --- Parse wires ---
+    parsed_wires: list[dict] = []
+    for i, w in enumerate(wires):
+        m = _WIRE_RE.search(w)
+        if not m:
+            continue
+        x1 = float(m.group(1))
+        y1 = float(m.group(2))
+        x2 = float(m.group(3))
+        y2 = float(m.group(4))
+        parsed_wires.append({"idx": i, "x1": x1, "y1": y1, "x2": x2, "y2": y2})
+
+    # --- Build label-endpoint → wire-index map ---
+    # A wire ending at (x2,y2) connects to the label at that position.
+    ep_to_wire: dict[tuple[float, float], int] = {}
+    for pw in parsed_wires:
+        key = (round(pw["x2"], 2), round(pw["y2"], 2))
+        ep_to_wire[key] = pw["idx"]
+
+    # --- Detect and resolve collisions ---
+    for i in range(len(parsed_labels)):
+        for j in range(i + 1, len(parsed_labels)):
+            la = parsed_labels[i]
+            lb = parsed_labels[j]
+
+            # Skip same-name labels — they represent the same net and
+            # should be deduped by position, not moved apart.
+            if la["text"] == lb["text"]:
+                continue
+
+            # Only check labels on the same orientation axis
+            if not _same_axis(la["angle"], lb["angle"]):
+                continue
+
+            # Check for overlap
+            if not _boxes_overlap(*la["bbox"], *lb["bbox"]):
+                continue
+
+            # Determine which label to shift (prefer the later-emitted one,
+            # or the one with fewer shifts already applied)
+            if la["shifts"] >= _COLLISION_MAX_SHIFTS and lb["shifts"] >= _COLLISION_MAX_SHIFTS:
+                continue
+
+            shift_candidate = lb if la["shifts"] < lb["shifts"] else la
+            if shift_candidate["shifts"] >= _COLLISION_MAX_SHIFTS:
+                shift_candidate = la if shift_candidate is lb else lb
+
+            # Shift the label further from its pin
+            dx, dy = _shift_direction(shift_candidate["angle"])
+            shift_mm = _COLLISION_SHIFT_MM
+
+            new_x = shift_candidate["x"] + dx * shift_mm
+            new_y = shift_candidate["y"] + dy * shift_mm
+
+            # Update the label S-expression string
+            old_lab = labels[shift_candidate["idx"]]
+            new_lab = re.sub(
+                r'\(at\s+[-\d.]+\s+[-\d.]+\s+\d+\)',
+                f'(at {new_x:.2f} {new_y:.2f} {shift_candidate["angle"]})',
+                old_lab,
+            )
+            labels[shift_candidate["idx"]] = new_lab
+
+            # Extend the connected wire — only the second (xy ...) endpoint.
+            # The format is: (wire (pts (xy X1 Y1) (xy X2 Y2)) ...)
+            wire_key = (round(shift_candidate["x"], 2), round(shift_candidate["y"], 2))
+            wire_idx = ep_to_wire.get(wire_key)
+            if wire_idx is not None:
+                old_wire = wires[wire_idx]
+                # Replace second xy AND the pts-closing paren right after it.
+                # Pattern: pts (xy X1 Y1) (xy X2 Y2))
+                new_wire = re.sub(
+                    r'(\(pts\s+\(xy\s+[-\d.]+\s+[-\d.]+\)\s+)\(xy\s+[-\d.]+\s+[-\d.]+\)\)',
+                    rf'\1(xy {new_x:.2f} {new_y:.2f}))',
+                    old_wire,
+                )
+                wires[wire_idx] = new_wire
+
+            # Update parsed label state
+            shift_candidate["x"] = new_x
+            shift_candidate["y"] = new_y
+            shift_candidate["bbox"] = _label_bbox(new_x, new_y, shift_candidate["text"], shift_candidate["angle"])
+            shift_candidate["shifts"] += 1
+
+    return labels, wires
+
+
+def _extract_wire_start(wire_str: str) -> str:
+    """Extract the start point (x y) from a wire S-expression."""
+    m = re.search(r'\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)', wire_str)
+    if m:
+        return f"{m.group(1)} {m.group(2)}"
+    return "0 0"
+
+
 def sheet_title_text(title, description="", x=20, y=15):
     """Generate title banner text above sheet content."""
     x = max(snap(ANNOTATION_MARGIN_X), snap(x))
@@ -1196,9 +1370,16 @@ def assemble_sheet(
     """Assemble a complete .kicad_sch file from parts."""
     import re
 
+    # Sprint 44 T196 — resolve label collisions before dedup so that
+    # any exact-position duplicates created by shifting are cleaned up
+    # by the dedup pass that follows.
+    if wires and labels:
+        labels, wires = _resolve_label_collisions(list(labels), list(wires))
+
     # Sprint 40 Task 170 — guarantee sheet elements are structurally unique
     # before emission. Catches any upstream double-emission in the placer /
-    # topology dispatchers / anchor renderer.
+    # topology dispatchers / anchor renderer, AND exact duplicates the label
+    # collision pass may have created.
     instances, wires, labels, no_connects, junctions = _dedupe_sheet_elements(
         list(instances),
         list(wires) if wires else [],
