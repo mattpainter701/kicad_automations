@@ -26,13 +26,26 @@ All platforms follow the same design flow — just different UI for user input.
 
 ### Step -1 — Auto-Detection (ALWAYS RUN FIRST)
 
-Before presenting any choices, **automatically scan the current directory for existing projects**:
+Before presenting any choices, **automatically scan for existing projects and available samples**:
 
 ```bash
 python -m circuit_weaver discover --json
 ```
 
-If projects are found, present them to the user:
+Then manually scan the `samples/` directory (relative to the repo root) for available sample designs:
+
+```bash
+ls -d samples/*/  # POSIX
+# or
+dir /b /ad samples\  # Windows
+```
+
+**Separate user projects from bundled samples:**
+
+- **User projects**: from the `discover --json` output, **exclude** any project whose path contains `/samples/` or `\samples\`. These are your actual user projects. Only show these in the "Open existing" option.
+- **Sample designs**: the subdirectories of `samples/` are bundled reference designs (e.g. `iot_sensor_node`, `motor_controller`, `usb_uart_bridge`, `led_power_indicator`, `fpga_power_carrier`, etc.). These are NOT user projects — they are starting-point templates. Show these only under option [3].
+
+If user projects are found, present them:
 
 ```
 Found 2 existing circuit project(s):
@@ -41,15 +54,11 @@ Found 2 existing circuit project(s):
   -  -------                  ----            ------       -----
   1  WiFi_Sensor_v1           circuit_weaver  validated    yaml, sch, pcb, log
   2  Motor_Controller         kicad_native    generated    sch, pcb, pro
-
-What would you like to do?
-  [1] Open an existing project (select from above)
-  [2] Design a new circuit
 ```
 
-If no projects are found, skip directly to Step 0 with only the "Design a new circuit" option.
+If no user projects are found (only samples or nothing), skip the project list.
 
-**Log:** `python -m circuit_weaver log-event <project_dir> --type wizard_step --message "Auto-detection: N projects found"`
+**Log:** `python -m circuit_weaver log-event <project_dir> --type wizard_step --message "Auto-detection: N projects found, M samples available"`
 
 ### Step 0 — Welcome & Route
 
@@ -62,15 +71,53 @@ Welcome to Circuit Weaver
 What would you like to do?
   [1] Design a new circuit
   [2] Open an existing design
+  [3] Start from a sample design
 ```
 
-For Claude Code: Use AskUserQuestion with options `["Design a new circuit", "Open an existing design"]`
-For Codex/OpenCode: Present as numbered list, ask user to type [1] or [2]
+For Claude Code: Use AskUserQuestion with options `["Design a new circuit", "Open an existing design", "Start from a sample design"]`
+For Codex/OpenCode: Present as numbered list, ask user to type [1], [2], or [3]
 For CLI: User already running `design-wizard`, skip this step
 
 Based on choice:
 - **[1] New design** → Proceed to Step 1
 - **[2] Existing design** → Jump to "Workflow: Existing Design" section
+- **[3] Sample design** → Proceed to Step 0.3 (below)
+
+### Step 0.3 — Start from a Sample Design
+
+List the available sample designs from the `samples/` directory:
+
+```
+Available sample designs:
+
+  #  Sample                   Description
+  -  ------                   -----------
+  1  iot_sensor_node          ESP32-based IoT environmental sensor
+  2  motor_controller         H-bridge motor driver with DRV8833
+  3  usb_uart_bridge          USB-to-UART bridge with CH340G + ESD
+  4  led_power_indicator      Discrete LED + current-limit resistor
+  5  fpga_power_carrier       Multi-rail FPGA power tree
+  6  battery_iot_sensor       Battery-powered BLE sensor
+  7  oled_display_module      I2C OLED display
+  8  wearable_bms             Coin-cell BMS + E-ink
+  9  rf_frontend              LNA + mixer RF chain
+  10 inverter_gate_driver     Gate driver + isolation
+  11 high_voltage_isolation   Mains + safety isolation
+  12 usb_regulated_supply     USB 5V regulated supply
+  13 zigbee_humidistat        Zigbee humidistat
+
+  [0] Back to main menu
+```
+
+Ask: "Which sample would you like to start from? [1-13]"
+
+On selection:
+1. Copy the sample directory to a new working project directory: `cp -r samples/<sample>/ ~/<user-chosen-name>/`
+2. Ask the user for a project name (default: same as sample)
+3. Rename the YAML + set project name in the spec
+4. Print: `✓ Sample copied to <project_name>/`
+5. Log: `[Step 0.3] Started from sample: <sample_name>`
+6. Jump to "Workflow: Existing Design" section (treat the copied sample as an existing design to review/modify)
 
 ### Step 1 — Project Setup & Folder Creation
 
@@ -558,18 +605,13 @@ Question: "What would you like to do next?"
 
 ### Route to Existing Design
 
-If Step -1 already discovered projects, use the user's selection from there.
+If Step -1 already discovered user projects (excluding samples), present the list with numbered choices and let the user select one. Also offer a "Browse for path" option.
 
-Otherwise, run auto-detection first:
+If no user projects were found, or the user chooses to browse:
+- Ask: "Path to your design directory?" (text input)
+- Expected: a directory containing a `design.yaml` or `*.kicad_pro` file
 
-```bash
-python -m circuit_weaver discover --json
-```
-
-If projects are found, present the list and let the user select one by number.
-If no projects are found, ask: "Path to your design directory?"
-
-**Claude Code / Codex / OpenCode:** Ask for text input only as fallback (path to folder with `design.yaml`)
+**Claude Code / Codex / OpenCode:** Ask for text input as fallback (path to folder with `design.yaml`)
 
 Validate the path and load `design.yaml`.
 

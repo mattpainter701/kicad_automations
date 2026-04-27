@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Design wizard workflow**: New "Start from a sample design" option [3] (Step 0.3) — lists 13 bundled sample designs, copies the selected one to a new working project, renames YAML and spec. Auto-detection now separates real user projects from bundled samples.
+
 ## [0.28.0] - 2026-04-26
 
 ### Sprint 41 — Resolver + Template UX Follow-ups

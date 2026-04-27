@@ -55,11 +55,13 @@ Before starting, scan the current directory for existing projects:
 python -m circuit_weaver discover --json
 ```
 
-If projects are found, present them and ask whether the user wants to:
+**Exclude bundled samples**: Filter out any project whose path contains `samples/` or `samples\`. The `samples/` directory contains reference designs shipped with Circuit Weaver — they are NOT user projects. Only show user-created projects.
+
+If user projects are found, present them and ask whether the user wants to:
 1. Continue/modify an existing project (load its design.yaml and skip to the relevant step)
 2. Start a fresh design (proceed to Step 0)
 
-If no projects are found, proceed directly to Step 0.
+If no user projects are found, proceed directly to Step 0.
 
 ---
 
