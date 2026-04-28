@@ -3,7 +3,6 @@
   "model": "deepseek/deepseek-v4-flash",
   "plugin": [
     "@ex-machina/opencode-anthropic-auth",
-    "oh-my-openagent",
     "opencode-agent-skills",
     "opencode-agent-memory",
     "@gotgenes/opencode-agent-identity"
