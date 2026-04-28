@@ -47,6 +47,11 @@ revalidates the Sprint 47 legacy-template migration boundary.
 - **Sprint 47 audit:** Re-ran `scripts/audit_legacy_templates.py`. Result is
   unchanged: A=7, B=21, C=9. Full legacy deletion remains unsafe for v0.30.2;
   the registry stays data-driven-first only for verified topologies.
+- **BME688 bundled IC data:** Added BME688 sensor pin/footprint metadata to the
+  bundled IC database so `IoT_AQ_Sensor_v2` no longer depends on local
+  `custom.json` registration state.
+- **Local workflow ignores:** Stopped tracking unused local OpenCode/KiCad agent
+  workflow files and added ignore rules for them.
 
 ### Tests
 

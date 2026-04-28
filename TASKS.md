@@ -69,6 +69,19 @@ Files: `src/circuit_weaver/jlcpcb_export.py`, `tests/test_sourcing_auditor.py`,
 
 Files: `docs/legacy_template_audit.md`
 
+### T204. Post-release local workflow cleanup and BME688 data promotion (P2, SMALL) ✅ DONE
+
+- [x] Stopped tracking local workflow files no longer used in this repo and
+  added ignore rules for `.opencode/`, `AGENTS.md`, `opencode.json`, and
+  `rules/kicad.md`.
+- [x] Investigated the `custom.json` BME688 change: without it,
+  `IoT_AQ_Sensor_v2` falls back to a 2-pin cache stub with no footprint.
+- [x] Promoted BME688 from the user-writable `custom.json` overlay into
+  bundled `ic_data/misc.json` so the reusable sensor definition ships with the
+  package instead of living as local registration state.
+
+Files: `.gitignore`, `src/circuit_weaver/ic_data/misc.json`
+
 ## Sprint 41 — Resolver + Template UX Follow-ups (Released in v0.28.0) ✅ DONE
 
 **Goal:** Kill two related failure modes surfaced by a user running the

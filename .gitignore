@@ -53,6 +53,10 @@ entities.json
 
 # Local coding tool configs / caches
 .kilo/
+.opencode/
+AGENTS.md
+opencode.json
+rules/kicad.md
 .mypy_cache/
 .code-review-graph/
 .wt-*/

@@ -3184,5 +3184,69 @@
     ],
     "pin_vdd": [],
     "pin_gnd": []
+  },
+  "BME688": {
+    "topology": "sensor",
+    "description": "Digital low power gas, pressure, temperature & humidity sensor with AI",
+    "manufacturer": "Bosch Sensortec",
+    "footprint": "Sensor_LGA:BME688_LGA-8_3x3mm_P0.8mm",
+    "pins": [
+      {
+        "number": "1",
+        "name": "VDD",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "2",
+        "name": "VDDIO",
+        "type": "power_in",
+        "side": "L"
+      },
+      {
+        "number": "3",
+        "name": "SDA",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "SCL",
+        "type": "input",
+        "side": "R"
+      },
+      {
+        "number": "5",
+        "name": "GND",
+        "type": "power_in",
+        "side": "R"
+      },
+      {
+        "number": "6",
+        "name": "GND",
+        "type": "power_in",
+        "side": "R"
+      },
+      {
+        "number": "7",
+        "name": "CSB",
+        "type": "input",
+        "side": "T"
+      },
+      {
+        "number": "8",
+        "name": "SDO",
+        "type": "bidirectional",
+        "side": "T"
+      }
+    ],
+    "vdd_range": [
+      1.71,
+      3.6
+    ],
+    "i2c_addr": [
+      118,
+      119
+    ]
   }
 }
