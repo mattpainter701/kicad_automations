@@ -40,6 +40,7 @@ Installers do not assume a default platform. Always pass an explicit platform fl
 - When editing workflow assets, installers, or cross-agent documentation, load `rules/kicad.md`.
 - Keep upstream generic. Project-specific wrappers, BOMs, pin maps, symbol libraries, footprint libraries, generated KiCad artifacts, and local integration tests belong downstream.
 - Keep README/install docs synchronized with the actual installer target lists and supported skill directories.
+- Treat agent prompt prefix as a hot path. Before adding plugins, sub-agents, or per-turn directives that change the always-loaded prompt, read `docs/cache-friendly-agents.md` and confirm the cache cost is worth it.
 
 ## Kilo Commands
 
