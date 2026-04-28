@@ -6,14 +6,12 @@ synthesizes missing conditioning blocks (I2C pull-ups, etc.).
 
 from __future__ import annotations
 
-import pytest
-
-from circuit_weaver.design_ir import DesignBlock, DesignIR
 from circuit_weaver.component_db import ComponentDef, PinDef
+from circuit_weaver.design_ir import DesignBlock, DesignIR
 from circuit_weaver.generational_repair import (
     RepairAction,
-    auto_repair_design,
     _is_ground,
+    auto_repair_design,
 )
 
 

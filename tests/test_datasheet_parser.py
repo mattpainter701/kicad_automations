@@ -6,17 +6,14 @@ text extraction pipeline.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import pytest
-
 from circuit_weaver.datasheet_parser import (
-    _apply_patterns,
-    _PATTERNS,
     _PASSIVE_PATTERNS,
-    parse_datasheet,
+    _PATTERNS,
+    _apply_patterns,
     extract_specs,
+    parse_datasheet,
 )
 
 

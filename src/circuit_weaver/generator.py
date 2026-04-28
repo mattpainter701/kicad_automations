@@ -39,7 +39,6 @@ from .placer import (
     reset_ref_counters,
 )
 from .primitives import (
-    ANNOTATION_MARGIN_X,
     PAPER_SIZES,
     TITLE_BLOCK_H,
     assemble_sheet,
@@ -56,36 +55,31 @@ from .primitives import (
     passive_pin_xy,
     pin_connection_point,
     place_component,
-    place_passive,
-    sexpr_bus_label,
-    sexpr_global_label,
     sexpr_header,
-    sexpr_hierarchical_label,
-    sexpr_junction,
     sexpr_no_connect,
-    sexpr_power_instance,
-    sexpr_power_lib_entry,
     sexpr_pwr_flag_instance,
     sexpr_pwr_flag_lib_entry,
-    sexpr_safe,
-    sexpr_bus_entry,
-    sexpr_bus,
     sexpr_sheet_pin,
     sexpr_wire,
     sheet_title_text,
     snap,
     text_annotation,
-    text_width_mm,
     uid,
 )
 from .sexpr_builder import (
-    _pin_side_to_kicad as pin_side_to_kicad,
     adjust_symbol_y_coordinates as _adjust_symbol_y_coordinates,
+)
+from .sexpr_builder import (
+    clean_symbol_properties as _clean_symbol_properties,
+)
+from .sexpr_builder import (
+    normalize_symbol_all_coordinates as _normalize_symbol_all_coordinates,
+)
+from .sexpr_builder import (
+    normalize_symbol_property_x as _normalize_symbol_property_x,
+)
+from .sexpr_builder import (
     validate_sexpr_balance as _validate_sexpr_balance,
-    clean_symbol_properties,
-    normalize_symbol_property_x,
-    normalize_symbol_all_coordinates,
-    validate_sexpr_balance,
 )
 from .validator import run_validation_checks
 

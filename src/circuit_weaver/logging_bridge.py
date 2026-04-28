@@ -146,11 +146,19 @@ class DesignLogHandler(logging.Handler):
                     status=dl_data.get("status", ""),
                     duration_sec=dl_data.get("duration_sec", 0.0),
                 )
-            elif record.levelno >= logging.WARNING:
-                # Capture untyped warnings/errors as error log entries
+            elif record.levelno >= logging.ERROR:
+                # ERROR and CRITICAL → structured error entry
                 self._dl.log_error(
                     operation=record.name,
                     error=self.format(record),
+                )
+            elif record.levelno >= logging.WARNING:
+                # WARNING → structured warning entry (Sprint 45 Bug 2:
+                # previously WARNINGs were logged as type:error, conflating
+                # severities and creating false ERROR noise in design.log).
+                self._dl.log_warning(
+                    operation=record.name,
+                    message=self.format(record),
                 )
         except Exception:
             self.handleError(record)

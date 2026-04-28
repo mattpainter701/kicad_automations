@@ -214,6 +214,11 @@ class TestExtendedSummary:
         summary = logger.get_summary()
         assert any("Something broke" in e for e in summary["errors"])
 
+    def test_summary_includes_warning_entries(self, logger, tmp_project):
+        logger.log_warning(operation="generate", message="Check this net")
+        summary = logger.get_summary()
+        assert any("Check this net" in warning for warning in summary["warnings"])
+
     def test_summary_none_sections_when_empty(self, logger, tmp_project):
         logger.log_step(1, "First step")
         summary = logger.get_summary()
@@ -242,7 +247,7 @@ class TestDesignLogHandler:
         assert entries[0]["type"] == "erc_drc"
         assert entries[0]["errors"] == 1
 
-    def test_handler_captures_warnings_as_errors(self, logger, tmp_project):
+    def test_handler_captures_warnings_as_warnings(self, logger, tmp_project):
         handler = DesignLogHandler(logger)
         handler.setFormatter(logging.Formatter("%(message)s"))
         record = logging.LogRecord(
@@ -253,8 +258,8 @@ class TestDesignLogHandler:
 
         entries = _read_log_entries(tmp_project / "design.log")
         assert len(entries) == 1
-        assert entries[0]["type"] == "error"
-        assert "Missing footprint" in entries[0]["error"]
+        assert entries[0]["type"] == "warning"
+        assert "Missing footprint" in entries[0]["message"]
 
     def test_handler_ignores_info_without_dl_type(self, logger, tmp_project):
         handler = DesignLogHandler(logger)
@@ -295,9 +300,9 @@ class TestSingleton:
         try:
             test_logger = logging.getLogger("circuit_weaver.test_module")
             test_logger.warning("test warning from bridge")
-            # Should be captured as an error entry in design.log
+            # Should be captured as a warning entry in design.log
             entries = _read_log_entries(tmp_project / "design.log")
-            assert any(e["type"] == "error" for e in entries)
+            assert any(e["type"] == "warning" for e in entries)
         finally:
             cleanup_logging()
 

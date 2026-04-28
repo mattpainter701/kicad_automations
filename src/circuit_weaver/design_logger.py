@@ -422,6 +422,36 @@ class DesignLogger:
             entry["traceback"] = traceback[:1000]
         self._append_entry(entry)
 
+    def log_warning(self, operation: str, message: str) -> None:
+        """Log a structured warning.
+
+        Distinct from log_error so the design.log distinguishes between
+        WARNING and ERROR severity. The bridge in logging_bridge.py routes
+        Python WARNINGs here and ERROR/CRITICAL records to log_error().
+        """
+        entry: dict[str, Any] = {
+            "timestamp": _now_iso(),
+            "type": "warning",
+            "operation": operation,
+            "message": message[:500],
+        }
+        self._append_entry(entry)
+
+    def log_info(self, operation: str, message: str) -> None:
+        """Log a structured INFO-level message.
+
+        Used by the logging bridge for INFO records that don't carry a
+        ``dl_type`` extra. Most INFO records are routed via dl_type to a
+        typed method (part_lookup, simulation, ...); this is the catch-all.
+        """
+        entry: dict[str, Any] = {
+            "timestamp": _now_iso(),
+            "type": "info",
+            "operation": operation,
+            "message": message[:500],
+        }
+        self._append_entry(entry)
+
     def get_summary(self) -> dict[str, Any]:
         """Get a summary of the design workflow so far.
 
@@ -502,6 +532,9 @@ class DesignLogger:
 
             elif etype == "error":
                 errors.append(f"{entry.get('operation')}: {entry.get('error', 'unknown')}")
+
+            elif etype == "warning":
+                warnings.append(f"{entry.get('operation')}: {entry.get('message', 'unknown')}")
 
         return {
             "status": "in_progress" if last_step > 0 else "empty",

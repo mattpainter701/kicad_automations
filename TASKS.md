@@ -2,6 +2,73 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 45-47 - v0.30.2 Patch Release (Output Fixes + Coverage + Migration Gate) ✅ DONE
+
+**Goal:** Respond to the `I:/my_circuit/output/` audit and close the safest
+short-runner backlog without forcing the high-risk legacy-template migration
+into a patch release.
+
+### T200. Fix circuit output regressions surfaced by IoT_AQ_Sensor_v2 (P1, MEDIUM) ✅ DONE
+
+- [x] `placer.layout_sheet()` starts from the allocator-selected paper size
+  and only promotes if that paper does not fit. This prevents small designs
+  from cascading to A2 due to density-scaled gaps.
+- [x] `placer._layout_fits()` keeps the 20 mm right-edge clearance while using
+  a tighter 5 mm clearance above KiCad's reserved title block, so
+  `IoT_AQ_Sensor_v2` fits on A3 instead of being over-promoted to A2.
+- [x] `DesignLogHandler` now maps Python WARNING records to `type: "warning"`
+  in `design.log` instead of `type: "error"`.
+- [x] `validate_design(check_determinism=False)` lets `generate_artifacts()`
+  avoid the old validation dual-pass plus real-generation triple-run pattern.
+- [x] Regression tests: `tests/test_placer.py`,
+  `tests/test_logging_bridge_levels.py`, `tests/test_design_logger_extended.py`,
+  `tests/test_validate_determinism_flag.py`.
+
+Files: `src/circuit_weaver/placer.py`, `src/circuit_weaver/design_logger.py`,
+`src/circuit_weaver/logging_bridge.py`, `src/circuit_weaver/dispatcher.py`,
+`tests/test_placer.py`, `tests/test_logging_bridge_levels.py`,
+`tests/test_design_logger_extended.py`, `tests/test_validate_determinism_flag.py`
+
+### T201. Close dedicated coverage gaps for allocator and placement readiness (P1, MEDIUM) ✅ DONE
+
+- [x] Added `tests/test_placement_readiness.py` covering promoted validator
+  codes, suggestion fallback, orphan-interface detection, power-net exclusions,
+  self-only net handling, and report serialization.
+- [x] Added `tests/test_allocator.py` covering paper thresholds,
+  classification, small-design allocation, passive-only sheet merge,
+  review-sheet partitioning, sorting, paper recomputation, and annotation
+  de-duplication.
+
+Files: `tests/test_placement_readiness.py`, `tests/test_allocator.py`
+
+### T202. Finish Sprint 46 short-runner coverage and JLCPCB variants (P2, MEDIUM) ✅ DONE
+
+- [x] Sourcing auditor alternate suggestions now have integration coverage:
+  risky parts carry `suggested_alternates`, and reports render alternates.
+- [x] Datasheet parser/spec extraction now has mocked-PDF coverage for parsing,
+  index metadata merge, and existing metadata reuse.
+- [x] Added JLCPCB assembly-variant generation:
+  `generate_assembly_variants()` supports `include_refs`, `exclude_refs`, and
+  `dnp_refs`; `export_jlcpcb(..., assembly_variants=[...])` writes per-variant
+  BOM/CPL outputs.
+- [x] Added JLCPCB export tests for BOM grouping, CPL writing, price-break
+  detection, assembly-variant filtering, and variant file emission.
+
+Files: `src/circuit_weaver/jlcpcb_export.py`, `tests/test_sourcing_auditor.py`,
+`tests/test_spec_harvester.py`, `tests/test_jlcpcb_export.py`
+
+### T203. Sprint 47 legacy migration gate (P1, SMALL) ✅ DONE / DEFERRED
+
+- [x] Re-ran `scripts/audit_legacy_templates.py`: A=7, B=21, C=9.
+- [x] Confirmed the full registry flip and legacy deletion remain unsafe for
+  v0.30.2 because B/C templates still have custom passive networks, pin wiring,
+  or boundary-port naming that the data-driven builder does not reproduce.
+- [x] Keep the current safe boundary: data-driven-first remains limited to
+  verified topologies (`buck`, `boost`, `buck_boost`, `ldo`). Full migration
+  remains deferred to a dedicated minor release.
+
+Files: `docs/legacy_template_audit.md`
+
 ## Sprint 41 — Resolver + Template UX Follow-ups (Released in v0.28.0) ✅ DONE
 
 **Goal:** Kill two related failure modes surfaced by a user running the

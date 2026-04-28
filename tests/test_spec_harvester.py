@@ -157,6 +157,102 @@ def test_extract_specs_empty_directory(tmp_path):
     assert result["status"] in ("ok", "error")
 
 
+def test_parse_datasheet_with_mocked_pypdf_extracts_normalized_fields(tmp_path):
+    from circuit_weaver.datasheet_parser import parse_datasheet
+
+    class FakePage:
+        def extract_text(self):
+            return "\n".join(
+                [
+                    "Thermal Resistance Junction to Ambient = 42 C/W",
+                    "Maximum Power Dissipation = 500 mW",
+                    "Switching Frequency = 750 kHz",
+                    "Supply Voltage = 2.5 to 5.5 V",
+                    "Tolerance = 1%",
+                ]
+            )
+
+    class FakeReader:
+        def __init__(self, path):
+            self.pages = [FakePage()]
+
+    class FakePypdf:
+        PdfReader = FakeReader
+
+    pdf_path = tmp_path / "TEST.pdf"
+    pdf_path.write_bytes(b"%PDF-1.7\n")
+
+    with patch("circuit_weaver.datasheet_parser._try_import_pypdf", return_value=FakePypdf):
+        result = parse_datasheet(pdf_path)
+
+    assert result["theta_ja"] == pytest.approx(42.0)
+    assert result["pdiss_max_w"] == pytest.approx(0.5)
+    assert result["fsw_mhz"] == pytest.approx(0.75)
+    assert result["vin_max"] == pytest.approx(5.5)
+    assert result["tolerance_pct"] == pytest.approx(1.0)
+    assert result["file"] == "TEST.pdf"
+
+
+def test_extract_specs_merges_datasheet_index_metadata(tmp_path):
+    from circuit_weaver.datasheet_parser import extract_specs
+
+    ds_dir = tmp_path / "datasheets"
+    out_dir = tmp_path / "out"
+    ds_dir.mkdir()
+    (ds_dir / "PART_1.pdf").write_bytes(b"%PDF-1.7\n")
+    (ds_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "parts": {
+                    "PART/1": {
+                        "manufacturer": "Acme",
+                        "description": "Mock regulator",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with (
+        patch("circuit_weaver.datasheet_parser._try_import_pypdf", return_value=object()),
+        patch(
+            "circuit_weaver.datasheet_parser.parse_datasheet",
+            return_value={"file": "PART_1.pdf", "extracted_timestamp": "now", "theta_ja": 55.0},
+        ),
+    ):
+        result = extract_specs(ds_dir, out_dir)
+
+    assert result["status"] == "ok"
+    assert result["extracted"] == 1
+    metadata = json.loads((out_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["PART/1"]["manufacturer"] == "Acme"
+    assert metadata["PART/1"]["description"] == "Mock regulator"
+
+
+def test_extract_specs_reuses_existing_metadata(tmp_path):
+    from circuit_weaver.datasheet_parser import extract_specs
+
+    ds_dir = tmp_path / "datasheets"
+    out_dir = tmp_path / "out"
+    ds_dir.mkdir()
+    out_dir.mkdir()
+    (ds_dir / "PART_1.pdf").write_bytes(b"%PDF-1.7\n")
+    (out_dir / "metadata.json").write_text(
+        json.dumps({"PART/1": {"file": "PART_1.pdf", "extracted_timestamp": "old"}}),
+        encoding="utf-8",
+    )
+
+    with (
+        patch("circuit_weaver.datasheet_parser._try_import_pypdf", return_value=object()),
+        patch("circuit_weaver.datasheet_parser.parse_datasheet") as mock_parse,
+    ):
+        result = extract_specs(ds_dir, out_dir)
+
+    assert result["skipped"] == 1
+    mock_parse.assert_not_called()
+
+
 # ---------- spice_fetcher tests ----------
 
 

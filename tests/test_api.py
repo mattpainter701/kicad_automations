@@ -191,7 +191,9 @@ class TestMvpApplyPatch:
         assert resp.status_code in (200, 422)
         if resp.status_code == 200:
             result = resp.json()
-            assert "spec" in result
+            assert "accepted" in result
+            assert "report" in result
+            assert "updated_spec" in result
 
     def test_mvp_apply_patch_missing_field_returns_400(self, client):
         """Omitting the 'patch' field should trigger a 400."""

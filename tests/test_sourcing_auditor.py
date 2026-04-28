@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from circuit_weaver.sourcing_auditor import (
     AuditFinding,
     AuditReport,
     _classify_risk_level,
     _identify_issues,
+    _suggest_alternates,
     audit_bom,
     audit_report_text,
 )
@@ -122,6 +125,24 @@ class TestAuditReport:
         assert "WARNINGS" in text
         assert "R1" in text
 
+    def test_audit_report_text_includes_alternates(self):
+        """Report should include alternate suggestions for risky parts."""
+        finding = AuditFinding(
+            ref="U1",
+            mpn="OLDPART",
+            lcsc_pn="C1",
+            description="Regulator",
+            risk_level="CRITICAL",
+            issues=["Out of stock"],
+            suggested_alternates=[{"mpn": "NEWPART", "manufacturer": "Acme", "stock": 1234}],
+        )
+        report = AuditReport(status="ok", project="Test", components=[finding], critical_count=1)
+
+        text = audit_report_text(report)
+
+        assert "Alternate: NEWPART" in text
+        assert "stock: 1234" in text
+
     def test_audit_report_text_recommendations(self):
         """Report should include recommendations."""
         report = AuditReport(
@@ -147,6 +168,77 @@ class TestAuditBOM:
         """Audit should handle invalid spec gracefully."""
         result = audit_bom({"invalid": "spec"})
         assert result.status == "error" or result.status == "ok"
+
+    def test_audit_bom_adds_alternates_for_warning_parts(self):
+        """Risky findings should carry alternate suggestions."""
+        from types import SimpleNamespace
+
+        from circuit_weaver.component_db import ComponentDef
+
+        comp = ComponentDef(
+            mpn="AP2112K-3.3",
+            source_ref="U1",
+            description="LDO regulator",
+            lcsc_pn="C123",
+        )
+        spec = {"project": "test"}
+        with (
+            patch(
+                "circuit_weaver.sourcing_auditor.compile_design_ir",
+                return_value=SimpleNamespace(components=[comp]),
+            ),
+            patch("circuit_weaver.sourcing_auditor._query_lcsc_stock", return_value=(50, 4)),
+            patch("circuit_weaver.sourcing_auditor._query_digikey_lifecycle", return_value="Active"),
+            patch("circuit_weaver.sourcing_auditor._suggest_alternates", return_value=[{"mpn": "ALT1"}]),
+        ):
+            report = audit_bom(spec)
+
+        assert report.status == "ok"
+        warning_findings = [item for item in report.components if item.risk_level == "WARNING"]
+        assert warning_findings
+        assert warning_findings[0].suggested_alternates == [{"mpn": "ALT1"}]
+
+
+class TestAlternateSuggestions:
+    """Test alternate-suggestion lookup behavior."""
+
+    def test_suggest_alternates_returns_empty_without_mpn(self):
+        assert _suggest_alternates("") == []
+
+    def test_suggest_alternates_uses_description_keywords(self):
+        lookup_results = [
+            {"mpn": "OLD", "description": "3.3V LDO regulator SOT-23", "stock": 0},
+            {
+                "mpn": "NEW",
+                "manufacturer": "Acme",
+                "description": "3.3V LDO regulator SOT-23",
+                "package": "SOT-23",
+                "stock": 5000,
+            },
+        ]
+        with patch("circuit_weaver.sourcing_auditor.PartsLookup") as mock_lookup:
+            mock_lookup.return_value.lookup.side_effect = lookup_results
+
+            alternates = _suggest_alternates("OLD")
+
+        assert alternates == [
+            {
+                "mpn": "NEW",
+                "manufacturer": "Acme",
+                "description": "3.3V LDO regulator SOT-23",
+                "package": "SOT-23",
+                "stock": 5000,
+            }
+        ]
+
+    def test_suggest_alternates_filters_same_mpn(self):
+        with patch("circuit_weaver.sourcing_auditor.PartsLookup") as mock_lookup:
+            mock_lookup.return_value.lookup.side_effect = [
+                {"mpn": "OLD", "description": "LDO regulator"},
+                {"mpn": "old", "description": "same part"},
+            ]
+
+            assert _suggest_alternates("OLD") == []
 
 
 class TestFindingDataclass:

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from circuit_weaver.allocator import SheetAllocation, allocate_sheets
+from circuit_weaver.allocator import allocate_sheets
 from circuit_weaver.design_loader import compile_design_ir
 from circuit_weaver.placer import (
     component_annotation_start_y,
@@ -268,4 +268,185 @@ class TestLayoutSheet:
 
         assert refs_a == refs_b, (
             f"Ref mismatch between runs:\n  A: {refs_a}\n  B: {refs_b}"
+        )
+
+
+# ================================================================
+# Tests — Sprint 45 Bug 1: paper-size selection respects allocator
+# ================================================================
+
+
+class TestPaperSizeSelection:
+    """layout_sheet() should respect the allocator's paper choice when it fits.
+
+    Regression: density-scaled gaps grow with paper area. When the placer
+    iterated `_PAPER_ORDER` from A4 upward, intermediate paper sizes (A3)
+    overflowed because their density-scaled gaps were sized for A3, while
+    A2 with even larger gaps still "fit" trivially. Result: a 5-IC design
+    that should land on A4 ended up on A2.
+    """
+
+    def test_small_design_does_not_over_promote_paper(self, reset_counters):
+        """A 5-IC iot-sensor-class design should NOT promote past A3.
+
+        Regression: prior to Sprint 45, density-scaled gaps could push a
+        5-IC, 33-pin layout (the IoT_AQ_Sensor_v2 size) all the way to A2,
+        wasting half a sheet of whitespace. The allocator picks A4; the
+        placer may need A3 if footprints don't fit, but never A2 for this
+        scale.
+        """
+        from circuit_weaver.allocator import pick_paper_size
+        from circuit_weaver.component_db import ComponentDef, PinDef
+
+        # Build a 5-IC design analogous to IoT_AQ_Sensor_v2 (small SOIC-style IC)
+        comps = []
+        pin_counts = [2, 4, 8, 15, 8]  # connector, pin-header, pull-ups, MCU, sensor
+        for i, npins in enumerate(pin_counts):
+            pins = [
+                PinDef(
+                    number=str(p + 1),
+                    name=f"P{p}",
+                    electrical_type="bidirectional",
+                    side=("L", "R", "T", "B")[p % 4],
+                )
+                for p in range(npins)
+            ]
+            comps.append(
+                ComponentDef(
+                    mpn=f"IC{i}",
+                    ref_prefix="U",
+                    category="digital",
+                    description=f"IC {i}",
+                    pins=pins,
+                    source_ref=f"U{i + 1}",
+                    footprint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+                )
+            )
+
+        total_pins = sum(len(c.pins) for c in comps)
+        allocator_choice = pick_paper_size(len(comps), total_pins)
+        # 5 components, 37 pins → A4 per allocator
+        assert allocator_choice == "A4", (
+            f"5 ICs × ~7 pins (37 total) should pick A4, got {allocator_choice}"
+        )
+
+        sheets = allocate_sheets(comps)
+        assert len(sheets) >= 1
+        # Bug 1: pre-fix, this would land on A2 due to gap-cascade. Now stays
+        # at allocator choice (A4) or at most one promotion (A3) for fit.
+        layout = layout_sheet(sheets[0])
+        assert layout.paper in ("A4", "A3"), (
+            f"Expected A4 or A3 (max one promotion), got {layout.paper}. "
+            f"Density-scaled gaps may be over-promoting paper size."
+        )
+
+    def test_mixed_connector_sensor_design_does_not_promote_to_a2(self, reset_counters):
+        """A small connector + 3-IC design should fit without jumping to A2."""
+        from circuit_weaver.component_db import BypassCap, ComponentDef, PinDef, StrapConfig
+
+        def pins(count: int) -> list[PinDef]:
+            return [
+                PinDef(
+                    number=str(idx + 1),
+                    name=f"P{idx}",
+                    electrical_type="bidirectional",
+                    side=("L", "R", "T", "B")[idx % 4],
+                )
+                for idx in range(count)
+            ]
+
+        comps = [
+            ComponentDef(
+                mpn="BAT_CONN",
+                ref_prefix="J",
+                category="power",
+                description="JST PH 2-Pin Connector (Battery/Sensor)",
+                pins=pins(2),
+                source_ref="BT1",
+                footprint="Connector_JST:JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical",
+                bypass_caps=[BypassCap("1", "VBAT", "GND", "10uF", "Capacitor_SMD:C_0805_2012Metric")],
+            ),
+            ComponentDef(
+                mpn="DEBUG_HDR",
+                ref_prefix="J",
+                category="mcu",
+                description="4-Pin 2.54mm Pin Header",
+                pins=pins(4),
+                source_ref="J1",
+                footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+            ),
+            ComponentDef(
+                mpn="NRF52840_MODULE",
+                ref_prefix="U",
+                category="mcu",
+                description="nRF52840 BLE 5.0 Module with PCB Antenna",
+                pins=pins(15),
+                source_ref="U1",
+                footprint="RF_Module:Raytac_MDBT50Q-1MV2",
+                bypass_caps=[
+                    BypassCap("1", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric"),
+                    BypassCap("2", "VBAT", "GND", "10uF", "Capacitor_SMD:C_0805_2012Metric"),
+                ],
+                straps=[StrapConfig("3", "RESET_N", "VDD_3P3", "10k", "Resistor_SMD:R_0402_1005Metric")],
+            ),
+            ComponentDef(
+                mpn="BME688",
+                ref_prefix="U",
+                category="sensor",
+                description="Digital low power gas, pressure, temperature and humidity sensor",
+                pins=pins(8),
+                source_ref="U2",
+                footprint="Package_LGA:Bosch_LGA-8_3x3mm_P0.8mm",
+            ),
+            ComponentDef(
+                mpn="I2C_PULLUPS",
+                ref_prefix="RP",
+                category="buses",
+                description="I2C pull-up resistor network (no physical IC)",
+                pins=pins(4),
+                source_ref="RP1",
+                footprint="Resistor_SMD:R_Array_Convex_4x0402",
+                straps=[
+                    StrapConfig("1", "I2C_SDA", "VDD_3P3", "4.7k", "Resistor_SMD:R_0402_1005Metric"),
+                    StrapConfig("2", "I2C_SCL", "VDD_3P3", "4.7k", "Resistor_SMD:R_0402_1005Metric"),
+                ],
+            ),
+        ]
+
+        layout = layout_sheet(allocate_sheets(comps)[0])
+
+        assert layout.paper in ("A4", "A3")
+
+    def test_large_design_promotes_paper_when_needed(self, reset_counters):
+        """A genuinely large design (40+ ICs) should promote paper as needed."""
+        from circuit_weaver.component_db import ComponentDef, PinDef
+
+        comps = []
+        for i in range(40):
+            pins = [
+                PinDef(
+                    number=str(p + 1),
+                    name=f"P{p}",
+                    electrical_type="bidirectional",
+                    side=("L", "R", "T", "B")[p % 4],
+                )
+                for p in range(20)
+            ]
+            comps.append(
+                ComponentDef(
+                    mpn=f"IC{i}",
+                    ref_prefix="U",
+                    category="digital",
+                    description=f"IC {i}",
+                    pins=pins,
+                    source_ref=f"U{i + 1}",
+                    footprint="Package_QFP:LQFP-48_7x7mm_P0.5mm",
+                )
+            )
+
+        sheets = allocate_sheets(comps)
+        layout = layout_sheet(sheets[0])
+        # Should land on A2 or larger; not stuck on A4.
+        assert layout.paper in ("A2", "A1", "A0"), (
+            f"Expected A2+ for 40 dense ICs, got {layout.paper}"
         )

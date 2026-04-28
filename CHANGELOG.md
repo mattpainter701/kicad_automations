@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.30.2] - 2026-04-28
+
+### Sprint 45-47 - Output Bug Fixes, Coverage, and Safe Migration Planning
+
+This patch release addresses the issues found in the `I:/my_circuit/output/`
+review: over-promoted schematic paper size, warning records mislabeled as
+errors in `design.log`, and redundant validation generation passes. It also
+closes the remaining Sprint 42/T191 dedicated-test gaps for allocator and
+placement-readiness logic, finishes Sprint 46 short-runner coverage, and
+revalidates the Sprint 47 legacy-template migration boundary.
+
+### Fixed
+
+- **Schematic paper over-promotion:** `layout_sheet()` now starts from the
+  allocator-selected paper size and only promotes if that size does not fit.
+  This prevents small IoT-sensor-class designs from cascading to A2 because
+  density-scaled gaps grow with paper area. The fit gate also uses a tighter
+  clearance above KiCad's reserved title block, keeping `IoT_AQ_Sensor_v2` on
+  A3 instead of over-promoting to A2.
+- **Design log severity:** `DesignLogHandler` now maps Python `WARNING`
+  records to `type: "warning"` entries instead of `type: "error"`. Error and
+  critical records still use `type: "error"`.
+- **Generate overhead:** `validate_design(check_determinism=False)` allows
+  `generate_artifacts()` to skip the dual deterministic-generation pass. A
+  `generate` run now performs one validation smoke generation plus the real
+  output generation, not three full generations.
+
+### Added
+
+- **Placement-readiness tests:** New `tests/test_placement_readiness.py` covers
+  promoted validator codes, suggestion fallback behavior, orphan-interface
+  detection, power-net exclusions, self-only net handling, and report
+  serialization.
+- **Allocator tests:** New `tests/test_allocator.py` covers paper thresholds,
+  category/ref/description classification, small-design single-sheet behavior,
+  passive-sheet merging, review-sheet partitioning, sort order, paper
+  recomputation after merge, and annotation de-duplication.
+- **JLCPCB assembly variants:** `generate_assembly_variants()` supports simple
+  `include_refs`, `exclude_refs`, and `dnp_refs` assembly subsets. Optional
+  `export_jlcpcb(..., assembly_variants=[...])` writes per-variant BOM/CPL
+  files alongside the default BOM/CPL.
+- **Sprint 46 tests:** Added coverage for sourcing alternate suggestions,
+  mocked PDF datasheet parsing/extraction, JLCPCB price-break detection, and
+  assembly-variant export.
+- **Sprint 47 audit:** Re-ran `scripts/audit_legacy_templates.py`. Result is
+  unchanged: A=7, B=21, C=9. Full legacy deletion remains unsafe for v0.30.2;
+  the registry stays data-driven-first only for verified topologies.
+
+### Tests
+
+- Added `tests/test_allocator.py` (28 tests).
+- Added `tests/test_placement_readiness.py` (24 tests).
+- Added `tests/test_logging_bridge_levels.py` (6 tests).
+- Added `tests/test_validate_determinism_flag.py` (4 tests).
+- Added `tests/test_jlcpcb_export.py` (7 tests).
+- Expanded `tests/test_placer.py`, `tests/test_sourcing_auditor.py`, and
+  `tests/test_spec_harvester.py`.
+
 ## [0.30.1] - 2026-04-28
 
 ### Sprint 44.1 — Cache Fix + Test Coverage

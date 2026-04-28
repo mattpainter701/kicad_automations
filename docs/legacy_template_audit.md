@@ -1,6 +1,6 @@
 # Legacy Template Audit
 
-Generated: 2026-04-26T10:52:28.880814
+Generated: 2026-04-28T13:59:04.086780
 
 Audit of all 37 legacy templates comparing `generate()` output against `DataDrivenTemplate`.
 

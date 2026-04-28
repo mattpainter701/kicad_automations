@@ -30,6 +30,7 @@ from .design_ir import (
     DesignInterface,
     DesignIR,
     design_ir_to_spec,
+    normalize_design_spec,
     semantic_diff,
 )
 from .design_loader import (
@@ -38,7 +39,7 @@ from .design_loader import (
 )
 from .design_logger import DesignLogger
 from .generator import generate_from_components
-from .project_spec import _parse_yaml, _simple_yaml_parse, resolve_project_spec
+from .project_spec import _parse_yaml, _simple_yaml_parse
 from .subcircuits.base import BoundaryPort, get_default_registry
 from .validator import run_validation_checks
 
@@ -1089,10 +1090,19 @@ def validate_design(
     profile: str = _STANDARD_PROFILE,
     enrich_parts: bool = False,
     strict: bool = False,
+    check_determinism: bool = True,
 ) -> ValidationReport:
     """Validate a design spec against the strict MVP profile.
 
     When *strict* is True, warnings also count as failures (not just errors).
+
+    When *check_determinism* is True (default), the validator runs the
+    artifact generation pipeline twice in temp directories and asserts the
+    output bytes match — the only way to catch non-deterministic UUID /
+    placement drift before it ships. Callers like ``generate_artifacts``
+    that are about to generate real artifacts anyway pass
+    ``check_determinism=False`` to avoid the redundant 2x generation
+    overhead (Sprint 45 Bug 3 — was 3 generations per CLI invocation).
     """
     profile = _ensure_profile(profile)
     compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
@@ -1158,13 +1168,9 @@ def validate_design(
         and not _has_errors(categories["placement_readiness"])
     )
     if can_check_artifacts:
-        with (
-            tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_a_") as tmp_a,
-            tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_b_") as tmp_b,
-        ):
+        with tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_a_") as tmp_a:
             try:
                 files_a, root_a = _generate_compiled_artifacts(compiled, Path(tmp_a), export_svg=True)
-                _files_b, _root_b = _generate_compiled_artifacts(compiled, Path(tmp_b), export_svg=False)
                 if root_a is None:
                     categories["implementation"].append(
                         ValidationMessage(
@@ -1175,16 +1181,32 @@ def validate_design(
                             message="Artifact generation did not produce a root schematic",
                         )
                     )
-                if _kicad_text_map(Path(tmp_a)) != _kicad_text_map(Path(tmp_b)):
-                    categories["implementation"].append(
-                        ValidationMessage(
-                            category="implementation",
-                            code="nondeterministic-generation",
-                            level="error",
-                            subject=compiled.metadata.get("project", "project"),
-                            message="Repeated stable-UUID generation produced different KiCad schematic text",
+
+                # Sprint 45 Bug 3 — only run the second generation pass when
+                # determinism checking is requested. generate_artifacts() skips
+                # this because it will produce the real artifact immediately
+                # afterward; running validate's dual-pass + generate's real pass
+                # was 3 generations per CLI invoke. With the flag default-on,
+                # direct ``validate`` callers still get full coverage.
+                if check_determinism:
+                    with tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_b_") as tmp_b:
+                        _files_b, _root_b = _generate_compiled_artifacts(
+                            compiled, Path(tmp_b), export_svg=False
                         )
-                    )
+                        if _kicad_text_map(Path(tmp_a)) != _kicad_text_map(Path(tmp_b)):
+                            categories["implementation"].append(
+                                ValidationMessage(
+                                    category="implementation",
+                                    code="nondeterministic-generation",
+                                    level="error",
+                                    subject=compiled.metadata.get("project", "project"),
+                                    message=(
+                                        "Repeated stable-UUID generation produced different "
+                                        "KiCad schematic text"
+                                    ),
+                                )
+                            )
+
                 categories["presentation"].extend(_presentation_issues(Path(tmp_a)))
             except subprocess.CalledProcessError as exc:
                 detail = (exc.stderr or exc.stdout or str(exc)).strip()
@@ -1554,7 +1576,16 @@ def generate_artifacts(
         logging.getLogger("circuit_weaver").addHandler(_local_fh)
 
     try:
-        report = validate_design(spec, profile=profile, enrich_parts=enrich_parts)
+        # Sprint 45 Bug 3 — skip the determinism dual-pass here because
+        # the real generation immediately follows; validate's smoke pass
+        # is enough to catch structural / KiCad-load failures, and we
+        # don't want 3 generations per CLI invoke.
+        report = validate_design(
+            spec,
+            profile=profile,
+            enrich_parts=enrich_parts,
+            check_determinism=False,
+        )
 
         # Sprint 40 Task 173 + Sprint 41 — generate enforcement is
         # deterministic regardless of the ``require_valid`` flag.

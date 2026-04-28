@@ -239,7 +239,7 @@ def _density_scaled_gaps(
     3.0x (maximum spreading for very large sparse sheets). Returns
     (col_gap, row_gap) snapped to the KiCad grid.
     """
-    if len(components) < 3:
+    if len(components) < 4:
         return base_col_gap, base_row_gap
 
     # Total component footprint area (approximate)
@@ -767,7 +767,8 @@ def _layout_fits(layout: SheetLayout, margin: float = 20.0) -> bool:
     _, _, max_x, max_y = _layout_bounds(layout)
     pw, ph = PAPER_SIZES.get(layout.paper, PAPER_SIZES["A3"])
     usable_h = ph - TITLE_BLOCK_H
-    return max_x <= pw - margin and max_y <= usable_h - margin
+    title_block_clearance = min(margin, 5.0)
+    return max_x <= pw - margin and max_y <= usable_h - title_block_clearance
 
 
 def _layout_metrics(layout: SheetLayout) -> dict[str, float]:
@@ -1553,76 +1554,44 @@ def layout_sheet(
     last_layout: SheetLayout | None = None
     last_state: tuple[dict[str, int], set[str]] = baseline_state
 
-    # A locked paper size is a reviewed preference. Honor it when it fits, but
-    # promote to a larger page if later sheet growth makes the override stale.
-    if getattr(sheet_alloc, "lock_paper_size", False):
-        locked_paper = sheet_alloc.paper
-        _restore_ref_state(baseline_state)
-        locked_layout = _build_layout(locked_paper)
-        locked_state = _snapshot_ref_state()
-        if _layout_fits(locked_layout):
-            _restore_ref_state(locked_state)
-            return locked_layout
+    # Start from the allocator's chosen paper size instead of A4.
+    # Density-scaled gaps expand with paper area, which can cause
+    # layouts on intermediate paper sizes (A3 for a 5-IC circuit)
+    # to overflow while A2 with even larger gaps still fits.
+    # Respecting the allocator's size prevents the cascade.
+    alloc_paper = getattr(sheet_alloc, "paper", "A4")
+    try:
+        start_idx = _PAPER_ORDER.index(alloc_paper)
+    except ValueError:
+        start_idx = 0
 
+    # Try the allocator's paper first — if it fits, use it.
+    _restore_ref_state(baseline_state)
+    first_layout = _build_layout(alloc_paper)
+    first_state = _snapshot_ref_state()
+    if _layout_fits(first_layout):
+        _restore_ref_state(first_state)
+        return first_layout
+
+    # A locked paper size is a reviewed preference. Warn and promote
+    # if it no longer fits.
+    if getattr(sheet_alloc, "lock_paper_size", False):
         print(
             f"WARNING: sheet '{sheet_alloc.name}' locked paper size "
-            f"{locked_paper} no longer fits; promoting to the next fitting size"
+            f"{alloc_paper} no longer fits; promoting to the next fitting size"
         )
 
-        try:
-            start_idx = _PAPER_ORDER.index(locked_paper)
-        except ValueError:
-            start_idx = -1
+    # Allocator-chosen size doesn't fit — try larger sizes.
+    last_layout = first_layout
+    last_state = first_state
 
-        fitting_layouts: list[tuple[SheetLayout, tuple[dict[str, int], set[str]]]] = []
-        last_layout = locked_layout
-        last_state = locked_state
-
-        for paper in _PAPER_ORDER[start_idx + 1 :]:
-            _restore_ref_state(baseline_state)
-            trial_layout = _build_layout(paper)
-            trial_state = _snapshot_ref_state()
-            if _layout_fits(trial_layout):
-                fitting_layouts.append((trial_layout, trial_state))
-            last_layout = trial_layout
-            last_state = trial_state
-
-        if fitting_layouts:
-            layout, final_state = min(fitting_layouts, key=lambda item: _layout_score(item[0]))
-            _restore_ref_state(final_state)
-            if layout.paper != locked_paper:
-                print(f"  Promoted locked sheet '{sheet_alloc.name}' from {locked_paper} to {layout.paper}")
-            return layout
-
-        layout = last_layout
-        _restore_ref_state(last_state)
-
-        pw, ph = PAPER_SIZES.get(layout.paper, PAPER_SIZES["A3"])
-        usable_h = ph - TITLE_BLOCK_H
-        min_x, min_y, max_x, max_y = _layout_bounds(layout)
-        if max_x > pw - 20:
-            print(
-                f"WARNING: sheet '{layout.name}' exceeds right page edge "
-                f"({max_x:.1f} > {pw - 20:.1f}mm) [{layout.paper}]"
-            )
-        if max_y > usable_h - 20:
-            print(
-                f"WARNING: sheet '{layout.name}' exceeds bottom page edge "
-                f"({max_y:.1f} > {usable_h - 20:.1f}mm) [{layout.paper}]"
-            )
-        if min_x < 20 or min_y < 20:
-            print(
-                f"WARNING: sheet '{layout.name}' crowds the page margin "
-                f"(min=({min_x:.1f}, {min_y:.1f})) [{layout.paper}]"
-            )
-        return layout
-
-    for paper in _PAPER_ORDER:
+    for paper in _PAPER_ORDER[start_idx + 1 :]:
         _restore_ref_state(baseline_state)
-        last_layout = _build_layout(paper)
+        trial_layout = _build_layout(paper)
         trial_state = _snapshot_ref_state()
-        if _layout_fits(last_layout):
-            fitting_layouts.append((last_layout, trial_state))
+        if _layout_fits(trial_layout):
+            fitting_layouts.append((trial_layout, trial_state))
+        last_layout = trial_layout
         last_state = trial_state
 
     if fitting_layouts:

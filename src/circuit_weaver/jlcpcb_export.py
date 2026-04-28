@@ -175,6 +175,65 @@ def write_dual_sided_cpl(
     }
 
 
+def _variant_file_token(name: str) -> str:
+    """Return a filesystem-safe token for an assembly variant name."""
+    token = "".join(ch.lower() if ch.isalnum() else "_" for ch in (name or "default"))
+    token = "_".join(part for part in token.split("_") if part)
+    return token or "default"
+
+
+def generate_assembly_variants(
+    components: list[ComponentDef],
+    variants: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Generate component subsets for JLCPCB assembly variants.
+
+    Variant specs are deliberately simple and data-oriented so they can be
+    emitted by design YAML, a future CLI flag, or downstream ordering tools:
+
+    ``{"name": "sensorless", "exclude_refs": ["U2"], "dnp_refs": ["R5"]}``
+
+    ``include_refs`` is optional. If present, only those designators are
+    considered. ``exclude_refs`` and ``dnp_refs`` then remove components from
+    the assembly set. Returned entries contain the filtered ComponentDef list,
+    generated BOM rows, and reference bookkeeping for reporting/tests.
+    """
+    specs = variants or [{"name": "default"}]
+    by_ref = {comp.source_ref: comp for comp in components if comp.source_ref}
+    all_refs = set(by_ref)
+    out: list[dict[str, Any]] = []
+    used_tokens: dict[str, int] = {}
+
+    for idx, spec in enumerate(specs):
+        name = str(spec.get("name") or f"variant_{idx + 1}")
+        base_token = _variant_file_token(name)
+        token_count = used_tokens.get(base_token, 0) + 1
+        used_tokens[base_token] = token_count
+        token = base_token if token_count == 1 else f"{base_token}_{token_count}"
+        include_refs = {str(ref) for ref in spec.get("include_refs", []) if str(ref)}
+        exclude_refs = {str(ref) for ref in spec.get("exclude_refs", []) if str(ref)}
+        dnp_refs = {str(ref) for ref in spec.get("dnp_refs", []) if str(ref)}
+
+        candidate_refs = include_refs if include_refs else all_refs
+        assembled_refs = sorted((candidate_refs & all_refs) - exclude_refs - dnp_refs)
+        assembled_components = [by_ref[ref] for ref in assembled_refs]
+        omitted_refs = sorted((all_refs - set(assembled_refs)) | exclude_refs | dnp_refs)
+
+        out.append(
+            {
+                "name": name,
+                "token": token,
+                "components": assembled_components,
+                "bom_rows": group_bom_rows(assembled_components),
+                "included_refs": assembled_refs,
+                "omitted_refs": omitted_refs,
+                "dnp_refs": sorted(dnp_refs),
+            }
+        )
+
+    return out
+
+
 def write_jlcpcb_readme(project_name: str, output_path: Path) -> None:
     """Write JLCPCB upload instructions and notes."""
     lines = []
@@ -315,13 +374,20 @@ def _append_price_breaks(readme_path: Path, alerts: list[dict]) -> None:
         pass
 
 
-def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bool = False) -> dict[str, Any]:
+def export_jlcpcb(
+    spec: dict[str, Any],
+    output_dir: str | Path,
+    enrich_parts: bool = False,
+    assembly_variants: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Export JLCPCB BOM and CPL files.
 
     Args:
         spec: Design spec dict (same format as passed to validate_design)
         output_dir: Directory to write BOM/CPL/README files
         enrich_parts: (reserved for future use) Whether to enrich part info via APIs
+        assembly_variants: Optional assembly variants. Each item may contain
+            name, include_refs, exclude_refs, and dnp_refs.
 
     Returns:
         Summary dict: {
@@ -362,6 +428,25 @@ def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bo
         write_jlcpcb_cpl(components, placements, cpl_path)
         write_jlcpcb_readme(project_name, readme_path)
 
+        variant_outputs: list[dict[str, Any]] = []
+        if assembly_variants:
+            for variant in generate_assembly_variants(components, assembly_variants):
+                token = variant["token"]
+                variant_bom = output_dir / f"bom_jlcpcb_{token}.csv"
+                variant_cpl = output_dir / f"cpl_jlcpcb_{token}.csv"
+                write_jlcpcb_bom(variant["bom_rows"], variant_bom)
+                write_jlcpcb_cpl(variant["components"], placements, variant_cpl)
+                variant_outputs.append(
+                    {
+                        "name": variant["name"],
+                        "bom": str(variant_bom),
+                        "cpl": str(variant_cpl),
+                        "component_count": len(variant["components"]),
+                        "bom_rows": len(variant["bom_rows"]),
+                        "dnp_refs": variant["dnp_refs"],
+                    }
+                )
+
         # Append price-break tips to README
         if price_breaks:
             _append_price_breaks(readme_path, price_breaks)
@@ -372,11 +457,18 @@ def export_jlcpcb(spec: dict[str, Any], output_dir: str | Path, enrich_parts: bo
         return {
             "status": "ok",
             "message": f"Exported JLCPCB BOM and CPL for {project_name}",
-            "files": [str(bom_path), str(cpl_path), str(readme_path)],
+            "files": [
+                str(bom_path),
+                str(cpl_path),
+                str(readme_path),
+                *[item["bom"] for item in variant_outputs],
+                *[item["cpl"] for item in variant_outputs],
+            ],
             "component_count": len(components),
             "bom_rows": len(bom_rows),
             "missing_lcsc": missing_lcsc,
             "price_breaks": len(price_breaks),
+            "assembly_variants": variant_outputs,
         }
 
     except Exception as e:
