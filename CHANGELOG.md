@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.30.1] - 2026-04-28
+
+### Sprint 44.1 — Cache Fix + Test Coverage
+
+OpenCode's non-deterministic sub-agent prompt construction breaks DeepSeek's
+prefix-based prompt caching, causing high cache-miss costs. This release
+disables the oh-my-openagent plugin (which injected per-turn mode tags and
+todo-continuation prompts) and adds dedicated test coverage for four
+previously untested modules.
+
+#### Cache-Friendly Workflow
+
+- **Plugin:** Removed `oh-my-openagent` from `opencode.json` plugin list
+  to stop per-turn directive injection that changed the prompt prefix on
+  every request.
+- **Docs:** Added `docs/cache-friendly-agents.md` — codifies cache-hit-first
+  operating principles: reuse `task_id` sessions, avoid sub-agents for
+  trivial work, keep `AGENTS.md`/`rules/kicad.md` small and stable, audit
+  plugins for per-turn injection.
+- **AGENTS.md:** New rule referencing the cache doc before adding any
+  plugin, sub-agent, or per-turn directive.
+
+#### New Test Modules (46 tests total)
+
+- **`tests/test_api.py`** (16 tests): Smoke tests for all 9 FastAPI endpoint
+  groups — `/health`, `/templates`, `/validate`, `/generate`,
+  `/generate/from-bom`, `/mvp/validate`, `/mvp/apply-patch`, `/mvp/diff`,
+  `/mvp/pcb-feedback`, `/mvp/generate`.
+- **`tests/test_placer.py`** (16 tests): Smoke tests for all 6 public
+  placer functions — `layout_sheet`, `reset_ref_counters`,
+  `component_block_size`, `component_body_size`, `component_body_bounds`,
+  `component_annotation_start_y`.
+- **`tests/test_thermal.py`** (6 tests): Smoke tests for
+  `analyze_thermal` and `generate_heatmap_svg` — full IoT sensor spec,
+  placements, custom ambient temp, empty components, SVG output.
+- **`tests/test_si_constraints.py`** (8 tests): Smoke tests for
+  `analyze_si_constraints` — USB bus detection from pins and descriptions,
+  impedance constraints, differential pairs, routing rules.
+
+#### Known Limitations
+
+- OpenCode upstream issue: sub-agent prompt construction is non-deterministic
+  (agent list not sorted). This must be fixed upstream in OpenCode for full
+  cache-hit optimization. Tracked in the cache doc.
+
 ## [0.30.0] - 2026-04-27
 
 ### Sprint 44 — CI Gate Repair & Label Collision Prevention
