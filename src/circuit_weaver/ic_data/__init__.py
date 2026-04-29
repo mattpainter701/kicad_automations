@@ -159,8 +159,12 @@ def get_all_ics(topology: str | None = None) -> dict[str, dict[str, Any]]:
     """Get all ICs, optionally filtered by topology."""
     db = _get_db()
     if topology is None:
-        return dict(db)
-    return {mpn: data for mpn, data in db.items() if data.get("topology") == topology}
+        return {mpn: data for mpn, data in db.items() if isinstance(data, dict)}
+    return {
+        mpn: data
+        for mpn, data in db.items()
+        if isinstance(data, dict) and data.get("topology") == topology
+    }
 
 
 def get_default_ic(topology: str) -> tuple[str, dict[str, Any]] | None:
@@ -217,7 +221,7 @@ def register_ic(mpn: str, data: dict[str, Any], *, persist: bool = True) -> None
     db = _get_db()
     with _db_lock:
         existing = db.get(mpn)
-        if existing is not None:
+        if isinstance(existing, dict):
             old_pins = len(existing.get("pins", []))
             new_pins = len(data.get("pins", []))
             old_topo = existing.get("topology", "?")
@@ -226,6 +230,8 @@ def register_ic(mpn: str, data: dict[str, Any], *, persist: bool = True) -> None
                 "Registering IC %s: overwriting existing entry (topology %s→%s, pins %d→%d)",
                 mpn, old_topo, new_topo, old_pins, new_pins,
             )
+        elif existing is not None:
+            _logger.warning("Registering IC %s: replacing malformed existing entry", mpn)
         db[mpn] = data
     if persist:
         path = _write_custom(mpn, data)
@@ -234,7 +240,7 @@ def register_ic(mpn: str, data: dict[str, Any], *, persist: bool = True) -> None
 
 def list_topologies() -> list[str]:
     """List all unique topology types across all loaded ICs."""
-    return sorted({data.get("topology", "") for data in _get_db().values()} - {""})
+    return sorted({data.get("topology", "") for data in _get_db().values() if isinstance(data, dict)} - {""})
 
 
 def merge_into_legacy_db(legacy_db: dict[str, dict[str, Any]], topology: str) -> dict[str, dict[str, Any]]:

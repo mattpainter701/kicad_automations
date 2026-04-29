@@ -481,5 +481,53 @@
     "pin_gain": "7",
     "pin_outp": "8",
     "pin_outn": "9"
+  },
+  "TLV3691IDPFR": {
+    "topology": "opamp",
+    "device_type": "comparator",
+    "description": "Nanopower single comparator, push-pull/open-drain compatible threshold detector use",
+    "footprint": "Package_TO_SOT_SMD:SOT-353_SC-70-5",
+    "units": 1,
+    "supply_range": [
+      0.9,
+      6.5
+    ],
+    "pins": [
+      {
+        "number": "1",
+        "name": "OUT",
+        "type": "output",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "V-",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "3",
+        "name": "IN+",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "4",
+        "name": "IN-",
+        "type": "input",
+        "side": "L"
+      },
+      {
+        "number": "5",
+        "name": "V+",
+        "type": "power_in",
+        "side": "T"
+      }
+    ],
+    "pin_vplus": "5",
+    "pin_vminus": "2",
+    "pin_out_a": "1",
+    "pin_inm_a": "4",
+    "pin_inp_a": "3"
   }
 }

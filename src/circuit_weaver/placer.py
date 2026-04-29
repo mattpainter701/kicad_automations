@@ -1361,6 +1361,7 @@ def layout_sheet(
         y_start = header_h
         x_limit = snap(pw - margin)
         section_top = y_start
+        compact_sheet = len(sheet_alloc.components) <= 8
 
         # Density-scaled gap helper: spreads components across available
         # page area when the sheet is large but the component count is
@@ -1370,9 +1371,12 @@ def layout_sheet(
         if connectors and (not (regulators or other_ics) or connector_heavy):
             # Connector-heavy sheets need width-first packing; a single-column
             # connector rail forces A0/A1 pages even when most of the page is blank.
-            conn_col_gap, conn_row_gap = _density_scaled_gaps(
-                connectors, _CONNECTOR_GAP, _CONNECTOR_GAP, pw, usable_h, margin,
-            )
+            if compact_sheet:
+                conn_col_gap, conn_row_gap = _CONNECTOR_GAP, _CONNECTOR_GAP
+            else:
+                conn_col_gap, conn_row_gap = _density_scaled_gaps(
+                    connectors, _CONNECTOR_GAP, _CONNECTOR_GAP, pw, usable_h, margin,
+                )
             conn_max_cols = _preferred_max_cols(
                 connectors,
                 margin,
@@ -1392,21 +1396,28 @@ def layout_sheet(
             section_top = snap(bottom + _SECTION_GAP)
             main_x_start = margin
         elif connectors:
-            conn_col_gap, conn_row_gap = _density_scaled_gaps(
-                connectors, _CONNECTOR_GAP, _CONNECTOR_GAP, pw, usable_h, margin,
-            )
+            if compact_sheet:
+                conn_col_gap, conn_row_gap = _CONNECTOR_GAP, _CONNECTOR_GAP
+            else:
+                conn_col_gap, conn_row_gap = _density_scaled_gaps(
+                    connectors, _CONNECTOR_GAP, _CONNECTOR_GAP, pw, usable_h, margin,
+                )
             connector_col_w = max(component_block_size(comp)[0] for comp in connectors)
+            connector_cols = 1
+            if compact_sheet and len(connectors) >= 4:
+                connector_cols = min(2, len(connectors))
+            connector_area_right = snap(margin + connector_cols * connector_col_w + (connector_cols - 1) * conn_col_gap)
             placed, _ = _layout_components_rowwise(
                 connectors,
                 margin,
                 y_start,
-                snap(margin + connector_col_w),
+                connector_area_right,
                 col_gap=conn_col_gap,
                 row_gap=conn_row_gap,
-                max_cols=1,
+                max_cols=connector_cols,
             )
             layout.placed_ics.extend(placed)
-            main_x_start = snap(margin + connector_col_w + _SECTION_GAP)
+            main_x_start = snap(connector_area_right + _SECTION_GAP)
         else:
             main_x_start = margin
 
@@ -1417,9 +1428,10 @@ def layout_sheet(
                 else None
             )
             reg_col_gap, reg_row_gap = _rowwise_gap_profile(regulators)
-            reg_col_gap, reg_row_gap = _density_scaled_gaps(
-                regulators, reg_col_gap, reg_row_gap, pw, usable_h, main_x_start,
-            )
+            if not compact_sheet:
+                reg_col_gap, reg_row_gap = _density_scaled_gaps(
+                    regulators, reg_col_gap, reg_row_gap, pw, usable_h, main_x_start,
+                )
             placed, bottom = _layout_components_rowwise(
                 regulators,
                 main_x_start,
@@ -1435,9 +1447,10 @@ def layout_sheet(
         if other_ics:
             other_max_cols = _preferred_max_cols(other_ics, main_x_start, x_limit)
             other_col_gap, other_row_gap = _rowwise_gap_profile(other_ics)
-            other_col_gap, other_row_gap = _density_scaled_gaps(
-                other_ics, other_col_gap, other_row_gap, pw, usable_h, main_x_start,
-            )
+            if not compact_sheet:
+                other_col_gap, other_row_gap = _density_scaled_gaps(
+                    other_ics, other_col_gap, other_row_gap, pw, usable_h, main_x_start,
+                )
             placed, bottom = _layout_components_rowwise(
                 other_ics,
                 main_x_start,

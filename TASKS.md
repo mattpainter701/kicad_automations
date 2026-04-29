@@ -2,7 +2,7 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
-## Sprint 48 - v0.30.3 Continued Release Validation (Windows CLI + Packaging) — IN PROGRESS
+## Sprint 48 - v0.30.3 Continued Release Validation (Windows CLI + Packaging) ✅ DONE
 
 **Goal:** Continue testing the v0.30.2 release candidate on Windows and bundled
 sample designs, collecting low-risk follow-up fixes into v0.30.3 instead of
@@ -18,20 +18,118 @@ expanding the already-committed v0.30.2 patch scope.
 
 Files: `src/circuit_weaver/dispatcher.py`
 
-### T206. Continue v0.30.3 release validation sweep (P1, MEDIUM) — IN PROGRESS
+### T206. Continue v0.30.3 release validation sweep (P1, MEDIUM) ✅ DONE
 
 - [x] Confirmed package version/import reports `0.30.2` before the v0.30.3 bump.
 - [x] Confirmed `py -m build` produces source and wheel distributions.
 - [x] Removed stale `__pycache__` bytecode from bundled skill package inputs
   after the first build tried to include it in the wheel.
-- [ ] Re-run package build after each release-blocking fix and inspect the wheel
+- [x] Re-run package build after each release-blocking fix and inspect the wheel
   for generated/cache artifacts.
-- [ ] Re-run real-design validation once `I:/my_circuit/design.yaml` is restored
+- [x] Re-run real-design validation once `I:/my_circuit/design.yaml` is restored
   or replaced with an equivalent regression fixture.
-- [ ] Add any additional issues found during further CLI/simulation/export tests
+- [x] Add any additional issues found during further CLI/simulation/export tests
   as dedicated v0.30.3 tasks below this section.
 
 Files: `TASKS.md`, `CHANGELOG.md`, release-validation fixes as discovered
+
+### T207. Harden `register-ic` against malformed single-object input (P1, SMALL) ✅ DONE
+
+- [x] Reviewed `I:/my_circuit` logs and found `register-ic` treated a single
+  IC object with fields like `mpn`, `manufacturer`, and `template_type` as a
+  multi-IC map, registering scalar keys into package `custom.json`.
+- [x] Confirmed the malformed custom entries poisoned the IC database and made
+  later `validate` runs crash with `'str' object has no attribute 'get'`.
+- [x] Updated `register-ic` to detect single IC objects with `mpn` and
+  `template_type`, normalize `template_type` to `topology`, and reject mapping
+  entries that are not JSON objects.
+- [x] Hardened IC database accessors so malformed custom entries are skipped
+  instead of crashing validation.
+- [x] Re-run targeted regression tests and full release validation.
+
+Files: `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/ic_data/__init__.py`,
+`tests/test_register_ic_cli.py`
+
+### T208. Return clean CLI errors for invalid `generate` requests (P1, SMALL) ✅ DONE
+
+- [x] Reviewing `I:/my_circuit` showed `generate` on an invalid design logged
+  the validation failure, then raised an unhandled `ValueError` traceback.
+- [x] Convert expected hard-validation `generate` failures into JSON
+  `{status: "error", valid: false, message: ...}` output with exit code 2.
+- [x] Re-run targeted regression tests and full release validation.
+
+Files: `src/circuit_weaver/dispatcher.py`, `tests/test_register_ic_cli.py`
+
+### T209. Honor power pins on generic connector headers (P1, SMALL) ✅ DONE
+
+- [x] Re-reading updated `I:/my_circuit` logs showed many placement-readiness
+  errors came from `PIN_HEADER_2P`/`PIN_HEADER_4P` mapping all pins to generic
+  `P*_REF` nets even when the spec supplied `positive_net` and `negative_net`.
+- [x] Updated generic connector mapping so headers with explicit power nets map
+  pin 1 to `positive_net`, pin 2 to `negative_net`, and start `signal_nets` at
+  pin 3.
+- [x] Re-run the `I:/my_circuit` validation/generation probe and regression tests.
+
+Files: `src/circuit_weaver/subcircuits/connector.py`, `tests/test_template_structure.py`
+
+### T210. Generate comparator support passives for comparator ICs (P1, SMALL) ✅ DONE
+
+- [x] Add a comparator mode to the op-amp template so TLV3691-class parts do
+  not generate op-amp feedback resistors when used as threshold detectors.
+- [x] Add regression coverage for threshold divider and output pull-up
+  generation.
+
+Files: `src/circuit_weaver/subcircuits/opamp.py`, `src/circuit_weaver/ic_data/amplifier.json`,
+`tests/test_template_structure.py`
+
+### T211. Replace battery-holder placeholder footprints when intent is explicit (P1, SMALL) ✅ DONE
+
+- [x] Add a 2xAA battery-holder connector definition using the KiCad standard
+  `Battery:BatteryHolder_Keystone_2462_2xAA` footprint.
+- [x] Upgrade BARREL_JACK placeholders to the 2xAA holder when the block
+  description explicitly says the barrel jack is a battery-holder placeholder.
+
+Files: `src/circuit_weaver/ic_data/connector.json`, `src/circuit_weaver/subcircuits/connector.py`,
+`tests/test_template_structure.py`
+
+### T212. Check generated footprints against local KiCad libraries (P1, MEDIUM) ✅ DONE
+
+- [x] Add a local KiCad footprint-library resolver for standard `.pretty`
+  libraries.
+- [x] Emit validation warnings when generated footprint references are not
+  present in the local KiCad footprint libraries so custom manufacturer
+  imports are not hidden behind a “ready” report.
+- [x] Include the local KiCad footprint search path and official KiCad
+  footprint-library browser URL in each missing-footprint warning.
+
+Files: `src/circuit_weaver/footprint_lib.py`, `src/circuit_weaver/dispatcher.py`,
+`tests/test_footprint_lib.py`
+
+### T213. Reduce over-promoted paper size for compact connector-heavy designs (P2, SMALL) ✅ DONE
+
+- [x] Re-ran the `I:/my_circuit` probe and confirmed the schematic still
+  promotes to A1 even after the component count dropped to 7 and J1 became a
+  2-pin battery holder.
+- [x] Tune the layout-fit scoring so compact connector-heavy designs choose
+  the smallest fitting page instead of A1.
+- [x] Re-ran `I:/my_circuit` generation and confirmed the schematic now uses
+  A3 instead of A1.
+
+Files: `src/circuit_weaver/placer.py`, `tests/test_placer.py`
+
+### T214. Suggest footprint-backed alternatives for custom-footprint parts (P1, MEDIUM) ✅ DONE
+
+- [x] Validation should catch custom/missing footprint-library references and
+  distinguish them from normal KiCad-backed footprint assignments.
+- [x] Where curated alternatives exist with standard KiCad footprints, include
+  them in the warning as safer substitutes instead of silently accepting the
+  custom footprint burden.
+- [x] Advanced users may still keep custom-footprint parts, but the warning must
+  clearly state that a trusted vendor/project `.pretty` import is required
+  before fabrication.
+
+Files: `src/circuit_weaver/footprint_lib.py`, `src/circuit_weaver/dispatcher.py`,
+`src/circuit_weaver/ic_data/alternates.json`, `tests/test_footprint_lib.py`
 
 ## Sprint 45-47 - v0.30.2 Patch Release (Output Fixes + Coverage + Migration Gate) ✅ DONE
 

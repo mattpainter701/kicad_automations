@@ -36,7 +36,7 @@ class OpAmpTemplate(SubcircuitTemplate):
             "type": "string",
             "required": False,
             "default": "non_inverting",
-            "options": ["non_inverting", "inverting", "follower", "differential"],
+            "options": ["non_inverting", "inverting", "follower", "differential", "comparator"],
         },
         {
             "name": "gain",
@@ -61,6 +61,9 @@ class OpAmpTemplate(SubcircuitTemplate):
         {"name": "gnd_net", "type": "string", "required": False, "default": "GND"},
         {"name": "in_net", "type": "string", "required": False},
         {"name": "out_net", "type": "string", "required": False},
+        {"name": "threshold_high", "type": "string", "required": False, "default": "100k"},
+        {"name": "threshold_low", "type": "string", "required": False, "default": "10k"},
+        {"name": "output_pullup", "type": "string", "required": False, "default": "100k"},
     ]
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:
@@ -69,7 +72,7 @@ class OpAmpTemplate(SubcircuitTemplate):
         if ic_name not in OPAMP_IC_DATABASE:
             errors.append(f"Unknown op-amp IC '{ic_name}'. Available: {', '.join(OPAMP_IC_DATABASE)}")
         config = params.get("config", "non_inverting")
-        if config not in ("non_inverting", "inverting", "follower", "differential"):
+        if config not in ("non_inverting", "inverting", "follower", "differential", "comparator"):
             errors.append(f"Invalid config '{config}'")
         gain = params.get("gain", 1.0)
         if gain <= 0:
@@ -81,6 +84,8 @@ class OpAmpTemplate(SubcircuitTemplate):
         ic_db = OPAMP_IC_DATABASE.get(ic_name, OPAMP_IC_DATABASE["LM358"])
         ref = params.get("ref", "U")
         config = params.get("config", "non_inverting")
+        if ic_db.get("device_type") == "comparator" and config == "non_inverting" and params.get("gain", 1.0) == 1.0:
+            config = "comparator"
         gain = params.get("gain", 1.0)
         vdd_net = params.get("vdd_net", "VDD_3P3")
         gnd_net = params.get("gnd_net", "GND")
@@ -103,6 +108,12 @@ class OpAmpTemplate(SubcircuitTemplate):
         p_out = ic_db["pin_out_a"]
         p_inm = ic_db["pin_inm_a"]
         p_inp = ic_db["pin_inp_a"]
+
+        def _res_value(name: str, default: str) -> str:
+            value = params.get(name, default)
+            if isinstance(value, (int, float)):
+                return format_resistance(float(value))
+            return str(value)
 
         # Compute feedback network
         if config == "follower":
@@ -153,6 +164,46 @@ class OpAmpTemplate(SubcircuitTemplate):
                 ]
             )
             annotations.append(f"Rf={format_resistance(rf_val)}, Rin={format_resistance(rin_val)}")
+        elif config == "comparator":
+            threshold_net = params.get("threshold_net", f"THRESH_{ref}")
+            threshold_high = _res_value("threshold_high", "100k")
+            threshold_low = _res_value("threshold_low", "10k")
+            output_pullup = _res_value("output_pullup", "100k")
+            pin_nets = {p_inp: in_net, p_inm: threshold_net, p_out: out_net}
+            straps.extend(
+                [
+                    StrapConfig(
+                        p_inm,
+                        threshold_net,
+                        vdd_net,
+                        threshold_high,
+                        FP_0402R,
+                        role="threshold_divider",
+                        presentation="topology_local",
+                    ),
+                    StrapConfig(
+                        p_inm,
+                        threshold_net,
+                        gnd_net,
+                        threshold_low,
+                        FP_0402R,
+                        role="threshold_divider",
+                        presentation="topology_local",
+                    ),
+                    StrapConfig(
+                        p_out,
+                        out_net,
+                        vdd_net,
+                        output_pullup,
+                        FP_0402R,
+                        role="output_pullup",
+                        presentation="topology_local",
+                    ),
+                ]
+            )
+            annotations.append(
+                f"Comparator threshold: {threshold_high}/{threshold_low}; output pull-up={output_pullup}"
+            )
         elif config == "inverting":
             # Gain = -Rf/Rin
             rf_val = params.get("rf")

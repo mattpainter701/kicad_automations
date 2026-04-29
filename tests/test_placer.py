@@ -417,6 +417,55 @@ class TestPaperSizeSelection:
 
         assert layout.paper in ("A4", "A3")
 
+    def test_compact_connector_heavy_design_stays_on_a3(self, reset_counters):
+        """A compact sensor board with several headers should not jump to A1."""
+        from circuit_weaver.component_db import BypassCap, ComponentDef, PinDef, StrapConfig
+
+        def pins(count: int) -> list[PinDef]:
+            return [
+                PinDef(
+                    number=str(idx + 1),
+                    name=f"P{idx}",
+                    electrical_type="bidirectional",
+                    side=("L", "R", "T", "B")[idx % 4],
+                )
+                for idx in range(count)
+            ]
+
+        comps = [
+            ComponentDef(
+                mpn=f"CONN_{idx}",
+                ref_prefix="J",
+                category="connector",
+                description="small board connector",
+                pins=pins(pin_count),
+                source_ref=f"J{idx + 1}",
+                footprint="Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+            )
+            for idx, pin_count in enumerate([2, 2, 3, 4, 9, 3])
+        ]
+        comps.append(
+            ComponentDef(
+                mpn="TLV3691IDPFR",
+                ref_prefix="U",
+                category="mcu",
+                description="nanopower comparator",
+                pins=pins(5),
+                source_ref="U3",
+                footprint="Package_TO_SOT_SMD:SOT-353_SC-70-5",
+                bypass_caps=[BypassCap("VDD", "VBAT", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
+                straps=[
+                    StrapConfig("4", "THRESH", "VBAT", "100k", "Resistor_SMD:R_0402_1005Metric"),
+                    StrapConfig("4", "THRESH", "GND", "10k", "Resistor_SMD:R_0402_1005Metric"),
+                    StrapConfig("1", "OUT", "VBAT", "100k", "Resistor_SMD:R_0402_1005Metric"),
+                ],
+            )
+        )
+
+        layout = layout_sheet(allocate_sheets(comps)[0])
+
+        assert layout.paper == "A3"
+
     def test_large_design_promotes_paper_when_needed(self, reset_counters):
         """A genuinely large design (40+ ICs) should promote paper as needed."""
         from circuit_weaver.component_db import ComponentDef, PinDef

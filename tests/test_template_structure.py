@@ -313,6 +313,29 @@ def test_schema_validation_catches_invalid_option():
     assert any("must be one of" in e for e in errors), f"Expected option error, got: {errors}"
 
 
+def test_opamp_comparator_generates_threshold_network():
+    """Comparator ICs should not emit op-amp feedback resistors."""
+    from circuit_weaver.subcircuits.opamp import OpAmpTemplate
+
+    template = OpAmpTemplate()
+    result = template.generate({
+        "ic": "TLV3691IDPFR",
+        "ref": "U3",
+        "config": "non_inverting",
+        "gain": 1.0,
+        "vdd_net": "VBAT",
+        "gnd_net": "GND",
+        "in_net": "PIEZO_IN",
+        "out_net": "VIB_INT",
+    })
+    comp = result.components[0]
+    assert comp.pin_nets["3"] == "PIEZO_IN"
+    assert comp.pin_nets["4"] == "THRESH_U3"
+    assert comp.pin_nets["1"] == "VIB_INT"
+    assert {s.role for s in comp.straps} == {"threshold_divider", "output_pullup"}
+    assert not any(s.role == "feedback" for s in comp.straps)
+
+
 def test_schema_validation_passes_for_valid_params():
     """Schema validation should pass for valid parameters."""
     template = BuckConverterTemplate()
@@ -802,6 +825,42 @@ def test_connector_pin_header_generates():
     assert comp.pin_nets["2"] == "SCL"
     assert comp.pin_nets["3"] == "VCC"
     assert comp.pin_nets["4"] == "GND"
+
+
+def test_connector_pin_header_power_pair_offsets_signal_nets():
+    """Generic headers with power pins should put signal_nets after power."""
+    from circuit_weaver.subcircuits.connector import ConnectorTemplate
+
+    template = ConnectorTemplate()
+    result = template.generate({
+        "ic": "PIN_HEADER_4P",
+        "positive_net": "VBAT",
+        "negative_net": "GND",
+        "signal_nets": "PIR_OUT",
+    })
+    comp = result.components[0]
+    assert comp.pin_nets["1"] == "VBAT"
+    assert comp.pin_nets["2"] == "GND"
+    assert comp.pin_nets["3"] == "PIR_OUT"
+    assert comp.pin_nets["4"] == "P4_J"
+
+
+def test_connector_barrel_placeholder_upgrades_to_2xaa_holder():
+    """Explicit 2xAA placeholder text should select a real battery holder footprint."""
+    from circuit_weaver.subcircuits.connector import ConnectorTemplate
+
+    template = ConnectorTemplate()
+    result = template.generate({
+        "ic": "BARREL_JACK_2.1MM",
+        "positive_net": "VBAT",
+        "negative_net": "GND",
+        "description": "2x AA battery input; barrel jack is only a placeholder footprint.",
+    })
+    comp = result.components[0]
+    assert comp.mpn == "BATTERY_HOLDER_2XAA"
+    assert comp.footprint == "Battery:BatteryHolder_Keystone_2462_2xAA"
+    assert comp.pin_nets["1"] == "VBAT"
+    assert comp.pin_nets["2"] == "GND"
 
 
 # ================================================================

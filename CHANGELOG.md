@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.30.3] - Unreleased
+## [0.30.3] - 2026-04-29
 
 ### Sprint 48 - Continued Release Validation
 
@@ -13,6 +13,33 @@ confidence reports, and simulation command behavior.
 - **Windows ERC CLI output:** `circuit-weaver erc` now prints ASCII `PASS` on
   success instead of a Unicode checkmark, avoiding cp1252 console crashes after
   successful ERC runs.
+- **`register-ic` malformed custom data:** Single IC JSON objects that use
+  `mpn`/`template_type` are now registered as one IC instead of being mistaken
+  for a map of many ICs. Multi-IC maps reject scalar entries, and IC database
+  accessors skip malformed custom entries instead of crashing validation.
+- **Invalid `generate` CLI failures:** Expected hard-validation failures now
+  return clean JSON error output with exit code 2 instead of surfacing an
+  unhandled Python traceback.
+- **Generic connector power nets:** `PIN_HEADER_2P`/`PIN_HEADER_4P` style
+  generic connectors now honor explicit `positive_net` and `negative_net`
+  fields before assigning `signal_nets`, so mixed power/signal headers do not
+  create dangling `P*_REF` nets for their power pins.
+- **Comparator template mode:** TLV3691-class comparator ICs now generate a
+  threshold divider and output pull-up instead of op-amp feedback resistors
+  when used as threshold detectors.
+- **Battery-holder placeholder replacement:** Explicit 2xAA battery-input
+  BARREL_JACK placeholders are upgraded to the standard KiCad
+  `Battery:BatteryHolder_Keystone_2462_2xAA` footprint.
+- **Footprint library readiness:** Generated footprint references are checked
+  against local KiCad `.pretty` libraries, and missing custom/manufacturer
+  footprints are emitted as implementation warnings with the searched install
+  path and an official KiCad footprint-library browser URL.
+- **Compact schematic paper size:** Connector-heavy compact boards now pack
+  connector rails into two columns and avoid density spreading, keeping the
+  `I:/my_circuit` Zigbee PIR/vibration schematic on A3 instead of A1.
+- **Custom-footprint alternative policy:** Validation now distinguishes
+  custom/missing footprint-library parts from standard KiCad-backed parts and
+  can recommend curated footprint-backed alternatives when available.
 
 ### Validation
 
@@ -22,8 +49,13 @@ confidence reports, and simulation command behavior.
   optional `ngspice` is not installed, as expected.
 - Removed stale bundled-skill `__pycache__` bytecode from package inputs after
   the first build attempted to include it in the wheel.
-- Real-design validation is pending because `I:/my_circuit/design.yaml` is not
-  currently present.
+- Re-ran the real `I:/my_circuit/design.yaml` validation/generation/ERC probe
+  from source into `I:/my_circuit/output_v0303_probe`; ERC reports 0 errors and
+  0 warnings, and the schematic now uses A3. The probe still flags missing
+  local footprint libraries for the E72 module and EKMB PIR sensor with KiCad
+  library/manufacturer-import guidance.
+- Rebuilt the source and wheel distributions after the final fixes; inspected
+  the wheel and found 0 `__pycache__` or bytecode artifacts.
 
 ## [0.30.2] - 2026-04-28
 

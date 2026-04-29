@@ -28,6 +28,28 @@
     "pin_negative": "2",
     "pin_switch": "3"
   },
+  "BATTERY_HOLDER_2XAA": {
+    "topology": "connector",
+    "description": "2xAA through-hole battery holder",
+    "footprint": "Battery:BatteryHolder_Keystone_2462_2xAA",
+    "connector_type": "power",
+    "pins": [
+      {
+        "number": "1",
+        "name": "+",
+        "type": "passive",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "-",
+        "type": "passive",
+        "side": "L"
+      }
+    ],
+    "pin_positive": "1",
+    "pin_negative": "2"
+  },
   "PIN_HEADER_2P": {
     "topology": "connector",
     "description": "2-Pin 2.54mm Pin Header",
@@ -78,6 +100,34 @@
         "type": "passive",
         "side": "R"
       }
+    ]
+  },
+  "E72-2G4M20S1E": {
+    "topology": "connector",
+    "description": "Ebyte E72-2G4M20S1E CC2652P Zigbee module connector model",
+    "footprint": "RF_Module:Ebyte_E72-2G4M20S1E",
+    "connector_type": "generic",
+    "pins": [
+      {"number": "1", "name": "VBAT", "type": "power_in", "side": "L"},
+      {"number": "2", "name": "GND", "type": "power_in", "side": "L"},
+      {"number": "3", "name": "DIO_0", "type": "bidirectional", "side": "R"},
+      {"number": "4", "name": "DIO_1", "type": "bidirectional", "side": "R"},
+      {"number": "5", "name": "TXD", "type": "output", "side": "R"},
+      {"number": "6", "name": "RXD", "type": "input", "side": "R"},
+      {"number": "7", "name": "RESET", "type": "input", "side": "R"},
+      {"number": "8", "name": "SWDCLK", "type": "input", "side": "R"},
+      {"number": "9", "name": "SWDIO", "type": "bidirectional", "side": "R"}
+    ]
+  },
+  "EKMB1303111": {
+    "topology": "connector",
+    "description": "Panasonic EKMB1303111 PIR sensor connector model",
+    "footprint": "Sensor:Panasonic_EKM_THT",
+    "connector_type": "generic",
+    "pins": [
+      {"number": "1", "name": "VDD", "type": "power_in", "side": "L"},
+      {"number": "2", "name": "GND", "type": "power_in", "side": "L"},
+      {"number": "3", "name": "OUT", "type": "output", "side": "R"}
     ]
   },
   "JST_PH_2P": {

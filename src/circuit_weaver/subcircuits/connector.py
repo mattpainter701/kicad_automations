@@ -91,6 +91,9 @@ class ConnectorTemplate(SubcircuitTemplate):
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
         ic_name = params.get("ic", "BARREL_JACK_2.1MM")
         db = self._ic_db()
+        desc = str(params.get("description", "")).lower()
+        if ic_name == "BARREL_JACK_2.1MM" and "2x aa" in desc and ("placeholder" in desc or "replace" in desc):
+            ic_name = "BATTERY_HOLDER_2XAA"
         ic_db = db.get(ic_name, db["BARREL_JACK_2.1MM"])
         ref = params.get("ref", "J")
         positive_net = params.get("positive_net", "VIN")
@@ -151,9 +154,16 @@ class ConnectorTemplate(SubcircuitTemplate):
         else:
             # Generic connectors: user provides signal_nets
             signal_list = [s.strip() for s in signal_nets_str.split(",") if s.strip()] if signal_nets_str else []
+            has_power_pair = "positive_net" in params or "negative_net" in params
+            signal_idx = 0
             for i, pin in enumerate(ic_db["pins"]):
-                if i < len(signal_list):
-                    net = signal_list[i]
+                if has_power_pair and i == 0:
+                    net = positive_net
+                elif has_power_pair and i == 1:
+                    net = negative_net
+                elif signal_idx < len(signal_list):
+                    net = signal_list[signal_idx]
+                    signal_idx += 1
                 else:
                     net = f"P{i + 1}_{ref}"
                 pin_nets[pin.number] = net

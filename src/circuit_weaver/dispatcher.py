@@ -522,6 +522,12 @@ def _validate_component_resolution(
     structural: list[ValidationMessage] = []
     implementation: list[ValidationMessage] = []
     groups = _group_components_by_block_key(compiled.components)
+    try:
+        from .footprint_lib import KiCadFootprintLibrary
+
+        fp_lib = KiCadFootprintLibrary()
+    except Exception:
+        fp_lib = None
 
     for block in compiled.ir.blocks:
         group = groups.get(_block_primary_key(block), [])
@@ -574,6 +580,27 @@ def _validate_component_resolution(
                     level="error",
                     subject=block.ref or block.id,
                     message="Resolved block has no footprint binding",
+                )
+            )
+        elif primary.footprint and fp_lib and fp_lib.roots and not fp_lib.footprint_exists(primary.footprint):
+            from .footprint_lib import custom_footprint_suggestion, official_kicad_footprint_url
+
+            roots = ", ".join(str(root) for root in fp_lib.roots[:2])
+            if len(fp_lib.roots) > 2:
+                roots += ", ..."
+            url = official_kicad_footprint_url(primary.footprint)
+            implementation.append(
+                ValidationMessage(
+                    category="implementation",
+                    code="footprint-library-missing",
+                    level="warning",
+                    subject=block.ref or block.id,
+                    message=(
+                        f"Footprint '{primary.footprint}' is not present in local KiCad footprint libraries; "
+                        f"searched {roots}. Check the official KiCad footprint library at {url}, "
+                        "import the manufacturer .pretty library, or choose a standard KiCad footprint"
+                    ),
+                    suggestion=custom_footprint_suggestion(primary.mpn, primary.footprint, fp_lib),
                 )
             )
         # Pin count sanity: IC with very few pins is suspicious
@@ -2574,21 +2601,28 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         update_spec = getattr(args, "update_spec", False)
         svg_placement = getattr(args, "svg_placement", False)
         spec_path = Path(args.spec) if update_spec else None
-        result = _run_with_stderr_capture(
-            lambda: generate_artifacts(
-                spec,
-                output_dir=args.output,
-                require_valid=args.require_valid,
-                enrich_parts=args.enrich_parts or auto_source,
-                export_svg=args.export_svg,
-                score=args.score,
-                auto_source=auto_source,
-                update_spec=update_spec,
-                spec_path=spec_path,
-                svg_placement=svg_placement,
-                export_pinout=getattr(args, "export_pinout", False),
+        try:
+            result = _run_with_stderr_capture(
+                lambda: generate_artifacts(
+                    spec,
+                    output_dir=args.output,
+                    require_valid=args.require_valid,
+                    enrich_parts=args.enrich_parts or auto_source,
+                    export_svg=args.export_svg,
+                    score=args.score,
+                    auto_source=auto_source,
+                    update_spec=update_spec,
+                    spec_path=spec_path,
+                    svg_placement=svg_placement,
+                    export_pinout=getattr(args, "export_pinout", False),
+                )
             )
-        )
+        except ValueError as exc:
+            message = str(exc)
+            if not message.startswith("Design has "):
+                raise
+            _print_json({"status": "error", "valid": False, "message": message})
+            raise SystemExit(2) from None
         if auto_source and "auto_source_summary" in result:
             s = result["auto_source_summary"]
             print(
@@ -2851,22 +2885,34 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
 
         data = _json_mod.loads(ic_json)
 
-        if isinstance(data, dict) and "topology" in data:
-            mpn = args.mpn
+        if not isinstance(data, dict):
+            print("Error: expected JSON object with IC data", file=sys.stderr)
+            raise SystemExit(1)
+
+        is_single_ic = ("topology" in data or "template_type" in data) and not all(
+            isinstance(value, dict) for value in data.values()
+        )
+
+        if is_single_ic:
+            mpn = args.mpn or str(data.get("mpn") or "").strip()
             if not mpn:
-                print("Error: --mpn required when input is a single IC object", file=sys.stderr)
+                print("Error: --mpn required when input is a single IC object without an mpn field", file=sys.stderr)
                 raise SystemExit(1)
+            if "topology" not in data and "template_type" in data:
+                data = {**data, "topology": data["template_type"]}
             register_ic(mpn, data, persist=True)
             print(f"Registered IC: {mpn} (topology: {data.get('topology', 'unknown')})")
-        elif isinstance(data, dict):
+        else:
             count = 0
             for mpn, ic_data in data.items():
+                if not isinstance(ic_data, dict):
+                    print(f"Error: IC entry {mpn!r} must be an object", file=sys.stderr)
+                    raise SystemExit(1)
+                if "topology" not in ic_data and "template_type" in ic_data:
+                    ic_data = {**ic_data, "topology": ic_data["template_type"]}
                 register_ic(mpn, ic_data, persist=True)
                 count += 1
             print(f"Registered {count} IC(s)")
-        else:
-            print("Error: expected JSON object with IC data", file=sys.stderr)
-            raise SystemExit(1)
         raise SystemExit(0)
 
     if args.command == "export-jlcpcb":

@@ -1,0 +1,15 @@
+{
+  "E72-2G4M20S1E": [
+    {
+      "mpn": "ESP32-C6-MINI-1",
+      "footprint": "RF_Module:ESP32-C6-MINI-1",
+      "reason": "standard KiCad footprint, 802.15.4 radio plus WiFi/BLE; requires firmware and pinout redesign from CC2652/PTVO"
+    },
+    {
+      "mpn": "Digi XBee SMT",
+      "footprint": "RF_Module:Digi_XBee_SMT",
+      "reason": "standard KiCad footprint for an 802.15.4/Zigbee-class module family; higher BOM cost and pinout/protocol redesign likely"
+    }
+  ],
+  "EKMB1303111": []
+}
