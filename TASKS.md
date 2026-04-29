@@ -2,6 +2,37 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 48 - v0.30.3 Continued Release Validation (Windows CLI + Packaging) — IN PROGRESS
+
+**Goal:** Continue testing the v0.30.2 release candidate on Windows and bundled
+sample designs, collecting low-risk follow-up fixes into v0.30.3 instead of
+expanding the already-committed v0.30.2 patch scope.
+
+### T205. Fix Windows ERC CLI success output (P1, SMALL) ✅ DONE
+
+- [x] Release validation found `circuit-weaver erc` crashed on Windows cp1252
+  consoles after a successful ERC because it printed a Unicode checkmark.
+- [x] Replaced the success line with ASCII `PASS` output.
+- [x] Re-ran lint, tests, bundled sample validate/generate/ERC, confidence, and
+  simulate checks for readiness.
+
+Files: `src/circuit_weaver/dispatcher.py`
+
+### T206. Continue v0.30.3 release validation sweep (P1, MEDIUM) — IN PROGRESS
+
+- [x] Confirmed package version/import reports `0.30.2` before the v0.30.3 bump.
+- [x] Confirmed `py -m build` produces source and wheel distributions.
+- [x] Removed stale `__pycache__` bytecode from bundled skill package inputs
+  after the first build tried to include it in the wheel.
+- [ ] Re-run package build after each release-blocking fix and inspect the wheel
+  for generated/cache artifacts.
+- [ ] Re-run real-design validation once `I:/my_circuit/design.yaml` is restored
+  or replaced with an equivalent regression fixture.
+- [ ] Add any additional issues found during further CLI/simulation/export tests
+  as dedicated v0.30.3 tasks below this section.
+
+Files: `TASKS.md`, `CHANGELOG.md`, release-validation fixes as discovered
+
 ## Sprint 45-47 - v0.30.2 Patch Release (Output Fixes + Coverage + Migration Gate) ✅ DONE
 
 **Goal:** Respond to the `I:/my_circuit/output/` audit and close the safest

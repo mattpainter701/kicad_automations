@@ -298,15 +298,23 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.28.0 (unreleased)
+## What's New in v0.30.x
 
 | Sprint | Feature |
 |-|-|
-| 41 | **Every hardcoded `*_IC_DATABASE` dict drained into `ic_data/*.json`** — 84 IC entries across 37 subcircuit templates now live in JSON. New `subcircuits.base.LegacyDBProxy` provides a dict-like shim over `merge_into_legacy_db({}, topology)` so existing template code keeps working. `register_ic()` entries are visible to every template immediately — no more "I registered RP2040, why doesn't the usb_controller template see it?" |
-| 41 | **`SymbolResolver` caches negative resolutions per process** — a design with N identical unresolvable parts (the toy-phone 12-button matrix case) now triggers 1 tier-chain walk, not N. `SymbolResolver.clear_unresolved_cache()` exposed for long-running callers |
-| 41 | **Placement preview PCB uses KiCad 10 fixed layer ids** — `*_placement.kicad_pcb` opens cleanly again after KiCad 10 started rejecting `ECO1.User` / `ECO2.User` as "not fixed layer hash" |
-| 41 | **74-test every-template smoke regression net** — iterates every template in the default registry, asserts `generate()` returns a valid ComponentDef with pins. Covers the 28+ templates the 9-archetype corpus doesn't exercise |
-| 41 | **Circuit Validity Generational Requirements** — new `placement_readiness` validation category promotes placement-blocking checks (dangling buses, missing I2C pull-ups, floating enables, orphan interfaces, unverified-stub ICs) into a hard category that `generate_artifacts` always blocks on. `generational_repair.py` auto-synthesizes missing PULLUPS_ONLY blocks; opt out via `auto_repair: false` in the spec |
+| 45-47 | **Schematic paper over-promotion fix** — `layout_sheet()` now starts from the allocator-selected paper size and only promotes if it doesn't fit. Small IoT-sensor-class designs no longer cascade to A2. Tighter title-block clearance keeps content on A3. |
+| 45-47 | **Design log severity mapping** — `DesignLogHandler` maps Python `WARNING` records to `"warning"` type instead of `"error"` in `design.log`. |
+| 45-47 | **BME688 bundled IC data** — sensor pin/footprint metadata shipped in `ic_data/misc.json`. `IoT_AQ_Sensor_v2` resolves without local `custom.json`. |
+| 45-47 | **JLCPCB assembly variants** — `generate_assembly_variants()` supports `include_refs`, `exclude_refs`, `dnp_refs` subsets; per-variant BOM/CPL output. |
+| 45-47 | **Allocator + placement-readiness tests** — 52 new dedicated tests closing Sprint 42 coverage gaps. |
+| 44 | **Label collision avoidance** — overlapping labels on dense sheets are detected and shifted along wire-stub direction. Same-name labels skipped. |
+| 44 | **Validate-all regression gate** — 14+1 sample YAMLs now validate clean; CI gate enforces zero hard errors. |
+| 44 | **Sourcing auditor alternates** — queries LCSC/DigiKey for functionally similar parts when a component has CRITICAL/WARNING risk. |
+| 44 | **MCP server** — `circuit-weaver-mcp` entry point for AI agent tool access via FastMCP. |
+| 44 | **Wire-crossing minimization** — placer penalizes crossing-dense placements; bus signal groups detected for future parallel routing. |
+| 43 | **Density-scaled grid spacing** — inter-component gaps scale to spread content across available page area, preventing corner-clustering on large sheets. |
+| 43 | **Annotation overlap prevention** — per-IC annotations shift down when they would collide, with overflow line drops. |
+| 43 | **Lane routing counter recycling** — capped at 6 with modulo wrap, preventing lanes from drifting 194mm from the IC. |
 
 <details><summary>v0.27.0</summary>
 
@@ -420,7 +428,7 @@ kicad_automations/
 │   ├── api.py                  # FastAPI HTTP server
 │   ├── helpers/placement.py    # KiCad API abstraction, footprint matching utilities
 │   └── subcircuits/            # Reusable circuit template library (37 templates)
-├── tests/                   # Regression test suite (450+ tests)
+├── tests/                   # Regression test suite (998 tests)
 ├── skills/                  # Global workflow skills: kicad, bom, digikey, lcsc, ee…
 ├── project-skills/          # Per-project templates: kicad_gen, autoroute, sim…
 ├── agents/                  # Hardware reviewer AI agent definitions

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.30.3] - Unreleased
+
+### Sprint 48 - Continued Release Validation
+
+This patch collects follow-up fixes found while validating the v0.30.2 release
+candidate on Windows, bundled sample designs, package builds, CLI validation,
+confidence reports, and simulation command behavior.
+
+### Fixed
+
+- **Windows ERC CLI output:** `circuit-weaver erc` now prints ASCII `PASS` on
+  success instead of a Unicode checkmark, avoiding cp1252 console crashes after
+  successful ERC runs.
+
+### Validation
+
+- Re-ran lint, tests, bundled sample validate/generate/ERC, confidence report,
+  simulation command, doctor, and package build checks.
+- Simulation command generates SPICE netlists but skips actual runs when
+  optional `ngspice` is not installed, as expected.
+- Removed stale bundled-skill `__pycache__` bytecode from package inputs after
+  the first build attempted to include it in the wheel.
+- Real-design validation is pending because `I:/my_circuit/design.yaml` is not
+  currently present.
+
 ## [0.30.2] - 2026-04-28
 
 ### Sprint 45-47 - Output Bug Fixes, Coverage, and Safe Migration Planning

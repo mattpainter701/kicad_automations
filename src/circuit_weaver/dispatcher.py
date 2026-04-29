@@ -3548,7 +3548,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 print(f"ERC: failed — {erc_result.skip_reason}", file=sys.stderr)
             else:
                 if erc_result.errors == 0 and erc_result.warnings == 0:
-                    print("ERC: ✓ 0 errors, 0 warnings")
+                    print("ERC: PASS 0 errors, 0 warnings")
                 else:
                     print(f"ERC: {erc_result.errors} error(s), {erc_result.warnings} warning(s)")
                     for v in erc_result.violations:
