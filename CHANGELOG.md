@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased] — Sprint 49
+
+### Sprint 49 — Incremental Legacy Migration (T180)
+
+- Flip `SubcircuitRegistry.get()` to data-driven-first resolution order for all topologies; legacy templates serve as fallback when ic_data JSON has no entries.
+- Remove `_DATA_DRIVEN_FIRST` class variable (dead code after flip).
+- Add `test_registry_uses_data_driven_first` and `test_registry_legacy_fallback_when_no_ic_data`; replace old `test_registry_prefers_legacy_for_unported_topologies`.
+- Catalog 26 test failures from boundary-port naming mismatches in verdict-B/C topologies (`build_generic` vs legacy). Buck/boost/buck_boost/ldo unaffected.
+
 ## [0.30.3] - 2026-04-29
 
 ### Sprint 48 - Continued Release Validation
@@ -996,7 +1005,7 @@ This release replaces the hardcoded subcircuit template classes with a JSON-driv
 
 ---
 
-## [0.16.0] - (In Progress)
+## [0.16.0] - 2026-04-07
 
 ### Sprint 19 — Design Review & Quality Assurance
 

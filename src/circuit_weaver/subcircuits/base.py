@@ -721,20 +721,12 @@ class SubcircuitRegistry:
     """Registry of available subcircuit templates, queryable by type name.
 
     Resolution order:
-    1. Data-driven templates from JSON IC data store (for topologies with
-        dedicated builders: buck, boost, buck_boost, ldo)
+    1. Data-driven templates from JSON IC data store — tried first for all
+        topologies. If ic_data JSON has entries for the topology, a
+        DataDrivenTemplate backed by topology_builders is returned.
     2. Legacy template classes (registered via register()) — fallback for
-        all other topologies until their builders are ported.
-
-    NOTE (Sprint 44 T180 reverted): The full data-driven-first flip is
-    gated on T181-T185 (builder parity for all topologies). The data-driven
-    builders still produce different boundary port names for verdict-B and
-    verdict-C topologies, breaking sample validations.
+        topologies with no ic_data JSON entries.
     """
-
-    # Topologies whose data-driven builder is known to produce output
-    # equivalent to the legacy template (verified by parity tests).
-    _DATA_DRIVEN_FIRST = {"buck", "boost", "buck_boost", "ldo"}
 
     def __init__(self):
         self._templates: dict[str, SubcircuitTemplate] = {}
@@ -746,20 +738,14 @@ class SubcircuitRegistry:
     def get(self, type_name: str) -> SubcircuitTemplate | None:
         """Look up a template by type name (e.g., 'buck', 'ldo').
 
-        For verified topologies (buck, boost, buck_boost, ldo) the data-driven
-        builder is used first. For all other topologies the legacy class is
-        used first to avoid regressions until dedicated builders are ported.
+        Data-driven resolution is tried first for all topologies.
+        Legacy template classes serve as fallback when ic_data JSON
+        has no entries for the requested topology.
         """
-        if type_name in self._DATA_DRIVEN_FIRST:
-            dd = self._get_data_driven(type_name)
-            if dd is not None:
-                return dd
-            return self._templates.get(type_name)
-
-        # Legacy-first for unported topologies
-        if type_name in self._templates:
-            return self._templates[type_name]
-        return self._get_data_driven(type_name)
+        dd = self._get_data_driven(type_name)
+        if dd is not None:
+            return dd
+        return self._templates.get(type_name)
 
     def _get_data_driven(self, type_name: str) -> DataDrivenTemplate | None:
         """Try to build a DataDrivenTemplate from JSON IC data."""

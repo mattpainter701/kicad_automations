@@ -966,19 +966,41 @@ def test_registry_prefers_data_driven_for_verified_topologies():
     assert tmpl.template_type == "buck"
 
 
-def test_registry_prefers_legacy_for_unported_topologies():
-    """Unported topologies still use legacy first to avoid regressions."""
+def test_registry_uses_data_driven_first():
+    """After the registry flip, all topologies with ic_data entries use
+    DataDrivenTemplate, not legacy classes."""
     from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
     from circuit_weaver.subcircuits.rtc import RTCTemplate
 
     reg = SubcircuitRegistry()
     reg.register(RTCTemplate())
 
-    # rtc is NOT in _DATA_DRIVEN_FIRST, so legacy wins
+    # rtc has ic_data JSON entries, so data-driven wins
     tmpl = reg.get("rtc")
     assert tmpl is not None
+    assert isinstance(tmpl, DataDrivenTemplate), (
+        f"Expected DataDrivenTemplate for rtc, got {type(tmpl).__name__}"
+    )
+
+
+def test_registry_legacy_fallback_when_no_ic_data():
+    """When ic_data has no entries for a topology, legacy template is used."""
+    from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
+
+    # Create a registry with only a legacy template for a fake topology
+    # that has no ic_data entries
+    class FakeTemplate:
+        template_type = "fake_topology_no_data"
+    fake = FakeTemplate()
+
+    reg = SubcircuitRegistry()
+    reg.register(fake)
+
+    # Data-driven should return None (no ic_data for this fake topology),
+    # so legacy template is the fallback
+    tmpl = reg.get("fake_topology_no_data")
+    assert tmpl is fake
     assert not isinstance(tmpl, DataDrivenTemplate)
-    assert isinstance(tmpl, RTCTemplate)
 
 
 def test_register_custom_ic():
