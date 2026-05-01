@@ -97,10 +97,8 @@ class USBControllerTemplate(SubcircuitTemplate):
     def _ic_db(cls) -> dict[str, dict[str, Any]]:
         """Hardcoded DB merged with ic_data 'usb_controller' entries so
         parts registered via ``circuit-weaver register-ic`` are accepted
-        by :meth:`validate_params` / :meth:`generate`. Same pattern as
-        :class:`AudioAmplifierTemplate`, :class:`MotorDriverTemplate`,
-        :class:`ProtectionTemplate`. Legacy hardcoded entries win on
-        collision (per :func:`merge_into_legacy_db`).
+        by :meth:`validate_params` / :meth:`generate`. Legacy hardcoded
+        entries win on collision (per :func:`merge_into_legacy_db`).
         """
         from ..ic_data import merge_into_legacy_db
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 
 from circuit_weaver.subcircuits.base import get_default_registry
-from circuit_weaver.subcircuits.buck import BUCK_IC_DATABASE, BuckConverterTemplate
 from circuit_weaver.subcircuits.clock import ClockSynthTemplate
 from circuit_weaver.subcircuits.driver import GateDriverTemplate, LevelShifterTemplate
 from circuit_weaver.subcircuits.mosfet_switch import MOSFETSwitchTemplate
@@ -60,6 +59,7 @@ def _build_params(template) -> dict[str, object]:
     # DataDrivenTemplate may have empty param_schema but still need params
     # for its underlying builder. Inject known required params by topology.
     from circuit_weaver.subcircuits.base import DataDrivenTemplate
+
     if isinstance(template, DataDrivenTemplate) and not params:
         topo = template._topology
         if topo in ("buck", "boost", "buck_boost"):
@@ -120,7 +120,9 @@ def _assert_no_unhandled_critical_pins(result) -> None:
 
 def test_default_registry_contains_all_templates():
     reg = get_default_registry()
-    assert len(reg._templates) >= 37
+    assert len(reg._templates) >= 30
+    for topology in ("buck", "boost", "buck_boost", "ldo", "can_transceiver", "eeprom", "protection"):
+        assert topology in reg.available_types()
 
 
 def test_all_default_templates_generate_and_power_pins_are_connected():
@@ -142,10 +144,13 @@ def test_all_default_templates_have_no_unhandled_critical_pins():
 
 
 def test_tps62088_grounds_its_exposed_pad():
-    template = BuckConverterTemplate()
+    from circuit_weaver.ic_data import get_ic_data
+
+    template = get_default_registry().get("buck")
     result = template.generate({"vin": 12.0, "vout": 3.3, "iout": 1.0, "ic": "TPS62088"})
     comp = result.components[0]
-    assert BUCK_IC_DATABASE["TPS62088"]["pin_gnd"] in comp.power_pins
+    ic_data = get_ic_data("TPS62088")
+    assert ic_data["pin_gnd"] in comp.power_pins
     assert comp.power_pins["8"] == "GND"
     _assert_no_unpowered_power_in_pins(result)
 
@@ -299,8 +304,10 @@ def test_all_templates_pass_contract_validation():
 
 def test_schema_validation_catches_invalid_type():
     """Schema validation should catch wrong parameter types."""
-    template = BuckConverterTemplate()
-    errors = template._validate_params_from_schema({"vin": "not_a_number", "vout": 3.3, "iout": 1.0})
+    from circuit_weaver.subcircuits.opamp import OpAmpTemplate
+
+    template = OpAmpTemplate()
+    errors = template._validate_params_from_schema({"config": "non_inverting", "gain": "not_a_number"})
     assert any("number" in e for e in errors), f"Expected type error, got: {errors}"
 
 
@@ -318,16 +325,18 @@ def test_opamp_comparator_generates_threshold_network():
     from circuit_weaver.subcircuits.opamp import OpAmpTemplate
 
     template = OpAmpTemplate()
-    result = template.generate({
-        "ic": "TLV3691IDPFR",
-        "ref": "U3",
-        "config": "non_inverting",
-        "gain": 1.0,
-        "vdd_net": "VBAT",
-        "gnd_net": "GND",
-        "in_net": "PIEZO_IN",
-        "out_net": "VIB_INT",
-    })
+    result = template.generate(
+        {
+            "ic": "TLV3691IDPFR",
+            "ref": "U3",
+            "config": "non_inverting",
+            "gain": 1.0,
+            "vdd_net": "VBAT",
+            "gnd_net": "GND",
+            "in_net": "PIEZO_IN",
+            "out_net": "VIB_INT",
+        }
+    )
     comp = result.components[0]
     assert comp.pin_nets["3"] == "PIEZO_IN"
     assert comp.pin_nets["4"] == "THRESH_U3"
@@ -338,8 +347,10 @@ def test_opamp_comparator_generates_threshold_network():
 
 def test_schema_validation_passes_for_valid_params():
     """Schema validation should pass for valid parameters."""
-    template = BuckConverterTemplate()
-    errors = template._validate_params_from_schema({"vin": 12.0, "vout": 3.3, "iout": 1.0})
+    from circuit_weaver.subcircuits.opamp import OpAmpTemplate
+
+    template = OpAmpTemplate()
+    errors = template._validate_params_from_schema({"config": "non_inverting", "gain": 10.0})
     assert not errors, f"Unexpected errors: {errors}"
 
 
@@ -720,9 +731,7 @@ def test_rtc_pcf8523_generates():
 
 def test_eeprom_i2c_generates():
     """24LC256 I2C EEPROM should generate with address strapping."""
-    from circuit_weaver.subcircuits.eeprom import EEPROMTemplate
-
-    template = EEPROMTemplate()
+    template = get_default_registry().get("eeprom")
     result = template.generate({"ic": "24LC256", "i2c_addr_offset": 3})
     comp = result.components[0]
     assert comp.mpn == "24LC256"
@@ -735,9 +744,7 @@ def test_eeprom_i2c_generates():
 
 def test_eeprom_spi_flash_generates():
     """AT25SF128A SPI flash should generate with WP/HOLD tied high."""
-    from circuit_weaver.subcircuits.eeprom import EEPROMTemplate
-
-    template = EEPROMTemplate()
+    template = get_default_registry().get("eeprom")
     result = template.generate({"ic": "AT25SF128A"})
     comp = result.components[0]
     assert comp.mpn == "AT25SF128A"
@@ -816,10 +823,12 @@ def test_connector_pin_header_generates():
     from circuit_weaver.subcircuits.connector import ConnectorTemplate
 
     template = ConnectorTemplate()
-    result = template.generate({
-        "ic": "PIN_HEADER_4P",
-        "signal_nets": "SDA,SCL,VCC,GND",
-    })
+    result = template.generate(
+        {
+            "ic": "PIN_HEADER_4P",
+            "signal_nets": "SDA,SCL,VCC,GND",
+        }
+    )
     comp = result.components[0]
     assert comp.pin_nets["1"] == "SDA"
     assert comp.pin_nets["2"] == "SCL"
@@ -832,12 +841,14 @@ def test_connector_pin_header_power_pair_offsets_signal_nets():
     from circuit_weaver.subcircuits.connector import ConnectorTemplate
 
     template = ConnectorTemplate()
-    result = template.generate({
-        "ic": "PIN_HEADER_4P",
-        "positive_net": "VBAT",
-        "negative_net": "GND",
-        "signal_nets": "PIR_OUT",
-    })
+    result = template.generate(
+        {
+            "ic": "PIN_HEADER_4P",
+            "positive_net": "VBAT",
+            "negative_net": "GND",
+            "signal_nets": "PIR_OUT",
+        }
+    )
     comp = result.components[0]
     assert comp.pin_nets["1"] == "VBAT"
     assert comp.pin_nets["2"] == "GND"
@@ -850,12 +861,14 @@ def test_connector_barrel_placeholder_upgrades_to_2xaa_holder():
     from circuit_weaver.subcircuits.connector import ConnectorTemplate
 
     template = ConnectorTemplate()
-    result = template.generate({
-        "ic": "BARREL_JACK_2.1MM",
-        "positive_net": "VBAT",
-        "negative_net": "GND",
-        "description": "2x AA battery input; barrel jack is only a placeholder footprint.",
-    })
+    result = template.generate(
+        {
+            "ic": "BARREL_JACK_2.1MM",
+            "positive_net": "VBAT",
+            "negative_net": "GND",
+            "description": "2x AA battery input; barrel jack is only a placeholder footprint.",
+        }
+    )
     comp = result.components[0]
     assert comp.mpn == "BATTERY_HOLDER_2XAA"
     assert comp.footprint == "Battery:BatteryHolder_Keystone_2462_2xAA"
@@ -885,57 +898,6 @@ def test_ic_data_store_loads():
     assert "ldo" in topos
 
 
-def test_data_driven_buck_parity():
-    """Data-driven buck builder should produce equivalent output to legacy template."""
-    from circuit_weaver.ic_data import get_ic_data
-    from circuit_weaver.subcircuits.buck import BuckConverterTemplate
-    from circuit_weaver.subcircuits.topology_builders import build_switching_regulator
-
-    params = {"vin": 12.0, "vout": 3.3, "iout": 1.0, "ic": "AP62300", "ref": "U1"}
-
-    # Legacy template
-    legacy = BuckConverterTemplate().generate(params)
-    legacy_comp = legacy.components[0]
-
-    # Data-driven builder
-    ic_data = dict(get_ic_data("AP62300"))
-    ic_data["_mpn"] = "AP62300"
-    dd = build_switching_regulator(ic_data, params)
-    dd_comp = dd.components[0]
-
-    # Parity checks: same power pins, same feedback divider straps, same passives count
-    assert legacy_comp.power_pins == dd_comp.power_pins
-    assert len(legacy_comp.straps) == len(dd_comp.straps)
-    assert len(legacy_comp.bypass_caps) == len(dd_comp.bypass_caps)
-    assert legacy_comp.mpn == dd_comp.mpn
-
-    # Same feedback resistor values
-    legacy_fbt = next(s for s in legacy_comp.straps if s.role == "feedback_top")
-    dd_fbt = next(s for s in dd_comp.straps if s.role == "feedback_top")
-    assert legacy_fbt.value == dd_fbt.value
-
-
-def test_data_driven_ldo_parity():
-    """Data-driven LDO builder should produce equivalent output to legacy template."""
-    from circuit_weaver.ic_data import get_ic_data
-    from circuit_weaver.subcircuits.ldo import LDOTemplate
-    from circuit_weaver.subcircuits.topology_builders import build_linear_regulator
-
-    params = {"vin": 5.0, "ic": "TLV75518", "ref": "U2"}
-
-    legacy = LDOTemplate().generate(params)
-    legacy_comp = legacy.components[0]
-
-    ic_data = dict(get_ic_data("TLV75518"))
-    ic_data["_mpn"] = "TLV75518"
-    dd = build_linear_regulator(ic_data, params)
-    dd_comp = dd.components[0]
-
-    assert legacy_comp.power_pins == dd_comp.power_pins
-    assert len(legacy_comp.bypass_caps) == len(dd_comp.bypass_caps)
-    assert legacy_comp.mpn == dd_comp.mpn
-
-
 def test_data_driven_template_via_registry():
     """DataDrivenTemplate should be findable via the registry."""
     from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
@@ -952,20 +914,6 @@ def test_data_driven_template_via_registry():
     assert result.components[0].mpn == "AP62300"
 
 
-def test_registry_prefers_data_driven_for_verified_topologies():
-    """Verified topologies (buck, boost, buck_boost, ldo) use data-driven first."""
-    from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
-    from circuit_weaver.subcircuits.buck import BuckConverterTemplate
-
-    reg = SubcircuitRegistry()
-    reg.register(BuckConverterTemplate())
-
-    tmpl = reg.get("buck")
-    assert tmpl is not None
-    assert isinstance(tmpl, DataDrivenTemplate)
-    assert tmpl.template_type == "buck"
-
-
 def test_registry_uses_data_driven_first():
     """After the registry flip, all topologies with ic_data entries use
     DataDrivenTemplate, not legacy classes."""
@@ -978,9 +926,7 @@ def test_registry_uses_data_driven_first():
     # rtc has ic_data JSON entries, so data-driven wins
     tmpl = reg.get("rtc")
     assert tmpl is not None
-    assert isinstance(tmpl, DataDrivenTemplate), (
-        f"Expected DataDrivenTemplate for rtc, got {type(tmpl).__name__}"
-    )
+    assert isinstance(tmpl, DataDrivenTemplate), f"Expected DataDrivenTemplate for rtc, got {type(tmpl).__name__}"
 
 
 def test_registry_legacy_fallback_when_no_ic_data():
@@ -991,6 +937,7 @@ def test_registry_legacy_fallback_when_no_ic_data():
     # that has no ic_data entries
     class FakeTemplate:
         template_type = "fake_topology_no_data"
+
     fake = FakeTemplate()
 
     reg = SubcircuitRegistry()
@@ -1008,23 +955,30 @@ def test_register_custom_ic():
     from circuit_weaver.ic_data import get_ic_data, register_ic, reload
 
     # Register a fake IC
-    register_ic("TEST_BUCK_999", {
-        "topology": "buck",
-        "description": "Test Buck IC",
-        "footprint": "SOT-23-6",
-        "vref": 0.6,
-        "fsw": 1e6,
-        "r_fbb_default": 200e3,
-        "pins": [
-            {"number": "1", "name": "GND", "type": "power_in", "side": "B"},
-            {"number": "2", "name": "SW", "type": "output", "side": "T"},
-            {"number": "3", "name": "VIN", "type": "power_in", "side": "L"},
-            {"number": "4", "name": "FB", "type": "input", "side": "R"},
-            {"number": "5", "name": "EN", "type": "input", "side": "L"},
-        ],
-        "pin_vin": "3", "pin_gnd": "1", "pin_sw": "2",
-        "pin_fb": "4", "pin_en": "5",
-    }, persist=False)
+    register_ic(
+        "TEST_BUCK_999",
+        {
+            "topology": "buck",
+            "description": "Test Buck IC",
+            "footprint": "SOT-23-6",
+            "vref": 0.6,
+            "fsw": 1e6,
+            "r_fbb_default": 200e3,
+            "pins": [
+                {"number": "1", "name": "GND", "type": "power_in", "side": "B"},
+                {"number": "2", "name": "SW", "type": "output", "side": "T"},
+                {"number": "3", "name": "VIN", "type": "power_in", "side": "L"},
+                {"number": "4", "name": "FB", "type": "input", "side": "R"},
+                {"number": "5", "name": "EN", "type": "input", "side": "L"},
+            ],
+            "pin_vin": "3",
+            "pin_gnd": "1",
+            "pin_sw": "2",
+            "pin_fb": "4",
+            "pin_en": "5",
+        },
+        persist=False,
+    )
 
     # Should be findable now
     ic = get_ic_data("TEST_BUCK_999")
@@ -1033,9 +987,17 @@ def test_register_custom_ic():
 
     # Should generate successfully via data-driven builder
     from circuit_weaver.subcircuits.topology_builders import build_switching_regulator
-    result = build_switching_regulator(ic, {
-        "vin": 5.0, "vout": 1.8, "iout": 2.0, "ic": "TEST_BUCK_999", "ref": "U99",
-    })
+
+    result = build_switching_regulator(
+        ic,
+        {
+            "vin": 5.0,
+            "vout": 1.8,
+            "iout": 2.0,
+            "ic": "TEST_BUCK_999",
+            "ref": "U99",
+        },
+    )
     assert result.components[0].mpn == "TEST_BUCK_999"
     assert len(result.components[0].straps) == 2  # feedback divider
 

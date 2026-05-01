@@ -17,7 +17,7 @@ import pytest
 from circuit_weaver.component_db import BUILTIN_REGISTRY
 from circuit_weaver.design_ir import normalize_design_spec
 from circuit_weaver.dispatcher import compile_design_ir, validate_design
-from circuit_weaver.subcircuits.ldo import LDOTemplate
+from circuit_weaver.subcircuits.base import get_default_registry
 from circuit_weaver.subcircuits.usb import USBControllerTemplate, USBHubTemplate
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
@@ -30,7 +30,7 @@ SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 
 class TestLDOPresentation:
     def test_ldo_bypass_caps_use_topology_local(self):
-        t = LDOTemplate()
+        t = get_default_registry().get("ldo")
         r = t.generate({"vin": 5.0, "vout": 3.3, "ic": "TLV75518"})
         caps = r.components[0].bypass_caps
         assert len(caps) == 2
@@ -39,10 +39,10 @@ class TestLDOPresentation:
             assert cap.role == "decoupling"
 
     def test_all_ldo_ics_produce_topology_local_caps(self):
-        from circuit_weaver.subcircuits.ldo import LDO_IC_DATABASE
+        from circuit_weaver.ic_data import get_all_ics
 
-        t = LDOTemplate()
-        for ic_name, ic_db in LDO_IC_DATABASE.items():
+        t = get_default_registry().get("ldo")
+        for ic_name, ic_db in get_all_ics("ldo").items():
             vout = ic_db.get("vout_fixed", 3.3)
             r = t.generate({"vin": vout + 2.0, "ic": ic_name})
             for cap in r.components[0].bypass_caps:

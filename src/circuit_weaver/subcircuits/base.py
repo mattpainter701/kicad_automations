@@ -765,8 +765,15 @@ class SubcircuitRegistry:
         )
 
     def available_types(self) -> list[str]:
-        """List all registered template type names."""
-        return sorted(self._templates.keys())
+        """List all registered template type names (legacy + data-driven)."""
+        types = set(self._templates.keys())
+        try:
+            from ..ic_data import list_topologies
+        except ImportError:
+            pass
+        else:
+            types.update(list_topologies())
+        return sorted(types)
 
     def __len__(self):
         return len(self._templates)
@@ -785,10 +792,6 @@ def _build_default_registry() -> SubcircuitRegistry:
     from .audio_amplifier import AudioAmplifierTemplate
     from .battery_charger import BatteryChargerTemplate
     from .battery_monitor import BatteryMonitorTemplate
-    from .boost import BoostConverterTemplate
-    from .buck import BuckConverterTemplate
-    from .buck_boost import BuckBoostConverterTemplate
-    from .can_transceiver import CANTransceiverTemplate
     from .charge_pump import ChargePumpTemplate
     from .clock import ClockSynthTemplate
     from .connector import ConnectorTemplate
@@ -797,16 +800,13 @@ def _build_default_registry() -> SubcircuitRegistry:
     from .dac import DACTemplate
     from .display_driver import DisplayDriverTemplate
     from .driver import GateDriverTemplate, LevelShifterTemplate
-    from .eeprom import EEPROMTemplate
     from .ethernet import EthernetPHYTemplate
     from .i2c_bus import I2CBusTemplate
-    from .ldo import LDOTemplate
     from .led_driver import LEDDriverTemplate
     from .mosfet_switch import MOSFETSwitchTemplate
     from .motor_driver import MotorDriverTemplate
     from .opamp import OpAmpTemplate
     from .power_mux import PowerMuxTemplate
-    from .protection import ProtectionTemplate
     from .relay_driver import RelayDriverTemplate
     from .rs485_transceiver import RS485TransceiverTemplate
     from .rtc import RTCTemplate
@@ -822,10 +822,6 @@ def _build_default_registry() -> SubcircuitRegistry:
         AudioAmplifierTemplate,
         BatteryChargerTemplate,
         BatteryMonitorTemplate,
-        BoostConverterTemplate,
-        BuckConverterTemplate,
-        BuckBoostConverterTemplate,
-        CANTransceiverTemplate,
         ChargePumpTemplate,
         ClockSynthTemplate,
         ConnectorTemplate,
@@ -833,18 +829,15 @@ def _build_default_registry() -> SubcircuitRegistry:
         CurrentSenseTemplate,
         DACTemplate,
         DisplayDriverTemplate,
-        EEPROMTemplate,
         EthernetPHYTemplate,
         GateDriverTemplate,
         I2CBusTemplate,
-        LDOTemplate,
         LEDDriverTemplate,
         LevelShifterTemplate,
         MOSFETSwitchTemplate,
         MotorDriverTemplate,
         OpAmpTemplate,
         PowerMuxTemplate,
-        ProtectionTemplate,
         RelayDriverTemplate,
         RS485TransceiverTemplate,
         RTCTemplate,

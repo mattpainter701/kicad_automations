@@ -37,10 +37,6 @@ def _register():
     from circuit_weaver.subcircuits.audio_amplifier import AudioAmplifierTemplate
     from circuit_weaver.subcircuits.battery_charger import BatteryChargerTemplate
     from circuit_weaver.subcircuits.battery_monitor import BatteryMonitorTemplate
-    from circuit_weaver.subcircuits.boost import BoostConverterTemplate
-    from circuit_weaver.subcircuits.buck import BuckConverterTemplate
-    from circuit_weaver.subcircuits.buck_boost import BuckBoostConverterTemplate
-    from circuit_weaver.subcircuits.can_transceiver import CANTransceiverTemplate
     from circuit_weaver.subcircuits.charge_pump import ChargePumpTemplate
     from circuit_weaver.subcircuits.clock import ClockSynthTemplate
     from circuit_weaver.subcircuits.connector import ConnectorTemplate
@@ -49,16 +45,13 @@ def _register():
     from circuit_weaver.subcircuits.dac import DACTemplate
     from circuit_weaver.subcircuits.display_driver import DisplayDriverTemplate
     from circuit_weaver.subcircuits.driver import GateDriverTemplate, LevelShifterTemplate
-    from circuit_weaver.subcircuits.eeprom import EEPROMTemplate
     from circuit_weaver.subcircuits.ethernet import EthernetPHYTemplate
     from circuit_weaver.subcircuits.i2c_bus import I2CBusTemplate
-    from circuit_weaver.subcircuits.ldo import LDOTemplate
     from circuit_weaver.subcircuits.led_driver import LEDDriverTemplate
     from circuit_weaver.subcircuits.mosfet_switch import MOSFETSwitchTemplate
     from circuit_weaver.subcircuits.motor_driver import MotorDriverTemplate
     from circuit_weaver.subcircuits.opamp import OpAmpTemplate
     from circuit_weaver.subcircuits.power_mux import PowerMuxTemplate
-    from circuit_weaver.subcircuits.protection import ProtectionTemplate
     from circuit_weaver.subcircuits.relay_driver import RelayDriverTemplate
     from circuit_weaver.subcircuits.rs485_transceiver import RS485TransceiverTemplate
     from circuit_weaver.subcircuits.rtc import RTCTemplate
@@ -74,10 +67,6 @@ def _register():
         (AudioAmplifierTemplate, "audio_amplifier", "audio_amplifier.py"),
         (BatteryChargerTemplate, "battery_charger", "battery_charger.py"),
         (BatteryMonitorTemplate, "battery_monitor", "battery_monitor.py"),
-        (BoostConverterTemplate, "boost", "boost.py"),
-        (BuckConverterTemplate, "buck", "buck.py"),
-        (BuckBoostConverterTemplate, "buck_boost", "buck_boost.py"),
-        (CANTransceiverTemplate, "can_transceiver", "can_transceiver.py"),
         (ChargePumpTemplate, "charge_pump", "charge_pump.py"),
         (ClockSynthTemplate, "clock_synth", "clock.py"),
         (ConnectorTemplate, "connector", "connector.py"),
@@ -85,18 +74,15 @@ def _register():
         (CurrentSenseTemplate, "current_sense", "current_sense.py"),
         (DACTemplate, "dac", "dac.py"),
         (DisplayDriverTemplate, "display_driver", "display_driver.py"),
-        (EEPROMTemplate, "eeprom", "eeprom.py"),
         (EthernetPHYTemplate, "ethernet_phy", "ethernet.py"),
         (GateDriverTemplate, "gate_driver", "driver.py"),
         (I2CBusTemplate, "i2c_bus", "i2c_bus.py"),
-        (LDOTemplate, "ldo", "ldo.py"),
         (LEDDriverTemplate, "led_driver", "led_driver.py"),
         (LevelShifterTemplate, "level_shifter", "driver.py"),
         (MOSFETSwitchTemplate, "mosfet_switch", "mosfet_switch.py"),
         (MotorDriverTemplate, "motor_driver", "motor_driver.py"),
         (OpAmpTemplate, "opamp", "opamp.py"),
         (PowerMuxTemplate, "power_mux", "power_mux.py"),
-        (ProtectionTemplate, "protection", "protection.py"),
         (RelayDriverTemplate, "relay_driver", "relay_driver.py"),
         (RS485TransceiverTemplate, "rs485_transceiver", "rs485_transceiver.py"),
         (RTCTemplate, "rtc", "rtc.py"),

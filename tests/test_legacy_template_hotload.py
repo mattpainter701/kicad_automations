@@ -97,7 +97,7 @@ def test_motor_driver_hotload_via_register_ic():
 
 
 def test_protection_hotload_via_register_ic():
-    from circuit_weaver.subcircuits.protection import TVS_DATABASE, ProtectionTemplate
+    from circuit_weaver.ic_data import get_all_ics
 
     register_ic(
         "TEST-HOT-TVS-99",
@@ -115,9 +115,9 @@ def test_protection_hotload_via_register_ic():
         },
         persist=False,
     )
-    merged = ProtectionTemplate._ic_db()
+    merged = get_all_ics("protection")
     assert "TEST-HOT-TVS-99" in merged
-    assert set(TVS_DATABASE).issubset(merged)
+    assert "SMBJ5.0A" in merged
 
 
 def test_usb_controller_hotload_via_register_ic():
@@ -281,7 +281,7 @@ def test_usb_c_connector_hotload_via_register_ic():
 
 def test_eeprom_hotload_via_register_ic():
     """Sprint 41 Task 176: eeprom template accepts ic_data hot-loads."""
-    from circuit_weaver.subcircuits.eeprom import EEPROM_IC_DATABASE, EEPROMTemplate
+    from circuit_weaver.ic_data import get_all_ics
 
     register_ic(
         "TEST-EEPROM-99",
@@ -312,15 +312,14 @@ def test_eeprom_hotload_via_register_ic():
         },
         persist=False,
     )
-    merged = EEPROMTemplate._ic_db()
+    merged = get_all_ics("eeprom")
     assert "TEST-EEPROM-99" in merged
-    assert set(EEPROM_IC_DATABASE).issubset(merged)
+    assert "24LC256" in merged
 
 
 def test_generate_uses_hotloaded_ic():
-    """End-to-end: after registering a new protection IC, the legacy
-    ProtectionTemplate.generate() path should accept it in params."""
-    from circuit_weaver.subcircuits.protection import ProtectionTemplate
+    """End-to-end: data-driven protection generation accepts registered ICs."""
+    from circuit_weaver.subcircuits.base import get_default_registry
 
     register_ic(
         "TEST-GEN-TVS",
@@ -340,9 +339,7 @@ def test_generate_uses_hotloaded_ic():
         persist=False,
     )
 
-    tpl = ProtectionTemplate()
-    errors = tpl.validate_params({"ic": "TEST-GEN-TVS", "protect_net": "VBUS"})
-    assert errors == [], f"validate_params should pass, got: {errors}"
+    tpl = get_default_registry().get("protection")
     result = tpl.generate({"ic": "TEST-GEN-TVS", "protect_net": "VBUS"})
     assert len(result.components) >= 1
     assert result.components[0].mpn == "TEST-GEN-TVS"

@@ -40,7 +40,7 @@ from .design_loader import (
 from .design_logger import DesignLogger
 from .generator import generate_from_components
 from .project_spec import _parse_yaml, _simple_yaml_parse
-from .subcircuits.base import BoundaryPort, get_default_registry
+from .subcircuits.base import BoundaryPort, DataDrivenTemplate, get_default_registry
 from .validator import run_validation_checks
 
 _STANDARD_PROFILE = "standard"
@@ -2780,7 +2780,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             info = {
                 "type": ttype,
                 "description": tmpl.description,
-                "source": "legacy",
+                "source": "data-driven" if isinstance(tmpl, DataDrivenTemplate) else "legacy",
                 "params": [
                     {k: v for k, v in spec.items() if k in ("name", "type", "required", "default", "options")}
                     for spec in tmpl.param_schema

@@ -100,9 +100,9 @@ class TestScorer:
 
 class TestLDOCluster:
     def test_ldo_template_generates_topology_local_caps(self):
-        from circuit_weaver.subcircuits.ldo import LDOTemplate
+        from circuit_weaver.subcircuits.base import get_default_registry
 
-        t = LDOTemplate()
+        t = get_default_registry().get("ldo")
         r = t.generate({"vin": 5.0, "vout": 3.3, "ic": "TLV75518"})
         caps = r.components[0].bypass_caps
         assert len(caps) == 2

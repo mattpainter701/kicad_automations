@@ -32,6 +32,7 @@ from .base import (
     ind_footprint,
     snap_cap,
     snap_ind,
+    snap_to_e24,
     snap_to_e96,
 )
 
@@ -119,8 +120,11 @@ def _build_buck_boost(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult
 
 
 def _build_switching_core(
-    ic_data: dict, params: dict[str, Any], topology: str,
-    l_val: float, delta_il: float,
+    ic_data: dict,
+    params: dict[str, Any],
+    topology: str,
+    l_val: float,
+    delta_il: float,
 ) -> SubcircuitResult:
     """Shared core: feedback, caps, pins, and component assembly for switching regulators."""
     vin = params["vin"]
@@ -153,6 +157,10 @@ def _build_switching_core(
     sw_net = f"SW_{ref}"
     bst_net = f"BST_{ref}"
     fb_net = f"FB_{ref}"
+    l1_net = f"L1_{ref}"
+    l2_net = f"L2_{ref}"
+    pg_net = f"PG_{ref}"
+    vaux_net = f"VAUX_{ref}"
 
     # Power pins
     pin_vin = _pin_role(ic_data, "vin")
@@ -161,6 +169,11 @@ def _build_switching_core(
     pin_fb = _pin_role(ic_data, "fb")
     pin_en = _pin_role(ic_data, "en")
     pin_bst = _pin_role(ic_data, "bst")
+    pin_l1 = _pin_role(ic_data, "l1")
+    pin_l2 = _pin_role(ic_data, "l2")
+    pin_pg = _pin_role(ic_data, "pg")
+    pin_vaux = _pin_role(ic_data, "vaux")
+    pin_ps_sync = _pin_role(ic_data, "ps_sync")
 
     power_pins: dict[str, str] = {}
     if pin_vin:
@@ -188,13 +201,25 @@ def _build_switching_core(
                 power_pins[pin.number] = rail_name
 
     pin_nets: dict[str, str] = {}
-    if pin_sw:
-        pin_nets[pin_sw] = sw_net
+    if topology == "buck_boost":
+        if pin_l1:
+            pin_nets[pin_l1] = l1_net
+        if pin_l2:
+            pin_nets[pin_l2] = l2_net
+        if pin_pg:
+            pin_nets[pin_pg] = pg_net
+        if pin_vaux:
+            pin_nets[pin_vaux] = vaux_net
+        if pin_ps_sync:
+            pin_nets[pin_ps_sync] = "GND"
+    else:
+        if pin_sw:
+            pin_nets[pin_sw] = sw_net
     if pin_fb:
         pin_nets[pin_fb] = fb_net
     if pin_en:
         pin_nets[pin_en] = en_net
-    if pin_bst:
+    if pin_bst and topology != "buck_boost":
         pin_nets[pin_bst] = bst_net
 
     # Mark any unused input/bidirectional pins as explicit no-connect
@@ -205,51 +230,156 @@ def _build_switching_core(
         if pin.electrical_type in ("input", "bidirectional"):
             explicit_no_connects.add(pin.number)
 
-    bypass_caps = [
-        BypassCap(
-            "CIN", vin_net, "GND",
-            format_capacitance(cin_val), cap_footprint(cin_val),
-            role="input_cap", presentation="topology_local",
-        ),
-        BypassCap(
-            "COUT", rail_name, "GND",
-            format_capacitance(cout_val), cap_footprint(cout_val),
-            role="output_cap", presentation="topology_local",
-        ),
-        BypassCap(
-            "L", sw_net, rail_name,
-            format_inductance(l_val), ind_footprint(l_val, iout),
-            role="inductor", presentation="topology_local",
-        ),
-    ]
-    if pin_bst:
-        bypass_caps.append(
+    bypass_caps: list[BypassCap] = []
+    if topology == "buck_boost":
+        cin_bulk_val = 10e-6
+        cin_hf_val = 100e-9
+        cout_bulk_val = 22e-6
+        cout_hf_val = 100e-9
+        c_vaux_val = 10e-6
+        bypass_caps = [
             BypassCap(
-                "CBST", bst_net, sw_net,
-                format_capacitance(cbst_val), FP_0402C,
-                role="bootstrap_cap", presentation="topology_local",
+                "CIN_BULK",
+                vin_net,
+                "GND",
+                format_capacitance(cin_bulk_val),
+                cap_footprint(cin_bulk_val),
+                role="input_cap",
+                presentation="topology_local",
             ),
-        )
+            BypassCap(
+                "CIN_HF",
+                vin_net,
+                "GND",
+                format_capacitance(cin_hf_val),
+                cap_footprint(cin_hf_val),
+                role="input_cap",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "COUT_BULK",
+                rail_name,
+                "GND",
+                format_capacitance(cout_bulk_val),
+                cap_footprint(cout_bulk_val),
+                role="output_cap",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "COUT_HF",
+                rail_name,
+                "GND",
+                format_capacitance(cout_hf_val),
+                cap_footprint(cout_hf_val),
+                role="output_cap",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "L",
+                l1_net,
+                l2_net,
+                format_inductance(l_val),
+                ind_footprint(l_val, iout),
+                role="inductor",
+                presentation="topology_local",
+            ),
+        ]
+        if pin_vaux and ic_data.get("has_vaux"):
+            bypass_caps.append(
+                BypassCap(
+                    "CVAUX",
+                    vaux_net,
+                    "GND",
+                    format_capacitance(c_vaux_val),
+                    cap_footprint(c_vaux_val),
+                    role="decoupling",
+                    presentation="topology_local",
+                ),
+            )
+    else:
+        bypass_caps = [
+            BypassCap(
+                "CIN",
+                vin_net,
+                "GND",
+                format_capacitance(cin_val),
+                cap_footprint(cin_val),
+                role="input_cap",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "COUT",
+                rail_name,
+                "GND",
+                format_capacitance(cout_val),
+                cap_footprint(cout_val),
+                role="output_cap",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "L",
+                vin_net if topology == "boost" else sw_net,
+                sw_net if topology == "boost" else rail_name,
+                format_inductance(l_val),
+                ind_footprint(l_val, iout),
+                role="inductor",
+                presentation="topology_local",
+            ),
+        ]
+        if pin_bst:
+            bypass_caps.append(
+                BypassCap(
+                    "CBST",
+                    bst_net,
+                    sw_net,
+                    format_capacitance(cbst_val),
+                    FP_0402C,
+                    role="bootstrap_cap",
+                    presentation="topology_local",
+                ),
+            )
 
     straps = [
         StrapConfig(
-            "FBT", fb_net, rail_name,
-            format_resistance(r_fbt), FP_0402R,
-            role="feedback_top", presentation="topology_local",
+            "FBT",
+            fb_net,
+            rail_name,
+            format_resistance(r_fbt),
+            FP_0402R,
+            role="feedback_top",
+            presentation="topology_local",
         ),
         StrapConfig(
-            "FBB", fb_net, "GND",
-            format_resistance(r_fbb_snapped), FP_0402R,
-            role="feedback_bottom", presentation="topology_local",
+            "FBB",
+            fb_net,
+            "GND",
+            format_resistance(r_fbb_snapped),
+            FP_0402R,
+            role="feedback_bottom",
+            presentation="topology_local",
         ),
     ]
 
     annotations = [
         f"{rail_name}: {vout}V from {vin_net} at {iout}A",
         f"Vout = {vref}V * (1 + {format_resistance(r_fbt)}/{format_resistance(r_fbb_snapped)}) = {actual_vout:.3f}V",
-        f"L={format_inductance(l_val)}, Cin={format_capacitance(cin_val)}, Cout={format_capacitance(cout_val)}",
-        f"fsw={fsw / 1e3:.0f}kHz, ripple={delta_il:.2f}A ({abs(delta_il / iout * 100):.0f}%)",
     ]
+    if topology == "buck_boost":
+        cin_bulk_val = 10e-6
+        cin_hf_val = 100e-9
+        cout_bulk_val = 22e-6
+        cout_hf_val = 100e-9
+        annotations += [
+            f"L={format_inductance(l_val)} (sized for Vin_min={params.get('vin_min', vin * 0.8)}V)",
+            f"Cin={format_capacitance(cin_bulk_val)}+{format_capacitance(cin_hf_val)}, "
+            f"Cout={format_capacitance(cout_bulk_val)}+{format_capacitance(cout_hf_val)}",
+            f"fsw={fsw / 1e6:.1f}MHz",
+        ]
+    else:
+        annotations += [
+            f"L={format_inductance(l_val)}, Cin={format_capacitance(cin_val)}, Cout={format_capacitance(cout_val)}",
+            f"fsw={fsw / 1e3:.0f}kHz, ripple={delta_il:.2f}A ({abs(delta_il / iout * 100):.0f}%)",
+        ]
 
     ic_comp = ComponentDef(
         mpn=ic_name,
@@ -274,6 +404,8 @@ def _build_switching_core(
     ]
     if pin_en:
         ports.append(BoundaryPort(en_net, "input"))
+    if topology == "buck_boost" and pin_pg:
+        ports.append(BoundaryPort(pg_net, "output"))
 
     topo_label = {"buck": "Buck", "boost": "Boost", "buck_boost": "Buck-Boost"}[topology]
     return SubcircuitResult(
@@ -385,6 +517,288 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
 
 
 # ================================================================
+# Thin verdict-A builders
+# ================================================================
+
+
+def build_can_transceiver(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build a CAN transceiver with legacy-compatible CAN net options."""
+    ic_name = params.get("ic", ic_data.get("_mpn", "SN65HVD230"))
+    ref = params.get("ref", "U")
+    vdd_net = params.get("vdd_net", "VDD_3P3")
+    txd_net = params.get("txd_net", f"CAN_TXD_{ref}")
+    rxd_net = params.get("rxd_net", f"CAN_RXD_{ref}")
+    bus_prefix = params.get("bus_net_prefix", "CAN")
+    termination = params.get("termination", False)
+    slope_control = params.get("slope_control", False)
+
+    pins = _pins_from_data(ic_data)
+    canh_net = f"{bus_prefix}_H_{ref}"
+    canl_net = f"{bus_prefix}_L_{ref}"
+    vref_net = f"CAN_VREF_{ref}"
+
+    pin_vcc = _pin_role(ic_data, "vcc")
+    pin_gnd = _pin_role(ic_data, "gnd")
+    pin_txd = _pin_role(ic_data, "txd")
+    pin_rxd = _pin_role(ic_data, "rxd")
+    pin_canh = _pin_role(ic_data, "canh")
+    pin_canl = _pin_role(ic_data, "canl")
+    pin_vref = _pin_role(ic_data, "vref")
+    pin_rs = _pin_role(ic_data, "rs")
+
+    power_pins = {pin_vcc: vdd_net, pin_gnd: "GND"}
+    pin_nets = {
+        pin_txd: txd_net,
+        pin_rxd: rxd_net,
+        pin_canh: canh_net,
+        pin_canl: canl_net,
+        pin_vref: vref_net,
+    }
+
+    if slope_control:
+        rs_net = f"CAN_RS_{ref}"
+        pin_nets[pin_rs] = rs_net
+    elif ic_data.get("rs_highspeed_to_gnd", False):
+        pin_nets[pin_rs] = "GND"
+
+    bypass_caps = [
+        BypassCap("C_VCC", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
+        BypassCap("C_VREF", vref_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
+    ]
+    straps = []
+    if slope_control:
+        straps.append(
+            StrapConfig(
+                "RS",
+                rs_net,
+                "GND",
+                format_resistance(snap_to_e24(10e3)),
+                FP_0402R,
+                role="slope_control",
+                presentation="topology_local",
+            )
+        )
+    if termination:
+        term_mid_net = f"CAN_TERM_MID_{ref}"
+        straps.extend(
+            [
+                StrapConfig(
+                    "RT1",
+                    canh_net,
+                    term_mid_net,
+                    format_resistance(snap_to_e96(60)),
+                    FP_0402R,
+                    role="termination",
+                    presentation="topology_local",
+                ),
+                StrapConfig(
+                    "RT2",
+                    term_mid_net,
+                    canl_net,
+                    format_resistance(snap_to_e96(60)),
+                    FP_0402R,
+                    role="termination",
+                    presentation="topology_local",
+                ),
+            ]
+        )
+        bypass_caps.append(
+            BypassCap(
+                "CT",
+                term_mid_net,
+                "GND",
+                format_capacitance(snap_cap(4.7e-9)),
+                cap_footprint(4.7e-9),
+                role="termination",
+                presentation="topology_local",
+            )
+        )
+
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="digital",
+        pins=pins,
+        power_pins={k: v for k, v in power_pins.items() if k},
+        pin_nets={k: v for k, v in pin_nets.items() if k},
+        bypass_caps=bypass_caps,
+        straps=straps,
+        annotations=[
+            f"CAN transceiver {ic_name}: {ic_data.get('vdd')}V, {ic_data.get('speed_mbps')}Mbps",
+            f"Termination: {'split 2x60R + 4.7nF' if termination else 'none'}",
+        ],
+    )
+    comp.source_ref = ref
+
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[
+            BoundaryPort(vdd_net, "input"),
+            BoundaryPort("GND", "passive"),
+            BoundaryPort(txd_net, "input"),
+            BoundaryPort(rxd_net, "output"),
+            BoundaryPort(canh_net, "bidirectional"),
+            BoundaryPort(canl_net, "bidirectional"),
+        ],
+        annotations=[
+            f"CAN transceiver {ic_name}: {vdd_net} ({ic_data.get('vdd')}V), "
+            f"{'terminated' if termination else 'unterminated'}"
+        ],
+        primary_category="digital",
+    )
+
+
+def build_eeprom(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build I2C EEPROM or SPI flash with legacy-compatible strapping."""
+    if ic_data.get("interface") == "spi":
+        return _build_spi_eeprom(ic_data, params)
+    return _build_i2c_eeprom(ic_data, params)
+
+
+def _build_i2c_eeprom(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    ic_name = params.get("ic", ic_data.get("_mpn", "24LC256"))
+    ref = params.get("ref", "U")
+    vdd_net = params.get("vdd_net", "VDD_3P3")
+    sda_net = params.get("sda_net", "I2C_SDA")
+    scl_net = params.get("scl_net", "I2C_SCL")
+    addr_offset = params.get("i2c_addr_offset", 0)
+    write_protect = params.get("write_protect", False)
+
+    power_pins = {
+        _pin_role(ic_data, "vcc"): vdd_net,
+        _pin_role(ic_data, "gnd"): "GND",
+    }
+    pin_nets = {
+        _pin_role(ic_data, "sda"): sda_net,
+        _pin_role(ic_data, "scl"): scl_net,
+    }
+    for i, pin_num in enumerate(ic_data.get("pin_addr", [])):
+        power_pins[str(pin_num)] = vdd_net if addr_offset & (1 << i) else "GND"
+    pin_wp = _pin_role(ic_data, "wp")
+    if pin_wp:
+        power_pins[pin_wp] = vdd_net if write_protect else "GND"
+
+    actual_addr = ic_data.get("i2c_base_addr", 0x50) + addr_offset
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="digital",
+        pins=_pins_from_data(ic_data),
+        power_pins={k: v for k, v in power_pins.items() if k},
+        pin_nets={k: v for k, v in pin_nets.items() if k},
+        bypass_caps=[
+            BypassCap("C_VDD", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local")
+        ],
+        annotations=[
+            f"EEPROM {ic_name}: {ic_data.get('capacity_kbit')}Kbit I2C",
+            f"Address: 0x{actual_addr:02X} (offset={addr_offset})",
+        ],
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[
+            BoundaryPort(vdd_net, "input"),
+            BoundaryPort("GND", "passive"),
+            BoundaryPort(sda_net, "bidirectional"),
+            BoundaryPort(scl_net, "input"),
+        ],
+        annotations=[f"EEPROM {ic_name}: {ic_data.get('capacity_kbit')}Kbit, I2C 0x{actual_addr:02X}"],
+        primary_category="digital",
+    )
+
+
+def _build_spi_eeprom(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    ic_name = params.get("ic", ic_data.get("_mpn", "AT25SF128A"))
+    ref = params.get("ref", "U")
+    vdd_net = params.get("vdd_net", "VDD_3P3")
+    cs_net = params.get("cs_net", f"FLASH_CS_{ref}")
+    mosi_net = params.get("mosi_net", "SPI_MOSI")
+    miso_net = params.get("miso_net", "SPI_MISO")
+    sclk_net = params.get("sclk_net", "SPI_SCLK")
+    write_protect = params.get("write_protect", False)
+
+    power_pins = {
+        _pin_role(ic_data, "vcc"): vdd_net,
+        _pin_role(ic_data, "gnd"): "GND",
+        _pin_role(ic_data, "wp"): "GND" if write_protect else vdd_net,
+        _pin_role(ic_data, "hold"): vdd_net,
+    }
+    pin_nets = {
+        _pin_role(ic_data, "cs"): cs_net,
+        _pin_role(ic_data, "si"): mosi_net,
+        _pin_role(ic_data, "so"): miso_net,
+        _pin_role(ic_data, "sck"): sclk_net,
+    }
+    cap_mbit = ic_data.get("capacity_kbit", 0) // 1024
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="digital",
+        pins=_pins_from_data(ic_data),
+        power_pins={k: v for k, v in power_pins.items() if k},
+        pin_nets={k: v for k, v in pin_nets.items() if k},
+        bypass_caps=[
+            BypassCap("C_VDD", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local")
+        ],
+        annotations=[f"Flash {ic_name}: {cap_mbit}Mbit SPI NOR"],
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[
+            BoundaryPort(vdd_net, "input"),
+            BoundaryPort("GND", "passive"),
+            BoundaryPort(cs_net, "input"),
+            BoundaryPort(mosi_net, "input"),
+            BoundaryPort(miso_net, "output"),
+            BoundaryPort(sclk_net, "input"),
+        ],
+        annotations=[f"Flash {ic_name}: {cap_mbit}Mbit SPI NOR, CS={cs_net}"],
+        primary_category="digital",
+    )
+
+
+def build_protection(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build a passive TVS/ESD protection device without IC decoupling."""
+    ic_name = params.get("ic", ic_data.get("_mpn", "SMBJ5.0A"))
+    ref = params.get("ref", "D")
+    protect_net = params.get("protect_net", "PROTECTED_NET")
+    gnd_net = params.get("gnd_net", "GND")
+    direction = "bidirectional" if ic_data.get("bidirectional") else "unidirectional"
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="D",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="protection",
+        pins=_pins_from_data(ic_data),
+        pin_nets={"1": protect_net, "2": gnd_net},
+        annotations=[
+            f"Protection: {ic_name} ({direction}) on {protect_net}",
+            f"Vrwm={ic_data.get('vrwm')}V, Vbr={ic_data.get('vbr_min')}V, Vc={ic_data.get('vc_max')}V",
+        ],
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[BoundaryPort(protect_net, "bidirectional"), BoundaryPort(gnd_net, "passive")],
+        annotations=[f"TVS {ic_name} on {protect_net}"],
+        primary_category="protection",
+    )
+
+
+# ================================================================
 # Generic wiring builder (pin map + decoupling)
 # ================================================================
 
@@ -441,16 +855,24 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         name_upper = pin.name.upper()
         if pin.electrical_type == "power_in":
             if any(
-                name_upper == p or name_upper.startswith(f"{p}_") or name_upper == p
-                for p in GROUND_NET_PREFIXES
+                name_upper == p or name_upper.startswith(f"{p}_") or name_upper == p for p in GROUND_NET_PREFIXES
             ) or name_upper in ("VEE", "SGND", "COM", "V-", "EPAD"):
                 power_pins[pin.number] = "GND"
             elif any(
-                name_upper == p or name_upper.startswith(f"{p}_") or p in name_upper
-                for p in POWER_NET_PREFIXES
+                name_upper == p or name_upper.startswith(f"{p}_") or p in name_upper for p in POWER_NET_PREFIXES
             ) or name_upper in (
-                "IN1", "IN2", "VPLUS", "VPOS", "V+", "AVDDH", "AVDDL",
-                "DVDDH", "DVDDL", "DVDDIO", "VDDL", "VDDA",
+                "IN1",
+                "IN2",
+                "VPLUS",
+                "VPOS",
+                "V+",
+                "AVDDH",
+                "AVDDL",
+                "DVDDH",
+                "DVDDL",
+                "DVDDIO",
+                "VDDL",
+                "VDDA",
             ):
                 power_pins[pin.number] = vdd_net
 
@@ -470,8 +892,13 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
 
     bypass_caps = [
         BypassCap(
-            str(raw_vdd) if raw_vdd else "VDD", vdd_net, "GND", "100nF",
-            FP_0402C, role="decoupling", presentation="topology_local",
+            str(raw_vdd) if raw_vdd else "VDD",
+            vdd_net,
+            "GND",
+            "100nF",
+            FP_0402C,
+            role="decoupling",
+            presentation="topology_local",
         ),
     ]
 
@@ -527,14 +954,15 @@ TOPOLOGY_BUILDERS: dict[str, Any] = {
     "boost": build_switching_regulator,
     "buck_boost": build_switching_regulator,
     "ldo": build_linear_regulator,
+    "can_transceiver": build_can_transceiver,
+    "eeprom": build_eeprom,
+    "protection": build_protection,
 }
 
 # All other topologies fall through to build_generic
 _GENERIC_TOPOLOGIES = {
-    "protection",
     "connector",
     "usb_c_connector",
-    "eeprom",
     "rtc",
     "display_driver",
     "wireless_module",
@@ -551,7 +979,6 @@ _GENERIC_TOPOLOGIES = {
     "charge_pump",
     "voltage_reference",
     "motor_driver",
-    "can_transceiver",
     "rs485_transceiver",
     "level_shifter",
     "i2c_bus",

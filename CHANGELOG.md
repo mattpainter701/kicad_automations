@@ -1,13 +1,21 @@
 # Changelog
 
-## [Unreleased] — Sprint 49
+## [Unreleased] — Sprint 50
 
-### Sprint 49 — Incremental Legacy Migration (T180)
+### Sprint 50 — Generic Builder Parity Cleanup (T215–T218)
+
+- Planned: close the remaining T180 data-driven generic-builder failures exposed by Sprint 49.
+
+## [0.30.4] - 2026-05-01
+
+### Sprint 49 — Incremental Legacy Migration (T180–T182)
 
 - Flip `SubcircuitRegistry.get()` to data-driven-first resolution order for all topologies; legacy templates serve as fallback when ic_data JSON has no entries.
 - Remove `_DATA_DRIVEN_FIRST` class variable (dead code after flip).
 - Add `test_registry_uses_data_driven_first` and `test_registry_legacy_fallback_when_no_ic_data`; replace old `test_registry_prefers_legacy_for_unported_topologies`.
 - Catalog 26 test failures from boundary-port naming mismatches in verdict-B/C topologies (`build_generic` vs legacy). Buck/boost/buck_boost/ldo unaffected.
+- Delete `subcircuits/buck.py`, `boost.py`, `buck_boost.py`, `ldo.py` — migrated to data-driven `DataDrivenTemplate` + topology builders with 34 parity tests (all pass). Remove registry import/register calls. Update test/script references to use registry-backed lookups via `get_default_registry().get()`.
+- Delete remaining verdict-A legacy templates `can_transceiver.py`, `eeprom.py`, and `protection.py` after porting their contracts to data-driven builders. Add regression coverage for CAN net naming/options, EEPROM I2C/SPI strapping, and passive protection devices. Full-suite failures are reduced from 26 to 20; remaining failures are the pre-existing T180 boundary-port/generic-builder gaps.
 
 ## [0.30.3] - 2026-04-29
 

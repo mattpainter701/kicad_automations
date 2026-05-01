@@ -50,24 +50,17 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Switching regulators ---
-    from circuit_weaver.subcircuits.buck import BUCK_IC_DATABASE
-    from circuit_weaver.subcircuits.boost import BOOST_IC_DATABASE
-    from circuit_weaver.subcircuits.buck_boost import BUCK_BOOST_IC_DATABASE
-
+    # buck, boost, buck_boost data already in switching_regulator.json (Sprint 41)
     switching = {}
-    switching.update(_serialize_db(BUCK_IC_DATABASE, "buck"))
-    switching.update(_serialize_db(BOOST_IC_DATABASE, "boost"))
-    switching.update(_serialize_db(BUCK_BOOST_IC_DATABASE, "buck_boost"))
     _write(out_dir / "switching_regulator.json", switching)
 
     # --- Linear regulators ---
-    from circuit_weaver.subcircuits.ldo import LDO_IC_DATABASE
+    # ldo data already in linear_regulator.json (Sprint 41)
     from circuit_weaver.subcircuits.charge_pump import CHARGE_PUMP_IC_DATABASE
     from circuit_weaver.subcircuits.voltage_reference import VREF_IC_DATABASE
     from circuit_weaver.subcircuits.battery_charger import CHARGER_IC_DATABASE
 
     linear = {}
-    linear.update(_serialize_db(LDO_IC_DATABASE, "ldo"))
     linear.update(_serialize_db(CHARGE_PUMP_IC_DATABASE, "charge_pump"))
     linear.update(_serialize_db(VREF_IC_DATABASE, "voltage_reference"))
     linear.update(_serialize_db(CHARGER_IC_DATABASE, "battery_charger"))
@@ -87,14 +80,12 @@ def main():
     # --- Bus interfaces ---
     from circuit_weaver.subcircuits.i2c_bus import I2C_BUS_IC_DATABASE
     from circuit_weaver.subcircuits.spi_bus import SPI_BUS_IC_DATABASE
-    from circuit_weaver.subcircuits.can_transceiver import CAN_TRANSCEIVER_IC_DATABASE
     from circuit_weaver.subcircuits.rs485_transceiver import RS485_TRANSCEIVER_IC_DATABASE
     from circuit_weaver.subcircuits.driver import LEVEL_SHIFTER_DATABASE
 
     bus = {}
     bus.update(_serialize_db(I2C_BUS_IC_DATABASE, "i2c_bus"))
     bus.update(_serialize_db(SPI_BUS_IC_DATABASE, "spi_bus"))
-    bus.update(_serialize_db(CAN_TRANSCEIVER_IC_DATABASE, "can_transceiver"))
     bus.update(_serialize_db(RS485_TRANSCEIVER_IC_DATABASE, "rs485_transceiver"))
     bus.update(_serialize_db(LEVEL_SHIFTER_DATABASE, "level_shifter"))
     _write(out_dir / "bus_interface.json", bus)
@@ -119,12 +110,6 @@ def main():
     osc.update(_serialize_db(CLOCK_IC_DATABASE, "clock_synth"))
     _write(out_dir / "oscillator.json", osc)
 
-    # --- Protection ---
-    from circuit_weaver.subcircuits.protection import TVS_DATABASE
-
-    prot = _serialize_db(TVS_DATABASE, "protection")
-    _write(out_dir / "protection.json", prot)
-
     # --- Connectors ---
     from circuit_weaver.subcircuits.connector import CONNECTOR_DATABASE
     from circuit_weaver.subcircuits.usb_c_connector import USB_C_CONNECTOR_DATABASE
@@ -133,12 +118,6 @@ def main():
     conn.update(_serialize_db(CONNECTOR_DATABASE, "connector"))
     conn.update(_serialize_db(USB_C_CONNECTOR_DATABASE, "usb_c_connector"))
     _write(out_dir / "connector.json", conn)
-
-    # --- Memory ---
-    from circuit_weaver.subcircuits.eeprom import EEPROM_IC_DATABASE
-
-    mem = _serialize_db(EEPROM_IC_DATABASE, "eeprom")
-    _write(out_dir / "memory.json", mem)
 
     # --- Misc ---
     from circuit_weaver.subcircuits.rtc import RTC_IC_DATABASE
