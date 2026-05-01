@@ -4,7 +4,11 @@
 
 ### Sprint 50 — Generic Builder Parity Cleanup (T215–T218)
 
-- Planned: close the remaining T180 data-driven generic-builder failures exposed by Sprint 49.
+- Fix data-driven `sensor_frontend` dual-rail power handling: `build_generic()` now maps explicit `pin_vpos`/`pin_vneg` metadata to `vdd_net`/`gnd_net`, eliminating INA128PA floating power pins and reducing the full-suite failure count from 20 to 18.
+- Preserve shared I2C/SPI net names in data-driven generation: add dedicated `i2c_bus` pull-up/level-shifter builders and map explicit SDA/SCL/SPI metadata to shared nets instead of per-instance `{PIN}_{REF}` names.
+- Restore data-driven battery charger and fuel-gauge support networks: `battery_charger` and `battery_monitor` now emit PROG, STAT, CELL, QSTRT, I2C, bypass, and support-passive contracts without reintroducing legacy template classes.
+- Restore data-driven display and passive diode contracts needed by the release gate: SSD1306-class display drivers now include reset, charge-pump, I2C/SPI, and support passives; diode/LED topologies now generate passive two-pin components without false power/GND requirements.
+- Close the Sprint 50 release gate: full suite passes `1005 passed, 1 skipped, 14 warnings`; focused sample/presentation/generation gate passes `38 passed`; 9-archetype corpus hard-error gate passes `9 passed`. The external `I:/my_circuit` probe still validates with known placement-readiness errors and generation remains blocked by that design's pre-existing connectivity issues.
 
 ## [0.30.4] - 2026-05-01
 

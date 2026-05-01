@@ -155,6 +155,16 @@ def test_tps62088_grounds_its_exposed_pad():
     _assert_no_unpowered_power_in_pins(result)
 
 
+def test_sensor_frontend_data_driven_maps_dual_rail_power_pins():
+    template = get_default_registry().get("sensor_frontend")
+    result = template.generate({"ic": "INA128PA", "gain": 10, "vdd_net": "VDD_5V", "gnd_net": "AGND"})
+    comp = result.components[0]
+    assert comp.power_pins["7"] == "VDD_5V"
+    assert comp.power_pins["4"] == "AGND"
+    _assert_no_unpowered_power_in_pins(result)
+    _assert_no_unhandled_critical_pins(result)
+
+
 def test_ucc27524_connects_duplicate_supply_pins():
     template = GateDriverTemplate()
     result = template.generate({"ic": "UCC27524"})
@@ -755,6 +765,63 @@ def test_eeprom_spi_flash_generates():
     assert "SPI_MOSI" in port_names
     assert "SPI_MISO" in port_names
     _assert_no_unpowered_power_in_pins(result)
+
+
+def test_i2c_bus_data_driven_preserves_shared_pullup_nets():
+    """Synthetic PULLUPS_ONLY blocks must keep shared SDA/SCL net names."""
+    template = get_default_registry().get("i2c_bus")
+    result = template.generate(
+        {"ic": "PULLUPS_ONLY", "ref": "RP1", "vdd_net": "VDD_IO", "sda_net": "SENSOR_SDA", "scl_net": "SENSOR_SCL"}
+    )
+    comp = result.components[0]
+    assert comp.pin_nets == {"3": "SENSOR_SDA", "4": "SENSOR_SCL"}
+    assert {strap.pin: (strap.net, strap.rail) for strap in comp.straps} == {
+        "R_SDA": ("SENSOR_SDA", "VDD_IO"),
+        "R_SCL": ("SENSOR_SCL", "VDD_IO"),
+    }
+    port_names = {p.name for p in result.boundary_ports}
+    assert {"VDD_IO", "GND", "SENSOR_SDA", "SENSOR_SCL"}.issubset(port_names)
+
+
+def test_display_driver_data_driven_preserves_shared_i2c_nets():
+    """Generic display drivers should not rename shared I2C pins per instance."""
+    template = get_default_registry().get("display_driver")
+    result = template.generate({"ic": "SSD1306", "ref": "U2", "sda_net": "OLED_SDA", "scl_net": "OLED_SCL"})
+    comp = result.components[0]
+    assert comp.pin_nets["4"] == "OLED_SDA"
+    assert comp.pin_nets["3"] == "OLED_SCL"
+    assert "SDA_U2" not in comp.pin_nets.values()
+    assert "SCL_U2" not in comp.pin_nets.values()
+
+
+def test_battery_charger_data_driven_preserves_programming_network():
+    """MCP73831 data-driven output must include PROG resistor and VBAT caps."""
+    template = get_default_registry().get("battery_charger")
+    result = template.generate(
+        {"ic": "MCP73831T-2ACI/OT", "ref": "U1", "ichg": 0.2, "vin_net": "VBUS_5V", "bat_net": "VBAT"}
+    )
+    comp = result.components[0]
+    assert comp.power_pins == {"4": "VBUS_5V", "2": "GND", "3": "VBAT"}
+    assert comp.pin_nets["5"] == "PROG_U1"
+    assert any(strap.pin == "RPROG" and strap.net == "PROG_U1" and strap.rail == "GND" for strap in comp.straps)
+    assert {cap.pin for cap in comp.bypass_caps} == {"CIN", "CBAT"}
+
+
+def test_battery_monitor_data_driven_preserves_cell_and_qstrt_networks():
+    """MAX17048 data-driven output must keep CELL filter and QSTRT pull-down."""
+    template = get_default_registry().get("battery_monitor")
+    result = template.generate({"ic": "MAX17048G+T", "ref": "U2", "bat_net": "VBAT"})
+    comp = result.components[0]
+    assert comp.power_pins == {"3": "VBAT", "4": "GND", "5": "GND", "1": "GND"}
+    assert comp.pin_nets["2"] == "CELL_U2"
+    assert comp.pin_nets["6"] == "QSTRT_U2"
+    assert comp.pin_nets["7"] == "I2C_SDA"
+    assert comp.pin_nets["8"] == "I2C_SCL"
+    assert {strap.pin: (strap.net, strap.rail) for strap in comp.straps} == {
+        "RCELL": ("VBAT", "CELL_U2"),
+        "RQSTRT": ("QSTRT_U2", "GND"),
+    }
+    assert any(cap.pin == "CCELL" and cap.net == "CELL_U2" for cap in comp.bypass_caps)
 
 
 def test_wireless_esp32_generates():

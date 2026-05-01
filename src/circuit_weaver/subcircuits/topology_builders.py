@@ -30,6 +30,7 @@ from .base import (
     format_inductance,
     format_resistance,
     ind_footprint,
+    res_footprint,
     snap_cap,
     snap_ind,
     snap_to_e24,
@@ -50,6 +51,28 @@ def _pin_role(ic_data: dict, role: str) -> str | None:
     key = f"pin_{role}"
     val = ic_data.get(key)
     return str(val) if val is not None else None
+
+
+_I2C_TRISE_MAX = {
+    100_000: 1000e-9,
+    400_000: 300e-9,
+    1_000_000: 120e-9,
+}
+
+
+def _calc_i2c_pullup_resistance(speed_hz: float, c_bus_f: float) -> float:
+    """Calculate I2C pull-up resistance from bus speed and capacitance."""
+    trise = _I2C_TRISE_MAX.get(speed_hz)
+    if trise is None:
+        for spd in sorted(_I2C_TRISE_MAX):
+            if spd >= speed_hz:
+                trise = _I2C_TRISE_MAX[spd]
+                break
+        if trise is None:
+            trise = _I2C_TRISE_MAX[1_000_000]
+    if c_bus_f <= 0:
+        c_bus_f = 100e-12
+    return trise / (0.8473 * c_bus_f)
 
 
 # ================================================================
@@ -798,6 +821,574 @@ def build_protection(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     )
 
 
+def build_i2c_bus(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build I2C pull-ups or level-shifter with shared bus net names."""
+    if ic_data.get("has_level_shift"):
+        return _build_i2c_level_shifter(ic_data, params)
+    return _build_i2c_pullups(ic_data, params)
+
+
+def _build_i2c_pullups(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    ic_name = params.get("ic", ic_data.get("_mpn", "PULLUPS_ONLY"))
+    ref = params.get("ref", "RP")
+    vdd = params.get("vdd", 3.3)
+    speed = params.get("speed", 400_000)
+    c_bus = params.get("c_bus", 100e-12)
+    vdd_net = params.get("vdd_net", "VDD_3P3")
+    gnd_net = params.get("gnd_net", "GND")
+    sda_net = params.get("sda_net", "I2C_SDA")
+    scl_net = params.get("scl_net", "I2C_SCL")
+    r_pullup_raw = _calc_i2c_pullup_resistance(speed, c_bus)
+    r_pullup = snap_to_e24(r_pullup_raw)
+    speed_str = f"{speed / 1e6:g}MHz" if speed >= 1_000_000 else f"{speed / 1e3:g}kHz"
+
+    annotations = [
+        f"I2C pull-ups: {format_resistance(r_pullup)} to {vdd_net} ({vdd}V)",
+        f"Speed: {speed_str}, C_bus={c_bus * 1e12:g}pF",
+        f"R = t_rise / (0.8473 * C_bus) = {r_pullup_raw:.0f} -> {format_resistance(r_pullup)}",
+    ]
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix=ic_data.get("ref_prefix", "RP"),
+        value="I2C_PULLUPS",
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="communication",
+        pins=_pins_from_data(ic_data),
+        power_pins={str(ic_data.get("pin_vdd")): vdd_net, str(ic_data.get("pin_gnd")): gnd_net},
+        pin_nets={str(ic_data.get("pin_sda")): sda_net, str(ic_data.get("pin_scl")): scl_net},
+        straps=[
+            StrapConfig(
+                "R_SDA",
+                sda_net,
+                vdd_net,
+                format_resistance(r_pullup),
+                FP_0402R,
+                role="i2c_pullup",
+                presentation="topology_local",
+            ),
+            StrapConfig(
+                "R_SCL",
+                scl_net,
+                vdd_net,
+                format_resistance(r_pullup),
+                FP_0402R,
+                role="i2c_pullup",
+                presentation="topology_local",
+            ),
+        ],
+        annotations=annotations,
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[
+            BoundaryPort(vdd_net, "input"),
+            BoundaryPort(gnd_net, "passive"),
+            BoundaryPort(sda_net, "bidirectional"),
+            BoundaryPort(scl_net, "bidirectional"),
+        ],
+        annotations=[
+            f"I2C pull-ups: {format_resistance(r_pullup)} to {vdd_net}, {speed_str}, C_bus={c_bus * 1e12:g}pF"
+        ],
+        primary_category="communication",
+    )
+
+
+def _build_i2c_level_shifter(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    ic_name = params.get("ic", ic_data.get("_mpn", "PCA9306"))
+    ref = params.get("ref", "U")
+    gnd_net = params.get("gnd_net", "GND")
+    vdd_low_net = params.get("vdd_low_net") or params.get("vdd_net", "VDD_3P3")
+    vdd_high_net = params.get("vdd_high_net", "VDD_5V")
+    sda_low_net = params.get("sda_low_net") or params.get("sda_net", "I2C_SDA")
+    scl_low_net = params.get("scl_low_net") or params.get("scl_net", "I2C_SCL")
+    sda_high_net = params.get("sda_high_net", f"SDA_HV_{ref}")
+    scl_high_net = params.get("scl_high_net", f"SCL_HV_{ref}")
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix=ic_data.get("ref_prefix", "U"),
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="communication",
+        pins=_pins_from_data(ic_data),
+        power_pins={str(ic_data.get("pin_vref1")): vdd_low_net, str(ic_data.get("pin_vref2")): vdd_high_net},
+        pin_nets={
+            str(ic_data.get("pin_sda1")): sda_low_net,
+            str(ic_data.get("pin_scl1")): scl_low_net,
+            str(ic_data.get("pin_sda2")): sda_high_net,
+            str(ic_data.get("pin_scl2")): scl_high_net,
+        },
+        bypass_caps=[
+            BypassCap(
+                "C_VREF1", vdd_low_net, gnd_net, "100nF", FP_0402C, role="decoupling", presentation="topology_local"
+            ),
+            BypassCap(
+                "C_VREF2", vdd_high_net, gnd_net, "100nF", FP_0402C, role="decoupling", presentation="topology_local"
+            ),
+        ],
+        annotations=[
+            f"I2C level shifter: {vdd_low_net} <-> {vdd_high_net}",
+            f"Low side: {sda_low_net}/{scl_low_net}, High side: {sda_high_net}/{scl_high_net}",
+            "PCA9306: internal pull-ups, no external pull-ups needed",
+        ],
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[
+            BoundaryPort(vdd_low_net, "input"),
+            BoundaryPort(vdd_high_net, "input"),
+            BoundaryPort(gnd_net, "passive"),
+            BoundaryPort(sda_low_net, "bidirectional"),
+            BoundaryPort(scl_low_net, "bidirectional"),
+            BoundaryPort(sda_high_net, "bidirectional"),
+            BoundaryPort(scl_high_net, "bidirectional"),
+        ],
+        annotations=[f"I2C level shifter {ic_name}: {vdd_low_net} <-> {vdd_high_net}"],
+        primary_category="communication",
+    )
+
+
+def build_battery_charger(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build Li-ion charger support passives with legacy-compatible nets."""
+    ic_name = params.get("ic", ic_data.get("_mpn", "MCP73831T-2ACI/OT"))
+    ref = params.get("ref", "U")
+    ichg = params.get("ichg", min(float(ic_data.get("ichg_max", 0.5)), 0.5))
+    vcell = params.get("vcell", 4.2)
+    vin_net = params.get("vin_net", "VUSB")
+    bat_net = params.get("bat_net", "VBAT")
+    gnd_net = params.get("gnd_net", "GND")
+    stat_net = params.get("stat_net", f"STAT_{ref}")
+    prog_net = f"PROG_{ref}"
+    k_prog = ic_data.get("k_prog", 1000)
+    rprog = snap_to_e96(k_prog / ichg)
+    actual_ichg = k_prog / rprog
+    cin_val = 4.7e-6
+    cbat_val = 4.7e-6
+
+    power_pins = {
+        str(ic_data.get("pin_vdd")): vin_net,
+        str(ic_data.get("pin_gnd")): gnd_net,
+        str(ic_data.get("pin_bat")): bat_net,
+    }
+    pin_nets = {
+        str(ic_data.get("pin_prog")): prog_net,
+        str(ic_data.get("pin_stat")): stat_net,
+    }
+    if ic_data.get("pin_ce"):
+        pin_nets[str(ic_data["pin_ce"])] = vin_net
+
+    straps = [
+        StrapConfig(
+            "RPROG",
+            prog_net,
+            gnd_net,
+            format_resistance(rprog),
+            FP_0402R,
+            role="current_program",
+            presentation="topology_local",
+        )
+    ]
+    if ic_data.get("has_temp_pin") and ic_data.get("pin_temp"):
+        temp_net = f"TEMP_{ref}"
+        pin_nets[str(ic_data["pin_temp"])] = temp_net
+        straps.append(
+            StrapConfig(
+                "RTEMP",
+                temp_net,
+                gnd_net,
+                format_resistance(snap_to_e96(10e3)),
+                FP_0402R,
+                role="temp_disable",
+                presentation="topology_local",
+            )
+        )
+
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="power",
+        pins=_pins_from_data(ic_data),
+        power_pins={k: v for k, v in power_pins.items() if k and k != "None"},
+        pin_nets={k: v for k, v in pin_nets.items() if k and k != "None"},
+        bypass_caps=[
+            BypassCap(
+                "CIN",
+                vin_net,
+                gnd_net,
+                format_capacitance(cin_val),
+                cap_footprint(cin_val),
+                role="input_cap",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "CBAT",
+                bat_net,
+                gnd_net,
+                format_capacitance(cbat_val),
+                cap_footprint(cbat_val),
+                role="output_cap",
+                presentation="topology_local",
+            ),
+        ],
+        straps=straps,
+        annotations=[
+            f"Charge {bat_net}: {ichg}A into {vcell}V cell from {vin_net}",
+            f"Rprog = {k_prog} / {ichg}A = {format_resistance(rprog)} (actual {actual_ichg:.3f}A)",
+        ],
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[
+            BoundaryPort(vin_net, "input"),
+            BoundaryPort(bat_net, "output"),
+            BoundaryPort(gnd_net, "passive"),
+            BoundaryPort(stat_net, "output"),
+        ],
+        annotations=[f"Charger {ic_name}: {vin_net} -> {bat_net} ({vcell}V) at {ichg}A"],
+        primary_category="power",
+    )
+
+
+def build_battery_monitor(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build battery fuel gauge support passives with legacy-compatible nets."""
+    ic_name = params.get("ic", ic_data.get("_mpn", "MAX17048G+T"))
+    ref = params.get("ref", "U")
+    bat_net = params.get("bat_net", "VBAT")
+    gnd_net = params.get("gnd_net", "GND")
+    cell_capacity_mah = params.get("cell_capacity_mah", 2000)
+    i2c_bus = params.get("i2c_bus", "I2C")
+    sda_net = params.get("sda_net", f"{i2c_bus}_SDA")
+    scl_net = params.get("scl_net", f"{i2c_bus}_SCL")
+
+    power_pins = {
+        str(ic_data.get("pin_vdd")): bat_net,
+        str(ic_data.get("pin_gnd")): gnd_net,
+    }
+    for gnd_pin in ic_data.get("extra_gnd_pins", []):
+        power_pins[str(gnd_pin)] = gnd_net
+    pin_nets = {
+        str(ic_data.get("pin_sda")): sda_net,
+        str(ic_data.get("pin_scl")): scl_net,
+    }
+    bypass_caps = [
+        BypassCap(
+            "CVDD",
+            bat_net,
+            gnd_net,
+            format_capacitance(snap_cap(1e-6)),
+            cap_footprint(snap_cap(1e-6)),
+            role="decoupling",
+            presentation="topology_local",
+        )
+    ]
+    straps: list[StrapConfig] = []
+    ports = [
+        BoundaryPort(bat_net, "input"),
+        BoundaryPort(gnd_net, "passive"),
+        BoundaryPort(sda_net, "bidirectional"),
+        BoundaryPort(scl_net, "input"),
+    ]
+    annotations = [
+        f"Fuel gauge {ic_name}: {ic_data.get('method')}",
+        f"Cell capacity: {cell_capacity_mah}mAh, I2C addr: {ic_data.get('i2c_addr')}",
+    ]
+
+    if not ic_data.get("has_rsense"):
+        power_pins[str(ic_data.get("pin_ctg"))] = gnd_net
+        cell_net = f"CELL_{ref}"
+        qstrt_net = f"QSTRT_{ref}"
+        rcell_val = snap_to_e96(100.0)
+        ccell_val = snap_cap(1e-6)
+        pin_nets[str(ic_data.get("pin_cell"))] = cell_net
+        pin_nets[str(ic_data.get("pin_qstrt"))] = qstrt_net
+        straps.extend(
+            [
+                StrapConfig(
+                    "RCELL",
+                    bat_net,
+                    cell_net,
+                    format_resistance(rcell_val),
+                    FP_0402R,
+                    role="cell_filter_series",
+                    presentation="topology_local",
+                ),
+                StrapConfig(
+                    "RQSTRT",
+                    qstrt_net,
+                    gnd_net,
+                    format_resistance(snap_to_e96(10e3)),
+                    FP_0402R,
+                    role="qstrt_pulldown",
+                    presentation="topology_local",
+                ),
+            ]
+        )
+        bypass_caps.append(
+            BypassCap(
+                "CCELL",
+                cell_net,
+                gnd_net,
+                format_capacitance(ccell_val),
+                cap_footprint(ccell_val),
+                role="cell_filter_cap",
+                presentation="topology_local",
+            )
+        )
+        annotations.extend(
+            [
+                f"CELL filter: {format_resistance(rcell_val)} + {format_capacitance(ccell_val)}",
+                "QSTRT pulled low (quick start disabled)",
+            ]
+        )
+    else:
+        rsense_val = params.get("rsense", ic_data.get("rsense_default", 0.010))
+        rsense_snapped = snap_to_e96(rsense_val)
+        srp_net = f"SRP_{ref}"
+        srn_net = f"SRN_{ref}"
+        pin_nets[str(ic_data.get("pin_srp"))] = srp_net
+        pin_nets[str(ic_data.get("pin_srn"))] = srn_net
+        power_pins[str(ic_data.get("pin_bat"))] = bat_net
+        if ic_data.get("pin_bin"):
+            pin_nets[str(ic_data["pin_bin"])] = bat_net
+        straps.append(
+            StrapConfig(
+                "RSENSE",
+                srp_net,
+                srn_net,
+                format_resistance(rsense_snapped),
+                res_footprint(rsense_snapped, 0.25),
+                role="current_sense",
+                presentation="topology_local",
+            )
+        )
+        if ic_data.get("pin_gpout"):
+            gpout_net = f"GPOUT_{ref}"
+            pin_nets[str(ic_data["pin_gpout"])] = gpout_net
+            ports.append(BoundaryPort(gpout_net, "output"))
+        annotations.append(f"Rsense: {format_resistance(rsense_snapped)}")
+
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="power",
+        pins=_pins_from_data(ic_data),
+        power_pins={k: v for k, v in power_pins.items() if k and k != "None"},
+        pin_nets={k: v for k, v in pin_nets.items() if k and k != "None"},
+        bypass_caps=bypass_caps,
+        straps=straps,
+        annotations=annotations,
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=ports,
+        annotations=[
+            f"Battery monitor {ic_name}: {ic_data.get('method')}, "
+            f"{cell_capacity_mah}mAh cell, I2C addr {ic_data.get('i2c_addr')}"
+        ],
+        primary_category="power",
+    )
+
+
+def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build display-controller passives and bus nets with legacy-compatible wiring."""
+    ic_name = params.get("ic", ic_data.get("_mpn", "SSD1306"))
+    ref = params.get("ref", "U")
+    interface = params.get("interface", "i2c").lower()
+    vdd_net = params.get("vdd_net", "VDD_3P3")
+    gnd_net = params.get("gnd_net", "GND")
+    resolution = params.get("resolution", ic_data.get("resolution", "128x64"))
+    display_type = ic_data.get("display_type", "display")
+    res_n_net = f"RES_N_{ref}"
+    dc_net = f"DC_{ref}"
+    cs_n_net = f"CS_N_{ref}"
+    iref_net = f"IREF_{ref}"
+
+    power_pins = {str(ic_data.get("pin_vdd")): vdd_net, str(ic_data.get("pin_gnd")): gnd_net}
+    if ic_data.get("pin_vcc"):
+        power_pins[str(ic_data["pin_vcc"])] = vdd_net
+
+    pin_nets = {str(ic_data.get("pin_res_n")): res_n_net}
+    if interface == "i2c":
+        pin_nets[str(ic_data.get("pin_sda"))] = params.get("sda_net", "I2C_SDA")
+        pin_nets[str(ic_data.get("pin_scl"))] = params.get("scl_net", "I2C_SCL")
+        if ic_data.get("pin_dc"):
+            pin_nets[str(ic_data["pin_dc"])] = gnd_net
+        if ic_data.get("pin_cs_n"):
+            pin_nets[str(ic_data["pin_cs_n"])] = gnd_net
+        interface_note = "Interface: I2C (DC=GND -> addr 0x3C)"
+    else:
+        pin_nets[str(ic_data.get("pin_sda"))] = params.get("mosi_net", "SPI_MOSI")
+        pin_nets[str(ic_data.get("pin_scl"))] = params.get("sclk_net", "SPI_SCLK")
+        if ic_data.get("pin_dc"):
+            pin_nets[str(ic_data["pin_dc"])] = dc_net
+        if ic_data.get("pin_cs_n"):
+            pin_nets[str(ic_data["pin_cs_n"])] = params.get("cs_net", cs_n_net)
+        interface_note = "Interface: SPI (4-wire)"
+
+    cdec_val = snap_cap(100e-9)
+    cbulk_val = snap_cap(10e-6)
+    rres_val = snap_to_e96(10e3)
+    cres_val = snap_cap(100e-9)
+    bypass_caps = [
+        BypassCap(
+            "CVDD",
+            vdd_net,
+            gnd_net,
+            format_capacitance(cdec_val),
+            cap_footprint(cdec_val),
+            role="decoupling",
+            presentation="topology_local",
+        ),
+        BypassCap(
+            "CVDD_BULK",
+            vdd_net,
+            gnd_net,
+            format_capacitance(cbulk_val),
+            cap_footprint(cbulk_val),
+            role="bulk_cap",
+            presentation="topology_local",
+        ),
+        BypassCap(
+            "CRES",
+            res_n_net,
+            gnd_net,
+            format_capacitance(cres_val),
+            cap_footprint(cres_val),
+            role="reset_delay",
+            presentation="topology_local",
+        ),
+    ]
+    straps = [
+        StrapConfig(
+            "RRES",
+            vdd_net,
+            res_n_net,
+            format_resistance(rres_val),
+            FP_0402R,
+            role="reset_pullup",
+            presentation="topology_local",
+        )
+    ]
+    annotations = [
+        f"Display {ic_name}: {resolution} {display_type.upper()}, {interface.upper()}",
+        f"Reset RC delay: {format_resistance(rres_val)} * {format_capacitance(cres_val)}",
+        interface_note,
+    ]
+
+    if ic_data.get("has_charge_pump"):
+        riref_val = snap_to_e96(ic_data.get("riref_default", 910e3))
+        pin_nets[str(ic_data.get("pin_iref"))] = iref_net
+        straps.append(
+            StrapConfig(
+                "RIREF",
+                iref_net,
+                gnd_net,
+                format_resistance(riref_val),
+                FP_0402R,
+                role="iref_set",
+                presentation="topology_local",
+            )
+        )
+        cpump_val = snap_cap(2.2e-6)
+        if ic_data.get("pin_c1p"):
+            c1p_net = f"C1P_{ref}"
+            pin_nets[str(ic_data["pin_c1p"])] = c1p_net
+            bypass_caps.append(
+                BypassCap(
+                    "C1P",
+                    c1p_net,
+                    gnd_net,
+                    format_capacitance(cpump_val),
+                    cap_footprint(cpump_val),
+                    role="charge_pump_cap",
+                    presentation="topology_local",
+                )
+            )
+        if ic_data.get("pin_c2p"):
+            c2p_net = f"C2P_{ref}"
+            pin_nets[str(ic_data["pin_c2p"])] = c2p_net
+            bypass_caps.append(
+                BypassCap(
+                    "C2P",
+                    c2p_net,
+                    gnd_net,
+                    format_capacitance(cpump_val),
+                    cap_footprint(cpump_val),
+                    role="charge_pump_cap",
+                    presentation="topology_local",
+                )
+            )
+        if ic_data.get("pin_vcomh"):
+            pin_nets[str(ic_data["pin_vcomh"])] = f"VCOMH_{ref}"
+        annotations.extend(
+            [f"IREF: {format_resistance(riref_val)}", f"Charge pump caps: 2x {format_capacitance(cpump_val)}"]
+        )
+
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="U",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="digital",
+        pins=_pins_from_data(ic_data),
+        power_pins={k: v for k, v in power_pins.items() if k and k != "None"},
+        pin_nets={k: v for k, v in pin_nets.items() if k and k != "None"},
+        bypass_caps=bypass_caps,
+        straps=straps,
+        annotations=annotations,
+    )
+    comp.source_ref = ref
+    ports = [BoundaryPort(vdd_net, "input"), BoundaryPort(gnd_net, "passive")]
+    for net_name in dict.fromkeys(comp.pin_nets.values()):
+        if net_name not in {vdd_net, gnd_net}:
+            ports.append(BoundaryPort(net_name, "bidirectional"))
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=ports,
+        annotations=[f"Display {ic_name}: {resolution} {display_type}, {interface}"],
+        primary_category="digital",
+    )
+
+
+def build_passive_diode(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build a passive diode/LED without IC power-pin requirements."""
+    ic_name = params.get("ic", ic_data.get("_mpn", "1N4148W"))
+    ref = params.get("ref", "D")
+    anode_net = params.get("anode_net", params.get("a_net", f"A_{ref}"))
+    cathode_net = params.get("cathode_net", params.get("k_net", f"K_{ref}"))
+    label = "LED" if ic_data.get("topology") == "led" else "Diode"
+    comp = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="D",
+        value=ic_name,
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="passive",
+        pins=_pins_from_data(ic_data),
+        pin_nets={"A": anode_net, "K": cathode_net},
+        annotations=[f"{label} {ic_name}: {anode_net} -> {cathode_net}"],
+    )
+    comp.source_ref = ref
+    return SubcircuitResult(
+        components=[comp],
+        boundary_ports=[BoundaryPort(anode_net, "passive"), BoundaryPort(cathode_net, "passive")],
+        annotations=[f"{label} {ic_name}: {anode_net} -> {cathode_net}"],
+        primary_category="passive",
+    )
+
+
 # ================================================================
 # Generic wiring builder (pin map + decoupling)
 # ================================================================
@@ -813,12 +1404,15 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     ic_name = params.get("ic", ic_data.get("_mpn", "UNKNOWN"))
     ref = params.get("ref", "U")
     vdd_net = params.get("vdd_net", "VDD_3P3")
+    gnd_net = params.get("gnd_net", "GND")
 
     pins = _pins_from_data(ic_data)
 
     # Read raw pin_vdd / pin_gnd from ic_data (may be list or scalar)
     raw_vdd = ic_data.get("pin_vdd") or ic_data.get("pin_vcc") or ic_data.get("pin_vin")
     raw_gnd = ic_data.get("pin_gnd")
+    raw_vpos = ic_data.get("pin_vpos")
+    raw_vneg = ic_data.get("pin_vneg")
 
     power_pins: dict[str, str] = {}
 
@@ -834,9 +1428,14 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     if raw_gnd:
         if isinstance(raw_gnd, list):
             for p in raw_gnd:
-                power_pins[str(p)] = "GND"
+                power_pins[str(p)] = gnd_net
         else:
-            power_pins[str(raw_gnd)] = "GND"
+            power_pins[str(raw_gnd)] = gnd_net
+
+    if raw_vpos:
+        power_pins[str(raw_vpos)] = vdd_net
+    if raw_vneg:
+        power_pins[str(raw_vneg)] = gnd_net
 
     # Handle multiple GND pins (pin_gnd_extra as list or scalar)
     for key in ic_data:
@@ -844,9 +1443,9 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
             extras = ic_data[key]
             if isinstance(extras, list):
                 for p in extras:
-                    power_pins[str(p)] = "GND"
+                    power_pins[str(p)] = gnd_net
             else:
-                power_pins[str(extras)] = "GND"
+                power_pins[str(extras)] = gnd_net
 
     # Auto-detect additional power pins by name from the pin list
     for pin in pins:
@@ -857,7 +1456,7 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
             if any(
                 name_upper == p or name_upper.startswith(f"{p}_") or name_upper == p for p in GROUND_NET_PREFIXES
             ) or name_upper in ("VEE", "SGND", "COM", "V-", "EPAD"):
-                power_pins[pin.number] = "GND"
+                power_pins[pin.number] = gnd_net
             elif any(
                 name_upper == p or name_upper.startswith(f"{p}_") or p in name_upper for p in POWER_NET_PREFIXES
             ) or name_upper in (
@@ -876,11 +1475,29 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
             ):
                 power_pins[pin.number] = vdd_net
 
-    # Wire all non-power signal pins to per-instance boundary ports
+    shared_pin_nets = {
+        "pin_sda": params.get("sda_net", "I2C_SDA"),
+        "pin_scl": params.get("scl_net", "I2C_SCL"),
+        "pin_mosi": params.get("mosi_net", "SPI_MOSI"),
+        "pin_miso": params.get("miso_net", "SPI_MISO"),
+        "pin_sclk": params.get("sclk_net", params.get("sck_net", "SPI_SCLK")),
+        "pin_sck": params.get("sck_net", params.get("sclk_net", "SPI_SCLK")),
+        "pin_cs": params.get("cs_net", f"CS_{ref}"),
+    }
+
+    # Wire all non-power signal pins to explicit shared bus nets where IC
+    # metadata provides them, otherwise to per-instance boundary ports.
     pin_nets: dict[str, str] = {}
+    for key, net_name in shared_pin_nets.items():
+        pin_num = ic_data.get(key)
+        if pin_num and str(pin_num) not in power_pins:
+            pin_nets[str(pin_num)] = net_name
+
     power_types = {"power_in", "power_out"}
     for pin in pins:
         if pin.number in power_pins:
+            continue
+        if pin.number in pin_nets:
             continue
         if pin.electrical_type in power_types:
             continue
@@ -894,7 +1511,7 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         BypassCap(
             str(raw_vdd) if raw_vdd else "VDD",
             vdd_net,
-            "GND",
+            gnd_net,
             "100nF",
             FP_0402C,
             role="decoupling",
@@ -931,7 +1548,7 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
 
     ports = [
         BoundaryPort(vdd_net, "input"),
-        BoundaryPort("GND", "passive"),
+        BoundaryPort(gnd_net, "passive"),
     ]
     for pin_num, net_name in pin_nets.items():
         ports.append(BoundaryPort(net_name, "bidirectional"))
@@ -957,6 +1574,12 @@ TOPOLOGY_BUILDERS: dict[str, Any] = {
     "can_transceiver": build_can_transceiver,
     "eeprom": build_eeprom,
     "protection": build_protection,
+    "i2c_bus": build_i2c_bus,
+    "battery_charger": build_battery_charger,
+    "battery_monitor": build_battery_monitor,
+    "display_driver": build_display_driver,
+    "diode": build_passive_diode,
+    "led": build_passive_diode,
 }
 
 # All other topologies fall through to build_generic
@@ -964,24 +1587,20 @@ _GENERIC_TOPOLOGIES = {
     "connector",
     "usb_c_connector",
     "rtc",
-    "display_driver",
     "wireless_module",
     "mosfet_switch",
     "relay_driver",
     "gate_driver",
     "led_driver",
     "power_mux",
-    "battery_monitor",
     "ethernet_phy",
     "usb_controller",
     "usb_hub",
-    "battery_charger",
     "charge_pump",
     "voltage_reference",
     "motor_driver",
     "rs485_transceiver",
     "level_shifter",
-    "i2c_bus",
     "spi_bus",
     "adc",
     "dac",
