@@ -20,6 +20,34 @@ This skill is **platform-aware**:
 
 All platforms follow the same design flow — just different UI for user input.
 
+## Domain Routing
+
+Do **not** treat the absence of built-in topology coverage as evidence that a design
+domain is unsupported.
+
+Use these routing rules:
+
+- **Standard covered designs**: follow the normal wizard flow.
+- **Specialized domains** such as RF/microwave, phased arrays, Ku-band radar,
+  mmWave, precision analog instrumentation, unusual isolation, or mixed-signal
+  boards with custom front ends: still proceed with Circuit Weaver, but switch
+  to a **research-first custom architecture path**.
+
+In the research-first custom architecture path:
+
+- Use `ee` for first-principles analysis and domain-specific calculations.
+- Use `sim` for RF chain / S-parameter / power / stability analysis where applicable.
+- Use `kicad` for review and downstream schematic/PCB analysis.
+- Capture the system as **custom blocks + interfaces + explicit constraints**
+  even when no turnkey builder/topology coverage exists.
+- Be precise about what is automated versus what remains manual
+  (for example: transmission-line synthesis, antenna tuning, EM/cavity effects,
+  array calibration, and final RF layout closure).
+
+Do **not** respond with blanket language like "Circuit Weaver is only for
+standard embedded electronics" when the real limitation is narrower: some
+domains have less automation and require more manual engineering review.
+
 ---
 
 ## Workflow: New Design
@@ -43,7 +71,7 @@ dir /b /ad samples\  # Windows
 **Separate user projects from bundled samples:**
 
 - **User projects**: from the `discover --json` output, **exclude** any project whose path contains `/samples/` or `\samples\`. These are your actual user projects. Only show these in the "Open existing" option.
-- **Sample designs**: the subdirectories of `samples/` are bundled reference designs (e.g. `iot_sensor_node`, `motor_controller`, `usb_uart_bridge`, `led_power_indicator`, `fpga_power_carrier`, etc.). These are NOT user projects — they are starting-point templates. Show these only under option [3].
+- **Sample designs**: the subdirectories of `samples/` are bundled reference designs (e.g. `iot_sensor_node`, `motor_controller`, `usb_uart_bridge`, `led_power_indicator`, `fpga_power_carrier`, etc.). These are NOT user projects — they are starting-point reference designs. Show these only under option [3].
 
 If user projects are found, present them:
 
@@ -159,7 +187,20 @@ Question: "What's your EE experience level?"
 
 **Log:** `[Step 1b] Experience level: {selected_level}`
 
-#### 1c. Purpose & Application
+Immediately branch the intake style by level. Do **not** use the same first
+requirements question for every tier:
+
+- **Beginner**: Start with a plain-language application question, then ask form factor, power, and interfaces separately.
+- **Intermediate**: Keep guided prompts with examples and defaults.
+- **Advanced**: Start with one compact design brief covering purpose, power, interfaces, and constraints, then ask only the missing fields.
+- **Professional**: Do **not** immediately ask "What does this circuit do?" as a standalone question. Ask for a compact design brief or spec fragment instead.
+
+Useful professional format:
+`purpose; input power; rails/current; interfaces; mechanical constraints; preferred ICs`
+
+#### 1c. Requirements Intake
+
+For **Beginner / Intermediate**, ask:
 
 Question: "What does this circuit do? (describe the end application)"
 
@@ -168,11 +209,33 @@ Examples:
 - "Motor controller for robot arm, wall-powered"
 - "USB audio interface, desktop device"
 
-**All platforms:** Ask as open text input.
+For **Advanced**, ask:
+
+Question: "Give me a compact design brief covering purpose, power, interfaces, and constraints."
+
+For **Professional**, ask:
+
+Question: "Paste a compact design brief or spec fragment. Useful format: purpose; input power; rails/current; interfaces; constraints."
 
 **Log:** `[Step 1c] Purpose: {user_input}`
 
+If the brief indicates specialized RF/microwave work (radar, phased array,
+Ku-band, mmWave, custom RF front-end), immediately switch from generic
+embedded intake to a specialized architecture intake. Ask for:
+
+- frequency band and bandwidth
+- system architecture (FMCW, direct conversion, superhet, IF chain, etc.)
+- channel/array count
+- LO/reference clock plan
+- gain / NF / power / dynamic-range targets
+- controlled-impedance and shielding constraints
+
+Do **not** refuse the design space. Frame it as:
+"supported through a custom engineering workflow with manual RF closure."
+
 #### 1d. Form Factor & Mechanical
+
+Only ask this as a separate follow-up if it was not already captured clearly in Step 1c.
 
 Question: "What are the size and component height constraints?"
 
@@ -187,6 +250,8 @@ Examples:
 
 #### 1e. Power Source & Rails
 
+Only ask this as a separate follow-up if Step 1c did not already capture input power and rail/current needs.
+
 Question: "What power source will you use, and what voltage rails do you need?"
 
 Examples:
@@ -199,6 +264,8 @@ Examples:
 **Log:** `[Step 1e] Power rails: {user_input}`
 
 #### 1f. Interfaces & Sensors
+
+Only ask this as a separate follow-up if Step 1c did not already capture the key interfaces, buses, or sensors.
 
 Question: "What interfaces and sensors does your circuit need?"
 

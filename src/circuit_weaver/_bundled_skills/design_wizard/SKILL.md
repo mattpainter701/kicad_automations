@@ -37,7 +37,7 @@ When presenting CLI command output to the user, follow these rules for clarity:
 | Command | Success Output | Error Output |
 |---------|---|---|
 | `validate` | `"Validation passed: X errors, Y warnings"` or full categories if issues exist | List each error with code + message |
-| `apply-patch` | `"Added [ref] ([template_type]) to design.yaml"` | List errors from patch validation |
+| `apply-patch` | `"Added [ref] ([topology]) to design.yaml"` | List errors from patch validation |
 | `scaffold` | Print the generated YAML snippet | Report error with details |
 | `generate` | `"Generated N files to [output_dir]"` with file list | Report generation failure reason |
 | `export-jlcpcb` | `"JLCPCB export: [bom_rows] rows, [missing_lcsc] need manual lookup"` | Report export error |
@@ -110,10 +110,19 @@ Adapt behavior based on their answer:
 |-------|----------------|
 | Beginner | Explain every concept briefly as it comes up. Suggest safe defaults aggressively. Flag anything that needs manual EE judgment. Link to the `ee` skill reference for learning. |
 | Intermediate | Explain non-obvious trade-offs. Suggest defaults but invite overrides. Skip basic definitions. |
-| Advanced | Lead with options, not explanations. Compact summaries. Skip obvious defaults. |
-| Professional | Minimize chatter. Present choices as tables. Allow batch answers. Offer to jump directly to YAML spec editing. |
+| Advanced | Lead with options, not explanations. Compact summaries. Start with a compact design brief that covers purpose, power, interfaces, and constraints, then only fill gaps. |
+| Professional | Minimize chatter. Do not open with a standalone "What does the circuit do?" prompt. Start with a structured design brief or pasted spec fragment, then ask only missing or high-risk questions. |
 
 Store the experience level and reference it throughout — don't re-ask.
+
+### 0b. Intake Mode By Experience
+
+Use a different first prompt after calibration:
+
+- **Beginner**: Start with a plain-language purpose question, then walk through mechanics, interfaces, and power one topic at a time.
+- **Intermediate**: Group 2-3 related requirement questions per turn, with examples and defaults.
+- **Advanced**: Start with one compact design brief covering purpose, input power, rails/current, key interfaces, and mechanical constraints. Follow up only on missing fields.
+- **Professional**: Start with one batch intake prompt or a pasted YAML/spec fragment. Useful format: `purpose; input power; rails/current; interfaces; mechanical constraints; preferred ICs/vendors`. Do **not** immediately ask a generic standalone "what does it do?" question.
 
 ---
 
@@ -121,10 +130,15 @@ Store the experience level and reference it throughout — don't re-ask.
 
 **Goal:** Capture enough context to make informed IC and topology decisions.
 
-Ask these questions **one group at a time** — don't dump them all at once.
-After each answer, acknowledge and summarize before moving on.
+Use the intake mode that matches the stored experience level:
+
+- **Beginner / Intermediate**: Ask these questions one group at a time. After each answer, acknowledge and summarize before moving on.
+- **Advanced / Professional**: Treat sections 1a-1d as a completeness checklist, not a fixed question order. Start with a compact brief, then ask follow-ups only for missing, ambiguous, or risky details.
 
 ### 1a. Purpose & Application
+
+For **Beginner / Intermediate**, ask this directly as the opening requirements question.
+For **Advanced / Professional**, this should usually come from the compact design brief; only re-ask if the brief is vague or incomplete.
 
 Ask:
 - What does this circuit/board need to do? (e.g., "battery-powered IoT sensor",
@@ -147,6 +161,28 @@ decided now — moving them after PCB layout is expensive rework.
 
 Record all mechanical constraints — they feed directly into Step 7 (PCB layout)
 for board outline and keep-out zone generation.
+
+### 1a-rf. Specialized RF / Microwave Intake
+
+If the design brief mentions RF/microwave work beyond ordinary module-level
+wireless integration (for example: radar, phased array, beamforming, Ku-band,
+mmWave, SDR front-end, custom LNA/mixer/filter chain), switch to this
+specialized intake instead of treating it like a generic embedded board.
+
+Ask:
+- What frequency band and bandwidth are you targeting?
+- What is the system architecture? (direct conversion, superhet, FMCW radar, phased array, IF sampling, etc.)
+- How many channels or array elements are involved?
+- What are the transmit / receive power, gain, NF, dynamic range, and phase-coherence requirements?
+- What reference clock / LO architecture is required?
+- What transmission-line / controlled-impedance constraints already exist?
+- What parts of the chain are fixed versus still open for selection?
+
+Then state clearly:
+- Circuit Weaver can still help with architecture capture, block partitioning,
+  BOM research, custom block scaffolding, review, and simulation planning.
+- Final microwave layout closure, EM behavior, antenna performance, shielding,
+  and calibration remain manual engineering tasks.
 
 ### 1b. Features & Interfaces
 
@@ -264,6 +300,12 @@ design areas that are harder than average. Present any flags found:
     needs RF matching and ground plane management. Expect manual
     tuning and possibly a VNA for validation.
 
+  ⚠ MICROWAVE / PHASED ARRAY / RADAR: Ku-band and other microwave
+    systems are still in scope, but they are not turnkey-generated
+    designs. Expect a research-first workflow, explicit RF chain
+    blocks, transmission-line constraints, custom simulation work,
+    and manual layout/validation closure.
+
   ⚠ MIXED-SIGNAL: Combining analog sensors with digital/switching
     circuits requires careful ground partitioning and power filtering.
     Layout matters more than schematic here.
@@ -283,6 +325,9 @@ Only show flags that apply. For each flag:
 - State whether Circuit Weaver can handle it automatically or if it needs
   manual EE work
 - Ask if the user wants to proceed, simplify, or get more details
+
+For **Professional** users in specialized domains, default to "proceed with
+custom architecture mode" instead of framing the domain as unsupported.
 
 If no flags apply, say so: "This design is straightforward — no special
 complexity concerns."
@@ -470,31 +515,46 @@ DRV8833                 0          0          42 units    ⚠ 16 weeks
 
 Ask after presenting all research: **Any ICs you want to swap or dig deeper on?**
 
-### 2c. Subcircuit Template Matching
+### 2c. Generation Coverage Check
 
-Check which of the confirmed blocks map to existing `circuit_weaver` subcircuit
-templates (there are 30+ in `src/circuit_weaver/subcircuits/`):
+Check which of the confirmed blocks map cleanly onto existing Circuit Weaver
+data-driven topology/builder coverage and which will need explicit custom block
+definition.
 
-- buck, boost, buck_boost, ldo, charge_pump, power_mux
-- usb, ethernet, can_transceiver, rs485_transceiver
-- motor_driver, relay_driver, led_driver, display_driver
-- crystal_oscillator, clock, i2c_bus, opamp, audio_amplifier
-- sensor_frontend, current_sense, battery_monitor, battery_charger
-- mosfet_switch, driver, protection, adc, dac
+Common well-covered areas include:
 
-Report which blocks have templates and which will need custom definition:
+- power conversion and regulation
+- USB / common digital interfaces
+- common mixed-signal support circuits
+- standard driver, protection, sensing, and conditioning blocks
+
+Report which blocks have direct coverage and which will need custom definition:
 
 ```
-Template matches:
-  [x] Power: buck (TPS563200)         -> subcircuits/buck.py
-  [x] Power: ldo (TLV75533)           -> subcircuits/ldo.py
-  [x] Sensor: sensor_frontend (BME280) -> subcircuits/sensor_frontend.py
-  [x] Comms: usb (USB-C)              -> subcircuits/usb.py
+Direct coverage:
+  [x] Power: buck regulator path
+  [x] Power: ldo regulator path
+  [x] Sensor conditioning path
+  [x] USB interface path
 
 Custom blocks needed:
   [ ] MCU: ESP32-S3 — will use component_db + manual pin mapping
-  [ ] Custom analog frontend — no matching template
+  [ ] Custom analog frontend — explicit custom block needed
 ```
+
+Important: **"no direct coverage" does not mean "unsupported."** It means
+the design should continue using explicit custom blocks, manual interface
+definitions, and targeted EE/simulation review instead of turnkey generation.
+
+For specialized RF/microwave designs, continue with:
+
+- RF chain blocks captured explicitly (LNA, mixer, LO, PA, filter, antenna path)
+- Interface/net constraints recorded explicitly (impedance, diff-pair, isolation, shielding)
+- Custom sourcing/research for the active RF parts and passives
+- Manual layout and validation expectations stated up front
+
+For professional users, present this as a capability boundary:
+"supported with custom engineering flow," not "outside scope."
 
 ---
 
@@ -549,7 +609,10 @@ Build the YAML spec incrementally using the CLI commands:
 
 **Step 1: Scaffold the first block**
 
-Identify the primary power source and scaffold the first IC:
+Identify the primary power source and scaffold the first IC.
+
+Note: the current CLI still uses the legacy flag name `--template` for topology
+selection. Treat that as compatibility syntax, not the workflow model.
 
 ```bash
 circuit-weaver scaffold --template buck --ref U1 --output design.yaml
@@ -559,7 +622,11 @@ This creates a minimal spec with the first power block. Present the output to th
 
 **Step 2: Add blocks iteratively with apply-patch**
 
-For each additional IC, create a patch JSON file and apply it:
+For each additional IC, create a patch JSON file and apply it.
+
+Note: the patch schema still uses legacy internal field names like
+`kind: "template"` and `template_type`. In workflow terms, think of these as
+"generated block" and "topology name".
 
 ```bash
 # patch_u2_ldo.json
@@ -1039,8 +1106,12 @@ Throughout the wizard, follow these principles:
    so the user doesn't lose work if the session ends. After Step 3, the
    spec should be saved to disk.
 
-6. **Be honest about limitations.** If the engine can't handle something
-   (e.g., a very unusual topology), say so and suggest the manual path.
+6. **Be honest about limitations, but distinguish automation limits from scope.**
+   If the engine lacks pre-modeled builder coverage for something unusual, do **not**
+   reject the whole design space. Instead say what Circuit Weaver can still do
+   (requirements capture, architecture, custom block scaffolding, sourcing,
+   validation planning, simulation setup, review) and what still needs manual
+   engineering closure.
 
 ---
 

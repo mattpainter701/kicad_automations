@@ -302,6 +302,8 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 | Sprint | Feature |
 |-|-|
+| 49 | **Wizard intake now tiers by experience level** — the offline `design-wizard` asks for experience before requirements, uses compact design-brief intake for advanced/professional users, and no longer forces the same opening question flow on every user. |
+| 49 | **Specialized RF workflows are now framed correctly** — Circuit Weaver skills now route radar / RF / microwave requests into a research-first custom engineering flow instead of treating the lack of turnkey coverage as an out-of-scope rejection. |
 | 45-47 | **Schematic paper over-promotion fix** — `layout_sheet()` now starts from the allocator-selected paper size and only promotes if it doesn't fit. Small IoT-sensor-class designs no longer cascade to A2. Tighter title-block clearance keeps content on A3. |
 | 45-47 | **Design log severity mapping** — `DesignLogHandler` maps Python `WARNING` records to `"warning"` type instead of `"error"` in `design.log`. |
 | 45-47 | **BME688 bundled IC data** — sensor pin/footprint metadata shipped in `ic_data/misc.json`. `IoT_AQ_Sensor_v2` resolves without local `custom.json`. |

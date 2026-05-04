@@ -180,12 +180,17 @@ at any point.
 **What happens:** You build your design specification incrementally using the
 CLI commands. The wizard helps you structure each block and validates the result.
 
+**Compatibility note:** The current CLI still uses legacy names like
+`--template`, `kind: "template"`, and `template_type` in a few commands and
+patch examples. Treat those as compatibility syntax for selecting a generated
+block topology, not as the conceptual workflow model.
+
 **Scaffold a starter block:**
 ```bash
 circuit-weaver scaffold --template buck --ref U1 --output design.yaml
 ```
 
-This creates a base design with one power block (buck converter, LDO, etc.).
+This creates a base design with one generated power block (buck converter, LDO, etc.).
 You can inspect and edit `design.yaml` at any time.
 
 **Add additional blocks via `apply-patch`:**

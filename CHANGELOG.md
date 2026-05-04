@@ -14,6 +14,8 @@
 
 ### Sprint 49 — Incremental Legacy Migration (T180–T182)
 
+- Rework wizard intake by experience level: the offline `design-wizard` now captures experience before requirements, uses a compact design-brief path for advanced/professional users, and avoids the old one-size-fits-all opening questionnaire.
+- Update Circuit Weaver workflow skills for the data-driven architecture: professional/specialized RF flows now route into research-first custom block definition instead of being framed as out-of-scope or template-gated, and the design-wizard/circuit-weaver docs now describe topology/block coverage rather than the old template-first mental model.
 - Flip `SubcircuitRegistry.get()` to data-driven-first resolution order for all topologies; legacy templates serve as fallback when ic_data JSON has no entries.
 - Remove `_DATA_DRIVEN_FIRST` class variable (dead code after flip).
 - Add `test_registry_uses_data_driven_first` and `test_registry_legacy_fallback_when_no_ic_data`; replace old `test_registry_prefers_legacy_for_unported_topologies`.

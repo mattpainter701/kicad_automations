@@ -72,6 +72,119 @@ _ANSI = {
 _logger = logging.getLogger(__name__)
 
 
+def _normalize_wizard_experience(raw: str) -> str:
+    cleaned = raw.strip().lower()
+    if not cleaned:
+        return "Intermediate"
+    aliases = {
+        "1": "Beginner",
+        "beginner": "Beginner",
+        "new": "Beginner",
+        "novice": "Beginner",
+        "2": "Intermediate",
+        "intermediate": "Intermediate",
+        "mid": "Intermediate",
+        "3": "Advanced",
+        "advanced": "Advanced",
+        "senior": "Advanced",
+        "4": "Professional",
+        "pro": "Professional",
+        "professional": "Professional",
+        "professional ee": "Professional",
+        "expert": "Professional",
+    }
+    return aliases.get(cleaned, cleaned.title())
+
+
+def _wizard_requirement_prompt_plan(experience_level: str) -> list[tuple[str, str, str]]:
+    level = _normalize_wizard_experience(experience_level)
+    if level == "Beginner":
+        return [
+            (
+                "purpose",
+                "In plain language, what are you building? (e.g., sensor node, motor controller) [Custom circuit]: ",
+                "Custom circuit",
+            ),
+            (
+                "form_factor",
+                "Any size, enclosure, or connector-placement constraints? [No constraint]: ",
+                "No constraint",
+            ),
+            (
+                "input_power",
+                "Where does power come from? (e.g., USB 5V, LiPo, wall adapter) [3.3V]: ",
+                "3.3V",
+            ),
+            (
+                "output_rails",
+                "What rails/current do you expect to need? (rough is fine) [3.3V, 500mA]: ",
+                "3.3V, 500mA",
+            ),
+            (
+                "interfaces",
+                "What does it need to connect to? (USB, WiFi, I2C sensors, buttons, motors, etc.) [I2C, UART]: ",
+                "I2C, UART",
+            ),
+            (
+                "mcu",
+                "Do you already want a main MCU/processor, or should it be selected later? [to be selected]: ",
+                "to be selected",
+            ),
+            (
+                "components",
+                "Any must-have sensors, connectors, or other key parts? [to be added]: ",
+                "to be added",
+            ),
+            ("special_reqs", "Any special goals like low power, low noise, or ruggedness? []: ", ""),
+        ]
+    if level == "Advanced":
+        return [
+            (
+                "purpose",
+                "Compact design brief (what it does + key power, interfaces, constraints) [Custom circuit]: ",
+                "Custom circuit",
+            ),
+            (
+                "form_factor",
+                "Mechanical constraints / size / enclosure [No constraint]: ",
+                "No constraint",
+            ),
+            ("input_power", "Input power source [3.3V]: ", "3.3V"),
+            ("output_rails", "Output rails / current budget [3.3V, 500mA]: ", "3.3V, 500mA"),
+            ("interfaces", "Key interfaces / buses [I2C, UART]: ", "I2C, UART"),
+            ("mcu", "Preferred MCU / main processor [to be selected]: ", "to be selected"),
+            ("components", "Key components / preferred parts [to be added]: ", "to be added"),
+            ("special_reqs", "Special requirements (low power, high speed, SI, thermal) []: ", ""),
+        ]
+    if level == "Professional":
+        return [
+            (
+                "purpose",
+                "Design brief or spec fragment "
+                "(use: purpose; input power; rails/current; interfaces; constraints) "
+                "[Custom circuit]: ",
+                "Custom circuit",
+            ),
+            ("form_factor", "Mechanical constraints / enclosure / size [No constraint]: ", "No constraint"),
+            ("input_power", "Input power source [3.3V]: ", "3.3V"),
+            ("output_rails", "Output rails / current budget [3.3V, 500mA]: ", "3.3V, 500mA"),
+            ("interfaces", "Key interfaces / buses [I2C, UART]: ", "I2C, UART"),
+            ("mcu", "Preferred MCU / main IC [to be selected]: ", "to be selected"),
+            ("components", "Preferred key parts / must-use / avoid [to be added]: ", "to be added"),
+            ("special_reqs", "Special requirements (compliance, cost, schedule, thermal, SI) []: ", ""),
+        ]
+    return [
+        ("purpose", "Purpose (e.g., WiFi sensor, motor controller) [Custom circuit]: ", "Custom circuit"),
+        ("form_factor", "Size/constraints (e.g., 50x30mm, SMD only) [No constraint]: ", "No constraint"),
+        ("input_power", "Input power source (e.g., 3.7V LiPo, 5V USB) [3.3V]: ", "3.3V"),
+        ("output_rails", "Output rails (e.g., 3.3V, 500mA; 5V, 100mA) [3.3V, 500mA]: ", "3.3V, 500mA"),
+        ("interfaces", "Interfaces (I2C, SPI, UART, USB, WiFi, etc.) [I2C, UART]: ", "I2C, UART"),
+        ("mcu", "Main processor/MCU (e.g., ESP32, STM32L0) [to be selected]: ", "to be selected"),
+        ("components", "Key components (comma-separated) [to be added]: ", "to be added"),
+        ("special_reqs", "Special requirements (e.g., low power, high speed) []: ", ""),
+    ]
+
+
 def _color_support(mode: str) -> bool:
     """Check if ANSI color output is supported.
 
@@ -4190,69 +4303,48 @@ def _run_design_wizard(
         project_context["research_depth"] = research_depth
     logger.log_step(1, "Project created", project_context)
 
-    # ===== STEP 1b: BASIC INFO =====
+    # ===== STEP 1b: EXPERIENCE LEVEL =====
     print("-" * 80)
-    print("STEP 1b: BASIC INFO")
-    print("-" * 80)
-    purpose = input("Purpose (e.g., WiFi sensor, motor controller) [Custom circuit]: ").strip()
-    if not purpose:
-        purpose = "Custom circuit"
-
-    logger.log_step(2, "Step 1b: Basic info captured", {"purpose": purpose})
-
-    # ===== STEP 1c: EXPERIENCE LEVEL =====
-    print("\n" + "-" * 80)
-    print("STEP 1c: EXPERIENCE LEVEL")
+    print("STEP 1b: EXPERIENCE LEVEL")
     print("-" * 80)
     experience = input("Experience (Beginner/Intermediate/Advanced/Professional) [Intermediate]: ").strip()
-    if not experience:
-        experience = "Intermediate"
+    experience = _normalize_wizard_experience(experience)
 
-    logger.log_step(3, "Step 1c: Experience level captured", {"experience": experience})
+    logger.log_step(2, "Step 1b: Experience level captured", {"experience": experience})
 
-    # ===== STEP 1d: FORM FACTOR =====
+    # ===== STEP 1c: REQUIREMENTS INTAKE =====
     print("\n" + "-" * 80)
-    print("STEP 1d: FORM FACTOR & MECHANICAL")
+    print("STEP 1c: REQUIREMENTS INTAKE")
     print("-" * 80)
-    form_factor = input("Size/constraints (e.g., 50x30mm, SMD only) [No constraint]: ").strip()
-    if not form_factor:
-        form_factor = "No constraint"
+    if experience == "Beginner":
+        print("Beginner mode: we'll go one concept at a time and keep the prompts plain-language.")
+    elif experience == "Advanced":
+        print("Advanced mode: start with a compact design brief, then fill only the missing fields.")
+    elif experience == "Professional":
+        print("Professional mode: give me a compact design brief or spec fragment first.")
+        print("I'll keep the follow-up prompts short and only collect what the YAML still needs.")
+    else:
+        print("Intermediate mode: guided prompts with defaults and short examples.")
 
+    responses: dict[str, str] = {}
+    for key, prompt, default in _wizard_requirement_prompt_plan(experience):
+        value = input(prompt).strip()
+        responses[key] = value or default
+
+    purpose = responses["purpose"]
+    form_factor = responses["form_factor"]
+    input_power = responses["input_power"]
+    output_rails = responses["output_rails"]
+    interfaces = responses["interfaces"]
+    mcu = responses["mcu"]
+    components = responses["components"]
+    special_reqs = responses["special_reqs"]
+
+    logger.log_step(3, "Step 1c: Basic info captured", {"purpose": purpose})
     logger.log_step(4, "Step 1d: Form factor captured", {"form_factor": form_factor})
-
-    # ===== STEP 1e: POWER SUPPLY =====
-    print("\n" + "-" * 80)
-    print("STEP 1e: POWER SUPPLY")
-    print("-" * 80)
-    input_power = input("Input power source (e.g., 3.7V LiPo, 5V USB) [3.3V]: ").strip()
-    if not input_power:
-        input_power = "3.3V"
-
-    output_rails = input("Output rails (e.g., 3.3V, 500mA; 5V, 100mA) [3.3V, 500mA]: ").strip()
-    if not output_rails:
-        output_rails = "3.3V, 500mA"
-
     logger.log_step(
         5, "Step 1e: Power requirements captured", {"input_power": input_power, "output_rails": output_rails}
     )
-
-    # ===== STEP 1f: INTERFACES & SENSORS =====
-    print("\n" + "-" * 80)
-    print("STEP 1f: INTERFACES & SENSORS")
-    print("-" * 80)
-    interfaces = input("Interfaces (I2C, SPI, UART, USB, WiFi, etc.) [I2C, UART]: ").strip()
-    if not interfaces:
-        interfaces = "I2C, UART"
-
-    mcu = input("Main processor/MCU (e.g., ESP32, STM32L0) [to be selected]: ").strip()
-    if not mcu:
-        mcu = "to be selected"
-
-    components = input("Key components (comma-separated) [to be added]: ").strip()
-    if not components:
-        components = "to be added"
-
-    special_reqs = input("Special requirements (e.g., low power, high speed) []: ").strip()
 
     logger.log_step(
         6,
