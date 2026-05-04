@@ -35,7 +35,7 @@ Files: `src/circuit_weaver/subcircuits/topology_builders.py`, `tests/test_genera
 
 ### T218. Close sample/corpus release gate (P1, MEDIUM) ✅ DONE
 
-- [x] Run the full suite and 9-archetype corpus after T215–T217: full suite passes `1005 passed, 1 skipped, 14 warnings`; corpus hard-error gate passes `9 passed`.
+- [x] Run the full suite and 9-archetype corpus after T215–T217: full suite passes `1009 passed, 1 skipped, 6 warnings`; corpus hard-error gate passes `9 passed`.
 - [x] Drive remaining pre-existing T180 failures to zero, or catalog any deliberately deferred failures with root cause and next task: no repo sample/corpus hard failures remain; focused sample/presentation/generation gate passes `38 passed`.
 - [x] Run the `I:/my_circuit` validate/generate probe: validate still reports the external design's pre-existing 44 placement-readiness errors; generate is blocked by those same design connectivity issues before artifact emission.
 - [x] Update `TASKS.md` and `CHANGELOG.md` with final Sprint 50 results.

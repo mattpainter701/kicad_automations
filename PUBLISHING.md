@@ -14,7 +14,7 @@ Uses **OpenID Connect (OIDC)** — no credentials stored in GitHub Secrets.
    - **PyPI Project Name:** `circuit-weaver`
    - **Owner:** `mattpainter701` (your GitHub username)
    - **Repository name:** `kicad_automations`
-   - **Workflow name:** `publish.yml`
+   - **Workflow name:** `release.yml`
    - **Environment name:** `pypi` (optional but recommended)
 3. Click "Add pending publisher"
 4. ✅ Done — no tokens needed!
@@ -37,12 +37,12 @@ For extra security, create a dedicated publishing environment:
    version = "0.11.0"
    ```
 2. Commit and push: `git add . && git commit -m "chore: Bump version to 0.11.0" && git push`
-3. Create release in GitHub UI:
-   - Go to repo → Releases → "Create a new release"
-   - **Tag version:** `v0.11.0`
-   - **Release title:** `Release 0.11.0`
-   - **Description:** Summary of changes (copy from CHANGELOG.md)
-   - **Publish release** button
+3. Create and push the version tag:
+   ```bash
+   git tag v0.11.0
+   git push origin main
+   git push origin v0.11.0
+   ```
 4. ✅ GitHub Actions automatically builds and publishes to PyPI (via OIDC)
    - Check "Actions" tab to see workflow progress
    - Should complete in ~2 minutes
@@ -72,7 +72,7 @@ After publishing, verify on PyPI:
 |-|-|
 | `Error 403: OIDC token error` | Ensure trusted publisher is registered at https://pypi.org/manage/account/publishing/ |
 | `Error 400: Invalid distribution` | Run `python -m build` locally, then `twine check dist/*` to validate |
-| Workflow never runs | Ensure release was "published" (not drafted). Drafted releases don't trigger workflow. |
+| Workflow never runs | Ensure the tag was pushed to GitHub and matches the workflow trigger pattern `v*.*.*`. |
 | Version mismatch | Verify `version` in `pyproject.toml` matches the git tag (e.g., both `0.11.0`) |
 
 ## How OIDC Works
@@ -87,7 +87,7 @@ After publishing, verify on PyPI:
 
 ## Files Modified for Publishing
 
-- `.github/workflows/publish.yml` — GitHub Actions workflow (uses OIDC via pypa/gh-action-pypi-publish)
+- `.github/workflows/release.yml` — GitHub Actions workflow (uses OIDC via pypa/gh-action-pypi-publish)
 - `pyproject.toml` — Python package config (already set up)
 - `PUBLISHING.md` — This guide
 
@@ -104,6 +104,6 @@ After publishing, verify on PyPI:
 
 1. ✅ Register trusted publisher at PyPI
 2. ✅ (Optional) Create GitHub `pypi` environment
-3. Create first release on GitHub
+3. Push the first version tag to GitHub
 4. Watch Actions tab for build status
 5. Verify package published on PyPI

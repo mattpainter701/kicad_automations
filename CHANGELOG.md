@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased] — Sprint 50
+## [Unreleased]
+
+## [0.30.5] - 2026-05-04
 
 ### Sprint 50 — Generic Builder Parity Cleanup (T215–T218)
 
@@ -8,14 +10,13 @@
 - Preserve shared I2C/SPI net names in data-driven generation: add dedicated `i2c_bus` pull-up/level-shifter builders and map explicit SDA/SCL/SPI metadata to shared nets instead of per-instance `{PIN}_{REF}` names.
 - Restore data-driven battery charger and fuel-gauge support networks: `battery_charger` and `battery_monitor` now emit PROG, STAT, CELL, QSTRT, I2C, bypass, and support-passive contracts without reintroducing legacy template classes.
 - Restore data-driven display and passive diode contracts needed by the release gate: SSD1306-class display drivers now include reset, charge-pump, I2C/SPI, and support passives; diode/LED topologies now generate passive two-pin components without false power/GND requirements.
-- Close the Sprint 50 release gate: full suite passes `1005 passed, 1 skipped, 14 warnings`; focused sample/presentation/generation gate passes `38 passed`; 9-archetype corpus hard-error gate passes `9 passed`. The external `I:/my_circuit` probe still validates with known placement-readiness errors and generation remains blocked by that design's pre-existing connectivity issues.
-
-## [0.30.4] - 2026-05-01
+- Harden packaged/read-only workflows for the 0.30.5 release candidate: CLI commands now fall back to a writable log directory instead of crashing when the spec directory cannot host `circuit-weaver.log`, unreadable `~/.config/secrets.env` no longer aborts `doctor` or unknown-part fallback, and the bundled skill payload is resynced byte-identical with `skills/` for PyPI installs.
+- Rework wizard intake by experience level: the offline `design-wizard` now captures experience before requirements, uses a compact design-brief path for advanced/professional users, and avoids the old one-size-fits-all opening questionnaire.
+- Update Circuit Weaver workflow skills for the data-driven architecture: professional/specialized RF flows now route into research-first custom block definition instead of being framed as out-of-scope or template-gated, and the design-wizard/circuit-weaver docs now describe topology/block coverage rather than the old template-first mental model.
+- Close the Sprint 50 release gate: full suite passes `1009 passed, 1 skipped, 6 warnings`; focused sample/presentation/generation gate passes `38 passed`; 9-archetype corpus hard-error gate passes `9 passed`. The external `I:/my_circuit` probe still validates with known placement-readiness errors and generation remains blocked by that design's pre-existing connectivity issues.
 
 ### Sprint 49 — Incremental Legacy Migration (T180–T182)
 
-- Rework wizard intake by experience level: the offline `design-wizard` now captures experience before requirements, uses a compact design-brief path for advanced/professional users, and avoids the old one-size-fits-all opening questionnaire.
-- Update Circuit Weaver workflow skills for the data-driven architecture: professional/specialized RF flows now route into research-first custom block definition instead of being framed as out-of-scope or template-gated, and the design-wizard/circuit-weaver docs now describe topology/block coverage rather than the old template-first mental model.
 - Flip `SubcircuitRegistry.get()` to data-driven-first resolution order for all topologies; legacy templates serve as fallback when ic_data JSON has no entries.
 - Remove `_DATA_DRIVEN_FIRST` class variable (dead code after flip).
 - Add `test_registry_uses_data_driven_first` and `test_registry_legacy_fallback_when_no_ic_data`; replace old `test_registry_prefers_legacy_for_unported_topologies`.

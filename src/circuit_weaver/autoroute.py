@@ -100,7 +100,7 @@ def autoroute_pcb(
         }
 
     log.info("Routing %s with Freerouting...", pcb.name)
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     try:
         # Create a temporary .dsn file for Freerouting
@@ -132,7 +132,7 @@ def autoroute_pcb(
             timeout=300,  # 5 minute timeout
         )
 
-        elapsed = time.time() - start_time
+        elapsed = time.perf_counter() - start_time
 
         if result.returncode != 0:
             log.warning("Freerouting failed: %s", result.stderr)

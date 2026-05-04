@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -66,6 +68,16 @@ _NO_LOG_COMMANDS = {
     "install-skills",
     "log-event",
 }
+
+
+def _log_dir_candidates(preferred: Path) -> list[Path]:
+    """Return best-effort fallback locations for CLI log files."""
+    candidates = [preferred]
+    temp_logs = Path(tempfile.gettempdir()) / "circuit-weaver-logs"
+    for candidate in (temp_logs, Path.cwd()):
+        if candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
 
 
 def get_design_logger() -> DesignLogger | None:
@@ -218,11 +230,15 @@ def init_logging(
     # level is driven by CIRCUIT_WEAVER_LOG_LEVEL (default INFO) which
     # controls what propagates to stderr.
     log_path = project_path / "circuit-weaver.log"
-    with _lock:
-        _file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
-        _file_handler.setLevel(logging.DEBUG)
-        _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    cw_logger.addHandler(_file_handler)
+    try:
+        with _lock:
+            _file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+            _file_handler.setLevel(logging.DEBUG)
+            _file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        cw_logger.addHandler(_file_handler)
+    except OSError:
+        cleanup_logging()
+        raise
 
     env_level = os.environ.get("CIRCUIT_WEAVER_LOG_LEVEL", "INFO").upper()
     try:
@@ -288,9 +304,27 @@ def init_logging_for_cli(
     if log_dir is None:
         return None
 
-    log_dir.mkdir(parents=True, exist_ok=True)
-    init_logging(log_dir)
-    return log_dir
+    last_error: OSError | None = None
+    for candidate in _log_dir_candidates(log_dir):
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            init_logging(candidate)
+            if candidate != log_dir:
+                print(
+                    f"Warning: log directory '{log_dir}' is not writable; using '{candidate}' instead.",
+                    file=sys.stderr,
+                )
+            return candidate
+        except OSError as exc:
+            last_error = exc
+            cleanup_logging()
+
+    if last_error is not None:
+        print(
+            f"Warning: unable to initialize file logging for '{log_dir}': {last_error}",
+            file=sys.stderr,
+        )
+    return None
 
 
 def log_workflow_step(

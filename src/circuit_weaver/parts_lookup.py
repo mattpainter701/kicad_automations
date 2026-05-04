@@ -49,9 +49,13 @@ def _load_secrets_env() -> dict[str, str]:
     Values are NOT shell-unquoted -- they're used as-is.
     """
     result: dict[str, str] = {}
-    if not _SECRETS_PATH.exists():
+    try:
+        if not _SECRETS_PATH.exists():
+            return result
+        raw_text = _SECRETS_PATH.read_text(encoding="utf-8")
+    except OSError:
         return result
-    for line in _SECRETS_PATH.read_text(encoding="utf-8").splitlines():
+    for line in raw_text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
