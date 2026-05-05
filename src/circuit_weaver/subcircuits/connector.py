@@ -20,6 +20,9 @@ from .base import (
 )
 
 CONNECTOR_DATABASE: dict[str, dict] = {}  # Migrated to ic_data/*.json (Task 178)
+_SUBTYPE_DEFAULT_ICS = {
+    "usb-a": "USB_A_4P",
+}
 
 
 class ConnectorTemplate(SubcircuitTemplate):
@@ -34,6 +37,12 @@ class ConnectorTemplate(SubcircuitTemplate):
             "required": False,
             "default": "BARREL_JACK_2.1MM",
             "description": "Connector MPN/type",
+        },
+        {
+            "name": "subtype",
+            "type": "string",
+            "required": False,
+            "description": "Convenience connector family alias (for example 'usb-a')",
         },
         {
             "name": "ref",
@@ -82,19 +91,27 @@ class ConnectorTemplate(SubcircuitTemplate):
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = []
-        ic_name = params.get("ic", "BARREL_JACK_2.1MM")
+        subtype = str(params.get("subtype", "")).strip().lower()
+        ic_name = params.get("ic") or _SUBTYPE_DEFAULT_ICS.get(subtype, "BARREL_JACK_2.1MM")
         db = self._ic_db()
+        if subtype and params.get("ic") in (None, "") and subtype not in _SUBTYPE_DEFAULT_ICS:
+            available = ", ".join(sorted(_SUBTYPE_DEFAULT_ICS))
+            errors.append(f"Unknown connector subtype '{subtype}'. Available: {available}")
         if ic_name not in db:
             errors.append(f"Unknown connector '{ic_name}'. Available: {', '.join(db)}")
         return errors
 
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
-        ic_name = params.get("ic", "BARREL_JACK_2.1MM")
+        subtype = str(params.get("subtype", "")).strip().lower()
+        ic_name = params.get("ic") or _SUBTYPE_DEFAULT_ICS.get(subtype, "BARREL_JACK_2.1MM")
         db = self._ic_db()
         desc = str(params.get("description", "")).lower()
         if ic_name == "BARREL_JACK_2.1MM" and "2x aa" in desc and ("placeholder" in desc or "replace" in desc):
             ic_name = "BATTERY_HOLDER_2XAA"
-        ic_db = db.get(ic_name, db["BARREL_JACK_2.1MM"])
+        if ic_name not in db:
+            available = ", ".join(sorted(db))
+            raise ValueError(f"Unknown connector '{ic_name}'. Available: {available}")
+        ic_db = db[ic_name]
         ref = params.get("ref", "J")
         positive_net = params.get("positive_net", "VIN")
         negative_net = params.get("negative_net", "GND")
@@ -140,6 +157,9 @@ class ConnectorTemplate(SubcircuitTemplate):
             signal_names = [p.name for p in ic_db["pins"]]
             for pin in ic_db["pins"]:
                 if pin.name in ("VCC", "VDD"):
+                    pin_nets[pin.number] = positive_net
+                    ports.append(BoundaryPort(positive_net, "output"))
+                elif pin.name == "VBUS":
                     pin_nets[pin.number] = positive_net
                     ports.append(BoundaryPort(positive_net, "output"))
                 elif pin.name in ("GND", "VSS"):

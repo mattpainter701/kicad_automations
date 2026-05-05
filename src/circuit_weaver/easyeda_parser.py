@@ -16,7 +16,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from .component_db import ComponentDef, PinDef
+from .component_db import ComponentDef, PinDef, infer_pin_roles_from_pins
 
 log = logging.getLogger(__name__)
 
@@ -490,6 +490,7 @@ def easyeda_to_component_def(data: dict) -> ComponentDef | None:
         pins=pin_defs,
         pin_nets=pin_nets,
         power_pins=power_pins,
+        pin_roles=infer_pin_roles_from_pins(pin_defs),
         features=[f"LCSC:{symbol.lcsc_id}"] if symbol.lcsc_id else [],
         annotations=[f"EasyEDA import ({symbol.lcsc_id})"],
     )

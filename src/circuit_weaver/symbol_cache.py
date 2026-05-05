@@ -118,6 +118,7 @@ def component_def_to_cache_payload(
         "pins": pins_serialized,
         "pin_nets": dict(getattr(comp, "pin_nets", {}) or {}),
         "power_pins": dict(getattr(comp, "power_pins", {}) or {}),
+        "pin_roles": dict(getattr(comp, "pin_roles", {}) or {}),
         "power_reqs": power_reqs_serialized,
         "bypass_caps": bypass_caps_serialized,
         "straps": straps_serialized,

@@ -300,8 +300,14 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ## What's New in v0.30.x
 
+Release numbering now tracks sprint number within the `0.30.x` series. Sprint 52 ships as `v0.30.52`.
+
 | Sprint | Feature |
 |-|-|
+| 52 | **Part-neutral repair and schema plumbing** — normalized `pin_roles` now flow through `ComponentDef`, `ic_data`, EasyEDA imports, generic-builder outputs, and cache round-trips, so SPI/UART repair can operate from shared capabilities instead of exact MPN branches. |
+| 52 | **Generation and placement hardening** — readiness gating now lives in `generate_from_components`, generic bypass policy is centralized, orphan non-power nets are hard-gated in placement-readiness, and PCB placement preview now penalizes long connected pairs instead of staying purely zone-based. |
+| 51 | **Restart and validation flows are more truthful** — `log-status` works for validate-only sessions, persisted validation summaries now reflect the final verdict, Windows text-mode validation falls back to ASCII, and bad data-driven `ic` resolution now fails closed instead of silently substituting another part. |
+| 51 | **Workflow skills are less brittle under long-running sessions** — `/circuit-weaver` now reports the installed CLI version first, long steps require timeout follow-up checks, and the validate-output recipe now preserves JSON on stdout instead of mixing it with stderr. |
 | 50 | **Generic builder parity gate is closed** — the data-driven path now covers the remaining sensor-front-end, shared-bus, battery, display, and passive-diode contracts that were blocking the sample/corpus release gate; the full suite passes `1009 passed, 1 skipped`. |
 | 50 | **CLI/package workflows are hardened for PyPI use** — read-only spec directories no longer crash file logging, unreadable `~/.config/secrets.env` no longer breaks `doctor` or unknown-part fallback, and the bundled skill payload is resynced byte-identical with `skills/`. |
 | 49 | **Wizard intake now tiers by experience level** — the offline `design-wizard` asks for experience before requirements, uses compact design-brief intake for advanced/professional users, and no longer forces the same opening question flow on every user. |

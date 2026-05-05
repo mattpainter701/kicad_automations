@@ -203,6 +203,7 @@ def _generate_svg(spec: dict[str, Any], work_dir: Path, label: str) -> Path | No
             project_name=compiled.metadata.get("project", label),
             stable_uuids=True,
             validate=False,
+            readiness_gate=False,
             pcb=False,
             hierarchical=True,
         )

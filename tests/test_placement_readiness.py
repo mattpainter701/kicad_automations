@@ -147,7 +147,7 @@ def test_orphan_interface_ignored_when_other_block_uses_power_pin():
     assert out == []
 
 
-def test_orphan_interface_ignored_when_other_block_uses_bypass_cap_net():
+def test_orphan_interface_not_satisfied_by_other_block_bypass_cap():
     out = placement_readiness_issues(
         [],
         _ir(("U1", "ANALOG_BIAS", "output")),
@@ -157,21 +157,25 @@ def test_orphan_interface_ignored_when_other_block_uses_bypass_cap_net():
         ],
     )
 
-    assert out == []
+    assert len(out) == 1
+    assert out[0].code == "orphan-interface"
+    assert "ANALOG_BIAS" in out[0].message
 
 
-def test_orphan_interface_ignored_when_other_block_uses_strap_net_or_rail():
+def test_orphan_interface_not_satisfied_by_other_block_strap():
     out = placement_readiness_issues(
         [],
-        _ir(("U1", "BOOT", "bidirectional"), ("U3", "PULL_RAIL", "output")),
+        _ir(("U1", "BOOT", "bidirectional")),
         [
             _comp("U1", pin_nets={"1": "BOOT"}),
-            _comp("U2", straps=[StrapConfig("2", "BOOT", "PULL_RAIL", "10k", "R_0402")]),
-            _comp("U3", pin_nets={"3": "PULL_RAIL"}),
+            _comp("U2", straps=[StrapConfig("2", "BOOT", "VDD_3P3", "10k", "R_0402")]),
+            _comp("U3", power_pins={"3": "VDD_3P3"}),
         ],
     )
 
-    assert out == []
+    assert len(out) == 1
+    assert out[0].code == "orphan-interface"
+    assert "BOOT" in out[0].message
 
 
 def test_orphan_interface_excludes_power_and_ground_nets():
@@ -199,6 +203,76 @@ def test_self_connection_only_still_counts_as_orphan():
 
     assert len(out) == 1
     assert out[0].code == "orphan-interface"
+
+
+def test_single_consumer_non_interface_net_is_promoted_to_error():
+    out = placement_readiness_issues(
+        [],
+        _ir(),
+        [_comp("U1", pin_nets={"1": "PHANTOM_BUS"})],
+    )
+
+    assert len(out) == 1
+    assert out[0].code == "orphan-net"
+    assert "PHANTOM_BUS" in out[0].message
+
+
+def test_single_consumer_net_allowlists_debug_block():
+    out = placement_readiness_issues(
+        [],
+        _ir(),
+        [_comp("J1", category="debug", pin_nets={"1": "SWD_IO"})],
+    )
+
+    assert out == []
+
+
+def test_single_consumer_net_allowlists_connector_local_control_nets():
+    out = placement_readiness_issues(
+        [],
+        _ir(),
+        [_comp("J1", category="connector", pin_nets={"A5": "USB_CC1", "B5": "USB_CC2"})],
+    )
+
+    assert out == []
+
+
+def test_single_consumer_net_allowlists_test_point_ref():
+    out = placement_readiness_issues(
+        [],
+        _ir(),
+        [_comp("TP1", ref_prefix="TP", pin_nets={"1": "MEAS_NODE"})],
+    )
+
+    assert out == []
+
+
+def test_single_consumer_net_excludes_internal_power_rails():
+    out = placement_readiness_issues(
+        [],
+        _ir(),
+        [_comp("U5", pin_nets={"45": "DVDD_1V1"})],
+    )
+
+    assert out == []
+
+
+def test_single_consumer_net_does_not_duplicate_validator_single_pin_issue():
+    validator_issue = ValidationIssue(
+        code="single-pin-net",
+        level="warning",
+        ref="U1",
+        mpn="TEST",
+        message="Net 'FLOATING_IRQ' has only one connection (pin 1 on U1) — likely dangling",
+        suggestion="",
+    )
+    out = placement_readiness_issues(
+        [_result("single-pin-net", validator_issue)],
+        _ir(),
+        [_comp("U1", pin_nets={"1": "FLOATING_IRQ"})],
+    )
+
+    assert [issue.code for issue in out] == ["single-pin-net"]
 
 
 def test_placement_readiness_report_to_dict_copies_payload():

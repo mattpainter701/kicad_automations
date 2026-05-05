@@ -184,6 +184,30 @@ def _build_net_list(components: list[ComponentDef]) -> list[str]:
     return sorted(nets)
 
 
+def _build_net_component_map(components: list[ComponentDef]) -> dict[str, list[str]]:
+    """Collect net -> component-ref memberships for placement/routing heuristics."""
+    net_map: dict[str, set[str]] = {}
+    for comp in components:
+        ref = comp.source_ref or comp.ref_prefix
+        if not ref:
+            continue
+        nets = set(comp.pin_nets.values()) | set(comp.power_pins.values())
+        for bc in comp.bypass_caps:
+            if bc.net:
+                nets.add(bc.net)
+            if bc.gnd_net:
+                nets.add(bc.gnd_net)
+        for sr in comp.straps:
+            if sr.net:
+                nets.add(sr.net)
+            if sr.rail:
+                nets.add(sr.rail)
+        for net in nets:
+            if net:
+                net_map.setdefault(net, set()).add(ref)
+    return {net: sorted(refs) for net, refs in net_map.items()}
+
+
 def _build_net_classes(nets: list[str]) -> dict[str, list[str]]:
     """Group nets by net class."""
     classes = {"Default": [], "Power_1A": [], "Power_3A": []}

@@ -25,6 +25,7 @@ from ..component_db import ComponentDef
 POWER_NET_PREFIXES = (
     "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO",
     "VBAT", "VSYS", "VAUX", "VS", "VM", "VB", "VCP", "VOUT",
+    "AVDD", "DVDD", "AVCC", "DVCC", "VDDIO", "VCCIO", "VDDCORE",
     "VUSB",
 )
 GROUND_NET_PREFIXES = ("GND", "AGND", "DGND", "PGND", "VSS", "GNDA", "GNDD")
@@ -651,13 +652,24 @@ class SubcircuitTemplate(ABC):
         if not schema:
             return []
         known = {spec.get("name", "") for spec in schema if spec.get("name")}
+        framework_passthrough = {
+            "ic",
+            "ref",
+            "type",
+            "section",
+            "template",
+            "pin_map",
+            "pinout_verified",
+            "power_map",
+            "no_connects",
+            "pin_nets_extra",
+            "power_pins_extra",
+            "interfaces",
+            "terminal",
+        }
         unknown = [
             k for k in params
-            if k not in known and k not in (
-                "ic", "ref", "type", "section", "template",
-                "no_connects", "pin_nets_extra", "power_pins_extra",
-                "interfaces", "terminal",
-            )
+            if k not in known and k not in framework_passthrough
         ]
         if unknown:
             return ["Unknown parameter(s): " + ", ".join(unknown)]
@@ -697,8 +709,11 @@ class DataDrivenTemplate(SubcircuitTemplate):
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
         from .topology_builders import get_builder
 
-        ic_name = params.get("ic")
-        if ic_name and ic_name in self._ic_database:
+        ic_name = str(params.get("ic", "")).strip()
+        if ic_name:
+            if ic_name not in self._ic_database:
+                available = ", ".join(sorted(self._ic_database))
+                raise ValueError(f"Unknown {self.template_type} IC '{ic_name}'. Available: {available}")
             ic_data = dict(self._ic_database[ic_name])
         elif self._ic_database:
             ic_name = next(iter(self._ic_database))
@@ -714,18 +729,22 @@ class DataDrivenTemplate(SubcircuitTemplate):
         return builder(ic_data, params)
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:
-        return self._validate_params_from_schema(params)
+        errors = self._validate_params_from_schema(params)
+        ic_name = str(params.get("ic", "")).strip()
+        if ic_name and ic_name not in self._ic_database:
+            available = ", ".join(sorted(self._ic_database))
+            errors.append(f"Unknown {self.template_type} IC '{ic_name}'. Available: {available}")
+        return errors
 
 
 class SubcircuitRegistry:
     """Registry of available subcircuit templates, queryable by type name.
 
     Resolution order:
-    1. Data-driven templates from JSON IC data store — tried first for all
-        topologies. If ic_data JSON has entries for the topology, a
-        DataDrivenTemplate backed by topology_builders is returned.
-    2. Legacy template classes (registered via register()) — fallback for
-        topologies with no ic_data JSON entries.
+    1. Registered template classes (via register()) — preferred when a
+        topology has handwritten behavior beyond the generic JSON builder.
+    2. Data-driven templates from JSON IC data store — fallback for
+        topologies that have no registered template class.
     """
 
     def __init__(self):
@@ -738,14 +757,16 @@ class SubcircuitRegistry:
     def get(self, type_name: str) -> SubcircuitTemplate | None:
         """Look up a template by type name (e.g., 'buck', 'ldo').
 
-        Data-driven resolution is tried first for all topologies.
-        Legacy template classes serve as fallback when ic_data JSON
-        has no entries for the requested topology.
+        Registered template classes are preferred so richer handwritten
+        behavior (shared bus nets, connector subtype handling, etc.)
+        is not shadowed by the generic data-driven builder. JSON-backed
+        DataDrivenTemplate remains the fallback for topologies that only
+        exist in ic_data.
         """
-        dd = self._get_data_driven(type_name)
-        if dd is not None:
-            return dd
-        return self._templates.get(type_name)
+        legacy = self._templates.get(type_name)
+        if legacy is not None:
+            return legacy
+        return self._get_data_driven(type_name)
 
     def _get_data_driven(self, type_name: str) -> DataDrivenTemplate | None:
         """Try to build a DataDrivenTemplate from JSON IC data."""

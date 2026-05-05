@@ -132,6 +132,10 @@ class DesignLogger:
         passed: bool,
         errors: list[str] | None = None,
         warnings: list[str] | None = None,
+        *,
+        scope: str = "final_report",
+        error_count: int | None = None,
+        warning_count: int | None = None,
     ) -> None:
         """Log a validation check result.
 
@@ -140,14 +144,20 @@ class DesignLogger:
             passed: Whether validation passed
             errors: List of error messages
             warnings: List of warning messages
+            scope: Validation stage identifier (for example ``raw_checks`` or
+                ``final_report``) so summaries can prefer the authoritative
+                final result when multiple validation events exist.
+            error_count: Optional full error count when ``errors`` is truncated.
+            warning_count: Optional full warning count when ``warnings`` is truncated.
         """
         entry = {
             "timestamp": _now_iso(),
             "type": "validation",
             "spec_file": spec_file,
             "passed": passed,
-            "error_count": len(errors or []),
-            "warning_count": len(warnings or []),
+            "scope": scope,
+            "error_count": len(errors or []) if error_count is None else int(error_count),
+            "warning_count": len(warnings or []) if warning_count is None else int(warning_count),
             "errors": (errors or [])[:5],  # Include first 5 errors
             "warnings": (warnings or [])[:5],  # Include first 5 warnings
         }
@@ -465,6 +475,11 @@ class DesignLogger:
         last_step = 0
         files = set()
         validation_passed = None
+        validation_error_count = 0
+        validation_warning_count = 0
+        validation_errors: list[str] = []
+        validation_warnings: list[str] = []
+        validation_scope_rank = -1
         errors: list[str] = []
         warnings: list[str] = []
         sim_count = 0
@@ -490,9 +505,19 @@ class DesignLogger:
                     errors.append(f"{entry.get('command')}: {entry.get('stderr', 'unknown error')}")
 
             elif etype == "validation":
-                validation_passed = entry.get("passed")
-                errors.extend(entry.get("errors", []))
-                warnings.extend(entry.get("warnings", []))
+                scope = str(entry.get("scope", "legacy"))
+                scope_rank = {
+                    "raw_checks": 0,
+                    "legacy": 1,
+                    "final_report": 2,
+                }.get(scope, 1)
+                if scope_rank >= validation_scope_rank:
+                    validation_scope_rank = scope_rank
+                    validation_passed = entry.get("passed")
+                    validation_error_count = int(entry.get("error_count", len(entry.get("errors", [])) or 0))
+                    validation_warning_count = int(entry.get("warning_count", len(entry.get("warnings", [])) or 0))
+                    validation_errors = list(entry.get("errors", []))
+                    validation_warnings = list(entry.get("warnings", []))
 
             elif etype == "research":
                 if entry.get("status") != "ok":
@@ -537,11 +562,13 @@ class DesignLogger:
                 warnings.append(f"{entry.get('operation')}: {entry.get('message', 'unknown')}")
 
         return {
-            "status": "in_progress" if last_step > 0 else "empty",
+            "status": "in_progress" if self.entries else "empty",
             "last_step": last_step,
             "entries": len(self.entries),
             "files_generated": sorted(f for f in files if f),
             "validation_passed": validation_passed,
+            "validation_error_count": validation_error_count,
+            "validation_warning_count": validation_warning_count,
             "simulation": {"total": sim_count, "passed": sim_passed, "skipped": sim_skipped} if sim_count else None,
             "thermal": {"warnings": thermal_warnings, "critical": thermal_critical}
             if (thermal_warnings or thermal_critical)
@@ -549,8 +576,8 @@ class DesignLogger:
             "erc_drc": {"errors": erc_errors, "warnings": erc_warnings} if (erc_errors or erc_warnings) else None,
             "scoring": scoring or None,
             "part_lookups": {"total": part_lookups, "failures": part_failures} if part_lookups else None,
-            "errors": errors[:10],
-            "warnings": warnings[:10],
+            "errors": (errors + validation_errors)[:10],
+            "warnings": (warnings + validation_warnings)[:10],
             "log_path": str(self.log_path),
         }
 
@@ -566,13 +593,16 @@ class DesignLogger:
         print("Design Workflow Summary")
         print("=" * 72)
         print(f"Status:      {summary['status'].upper()}")
-        print(f"Last step:   {summary['last_step']}")
+        print(f"Last step:   {summary['last_step'] if summary['last_step'] > 0 else 'n/a'}")
         print(f"Log entries: {summary['entries']}")
         print(f"Files:       {len(summary['files_generated'])} generated")
 
         if summary["validation_passed"] is not None:
             status = "PASSED" if summary["validation_passed"] else "FAILED"
-            print(f"Validation:  {status}")
+            print(
+                f"Validation:  {status} "
+                f"({summary['validation_error_count']} errors, {summary['validation_warning_count']} warnings)"
+            )
 
         sim = summary.get("simulation")
         if sim:

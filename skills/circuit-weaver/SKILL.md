@@ -50,9 +50,90 @@ domains have less automation and require more manual engineering review.
 
 ---
 
+## Long-Running Operations & Timeout Awareness
+
+Do not let Circuit Weaver work run silently for long periods.
+
+When a step is expected to take noticeable time — for example `confidence --run-sims`,
+`simulate`, `generate` on a large design, `optimize-placement`, `autoroute`, large
+research passes, or repeated validation/generation retries — follow these rules:
+
+1. **Before starting any command likely to exceed ~2 minutes**, tell the user:
+   - what command or phase is starting,
+   - why it may take a while,
+   - what success artifact or status you expect.
+2. **At ~2 minutes without completion**, send a follow-up and check progress using the
+   best available source:
+   - `python -m circuit_weaver log-status <project_dir>`
+   - `python -m circuit_weaver log-view <project_dir>`
+   - recent entries in `design.log`
+   - recent entries in `circuit-weaver.log`
+   - output/artifact timestamps or files created so far
+3. **At ~5 minutes**, do not just keep waiting. Inspect for actionable issues:
+   - unresolved validation blockers,
+   - missing dependencies/tools,
+   - stalled artifact generation,
+   - repeated warnings/errors in logs,
+   - no file or status movement since the last check.
+   Then tell the user whether the work is actively progressing, blocked, or likely stuck.
+4. **At ~15 minutes**, either:
+   - explain concretely why the wait is still expected and what milestone remains, or
+   - stop/pivot to a smaller bounded step and surface the blocker.
+5. **Never allow a run to sit silent for ~30 minutes.** Long-running work must include
+   periodic follow-up plus an explicit progress/issue check.
+
+When reopening an interrupted or stale project, check status/logs before re-running
+expensive commands. Minimum restart triage:
+
+```bash
+python -m circuit_weaver log-status <project_dir>
+python -m circuit_weaver log-view <project_dir>
+```
+
+If those suggest a prior failure or stalled run, inspect `design.log` and
+`circuit-weaver.log` before deciding whether to retry, validate, or edit the spec.
+
+---
+
 ## Workflow: New Design
 
-### Step -1 — Auto-Detection (ALWAYS RUN FIRST)
+### Step -2 — Installed Version Banner (ALWAYS RUN FIRST)
+
+Before presenting any choices, detect the **installed Circuit Weaver CLI version**
+from the command on `PATH` and paste it back to the user.
+
+Preferred command:
+
+```bash
+circuit-weaver --version
+```
+
+Fallback if the `circuit-weaver` entrypoint is missing:
+
+```bash
+python -m circuit_weaver --version
+```
+
+Rules:
+
+- Prefer the `circuit-weaver` command on `PATH` when available. That is the installed CLI.
+- Do **not** infer the version by reading `src/circuit_weaver/__init__.py` or other repo files.
+- If forced to use `python -m circuit_weaver --version` from a checkout, clearly label it as
+  the local/imported version rather than the installed CLI version.
+
+Paste back a short banner before the menu, for example:
+
+```text
+Circuit Weaver installed: v0.30.5
+```
+
+If only the fallback worked:
+
+```text
+Circuit Weaver local/imported version: v0.30.5
+```
+
+### Step -1 — Auto-Detection
 
 Before presenting any choices, **automatically scan for existing projects and available samples**:
 
@@ -805,6 +886,43 @@ All Python operations accept **command-line arguments only**, no interactive pro
 - `log-view project_dir` (show recent log entries)
 
 This ensures the skill can call them without dealing with subprocess stdin/stdout complexity.
+
+### Validation Output Handling
+
+Treat `validate` output carefully.
+
+- In the current Circuit Weaver CLI, `validate` already emits JSON to **stdout** by default.
+- Human diagnostics and environment warnings may still appear on **stderr**.
+- Do **not** add `--json` to `validate` unless the CLI explicitly grows that flag in a later version.
+- Do **not** merge stderr into stdout with `2>&1` before parsing JSON.
+- A non-zero exit code from `validate` usually means the design is invalid, not that the command wrapper failed.
+
+Expected top-level JSON keys:
+
+```text
+valid
+summary
+categories
+metadata
+```
+
+Do **not** assume top-level `error_count`, `warning_count`, or `errors` fields.
+Use `summary` and `categories`.
+
+Safe pattern:
+
+```bash
+circuit-weaver validate design.yaml > val.json 2> val.err
+python - <<'PY'
+import json
+data = json.load(open('val.json', encoding='utf-8'))
+print('Valid:', data['valid'])
+print('Summary:', data['summary'])
+PY
+```
+
+If you need to summarize failures, read from `categories` rather than inventing a
+wrapper that reparses mixed stdout/stderr streams.
 
 ---
 

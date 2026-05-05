@@ -1070,3 +1070,169 @@ def test_register_custom_ic():
 
     # Clean up
     reload()
+
+
+# ================================================================
+# Sprint 52 / T228 — build_generic synthesized-net hardening
+# ================================================================
+
+
+def _t228_ic_data(extra: dict | None = None) -> dict:
+    """Minimal IC data dict for build_generic regression tests."""
+    base = {
+        "_mpn": "FAKE_USB_HUB",
+        "topology": "usb_hub",
+        "description": "Synthetic USB hub for T228 regression",
+        "footprint": "QFN-32",
+        "category": "digital",
+        "primary_category": "digital",
+        "pins": [
+            {"number": "1", "name": "VDD", "type": "power_in", "side": "T"},
+            {"number": "2", "name": "GND", "type": "power_in", "side": "B"},
+            {"number": "3", "name": "DP1", "type": "bidirectional", "side": "L"},
+            {"number": "4", "name": "DM1", "type": "bidirectional", "side": "L"},
+            {"number": "5", "name": "~", "type": "passive", "side": "R"},
+            {"number": "6", "name": "RESERVED", "type": "passive", "side": "R"},
+            {"number": "7", "name": "PROG", "type": "input", "side": "R"},
+        ],
+        "pin_vdd": "1",
+        "pin_gnd": "2",
+        "pin_dp1": "3",
+        "pin_dm1": "4",
+    }
+    if extra:
+        base.update(extra)
+    return base
+
+
+def test_t228_build_generic_routes_usb_dp_dm_to_shared_nets():
+    """USB DP/DM pins declared in ic_data must use shared USB_DP/USB_DM,
+    not synthesized per-instance names like DP1_U1."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    result = build_generic(_t228_ic_data(), {"ic": "FAKE_USB_HUB", "ref": "U1"})
+    comp = result.components[0]
+    assert comp.pin_nets["3"] == "USB_DP"
+    assert comp.pin_nets["4"] == "USB_DM"
+    assert "DP1_U1" not in comp.pin_nets.values()
+    assert "DM1_U1" not in comp.pin_nets.values()
+
+
+def test_t228_build_generic_filters_nc_pin_names():
+    """Pins named '~' / 'RESERVED' must become explicit_no_connects, not
+    synthesized phantom nets like '~_U1' / 'RESERVED_U1'."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    result = build_generic(_t228_ic_data(), {"ic": "FAKE_USB_HUB", "ref": "U1"})
+    comp = result.components[0]
+    assert "5" in comp.explicit_no_connects
+    assert "6" in comp.explicit_no_connects
+    assert "5" not in comp.pin_nets
+    assert "6" not in comp.pin_nets
+    for net_name in comp.pin_nets.values():
+        assert "~" not in net_name
+        assert not net_name.startswith("RESERVED_")
+
+
+def test_t228_build_generic_skips_per_instance_nets_from_boundary_ports():
+    """Interface-heavy generic parts must not invent local signal nets."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    result = build_generic(_t228_ic_data(), {"ic": "FAKE_USB_HUB", "ref": "U1"})
+    comp = result.components[0]
+    port_names = {p.name for p in result.boundary_ports}
+    # Shared external nets DO appear
+    assert "USB_DP" in port_names
+    assert "USB_DM" in port_names
+    assert "VDD_3P3" in port_names
+    assert "GND" in port_names
+    # Unmapped signals stay unresolved until generation, rather than
+    # becoming phantom local interfaces.
+    assert "7" not in comp.pin_nets
+    assert "PROG_U1" not in port_names
+    assert "PROG_U1" not in comp.pin_nets.values()
+
+
+def test_t228_build_generic_marks_unmapped_signal_pin_for_generation_guard():
+    """Unmapped interface pins should be recorded for a hard generation fail."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    result = build_generic(_t228_ic_data(), {"ic": "FAKE_USB_HUB", "ref": "U1"})
+    comp = result.components[0]
+    assert comp.unmapped_required_pins == {"7": "PROG"}
+
+
+def test_t228_build_generic_honors_param_supplied_usb_nets():
+    """Callers can override the default USB net names via params."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    result = build_generic(
+        _t228_ic_data(),
+        {
+            "ic": "FAKE_USB_HUB",
+            "ref": "U1",
+            "usb_dp_net": "USB1_DP",
+            "usb_dm_net": "USB1_DM",
+        },
+    )
+    comp = result.components[0]
+    assert comp.pin_nets["3"] == "USB1_DP"
+    assert comp.pin_nets["4"] == "USB1_DM"
+
+
+def test_t228_build_generic_signal_nets_dict_routes_arbitrary_pins():
+    """ic_data['signal_nets'] should map arbitrary pins to declared nets."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    ic_data = _t228_ic_data({"signal_nets": {"7": "PROG_BUS"}})
+    result = build_generic(ic_data, {"ic": "FAKE_USB_HUB", "ref": "U1"})
+    comp = result.components[0]
+    assert comp.pin_nets["7"] == "PROG_BUS"
+    # Pin 7 is shared (not per-instance), so it MUST be a boundary port
+    port_names = {p.name for p in result.boundary_ports}
+    assert "PROG_BUS" in port_names
+
+
+def test_t234_build_generic_preserves_normalized_pin_roles():
+    """Generic-builder outputs should carry normalized pin-role metadata forward."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    result = build_generic(_t228_ic_data(), {"ic": "FAKE_USB_HUB", "ref": "U1"})
+    comp = result.components[0]
+    assert comp.pin_roles["dp1"] == "3"
+    assert comp.pin_roles["dm1"] == "4"
+
+
+def test_t230_build_generic_defers_bypass_policy_to_engine_pass():
+    """Generic builder should no longer pre-seed a blanket 100nF cap.
+
+    The centralized auto_generate_bypass_caps pass owns the final cap set so
+    validate/generate share one policy.
+    """
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    result = build_generic(_t228_ic_data(), {"ic": "FAKE_USB_HUB", "ref": "U1"})
+    comp = result.components[0]
+    assert comp.bypass_caps == []
+
+
+def test_t233_crystal_builder_emits_load_caps_and_feedback():
+    from circuit_weaver.ic_data import get_ic_data
+    from circuit_weaver.subcircuits.topology_builders import build_crystal_oscillator
+
+    result = build_crystal_oscillator(
+        get_ic_data("ABM8G"),
+        {
+            "ic": "ABM8G",
+            "ref": "X1",
+            "freq": 12_000_000.0,
+            "cl_spec": 12,
+            "xtal_in_net": "XTAL1_RP",
+            "xtal_out_net": "XTAL2_RP",
+        },
+    )
+    comp = result.components[0]
+    assert comp.pin_nets["1"] == "XTAL1_RP"
+    assert comp.pin_nets["3"] == "XTAL2_RP"
+    assert len([cap for cap in comp.bypass_caps if cap.role == "load_cap"]) == 2
+    assert any(strap.role == "feedback" for strap in comp.straps)

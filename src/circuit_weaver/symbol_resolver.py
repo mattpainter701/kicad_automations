@@ -309,6 +309,7 @@ class SymbolResolver:
             pins=pins,
             pin_nets=dict(cached.get("pin_nets", {}) or {}),
             power_pins=dict(cached.get("power_pins", {}) or {}),
+            pin_roles=dict(cached.get("pin_roles", {}) or {}),
             power_reqs=power_reqs,
             bypass_caps=bypass_caps,
             straps=straps,

@@ -138,6 +138,15 @@ def _classify_unhandled_pin(comp, pin_num, pname, ptype):
     if _NC_PIN_NAME_PATTERNS.match(pname):
         return "no_connect", "silent", f"pin name '{pname}' indicates no-connect"
 
+    unmapped_required = getattr(comp, "unmapped_required_pins", {}) or {}
+    if pin_num in unmapped_required:
+        route_name = unmapped_required.get(pin_num) or pname
+        return (
+            "no_connect",
+            "error",
+            f"UNMAPPED signal pin '{route_name}' (pin {pin_num}) — declare its interface net or support network",
+        )
+
     # 3. Build a pin type lookup from ComponentDef.pins for richer type info
     comp_pin_type = None
     for pin in comp.pins:
@@ -1053,6 +1062,8 @@ def generate_from_components(
     interface_policy: str | None = None,
     presentation_wiring_policy: PresentationWiringPolicy | dict | None = None,
     score: bool = False,
+    compiled_ir=None,
+    readiness_gate: bool = True,
 ) -> list[str]:
     """Generate KiCad schematics from a list of ComponentDefs.
 
@@ -1097,11 +1108,28 @@ def generate_from_components(
 
         _resolve_late_pin_maps(components)
 
-        if validate:
+        validation_results = None
+        if validate or readiness_gate:
             validation_results = run_validation_checks(components)
+        if validate:
             _report_validation_results(validation_results)
-        else:
-            validation_results = None
+        if readiness_gate:
+            from .design_ir import DesignIR
+            from .placement_readiness import placement_readiness_issues
+
+            ir_for_gate = compiled_ir if compiled_ir is not None else DesignIR()
+            readiness_issues = placement_readiness_issues(validation_results or [], ir_for_gate, components)
+            if readiness_issues:
+                for issue in readiness_issues[:8]:
+                    _logger.error(
+                        "Placement readiness blocked generation: %s (%s)",
+                        issue.code,
+                        issue.message,
+                    )
+                raise ValueError(
+                    f"Design has {len(readiness_issues)} placement_readiness error(s) — "
+                    "fix these before generation or bypass with readiness_gate=False / --no-readiness-gate"
+                )
 
         resolved_presentation_wiring_policy = normalize_presentation_wiring_policy(presentation_wiring_policy)
 
@@ -1890,10 +1918,11 @@ def _render_sheet(
                 px, py, pangle, plen, pname, ptype = pin_pos[pin_num]
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
                 _action, level, reason = _classify_unhandled_pin(comp, pin_num, pname, ptype)
-                no_connects.append(sexpr_no_connect(cx, cy))
                 if level == "error":
                     _logger.error("%s (%s): %s", placed.ref, comp.mpn, reason)
-                elif level == "warning":
+                    raise ValueError(f"Generation blocked at {placed.ref} ({comp.mpn}): {reason}")
+                no_connects.append(sexpr_no_connect(cx, cy))
+                if level == "warning":
                     _logger.warning("%s (%s): %s", placed.ref, comp.mpn, reason)
                     nc_intent_notes.append(f"{pname}({pin_num}): NC")
         # Annotate the schematic with NC intent summary for non-trivial cases

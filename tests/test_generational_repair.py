@@ -11,6 +11,7 @@ from circuit_weaver.design_ir import DesignBlock, DesignIR
 from circuit_weaver.generational_repair import (
     RepairAction,
     _is_ground,
+    apply_component_repairs,
     auto_repair_design,
 )
 
@@ -92,13 +93,21 @@ class TestAutoRepairDesign:
             interfaces=[],
         )
 
-    def _make_component(self, ref: str, pin_nets: dict[str, str],
-                        power_pins: dict[str, str] | None = None) -> ComponentDef:
+    def _make_component(
+        self,
+        ref: str,
+        pin_nets: dict[str, str],
+        power_pins: dict[str, str] | None = None,
+        *,
+        pin_names: dict[str, str] | None = None,
+        pin_roles: dict[str, str] | None = None,
+    ) -> ComponentDef:
         """Helper: build a minimal ComponentDef with pin nets."""
         pins = []
-        for num in pin_nets:
+        all_pin_nums = set(pin_nets) | set(power_pins or {}) | set(pin_names or {}) | set((pin_roles or {}).values())
+        for num in sorted(all_pin_nums):
             pins.append(PinDef(
-                number=num, name=f"pin{num}",
+                number=num, name=(pin_names or {}).get(num, f"pin{num}"),
                 electrical_type="bidirectional", side="L",
             ))
         return ComponentDef(
@@ -107,6 +116,7 @@ class TestAutoRepairDesign:
             pins=pins,
             pin_nets=dict(pin_nets),
             power_pins=dict(power_pins or {}),
+            pin_roles=dict(pin_roles or {}),
         )
 
     def test_enabled_by_default(self):
@@ -118,8 +128,9 @@ class TestAutoRepairDesign:
         components = [self._make_component("U1", {"1": "VDD", "2": "I2C_SDA", "3": "I2C_SCL"},
                                             power_pins={"4": "VDD"})]
 
-        repaired, actions = auto_repair_design(ir, components, enabled=True)
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
 
+        assert component_repairs == []
         assert len(actions) > 0, "Expected at least one repair action for I2C design"
         assert any(a.kind == "i2c_pullups" for a in actions)
 
@@ -132,8 +143,9 @@ class TestAutoRepairDesign:
         components = [self._make_component("U1", {"1": "VDD", "2": "I2C_SDA", "3": "I2C_SCL"},
                                             power_pins={"4": "VDD"})]
 
-        repaired, actions = auto_repair_design(ir, components, enabled=False)
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=False)
 
+        assert component_repairs == []
         assert len(actions) == 0, "No repair actions expected when disabled"
 
     def test_skips_when_i2c_block_already_present(self):
@@ -151,12 +163,55 @@ class TestAutoRepairDesign:
             self._make_component("RP1", {"1": "VDD", "2": "GND", "3": "I2C_SDA", "4": "I2C_SCL"}),
         ]
 
-        repaired, actions = auto_repair_design(ir, components, enabled=True)
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
 
+        assert component_repairs == []
         i2c_actions = [a for a in actions if a.kind == "i2c_pullups"]
         assert len(i2c_actions) == 0, (
             f"Should not synthesize pull-ups when i2c_bus block exists, got {i2c_actions}"
         )
+
+    def test_existing_i2c_block_only_suppresses_matching_bus(self):
+        """A declared i2c_bus should only suppress repair for the same nets."""
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu",
+             "params": {"sda_net": "I2C0_SDA", "scl_net": "I2C0_SCL"}},
+            {"ref": "RP1", "kind": "digital", "template_type": "i2c_bus",
+             "params": {"sda_net": "I2C0_SDA", "scl_net": "I2C0_SCL"}},
+            {"ref": "U2", "kind": "digital", "template_type": "sensor",
+             "params": {"sda_net": "I2C1_SDA", "scl_net": "I2C1_SCL"}},
+        ])
+        components = [
+            self._make_component("U1", {"1": "I2C0_SDA", "2": "I2C0_SCL"}, power_pins={"3": "VDD_3P3"}),
+            self._make_component("RP1", {"1": "I2C0_SDA", "2": "I2C0_SCL"}, power_pins={"3": "VDD_3P3"}),
+            self._make_component("U2", {"1": "I2C1_SDA", "2": "I2C1_SCL"}, power_pins={"3": "VDD_1P8"}),
+        ]
+
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
+
+        assert component_repairs == []
+        i2c_actions = [a for a in actions if a.kind == "i2c_pullups"]
+        assert len(i2c_actions) == 1
+        assert i2c_actions[0].nets[:2] == ["I2C1_SDA", "I2C1_SCL"]
+        i2c_blocks = [b for b in repaired.blocks if b.template_type == "i2c_bus"]
+        assert any(b.params.get("sda_net") == "I2C1_SDA" and b.params.get("scl_net") == "I2C1_SCL" for b in i2c_blocks)
+
+    def test_unrelated_sda_scl_nets_do_not_pair(self):
+        """Zero-overlap SDA/SCL names should not synthesize a false I2C bus."""
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+            {"ref": "U2", "kind": "debug", "template_type": "header"},
+        ])
+        components = [
+            self._make_component("U1", {"1": "I2C0_SDA"}, power_pins={"2": "VDD_3P3"}),
+            self._make_component("U2", {"1": "SCL_DBG"}, power_pins={"2": "VDD_3P3"}),
+        ]
+
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
+
+        assert component_repairs == []
+        assert actions == []
+        assert [b for b in repaired.blocks if b.template_type == "i2c_bus"] == []
 
     def test_no_i2c_nets_does_nothing(self):
         """Design without I2C nets produces no repair actions."""
@@ -166,8 +221,9 @@ class TestAutoRepairDesign:
         ])
         components = [self._make_component("U1", {"1": "VIN", "2": "GND", "3": "VDD"})]
 
-        repaired, actions = auto_repair_design(ir, components, enabled=True)
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
 
+        assert component_repairs == []
         assert len(actions) == 0, "No repair expected for non-I2C design"
 
     def test_repair_adds_synthetic_block(self):
@@ -179,8 +235,9 @@ class TestAutoRepairDesign:
         components = [self._make_component("U1", {"1": "VDD", "2": "I2C_SDA", "3": "I2C_SCL"},
                                             power_pins={"4": "VDD"})]
 
-        repaired, actions = auto_repair_design(ir, components, enabled=True)
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
 
+        assert component_repairs == []
         # The repaired IR should have a synthetic i2c_bus block
         i2c_blocks = [b for b in repaired.blocks if b.template_type == "i2c_bus"]
         assert len(i2c_blocks) > 0, "Expected synthetic i2c_bus block in repaired IR"
@@ -188,3 +245,69 @@ class TestAutoRepairDesign:
         synth = i2c_blocks[0]
         assert synth.params.get("sda_net") == "I2C_SDA"
         assert synth.params.get("scl_net") == "I2C_SCL"
+
+    def test_spi_repair_connects_floating_cs_to_existing_bus_net(self):
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+            {"ref": "U2", "kind": "storage", "template_type": "memory"},
+        ])
+        components = [
+            self._make_component(
+                "U1",
+                {"1": "SPI_MOSI", "2": "SPI_MISO", "3": "SPI_SCLK", "4": "FLASH_CS"},
+                power_pins={"5": "VDD_3P3"},
+                pin_names={"1": "MOSI", "2": "MISO", "3": "SCLK", "4": "CS_N", "5": "VDD"},
+                pin_roles={"mosi": "1", "miso": "2", "sclk": "3", "cs": "4"},
+            ),
+            self._make_component(
+                "U2",
+                {"1": "SPI_MOSI", "2": "SPI_MISO", "3": "SPI_SCLK"},
+                power_pins={"5": "VDD_3P3"},
+                pin_names={"1": "MOSI", "2": "MISO", "3": "SCLK", "4": "CS_N", "5": "VDD"},
+                pin_roles={"mosi": "1", "miso": "2", "sclk": "3", "cs": "4"},
+            ),
+        ]
+
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
+
+        assert repaired is ir
+        assert any(a.kind == "spi_cs" for a in actions)
+        assert len(component_repairs) == 1
+        assert component_repairs[0].ref == "U2"
+        assert component_repairs[0].pin_nets == {"4": "FLASH_CS"}
+
+        apply_component_repairs(components, component_repairs)
+        assert components[1].pin_nets["4"] == "FLASH_CS"
+
+    def test_uart_repair_completes_missing_peer_direction_from_existing_net(self):
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+            {"ref": "U2", "kind": "digital", "template_type": "bridge"},
+        ])
+        components = [
+            self._make_component(
+                "U1",
+                {"1": "UART0_TX", "2": "UART0_RX"},
+                power_pins={"3": "VDD_3P3"},
+                pin_names={"1": "TXD", "2": "RXD", "3": "VDD"},
+                pin_roles={"txd": "1", "rxd": "2"},
+            ),
+            self._make_component(
+                "U2",
+                {"2": "UART0_TX"},
+                power_pins={"3": "VDD_3P3"},
+                pin_names={"1": "TXD", "2": "RXD", "3": "VDD"},
+                pin_roles={"txd": "1", "rxd": "2"},
+            ),
+        ]
+
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
+
+        assert repaired is ir
+        assert any(a.kind == "uart_pair" for a in actions)
+        assert len(component_repairs) == 1
+        assert component_repairs[0].ref == "U2"
+        assert component_repairs[0].pin_nets == {"1": "UART0_RX"}
+
+        apply_component_repairs(components, component_repairs)
+        assert components[1].pin_nets["1"] == "UART0_RX"

@@ -14,10 +14,13 @@ import pytest
 from circuit_weaver.allocator import classify_component
 from circuit_weaver.component_db import (
     BUILTIN_REGISTRY,
+    BypassCap,
     ComponentDef,
     PinDef,
     auto_generate_bypass_caps,
 )
+from circuit_weaver.design_ir import normalize_design_spec
+from circuit_weaver.dispatcher import _validate_block_definitions
 from circuit_weaver.kicad_lib import KiCadLibrary
 from circuit_weaver.project_spec import (
     _apply_net_prefix,
@@ -27,7 +30,9 @@ from circuit_weaver.project_spec import (
     resolve_project_spec,
 )
 from circuit_weaver.subcircuits.base import get_default_registry
+from circuit_weaver.subcircuits.connector import ConnectorTemplate
 from circuit_weaver.subcircuits.power_mux import PowerMuxTemplate
+from circuit_weaver.subcircuits.rtc import RTCTemplate
 
 # ================================================================
 # Task 1: Stop silently dropping components
@@ -63,6 +68,114 @@ class TestStubComponents:
         )
         assert len(result) == 1
         assert any("UNRESOLVED" in a for a in result[0].annotations)
+
+    def test_type_component_uses_standalone_resolver_chain(self):
+        result = _resolve_component(
+            {"type": "component", "ic": "RP2040", "ref": "U1"},
+            "digital",
+            get_default_registry(),
+            BUILTIN_REGISTRY,
+            None,
+        )
+        assert len(result) == 1
+        assert result[0].mpn == "RP2040"
+        assert not any("UNRESOLVED" in a for a in result[0].annotations)
+
+    def test_unknown_data_driven_ic_fails_closed(self):
+        result = _resolve_component(
+            {
+                "type": "ldo",
+                "ic": "NOT_A_REAL_LDO",
+                "ref": "U1",
+                "vin": 5.0,
+                "vout": 3.3,
+                "iout": 0.1,
+            },
+            "power",
+            get_default_registry(),
+            BUILTIN_REGISTRY,
+            None,
+        )
+        assert len(result) == 1
+        assert any("UNRESOLVED" in a for a in result[0].annotations)
+
+    def test_usb_a_connector_subtype_and_pin_map_override_apply(self):
+        result = _resolve_component(
+            {
+                "type": "connector",
+                "ref": "J2",
+                "subtype": "usb-a",
+                "pin_map": {
+                    "1": "VDD_5V",
+                    "2": "USB_DN2",
+                    "3": "USB_DP2",
+                    "4": "GND",
+                },
+            },
+            "connectors",
+            get_default_registry(),
+            BUILTIN_REGISTRY,
+            None,
+        )
+        assert len(result) == 1
+        comp = result[0]
+        assert comp.mpn == "USB_A_4P"
+        assert comp.footprint == "Connector_USB:USB_A"
+        assert comp.power_pins["1"] == "VDD_5V"
+        assert comp.pin_nets["2"] == "USB_DN2"
+        assert comp.pin_nets["3"] == "USB_DP2"
+        assert comp.power_pins["4"] == "GND"
+        port_names = {port.name for port in comp.template_boundary_ports}
+        assert "TIP_J2" not in port_names
+        assert {"VDD_5V", "USB_DN2", "USB_DP2", "GND"} <= port_names
+
+    def test_registered_templates_win_over_generic_data_driven_fallback(self):
+        registry = get_default_registry()
+        assert isinstance(registry.get("connector"), ConnectorTemplate)
+        assert isinstance(registry.get("rtc"), RTCTemplate)
+
+    def test_jst_i2c_connector_catalog_uses_real_pin_types(self):
+        result = _resolve_component(
+            {
+                "type": "connector",
+                "ref": "J3",
+                "ic": "JST_PH_4P",
+            },
+            "connectors",
+            get_default_registry(),
+            BUILTIN_REGISTRY,
+            None,
+        )
+        assert len(result) == 1
+        comp = result[0]
+        pin_types = {pin.number: pin.electrical_type for pin in comp.pins}
+        assert pin_types["1"] == "power_in"
+        assert pin_types["2"] == "power_in"
+        assert pin_types["3"] == "bidirectional"
+        assert pin_types["4"] == "input"
+
+    def test_template_validation_allows_pin_map_passthrough_and_connector_subtype(self):
+        ir = normalize_design_spec(
+            {
+                "project": "usb_a_connector",
+                "connectors": [
+                    {
+                        "type": "connector",
+                        "ref": "J2",
+                        "subtype": "usb-a",
+                        "pin_map": {
+                            "1": "VDD_5V",
+                            "2": "USB_DN2",
+                            "3": "USB_DP2",
+                            "4": "GND",
+                        },
+                    }
+                ],
+            }
+        )
+        structural, electrical = _validate_block_definitions(ir)
+        assert not structural
+        assert not electrical
 
     def test_missing_type_and_ic_produces_stub(self):
         result = _resolve_component(
@@ -147,6 +260,44 @@ class TestAutoBypassCaps:
         assert original_count > 0
         auto_generate_bypass_caps([comp])
         assert len(comp.bypass_caps) == original_count
+
+    def test_partial_existing_bypass_caps_are_augmented_per_missing_rail(self):
+        comp = ComponentDef(
+            mpn="DUAL_RAIL_ADC",
+            ref_prefix="U",
+            value="DUAL_RAIL_ADC",
+            footprint="QFN-16",
+            category="analog",
+            pins=[PinDef(str(i), f"P{i}", "passive", "L") for i in range(1, 9)],
+            power_pins={"1": "AVDD_3P3", "2": "DVDD_1P8", "3": "GND"},
+            bypass_caps=[BypassCap("auto", "AVDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric")],
+        )
+        count = auto_generate_bypass_caps([comp])
+        assert count == 1
+        caps_by_net = {(cap.net, cap.value) for cap in comp.bypass_caps}
+        assert ("AVDD_3P3", "100nF") in caps_by_net
+        assert ("DVDD_1P8", "100nF") in caps_by_net
+        assert len([cap for cap in comp.bypass_caps if cap.net == "AVDD_3P3" and cap.value == "100nF"]) == 1
+
+    def test_recommended_bypass_overrides_generic_heuristic(self):
+        comp = ComponentDef(
+            mpn="MIXED_SIGNAL_SOC",
+            ref_prefix="U",
+            value="MIXED_SIGNAL_SOC",
+            footprint="QFN-32",
+            category="digital",
+            pins=[PinDef(str(i), f"P{i}", "passive", "L") for i in range(1, 13)],
+            power_pins={"1": "AVDD_3P3", "2": "DVDD_1P8", "3": "GND"},
+            recommended_bypass=[
+                {"net": "AVDD_3P3", "value": "1uF", "count": 2},
+                {"net": "DVDD_1P8", "value": "100nF", "count": 1},
+            ],
+        )
+        count = auto_generate_bypass_caps([comp])
+        assert count == 1
+        assert len([cap for cap in comp.bypass_caps if cap.net == "AVDD_3P3" and cap.value == "1uF"]) == 2
+        assert len([cap for cap in comp.bypass_caps if cap.net == "DVDD_1P8" and cap.value == "100nF"]) == 1
+        assert all(not (cap.net == "AVDD_3P3" and cap.value == "100nF") for cap in comp.bypass_caps)
 
     def test_connector_does_not_get_caps(self):
         """Connectors with power pins should NOT get auto-decoupling."""

@@ -8,13 +8,13 @@
       {
         "number": "1",
         "name": "TIP",
-        "type": "passive",
+        "type": "power_in",
         "side": "R"
       },
       {
         "number": "2",
         "name": "RING",
-        "type": "passive",
+        "type": "power_in",
         "side": "L"
       },
       {
@@ -37,13 +37,13 @@
       {
         "number": "1",
         "name": "+",
-        "type": "passive",
+        "type": "power_in",
         "side": "R"
       },
       {
         "number": "2",
         "name": "-",
-        "type": "passive",
+        "type": "power_in",
         "side": "L"
       }
     ],
@@ -59,13 +59,13 @@
       {
         "number": "1",
         "name": "P1",
-        "type": "passive",
+        "type": "power_in",
         "side": "R"
       },
       {
         "number": "2",
         "name": "P2",
-        "type": "passive",
+        "type": "power_in",
         "side": "R"
       }
     ]
@@ -98,6 +98,38 @@
         "number": "4",
         "name": "P4",
         "type": "passive",
+        "side": "R"
+      }
+    ]
+  },
+  "USB_A_4P": {
+    "topology": "connector",
+    "description": "USB Type-A 4-pin receptacle",
+    "footprint": "Connector_USB:USB_A",
+    "connector_type": "signal",
+    "pins": [
+      {
+        "number": "1",
+        "name": "VBUS",
+        "type": "power_in",
+        "side": "R"
+      },
+      {
+        "number": "2",
+        "name": "D-",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "D+",
+        "type": "bidirectional",
+        "side": "R"
+      },
+      {
+        "number": "4",
+        "name": "GND",
+        "type": "power_in",
         "side": "R"
       }
     ]
@@ -161,25 +193,25 @@
       {
         "number": "1",
         "name": "VCC",
-        "type": "passive",
+        "type": "power_in",
         "side": "R"
       },
       {
         "number": "2",
         "name": "GND",
-        "type": "passive",
+        "type": "power_in",
         "side": "R"
       },
       {
         "number": "3",
         "name": "SDA",
-        "type": "passive",
+        "type": "bidirectional",
         "side": "R"
       },
       {
         "number": "4",
         "name": "SCL",
-        "type": "passive",
+        "type": "input",
         "side": "R"
       }
     ]

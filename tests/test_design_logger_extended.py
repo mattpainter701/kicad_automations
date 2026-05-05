@@ -172,6 +172,31 @@ class TestError:
 # ---- Test get_summary with new event types ----
 
 class TestExtendedSummary:
+    def test_summary_prefers_final_validation_scope(self, logger, tmp_project):
+        logger.log_validation(
+            spec_file="design.yaml",
+            passed=True,
+            warnings=["raw warning"],
+            scope="raw_checks",
+            error_count=0,
+            warning_count=1,
+        )
+        logger.log_validation(
+            spec_file="design.yaml",
+            passed=False,
+            errors=["final error"],
+            warnings=["final warning"],
+            scope="final_report",
+            error_count=7,
+            warning_count=3,
+        )
+        summary = logger.get_summary()
+        assert summary["status"] == "in_progress"
+        assert summary["validation_passed"] is False
+        assert summary["validation_error_count"] == 7
+        assert summary["validation_warning_count"] == 3
+        assert "final error" in summary["errors"][0]
+
     def test_summary_includes_simulation(self, logger, tmp_project):
         logger.log_simulation(sim_type="tran", target="buck", status="ok")
         logger.log_simulation(sim_type="ac", target="filter", status="skipped")

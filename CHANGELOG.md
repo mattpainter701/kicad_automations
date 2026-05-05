@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [0.30.52] - 2026-05-05
+
+### Sprint 52 — Generation Pipeline Hardening
+
+- Codify the part-neutral, vendor-agnostic, data/spec-driven direction in repo policy: add a root `CLAUDE.md` that tells future agents to prefer normalized schema + topology behavior over per-part engine branches.
+- (T228) In progress — interface-heavy generic topologies now stop synthesizing NC phantom nets, default crystal nets to shared `XTAL_IN` / `XTAL_OUT` names, and hard-fail generation on unresolved declared-interface pins. The remaining work is the full removal of fallback per-instance signal nets in favor of normalized interface / pin-role routing across the rest of `build_generic`.
+- (T229) Add a placement-readiness `orphan-net` gate for non-power nets consumed by only one block, with curated exemptions for test points, debug connectors, and connector-local USB-C control nets. Re-checking `I:/my_circuit/design.yaml` now keeps the placement-readiness total at `59` with `0` extra `orphan-net` false positives.
+- (T230) Centralize generic IC decoupling policy under `auto_generate_bypass_caps`: `build_generic` no longer bakes in a blanket 100nF cap, the central pass now augments missing per-rail caps instead of skipping any component that already had one, and datasheet-driven `recommended_bypass` entries override the heuristic when present.
+- (T231) Add weighted shared-net attraction to the PCB placement optimizer using a net-to-component map from `pcb_export`. `balanced` / `si` placement now penalizes long connected pairs instead of staying purely zone-based; on `samples/iot_sensor_node`, a high-weight connected pair (`RP1`↔`U4`) moved from `38.48 mm` apart in `simple` mode to `3.92 mm` in `balanced` mode.
+- (T232) Lift placement-readiness gating into `generate_from_components`, add the single `readiness_gate` / `--no-readiness-gate` override path for debug emits, and turn `_classify_unhandled_pin(... level=\"error\")` into a hard generation failure instead of a logged no-connect. Direct runtime probes now confirm the gate blocks direct callers, the override reaches allocation, and floating power pins still hard-fail.
+- (T233) Add normalized SPI/UART repair plumbing on top of the dedicated crystal-builder work: `generational_repair.py` now uses shared `pin_roles` metadata to complete floating SPI chip-select pins onto an existing unique CS net on the same bus and to complete missing UART TX/RX directions only when the peer net already exists. Optional flow-control / explicit-NC behavior is still open.
+- (T234) Start turning catalog growth into a real schema pipeline: add normalized `pin_roles` to `ComponentDef`, cache payloads, `ic_data` conversion, EasyEDA imports, and generic-builder outputs so repairs/builders consume vendor-agnostic interface capabilities instead of exact MPN branches. The remaining work is broader datasheet/schema propagation plus acceptance-corpus coverage.
+- Add a repo-local `tests/conftest.py` `tmp_path` override so focused pytest modules no longer depend on the broken Windows `tmp_path` / basetemp ACL path on this machine.
+
+### Sprint 51 — Restart & Validation Hardening
+
+- Add an installed-version banner to the `/circuit-weaver` startup flow and keep the repo-local and bundled `circuit-weaver` skills byte-identical. The skill now prefers `circuit-weaver --version` and falls back to `python -m circuit_weaver --version` only when needed.
+- Add timeout-aware workflow guidance to `/circuit-weaver` and `/design_wizard`: long-running steps now require pre-announcement, follow-up checks around 2/5/15 minutes, and explicit log/status/issue inspection instead of letting work sit silent for ~30 minutes.
+- Add canonical `validate` output-handling guidance to the workflow skills: the current CLI emits JSON to stdout by default, stderr must remain separate when parsing, `--json` should not be assumed, and the skills now include a safe capture/parsing recipe instead of brittle `2>&1 | json.load(...)` wrappers.
+- Make restart state truthful for validate-only sessions: `log-status` no longer reports an empty workflow when a project only has validation activity, and persisted validation summaries now prefer the authoritative final report over the earlier raw-check pass.
+- Harden Windows console validation output: text mode now falls back to ASCII `PASS` / `FAIL` when stdout cannot encode Unicode checkmark/cross glyphs, avoiding cp1252 `UnicodeEncodeError` crashes.
+- Fail closed on bad component/template resolution: unknown data-driven `ic` selections now error instead of silently substituting the first database entry, `type: component` routes through the standalone resolver chain, handwritten templates again win over the generic JSON fallback when both exist, and `connector` now supports explicit `subtype: usb-a` resolution via `USB_A_4P`.
+- Harden I2C auto-repair matching: synthetic pull-up repair now requires real SDA/SCL participant overlap, and hand-authored `i2c_bus` blocks suppress only the matching bus instead of disabling repair globally for every I2C bus in a design.
+- Tighten placement-readiness interface semantics: passive support parts such as straps and bypass caps no longer count as true inter-block consumers, so orphan-interface checks stop being accidentally satisfied by support-only nets.
+- Trim compile-path and warning debt: remove the dead duplicate shared-net synthesis helper from `dispatcher.py`, switch confidence-report timestamps to timezone-aware UTC, register the `network` pytest marker, and refresh stale import-site coverage around the renamed IR normalizer.
+- Re-validate the live restart repro against the patched source: `I:/my_circuit/design.yaml` no longer produces the bogus barrel-jack `TIP_J2` / `RING_J2` connector artifacts or the repeated `USB_DP_*` substitution noise from unrelated components. The current remaining validation summary is `1 structural`, `59 electrical`, `9 implementation`, and `59 placement_readiness`; the remaining blockers are now exposed honestly instead of being masked by the old connector/template noise.
+
 ## [0.30.5] - 2026-05-04
 
 ### Sprint 50 — Generic Builder Parity Cleanup (T215–T218)

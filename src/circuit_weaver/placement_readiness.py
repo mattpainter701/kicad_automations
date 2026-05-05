@@ -16,6 +16,7 @@ anything.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -48,6 +49,22 @@ _PROMOTE_CODES: dict[str, str] = {
     "vdd-to-gnd-short": "A power net is shorted to ground — check your net assignments.",
 }
 
+_VALIDATOR_NET_RE = re.compile(r"Net '([^']+)'")
+_SINGLE_CONSUMER_ALLOW_NET_PREFIXES = (
+    "TP",
+    "TEST",
+    "DEBUG",
+    "DBG",
+    "SWD",
+    "JTAG",
+)
+_CONNECTOR_LOCAL_ALLOW_NET_PREFIXES = (
+    "USB_CC",
+    "CC",
+    "SHIELD",
+    "SHELL",
+)
+
 
 @dataclass
 class PlacementReadinessReport:
@@ -76,42 +93,48 @@ def categorize_for_placement(code: str) -> bool:
     return code in _PROMOTE_CODES
 
 
-def _orphan_interface_issues(compiled_ir: "DesignIR", components) -> list[tuple[str, str, str]]:
-    """Detect block-declared interfaces whose net name is never consumed.
+def _component_ref(comp) -> str:
+    return comp.source_ref or comp.ref_prefix or ""
 
-    An ``interface`` on a block means "this block publishes a signal called
-    N, and another block must consume it". If no other block's
-    ``pin_nets`` / ``power_pins`` / ``straps`` / ``bypass_caps`` reference
-    N, the interface is orphaned — any downstream placement pass that
-    relies on hierarchical labels will leave the net dangling.
 
-    Power / ground interfaces are excluded: those are driven by the rail
-    infrastructure, not another block.
-
-    Returns a list of (block_ref, net_name, direction) tuples.
-    """
-    # Build net -> {block_refs} map from resolved component connections.
+def _build_net_to_refs(components) -> tuple[dict[str, set[str]], dict[str, object]]:
+    """Map every pin/power net to the set of component refs that consume it."""
     net_to_refs: dict[str, set[str]] = {}
+    comp_by_ref: dict[str, object] = {}
     for comp in components:
-        ref = comp.source_ref or comp.ref_prefix
+        ref = _component_ref(comp)
         if not ref:
             continue
+        comp_by_ref[ref] = comp
         for net in comp.pin_nets.values():
             if net:
                 net_to_refs.setdefault(net, set()).add(ref)
         for net in comp.power_pins.values():
             if net:
                 net_to_refs.setdefault(net, set()).add(ref)
-        for bc in comp.bypass_caps:
-            if bc.net:
-                net_to_refs.setdefault(bc.net, set()).add(ref)
-            if bc.gnd_net:
-                net_to_refs.setdefault(bc.gnd_net, set()).add(ref)
-        for strap in comp.straps:
-            if strap.net:
-                net_to_refs.setdefault(strap.net, set()).add(ref)
-            if strap.rail:
-                net_to_refs.setdefault(strap.rail, set()).add(ref)
+    return net_to_refs, comp_by_ref
+
+
+def _orphan_interface_issues(compiled_ir: "DesignIR", components) -> list[tuple[str, str, str]]:
+    """Detect block-declared interfaces whose net name is never consumed.
+
+    An ``interface`` on a block means "this block publishes a signal called
+    N, and another block must consume it". If no other block's
+    ``pin_nets`` / ``power_pins`` reference N, the interface is orphaned —
+    any downstream placement pass that
+    relies on hierarchical labels will leave the net dangling.
+
+    Passive support elements (for example a pull strap or bypass capacitor)
+    do **not** count as another block consuming the signal. They may support
+    the net electrically, but they do not satisfy the higher-level contract
+    that another functional block is attached to the interface.
+
+    Power / ground interfaces are excluded: those are driven by the rail
+    infrastructure, not another block.
+
+    Returns a list of (block_ref, net_name, direction) tuples.
+    """
+    net_to_refs, _ = _build_net_to_refs(components)
 
     from .subcircuits.base import _is_power_net
 
@@ -133,6 +156,62 @@ def _orphan_interface_issues(compiled_ir: "DesignIR", components) -> list[tuple[
     return orphans
 
 
+def _is_allowlisted_single_consumer_net(net: str, consumers: set[str], comp_by_ref: dict[str, object]) -> bool:
+    """Allow intentional one-ended nets used for test/debug exposure."""
+    if len(consumers) != 1:
+        return False
+    upper = net.strip().upper()
+    if upper.startswith(_SINGLE_CONSUMER_ALLOW_NET_PREFIXES):
+        return True
+    ref = next(iter(consumers))
+    comp = comp_by_ref.get(ref)
+    if comp is None:
+        return False
+    if getattr(comp, "category", "") == "debug":
+        return True
+    if getattr(comp, "category", "") == "connector" and upper.startswith(_CONNECTOR_LOCAL_ALLOW_NET_PREFIXES):
+        return True
+    ref_prefix = str(getattr(comp, "ref_prefix", "") or "").upper()
+    source_ref = str(getattr(comp, "source_ref", "") or "").upper()
+    return ref_prefix == "TP" or source_ref.startswith("TP")
+
+
+def _single_consumer_net_issues(
+    compiled_ir: "DesignIR",
+    components,
+    existing_validator_nets: set[str],
+) -> list[tuple[str, str]]:
+    """Detect non-power nets consumed by only one block even without a declared interface.
+
+    This closes the gap where a synthesized or mis-modeled net never appears in
+    ``compiled_ir.blocks[].interfaces`` and therefore bypasses the
+    ``orphan-interface`` check entirely. We skip nets the validator already
+    promoted (for example ``single-pin-net`` / ``undriven-net``) to avoid
+    duplicate placement-readiness errors for the same underlying problem.
+    """
+    from .subcircuits.base import _is_power_net
+
+    net_to_refs, comp_by_ref = _build_net_to_refs(components)
+    declared_interfaces = {
+        (iface.name or "").strip()
+        for block in compiled_ir.blocks
+        for iface in block.interfaces
+        if (iface.name or "").strip()
+    }
+    out: list[tuple[str, str]] = []
+    for net, consumers in net_to_refs.items():
+        if not net or _is_power_net(net):
+            continue
+        if len(consumers) > 1:
+            continue
+        if net in declared_interfaces or net in existing_validator_nets:
+            continue
+        if _is_allowlisted_single_consumer_net(net, consumers, comp_by_ref):
+            continue
+        out.append((next(iter(consumers)), net))
+    return out
+
+
 def placement_readiness_issues(
     validator_results: list["ValidationCheckResult"],
     compiled_ir: "DesignIR",
@@ -146,13 +225,16 @@ def placement_readiness_issues(
     issue carries a ``suggestion`` when the original check didn't
     supply one.
 
-    Also appends ``orphan-interface`` issues derived from the compiled
-    IR — a block declared a signal interface but no other block
-    consumes the net, which is a silent placement blocker today.
+    Also appends:
+    - ``orphan-interface`` issues derived from the compiled IR — a block
+      declared a signal interface but no other block consumes the net.
+    - ``orphan-net`` issues for non-power nets consumed by only one block
+      even when no interface was declared.
     """
     from .validator import ValidationIssue  # local import avoids cycle
 
     out: list[ValidationIssue] = []
+    existing_validator_nets: set[str] = set()
 
     for result in validator_results:
         if result.code not in _PROMOTE_CODES and not any(
@@ -172,6 +254,9 @@ def placement_readiness_issues(
                 continue
             fallback = _PROMOTE_CODES.get(issue.code) or _PROMOTE_CODES.get(result.code, "")
             suggestion = issue.suggestion or fallback
+            match = _VALIDATOR_NET_RE.search(issue.message or "")
+            if match:
+                existing_validator_nets.add(match.group(1))
             out.append(
                 ValidationIssue(
                     code=issue.code,
@@ -198,6 +283,21 @@ def placement_readiness_issues(
                 suggestion=(
                     f"Wire another block's pin_nets to '{net}', drop the interface, "
                     "or mark the block as terminal."
+                ),
+            )
+        )
+
+    for block_ref, net in _single_consumer_net_issues(compiled_ir, components, existing_validator_nets):
+        out.append(
+            ValidationIssue(
+                code="orphan-net",
+                level="error",
+                ref=block_ref,
+                mpn="",
+                message=f"Net '{net}' is only consumed by block '{block_ref}' and has no external peer",
+                suggestion=(
+                    f"Connect another block to '{net}', declare it as a deliberate debug/test net, "
+                    "or mark the pin as an explicit no-connect."
                 ),
             )
         )

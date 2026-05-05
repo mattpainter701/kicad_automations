@@ -16,9 +16,11 @@ import logging
 import math
 import random
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 
 from .component_db import ComponentDef
+from .pcb_export import _build_net_component_map
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +58,31 @@ _ZONE_CENTERS: dict[str, tuple[float, float]] = {
     "sensor": (0.85, 0.7),
     "passive": (0.5, 0.5),
 }
+
+_GROUND_NET_PREFIXES = ("GND", "AGND", "DGND", "PGND", "VSS", "GNDA", "GNDD")
+_POWER_NET_PREFIXES = ("VDD", "VCC", "VBUS", "VIN", "VBAT", "VSYS", "AVDD", "DVDD")
+_HIGH_SPEED_NET_TOKENS = (
+    "USB",
+    "ETH",
+    "RGMII",
+    "RMII",
+    "MII",
+    "SPI",
+    "QSPI",
+    "I2C",
+    "UART",
+    "CLK",
+    "XTAL",
+    "SCL",
+    "SDA",
+    "MOSI",
+    "MISO",
+    "SCK",
+    "TX",
+    "RX",
+    "DP",
+    "DM",
+)
 
 
 @dataclass
@@ -259,7 +286,57 @@ def _cost_zone(placements: list[ComponentPlacement], config: PlacementConfig) ->
     return total
 
 
-def _total_cost(placements: list[ComponentPlacement], config: PlacementConfig) -> float:
+def _net_weight(net_name: str) -> float:
+    upper = (net_name or "").upper()
+    if not upper or upper.startswith(_GROUND_NET_PREFIXES):
+        return 0.0
+    if upper.startswith(_POWER_NET_PREFIXES):
+        return 0.5
+    if any(token in upper for token in _HIGH_SPEED_NET_TOKENS):
+        return 3.0
+    return 1.0
+
+
+def _build_connectivity_pairs(components: list[ComponentDef]) -> dict[tuple[str, str], float]:
+    """Collapse shared nets into weighted component-pair attractions."""
+    pair_weights: dict[tuple[str, str], float] = {}
+    for net_name, refs in _build_net_component_map(components).items():
+        if len(refs) < 2:
+            continue
+        weight = _net_weight(net_name)
+        if weight <= 0:
+            continue
+        for a, b in combinations(refs, 2):
+            key = tuple(sorted((a, b)))
+            pair_weights[key] = pair_weights.get(key, 0.0) + weight
+    return pair_weights
+
+
+def _cost_connectivity(
+    placements: list[ComponentPlacement],
+    connectivity_pairs: dict[tuple[str, str], float],
+) -> float:
+    """Penalty for placing connected components far apart."""
+    if not connectivity_pairs:
+        return 0.0
+    placement_by_ref = {p.ref: p for p in placements}
+    total = 0.0
+    for (ref_a, ref_b), weight in connectivity_pairs.items():
+        a = placement_by_ref.get(ref_a)
+        b = placement_by_ref.get(ref_b)
+        if a is None or b is None:
+            continue
+        dx = a.x - b.x
+        dy = a.y - b.y
+        total += (dx * dx + dy * dy) * weight
+    return total * 0.02
+
+
+def _total_cost(
+    placements: list[ComponentPlacement],
+    config: PlacementConfig,
+    connectivity_pairs: dict[tuple[str, str], float] | None = None,
+) -> float:
     """Compute total placement cost based on strategy."""
     cost = _cost_overlap(placements, config.min_component_gap_mm)
     cost += _cost_boundary(placements, config)
@@ -267,8 +344,7 @@ def _total_cost(placements: list[ComponentPlacement], config: PlacementConfig) -
     if config.strategy in ("thermal", "balanced"):
         cost += _cost_thermal(placements)
     if config.strategy in ("si", "balanced"):
-        # SI cost: impedance-controlled components should be close to their ICs
-        pass  # Placeholder — needs net connectivity data
+        cost += _cost_connectivity(placements, connectivity_pairs or {})
     if config.strategy in ("cost", "balanced"):
         cost += _cost_zone(placements, config)
 
@@ -338,6 +414,7 @@ def optimize_placement(
     specs_path = Path(specs_dir) if specs_dir else None
     thermal_specs = _load_thermal_specs(specs_path)
     si_specs = _load_si_specs(specs_path)
+    connectivity_pairs = _build_connectivity_pairs(components)
 
     state = _init_placements(components, config, thermal_specs, si_specs)
 
@@ -359,7 +436,7 @@ def optimize_placement(
         return _build_result(state, config, 0, 0.0, 0.0)
 
     rng = random.Random(config.seed)
-    current_cost = _total_cost(state, config)
+    current_cost = _total_cost(state, config, connectivity_pairs)
     initial_cost = current_cost
     best_state = state
     best_cost = current_cost
@@ -367,7 +444,7 @@ def optimize_placement(
 
     for i in range(config.iterations):
         candidate = _perturb(state, config, rng)
-        candidate_cost = _total_cost(candidate, config)
+        candidate_cost = _total_cost(candidate, config, connectivity_pairs)
         delta = candidate_cost - current_cost
 
         if delta < 0 or rng.random() < math.exp(-delta / max(temp, 0.001)):

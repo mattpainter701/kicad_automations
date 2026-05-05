@@ -45,6 +45,38 @@ When presenting CLI command output to the user, follow these rules for clarity:
 
 Never output raw JSON unless the user explicitly requests `--json` flag. Present human-readable tables and summaries instead.
 
+For `validate` specifically:
+
+- The current Circuit Weaver CLI emits structured JSON to **stdout** by default.
+- Diagnostics and environment warnings may still appear on **stderr**.
+- Do **not** add `--json` to `validate` unless the CLI explicitly supports it.
+- Do **not** parse JSON from a stream where stderr has been merged with stdout via `2>&1`.
+- Read `valid`, `summary`, `categories`, and `metadata` from the JSON object.
+
+---
+
+## Long-Running Operations & Timeout Awareness
+
+Do not leave the user without status during long wizard-driven work.
+
+For any step likely to exceed ~2 minutes — research, repeated validation,
+generation, simulations, confidence runs, placement, exports, or large log/design
+triage — the wizard must:
+
+1. Announce the long-running step before starting it.
+2. Follow up at ~2 minutes with a progress check.
+3. At ~5 minutes, inspect for issues rather than just waiting:
+   - `python -m circuit_weaver log-status <project_dir>`
+   - `python -m circuit_weaver log-view <project_dir>`
+   - `design.log`
+   - `circuit-weaver.log`
+   - recently created or updated artifacts
+4. Tell the user whether the work is progressing, blocked, or likely stuck.
+5. Never stay silent for ~30 minutes; keep sending bounded follow-ups and surface blockers.
+
+If resuming after an interrupted run, check status/logs first before retrying the
+same expensive command sequence.
+
 ---
 
 ## Step -1 — Auto-Detection (ALWAYS RUN FIRST)

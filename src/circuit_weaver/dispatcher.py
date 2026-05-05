@@ -217,11 +217,22 @@ def _print_validation_report(report: ValidationReport, *, use_color: bool, verbo
         use_color: Whether to use ANSI color codes
         verbose: Whether to include category and code in output
     """
+    def _supports_stdout_text(text: str) -> bool:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        try:
+            text.encode(encoding)
+        except (LookupError, UnicodeEncodeError):
+            return False
+        return True
+
+    pass_suffix = " ✓" if _supports_stdout_text("✓") else ""
+    fail_suffix = " ✗" if _supports_stdout_text("✗") else ""
+
     # Header
     status_str = (
-        f"{_ANSI['bold'] if use_color else ''}PASS ✓{_ANSI['reset'] if use_color else ''}"
+        f"{_ANSI['bold'] if use_color else ''}PASS{pass_suffix}{_ANSI['reset'] if use_color else ''}"
         if report.valid
-        else f"{_ANSI['red'] if use_color else ''}FAIL ✗{_ANSI['reset'] if use_color else ''}"
+        else f"{_ANSI['red'] if use_color else ''}FAIL{fail_suffix}{_ANSI['reset'] if use_color else ''}"
     )
     project = report.metadata.get("project", "design")
     print(f"{status_str} {project}")
@@ -409,66 +420,6 @@ def _apply_approved_overrides(ir: DesignIR, components: list[ComponentDef]) -> N
                 primary.source_value = part_value
         elif kind == "support_passives" and value:
             primary.presentation_wiring_policy = PresentationWiringPolicy(support_passives=str(value))
-
-
-def _synthesize_shared_net_interfaces(ir: DesignIR, components: list[ComponentDef]) -> None:
-    """Sprint 41 — auto-declare interfaces on shared signal nets.
-
-    The MVP validator requires every block that touches a non-power
-    signal net shared across blocks to declare an interface for that
-    net (see ``_validate_shared_net_interfaces``). Requiring users to
-    hand-declare every I2C_SDA / UART_TX / SPI_MOSI interface on every
-    participating block becomes boilerplate once bus synthesis picks up
-    — especially because auto_repair's synthetic I2C pull-up block must
-    also declare the same interfaces as the MCU and sensor.
-
-    This pass walks every non-power signal net that appears on two or
-    more blocks and appends a ``DesignInterface`` to each participating
-    block's ``interfaces`` list (if it isn't there already). Directions
-    are best-effort: inputs → input, outputs → output, the mix →
-    bidirectional.
-    """
-    groups = _group_components_by_block_key(components)
-
-    # For each non-power signal net, gather (block_key, direction) tuples.
-    net_contributors: dict[str, dict[str, str]] = {}
-    for block in ir.blocks:
-        block_key = _block_primary_key(block)
-        for comp in groups.get(block_key, []):
-            pin_type_by_num = {pin.number: pin.electrical_type for pin in comp.pins}
-            for pin_num, net in comp.pin_nets.items():
-                if not net or _is_power_net(net):
-                    continue
-                etype = pin_type_by_num.get(pin_num, "bidirectional")
-                if etype == "output":
-                    direction = "output"
-                elif etype == "input":
-                    direction = "input"
-                elif etype in ("power_in", "power_out"):
-                    direction = "passive"
-                else:
-                    direction = "bidirectional"
-                existing = net_contributors.setdefault(net, {}).get(block_key)
-                if existing is None:
-                    net_contributors[net][block_key] = direction
-                elif existing != direction:
-                    net_contributors[net][block_key] = "bidirectional"
-
-    # For each net shared across ≥ 2 blocks, append missing interfaces
-    # to each block.
-    block_by_key = {_block_primary_key(block): block for block in ir.blocks}
-    for net, contributors in net_contributors.items():
-        if len(contributors) < 2:
-            continue
-        for block_key, direction in contributors.items():
-            block = block_by_key.get(block_key)
-            if block is None:
-                continue
-            if any(iface.name == net for iface in block.interfaces):
-                continue
-            block.interfaces.append(
-                DesignInterface(block_id=block.id, name=net, direction=direction).normalized()
-            )
 
 
 def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) -> DesignIR:
@@ -1069,6 +1020,7 @@ def _generate_compiled_artifacts(
     *,
     export_svg: bool,
     score: bool = False,
+    readiness_gate: bool = True,
 ) -> tuple[list[str], Path | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
     profile = compiled.metadata.get("presentation_profile", "default")
@@ -1089,6 +1041,8 @@ def _generate_compiled_artifacts(
         interface_policy="explicit",
         presentation_wiring_policy=pwp,
         score=score,
+        compiled_ir=compiled.ir,
+        readiness_gate=readiness_gate,
     )
     root = _find_root_schematic(files, compiled.metadata.get("project", "project"))
     if export_svg and root is not None:
@@ -1695,6 +1649,7 @@ def generate_artifacts(
     spec_path: Path | None = None,
     svg_placement: bool = False,
     export_pinout: bool = False,
+    readiness_gate: bool = True,
 ) -> dict[str, Any]:
     """Generate derived artifacts from a validated design spec."""
     profile = _ensure_profile(profile)
@@ -1729,12 +1684,17 @@ def generate_artifacts(
 
         # Sprint 40 Task 173 + Sprint 41 — generate enforcement is
         # deterministic regardless of the ``require_valid`` flag.
-        # Structural, implementation, and (Sprint 41) placement-readiness
-        # errors always block. ``--no-require-valid`` only bypasses soft
+        # Structural and implementation errors always block here.
+        # Placement-readiness is enforced one layer lower inside
+        # generator.generate_from_components so direct generator callers
+        # inherit the same guarantee, and a single readiness_gate flag can
+        # intentionally bypass it for debug/diff workflows.
+        #
+        # ``--no-require-valid`` only bypasses soft
         # electrical warnings (crystal-load tolerance, rc/lc-filter
         # tuning, cap-voltage derating, power-budget hints) — it cannot
         # paper over a schematic that is physically unfinished.
-        _HARD_ERROR_CATEGORIES = ("structural", "implementation", "placement_readiness")
+        _HARD_ERROR_CATEGORIES = ("structural", "implementation")
         hard_errors = [
             msg
             for category in _HARD_ERROR_CATEGORIES
@@ -1749,7 +1709,7 @@ def generate_artifacts(
                 report.summary,
             )
             raise ValueError(
-                f"Design has {len(hard_errors)} structural/implementation/placement_readiness "
+                f"Design has {len(hard_errors)} structural/implementation "
                 "error(s) — fix these before generation (these are not bypassable via "
                 "--no-require-valid)"
             )
@@ -1763,7 +1723,13 @@ def generate_artifacts(
             )
 
         compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
-        files, root = _generate_compiled_artifacts(compiled, output_path, export_svg=export_svg, score=score)
+        files, root = _generate_compiled_artifacts(
+            compiled,
+            output_path,
+            export_svg=export_svg,
+            score=score,
+            readiness_gate=readiness_gate,
+        )
     except Exception:
         _logger.exception("Artifact generation failed for output directory %s", output_path)
         raise
@@ -2110,6 +2076,7 @@ def main() -> None:
     gen_p.add_argument("spec", help="Path to YAML/JSON design spec")
     gen_p.add_argument("--output", "-o", required=True, help="Artifact output directory")
     gen_p.add_argument("--no-require-valid", dest="require_valid", action="store_false")
+    gen_p.add_argument("--no-readiness-gate", dest="readiness_gate", action="store_false")
     gen_p.add_argument("--no-svg", dest="export_svg", action="store_false")
     gen_p.add_argument("--enrich-parts", action="store_true", default=False)
     gen_p.add_argument(
@@ -2144,7 +2111,7 @@ def main() -> None:
         default=False,
         help="Export SVG placement diagram after PCB generation (Task 93)",
     )
-    gen_p.set_defaults(require_valid=True, export_svg=True)
+    gen_p.set_defaults(require_valid=True, readiness_gate=True, export_svg=True)
 
     review_p = subparsers.add_parser("review-report", help="Generate comprehensive HTML design review report")
     review_p.add_argument("spec", help="Path to YAML/JSON design spec")
@@ -2645,6 +2612,28 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 strict=strict,
             )
         )
+        from .logging_bridge import get_design_logger
+
+        dl = get_design_logger()
+        if dl is not None:
+            error_msgs = []
+            warning_msgs = []
+            for messages in report.categories.values():
+                for msg in messages:
+                    rendered = f"[{msg.category}:{msg.code}] {msg.message}"
+                    if msg.level == "error":
+                        error_msgs.append(rendered)
+                    elif msg.level == "warning":
+                        warning_msgs.append(rendered)
+            dl.log_validation(
+                spec_file=str(args.spec),
+                passed=report.valid,
+                errors=error_msgs[:5],
+                warnings=warning_msgs[:5],
+                scope="final_report",
+                error_count=len(error_msgs),
+                warning_count=len(warning_msgs),
+            )
         # Print as colored text only if --verbose or if color is always/auto with TTY support
         if verbose or (color in ("always", "auto") and _color_support(color)):
             use_color = _color_support(color)
@@ -2720,6 +2709,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                     spec,
                     output_dir=args.output,
                     require_valid=args.require_valid,
+                    readiness_gate=getattr(args, "readiness_gate", True),
                     enrich_parts=args.enrich_parts or auto_source,
                     export_svg=args.export_svg,
                     score=args.score,

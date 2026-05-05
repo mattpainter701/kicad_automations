@@ -8,7 +8,7 @@ with actionable recommendations.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -411,7 +411,7 @@ def generate_confidence_report(
 
     report = DesignConfidenceReport(
         project=project,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
         overall_score=overall,
         overall_grade=overall_grade,
         readiness=readiness,

@@ -217,9 +217,12 @@ class DisplayDriverTemplate(SubcircuitTemplate):
         )
 
         # ---- Interface mode wiring ----
+        # T228 — honor caller-supplied shared bus net names so designs that
+        # name their I2C/SPI buses (e.g. OLED_SDA / OLED_SCL) keep that name
+        # all the way through the schematic.
         if interface == "i2c":
-            sda_net = "I2C_SDA"
-            scl_net = "I2C_SCL"
+            sda_net = params.get("sda_net", "I2C_SDA")
+            scl_net = params.get("scl_net", "I2C_SCL")
             pin_nets[ic_db["pin_sda"]] = sda_net
             pin_nets[ic_db["pin_scl"]] = scl_net
 
@@ -233,13 +236,13 @@ class DisplayDriverTemplate(SubcircuitTemplate):
             annotations.append("Interface: I2C (DC=GND -> addr 0x3C)")
         else:
             # SPI mode
-            mosi_net = "SPI_MOSI"
-            sclk_net = "SPI_SCLK"
+            mosi_net = params.get("mosi_net", "SPI_MOSI")
+            sclk_net = params.get("sclk_net", params.get("sck_net", "SPI_SCLK"))
             pin_nets[ic_db["pin_sda"]] = mosi_net  # SDA doubles as MOSI in SPI
             pin_nets[ic_db["pin_scl"]] = sclk_net  # SCL doubles as SCLK in SPI
             pin_nets[ic_db["pin_dc"]] = dc_net
             if ic_db.get("pin_cs_n"):
-                pin_nets[ic_db["pin_cs_n"]] = cs_n_net
+                pin_nets[ic_db["pin_cs_n"]] = params.get("cs_net", cs_n_net)
 
             annotations.append("Interface: SPI (4-wire)")
 
@@ -374,13 +377,13 @@ class DisplayDriverTemplate(SubcircuitTemplate):
         ]
 
         if interface == "i2c":
-            ports.append(BoundaryPort("I2C_SDA", "bidirectional"))
-            ports.append(BoundaryPort("I2C_SCL", "input"))
+            ports.append(BoundaryPort(params.get("sda_net", "I2C_SDA"), "bidirectional"))
+            ports.append(BoundaryPort(params.get("scl_net", "I2C_SCL"), "input"))
         else:
-            ports.append(BoundaryPort("SPI_MOSI", "input"))
-            ports.append(BoundaryPort("SPI_SCLK", "input"))
+            ports.append(BoundaryPort(params.get("mosi_net", "SPI_MOSI"), "input"))
+            ports.append(BoundaryPort(params.get("sclk_net", params.get("sck_net", "SPI_SCLK")), "input"))
             ports.append(BoundaryPort(dc_net, "input"))
-            ports.append(BoundaryPort(cs_n_net, "input"))
+            ports.append(BoundaryPort(params.get("cs_net", cs_n_net), "input"))
 
         return SubcircuitResult(
             components=[ic_comp],

@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from .component_db import ComponentDef, PresentationWiringPolicy
+from .component_db import ComponentDef, PresentationWiringPolicy, auto_generate_bypass_caps
 from .design_ir import (
     DesignBlock,
     DesignInterface,
@@ -266,25 +266,29 @@ def compile_design_ir(
     synthetic blocks were added. Users opt out via ``auto_repair: false``
     at the top of the spec.
     """
-    from .generational_repair import auto_repair_design
+    from .generational_repair import apply_component_repairs, auto_repair_design
 
     ir = normalize_design_spec(spec)
+    original_block_count = len(ir.blocks)
     engine_spec = design_ir_to_engine_spec(ir)
     components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
     components = copy.deepcopy(components)
 
     repair_enabled = bool(spec.get("auto_repair", True))
-    repaired_ir, repair_actions = auto_repair_design(ir, components, enabled=repair_enabled)
+    repaired_ir, component_repairs, repair_actions = auto_repair_design(ir, components, enabled=repair_enabled)
     repair_records = [action.to_dict() for action in repair_actions]
     if repair_actions:
         ir = repaired_ir
         engine_spec = design_ir_to_engine_spec(ir)
-        components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
-        components = copy.deepcopy(components)
+        if len(repaired_ir.blocks) != original_block_count:
+            components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
+            components = copy.deepcopy(components)
+        apply_component_repairs(components, component_repairs)
 
     _apply_block_attributes(ir, components)
     _apply_approved_overrides(ir, components)
     _synthesize_shared_net_interfaces(ir, components)
+    auto_generate_bypass_caps(components)
     hydrated_ir = _hydrate_ir_from_components(ir, components)
     metadata.update(
         {

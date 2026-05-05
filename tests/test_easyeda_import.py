@@ -298,6 +298,8 @@ class TestComponentDefConversion:
         # IO pins should be signal
         assert "37" in comp.pin_nets
         assert comp.pin_nets["37"] == "IO23"
+        assert comp.pin_roles["txd"] == "35"
+        assert comp.pin_roles["rxd"] == "34"
 
     def test_empty_data_returns_none(self):
         assert easyeda_to_component_def({}) is None

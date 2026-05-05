@@ -125,6 +125,42 @@ def test_optimize_deterministic_with_seed():
     assert r1["placements"] == r2["placements"]
 
 
+def test_optimize_connected_pair_settles_closer_than_unconnected_pair():
+    from circuit_weaver.placement_optimizer import PlacementConfig, optimize_placement
+
+    comps = [
+        ComponentDef(
+            mpn="IC_U1",
+            description="Connected power block",
+            footprint="QFN-32",
+            category="power",
+            pins=[PinDef(number="1", name="LINK", electrical_type="bidirectional", side="L")],
+            pin_nets={"1": "CTRL_LINK"},
+            source_ref="U1",
+        ),
+        ComponentDef(
+            mpn="IC_U2",
+            description="Connected digital block",
+            footprint="QFN-32",
+            category="digital",
+            pins=[PinDef(number="1", name="LINK", electrical_type="bidirectional", side="L")],
+            pin_nets={"1": "CTRL_LINK"},
+            source_ref="U2",
+        ),
+        _make_comp("U3", category="power"),
+        _make_comp("U4", category="digital"),
+    ]
+    result = optimize_placement(comps, config=PlacementConfig(strategy="balanced", iterations=1500, seed=42))
+    placements = result["placements"]
+
+    def _dist(a: str, b: str) -> float:
+        dx = placements[a]["x"] - placements[b]["x"]
+        dy = placements[a]["y"] - placements[b]["y"]
+        return (dx * dx + dy * dy) ** 0.5
+
+    assert _dist("U1", "U2") < _dist("U3", "U4")
+
+
 # ---------- placement_viewer tests ----------
 
 

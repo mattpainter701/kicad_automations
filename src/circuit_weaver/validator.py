@@ -923,6 +923,9 @@ def run_validation_checks(components: list[ComponentDef]) -> list[ValidationChec
             passed=all_passed,
             errors=error_msgs[:5],
             warnings=warning_msgs[:5],
+            scope="raw_checks",
+            error_count=len(error_msgs),
+            warning_count=len(warning_msgs),
         )
 
     return results

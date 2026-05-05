@@ -354,7 +354,12 @@ def ic_data_to_component_def(mpn: str, data: dict[str, Any]) -> Any:
     Returns None if the entry lacks a ``pins`` list (unusable for schematic
     generation).
     """
-    from ..component_db import ComponentDef, PinDef  # local import — avoid cycles
+    from ..component_db import (  # local import — avoid cycles
+        ComponentDef,
+        PinDef,
+        normalize_pin_role_name,
+        normalize_pin_roles,
+    )
 
     pins_raw = data.get("pins")
     if not isinstance(pins_raw, list) or not pins_raw:
@@ -394,6 +399,12 @@ def ic_data_to_component_def(mpn: str, data: dict[str, Any]) -> Any:
     manufacturer = str(data.get("manufacturer", ""))
     footprint = str(data.get("footprint", ""))
     description = str(data.get("description", ""))
+    pin_roles = normalize_pin_roles(data.get("pin_roles", {}))
+    for key, value in data.items():
+        role = normalize_pin_role_name(str(key))
+        pin = str(value or "").strip()
+        if role and pin and role not in pin_roles:
+            pin_roles[role] = pin
 
     return ComponentDef(
         mpn=mpn,
@@ -406,6 +417,7 @@ def ic_data_to_component_def(mpn: str, data: dict[str, Any]) -> Any:
         pins=pins,
         pin_nets={},
         power_pins=power_pins,
+        pin_roles=pin_roles,
         power_reqs=[],
         bypass_caps=[],
         straps=[],

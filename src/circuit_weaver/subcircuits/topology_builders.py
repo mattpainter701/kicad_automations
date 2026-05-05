@@ -9,9 +9,17 @@ Builder functions are keyed by topology name in TOPOLOGY_BUILDERS dict.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, PinDef, StrapConfig
+from ..component_db import (
+    BypassCap,
+    ComponentDef,
+    PinDef,
+    StrapConfig,
+    normalize_pin_role_name,
+    normalize_pin_roles,
+)
 from .base import (
     FP_0402C,
     FP_0402R,
@@ -24,6 +32,7 @@ from .base import (
     buck_inductor,
     buck_output_cap,
     cap_footprint,
+    crystal_load_caps,
     feedback_divider_top,
     feedback_divider_vout,
     format_capacitance,
@@ -35,6 +44,36 @@ from .base import (
     snap_ind,
     snap_to_e24,
     snap_to_e96,
+)
+
+# T228 — pin names that should never be routed to a synthesized signal net.
+# Mirrors generator._NC_PIN_NAME_PATTERNS so unmapped pins like "~", "NC",
+# "DNC", "RESERVED" become explicit_no_connects instead of phantom
+# per-instance nets like "~_U1" / "RESERVED_U4".
+_NC_PIN_NAME_RE = re.compile(
+    r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$",
+    re.IGNORECASE,
+)
+
+# Audit F1/F2 affected interface-heavy parts where synthesized per-instance
+# signal nets create phantom ports instead of wiring into the real shared bus.
+_DECLARED_INTERFACE_ONLY_TOPOLOGIES = frozenset(
+    {
+        "usb_controller",
+        "usb_hub",
+        "ethernet_phy",
+        "crystal_oscillator",
+    }
+)
+_SAFE_UNMAPPED_PIN_TYPES = frozenset(
+    {
+        "output",
+        "power_out",
+        "open_collector",
+        "open_emitter",
+        "free",
+        "no_connect",
+    }
 )
 
 
@@ -51,6 +90,17 @@ def _pin_role(ic_data: dict, role: str) -> str | None:
     key = f"pin_{role}"
     val = ic_data.get(key)
     return str(val) if val is not None else None
+
+
+def _collect_pin_roles(ic_data: dict) -> dict[str, str]:
+    """Collect canonical role -> pin mappings from ic_data legacy and new fields."""
+    roles = normalize_pin_roles(ic_data.get("pin_roles", {}))
+    for key, value in ic_data.items():
+        role = normalize_pin_role_name(str(key))
+        pin = str(value or "").strip()
+        if role and pin and role not in roles:
+            roles[role] = pin
+    return roles
 
 
 _I2C_TRISE_MAX = {
@@ -1389,6 +1439,93 @@ def build_passive_diode(ic_data: dict, params: dict[str, Any]) -> SubcircuitResu
     )
 
 
+def build_crystal_oscillator(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
+    """Build a crystal plus load-cap network from CL/frequency params."""
+    freq = params["freq"]
+    cl_spec_pf = params["cl_spec"]
+    c_stray = params.get("c_stray", 3e-12)
+    ic_name = params.get("ic", ic_data.get("_mpn", "UNKNOWN"))
+    ref = params.get("ref", "Y")
+    xtal_in_net = params.get("xtal_in_net", "XTAL_IN")
+    xtal_out_net = params.get("xtal_out_net", "XTAL_OUT")
+
+    cl_val = snap_cap(crystal_load_caps(cl_spec_pf * 1e-12, c_stray))
+    r_fb = snap_to_e96(1e6)
+    freq_mhz = freq / 1e6
+
+    pin_xtal1 = _pin_role(ic_data, "xtal1") or _pin_role(ic_data, "xtal_in")
+    pin_xtal2 = _pin_role(ic_data, "xtal2") or _pin_role(ic_data, "xtal_out")
+    if not pin_xtal1 or not pin_xtal2:
+        raise ValueError(f"{ic_name} crystal_oscillator entry must declare xtal pin roles")
+
+    power_pins: dict[str, str] = {}
+    for gnd_pin in ic_data.get("gnd_pins", []) or []:
+        power_pins[str(gnd_pin)] = "GND"
+
+    xtal = ComponentDef(
+        mpn=ic_name,
+        ref_prefix="Y",
+        value=f"{freq_mhz:g}MHz",
+        footprint=ic_data.get("footprint", ""),
+        description=ic_data.get("description", ""),
+        category="clock",
+        pins=_pins_from_data(ic_data),
+        power_pins=power_pins,
+        pin_nets={str(pin_xtal1): xtal_in_net, str(pin_xtal2): xtal_out_net},
+        bypass_caps=[
+            BypassCap(
+                "CL1",
+                xtal_in_net,
+                "GND",
+                format_capacitance(cl_val),
+                cap_footprint(cl_val),
+                role="load_cap",
+                presentation="topology_local",
+            ),
+            BypassCap(
+                "CL2",
+                xtal_out_net,
+                "GND",
+                format_capacitance(cl_val),
+                cap_footprint(cl_val),
+                role="load_cap",
+                presentation="topology_local",
+            ),
+        ],
+        straps=[
+            StrapConfig(
+                "RFB",
+                xtal_in_net,
+                xtal_out_net,
+                format_resistance(r_fb),
+                FP_0402R,
+                role="feedback",
+                presentation="topology_local",
+            ),
+        ],
+        annotations=[
+            f"Crystal {freq_mhz:g}MHz, CL={cl_spec_pf:g}pF",
+            f"Load caps: 2x {format_capacitance(cl_val)}",
+            f"Feedback R: {format_resistance(r_fb)}",
+        ],
+    )
+    xtal.source_ref = ref
+
+    return SubcircuitResult(
+        components=[xtal],
+        boundary_ports=[
+            BoundaryPort(xtal_in_net, "bidirectional"),
+            BoundaryPort(xtal_out_net, "bidirectional"),
+            BoundaryPort("GND", "passive"),
+        ],
+        annotations=[
+            f"Crystal oscillator {ic_name}: {freq_mhz:g}MHz, "
+            f"CL={cl_spec_pf:g}pF, load caps 2x {format_capacitance(cl_val)}",
+        ],
+        primary_category="clock",
+    )
+
+
 # ================================================================
 # Generic wiring builder (pin map + decoupling)
 # ================================================================
@@ -1475,25 +1612,69 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
             ):
                 power_pins[pin.number] = vdd_net
 
-    shared_pin_nets = {
-        "pin_sda": params.get("sda_net", "I2C_SDA"),
-        "pin_scl": params.get("scl_net", "I2C_SCL"),
-        "pin_mosi": params.get("mosi_net", "SPI_MOSI"),
-        "pin_miso": params.get("miso_net", "SPI_MISO"),
-        "pin_sclk": params.get("sclk_net", params.get("sck_net", "SPI_SCLK")),
-        "pin_sck": params.get("sck_net", params.get("sclk_net", "SPI_SCLK")),
-        "pin_cs": params.get("cs_net", f"CS_{ref}"),
+    # T228/T234 — shared interface routing now keys off normalized pin roles
+    # rather than a fixed list of `pin_<role>` field names. This lets both
+    # curated ic_data entries and imported parts converge on one contract.
+    pin_roles = _collect_pin_roles(ic_data)
+    shared_role_nets = {
+        "sda": params.get("sda_net", "I2C_SDA"),
+        "scl": params.get("scl_net", "I2C_SCL"),
+        "mosi": params.get("mosi_net", "SPI_MOSI"),
+        "miso": params.get("miso_net", "SPI_MISO"),
+        "sclk": params.get("sclk_net", params.get("sck_net", "SPI_SCLK")),
+        "cs": params.get("cs_net", f"CS_{ref}"),
+        # USB high-speed differential pair — shared with the USB connector.
+        "dp": params.get("usb_dp_net", "USB_DP"),
+        "dm": params.get("usb_dm_net", "USB_DM"),
+        "dp1": params.get("usb_dp_net", "USB_DP"),
+        "dm1": params.get("usb_dm_net", "USB_DM"),
+        "dp2": params.get("usb_dp_net", "USB_DP"),
+        "dm2": params.get("usb_dm_net", "USB_DM"),
+        # Crystal oscillator nets default to shared names so the MCU and
+        # crystal block resolve onto the same interface unless the caller
+        # explicitly requests per-instance aliases.
+        "xtal_in": params.get("xtal_in_net", "XTAL_IN"),
+        "xtal_out": params.get("xtal_out_net", "XTAL_OUT"),
     }
 
     # Wire all non-power signal pins to explicit shared bus nets where IC
     # metadata provides them, otherwise to per-instance boundary ports.
     pin_nets: dict[str, str] = {}
-    for key, net_name in shared_pin_nets.items():
-        pin_num = ic_data.get(key)
+    for role, net_name in shared_role_nets.items():
+        pin_num = pin_roles.get(role)
         if pin_num and str(pin_num) not in power_pins:
             pin_nets[str(pin_num)] = net_name
 
+    # ic_data may also declare arbitrary pin -> net mappings via signal_nets.
+    # Used by catalog entries that need a signal interface beyond the
+    # well-known buses above.
+    signal_nets_map = ic_data.get("signal_nets") or {}
+    if isinstance(signal_nets_map, dict):
+        for pin_num, net_name in signal_nets_map.items():
+            spn = str(pin_num)
+            if spn in power_pins:
+                continue
+            if not isinstance(net_name, str) or not net_name:
+                continue
+            # Allow callers to override via params (e.g. params={"net_<pin>": "MY_NET"})
+            override = params.get(f"net_{spn}") or params.get(f"net_{net_name.lower()}")
+            pin_nets[spn] = override or net_name
+
+    # T228 — collect explicit no-connect pins from ic_data and pin name.
+    # Pins whose name marks them NC (e.g. "~", "NC", "DNC", "RESERVED") must
+    # never be routed to a synthesized signal net; they belong in
+    # explicit_no_connects so the schematic emits an `(no_connect)` marker
+    # without a warning.
+    explicit_ncs: set[str] = set()
+    unmapped_required_pins: dict[str, str] = {}
+    declared_ncs = ic_data.get("explicit_no_connects") or []
+    if isinstance(declared_ncs, (list, tuple, set)):
+        for pin_num in declared_ncs:
+            explicit_ncs.add(str(pin_num))
+
     power_types = {"power_in", "power_out"}
+    topo = str(ic_data.get("topology", "") or "").strip().lower()
+    interface_only = topo in _DECLARED_INTERFACE_ONLY_TOPOLOGIES
     for pin in pins:
         if pin.number in power_pins:
             continue
@@ -1501,27 +1682,24 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
             continue
         if pin.electrical_type in power_types:
             continue
-        # Skip NC / reserved pins
-        if pin.name.upper().startswith("NC") or pin.name.upper().startswith("RESERVED"):
+        # T228 — pin names indicating intentional no-connect bypass synthesis
+        # entirely. The classifier in generator.py already knows these, but
+        # build_generic ran first and gave them synthesized nets like "~_U1"
+        # before the classifier could see them.
+        if _NC_PIN_NAME_RE.match(pin.name) or pin.name.upper().startswith(("NC", "RESERVED")):
+            explicit_ncs.add(pin.number)
             continue
+        if interface_only:
+            if pin.electrical_type not in _SAFE_UNMAPPED_PIN_TYPES:
+                unmapped_required_pins[pin.number] = pin.name
+            continue
+        # Non-interface-heavy generic parts still use local synthesized nets
+        # until they graduate into dedicated builders or catalog entries.
         net_name = f"{pin.name}_{ref}"
         pin_nets[pin.number] = net_name
 
-    bypass_caps = [
-        BypassCap(
-            str(raw_vdd) if raw_vdd else "VDD",
-            vdd_net,
-            gnd_net,
-            "100nF",
-            FP_0402C,
-            role="decoupling",
-            presentation="topology_local",
-        ),
-    ]
-
     # Detect ref_prefix based on topology / component type
     detected_ref_prefix = "U"
-    topo = ic_data.get("topology", "")
     if ic_data.get("connector_type"):
         detected_ref_prefix = "J"
     elif topo == "crystal_oscillator" or "crystal" in ic_data.get("description", "").lower():
@@ -1540,18 +1718,37 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         category=ic_data.get("category", "digital"),
         pins=pins,
         power_pins=power_pins,
+        pin_roles=pin_roles,
         pin_nets=pin_nets,
-        bypass_caps=bypass_caps,
+        bypass_caps=[],
+        recommended_bypass=list(ic_data.get("recommended_bypass") or []),
+        explicit_no_connects=explicit_ncs,
+        unmapped_required_pins=unmapped_required_pins,
         annotations=[f"{ic_data.get('description', ic_name)}"],
     )
     ic_comp.source_ref = ref
 
+    # T228 / F7 — only declare BoundaryPort entries for nets that genuinely
+    # cross the IC boundary (shared buses, named external interfaces). Synthesized
+    # per-instance nets (e.g. `THRESH_U3`, `XTAL_IN_U1`) are still kept on
+    # `ic_comp.pin_nets` so support passives can reference them, but promoting
+    # them to hierarchical sheet pins creates phantom interfaces — they have no
+    # consumer outside this IC.
     ports = [
         BoundaryPort(vdd_net, "input"),
         BoundaryPort(gnd_net, "passive"),
     ]
-    for pin_num, net_name in pin_nets.items():
+    seen_ports: set[str] = {vdd_net, gnd_net}
+    ref_suffix = f"_{ref}"
+    for net_name in pin_nets.values():
+        if not net_name or net_name in seen_ports:
+            continue
+        # Skip per-instance synthesized nets ('FOO_U1', 'PROG_U2', etc.) — they
+        # only connect within this IC's local cluster.
+        if net_name.endswith(ref_suffix) or ref_suffix in net_name:
+            continue
         ports.append(BoundaryPort(net_name, "bidirectional"))
+        seen_ports.add(net_name)
 
     return SubcircuitResult(
         components=[ic_comp],
@@ -1580,6 +1777,7 @@ TOPOLOGY_BUILDERS: dict[str, Any] = {
     "display_driver": build_display_driver,
     "diode": build_passive_diode,
     "led": build_passive_diode,
+    "crystal_oscillator": build_crystal_oscillator,
 }
 
 # All other topologies fall through to build_generic
@@ -1608,7 +1806,6 @@ _GENERIC_TOPOLOGIES = {
     "opamp",
     "sensor_frontend",
     "audio_amplifier",
-    "crystal_oscillator",
     "clock_synth",
 }
 

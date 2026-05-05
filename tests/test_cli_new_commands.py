@@ -7,12 +7,20 @@ Tests verify that CLI subcommands work end-to-end:
 - Error cases produce helpful messages
 """
 
+import io
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from circuit_weaver.design_logger import DesignLogger
+from circuit_weaver.dispatcher import (
+    ValidationMessage,
+    ValidationReport,
+    _print_validation_report,
+)
 
 _PYTHON = sys.executable
 _MINIMAL_SPEC = "project: CLITest\nblocks: []\n"
@@ -242,6 +250,22 @@ class TestLogStatusCLI:
         result = _run(["log-status", str(project_dir)])
         assert result.returncode == 0
 
+    def test_log_status_shows_validation_only_session(self, project_dir):
+        logger = DesignLogger(project_dir)
+        logger.log_validation(
+            spec_file="design.yaml",
+            passed=False,
+            errors=["[placement_readiness:single-pin-net] dangling net"],
+            warnings=["[electrical:crystal-load] missing load caps"],
+            scope="final_report",
+            error_count=9,
+            warning_count=2,
+        )
+        result = _run(["log-status", str(project_dir)])
+        assert result.returncode == 0
+        assert "No design workflow recorded yet." not in result.stdout
+        assert "Validation:  FAILED (9 errors, 2 warnings)" in result.stdout
+
 
 class TestLogViewCLI:
     def test_log_view_empty(self, project_dir):
@@ -254,3 +278,31 @@ class TestLogViewCLI:
         _run(["log-event", str(project_dir), "--type", "wizard_step", "--message", "setup"])
         result = _run(["log-view", str(project_dir)])
         assert result.returncode == 0
+
+
+class TestValidationReportOutput:
+    def test_print_validation_report_falls_back_to_ascii_on_cp1252(self, monkeypatch):
+        report = ValidationReport(
+            profile="standard",
+            valid=False,
+            categories={
+                "placement_readiness": [
+                    ValidationMessage(
+                        category="placement_readiness",
+                        code="single-pin-net",
+                        level="error",
+                        subject="U1",
+                        message="dangling net",
+                    )
+                ]
+            },
+            metadata={"project": "CP1252Probe"},
+        )
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="cp1252")
+        monkeypatch.setattr(sys, "stdout", stream)
+        _print_validation_report(report, use_color=False, verbose=False)
+        stream.flush()
+        rendered = raw.getvalue().decode("cp1252")
+        assert "FAIL CP1252Probe" in rendered
+        assert "dangling net" in rendered

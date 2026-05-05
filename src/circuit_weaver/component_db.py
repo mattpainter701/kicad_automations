@@ -73,6 +73,97 @@ class PinDef:
         return (self.number, self.name, self.electrical_type, self.side)
 
 
+_PIN_ROLE_ALIASES = {
+    "sda": "sda",
+    "sda1": "sda1",
+    "sda2": "sda2",
+    "scl": "scl",
+    "scl1": "scl1",
+    "scl2": "scl2",
+    "mosi": "mosi",
+    "sdi": "mosi",
+    "copi": "mosi",
+    "miso": "miso",
+    "sdo": "miso",
+    "cipo": "miso",
+    "sclk": "sclk",
+    "sck": "sclk",
+    "cs": "cs",
+    "csn": "cs",
+    "cs_n": "cs",
+    "csb": "cs",
+    "ss": "cs",
+    "ssn": "cs",
+    "nss": "cs",
+    "tx": "txd",
+    "txd": "txd",
+    "txd0": "txd",
+    "tx0": "txd",
+    "rx": "rxd",
+    "rxd": "rxd",
+    "rxd0": "rxd",
+    "rx0": "rxd",
+    "cts": "cts",
+    "rts": "rts",
+    "dp": "dp",
+    "dp1": "dp1",
+    "dp2": "dp2",
+    "usb_dp": "dp",
+    "dm": "dm",
+    "dm1": "dm1",
+    "dm2": "dm2",
+    "usb_dm": "dm",
+    "xtal1": "xtal_in",
+    "xin": "xtal_in",
+    "xi": "xtal_in",
+    "osc_in": "xtal_in",
+    "xtal_in": "xtal_in",
+    "xtal2": "xtal_out",
+    "xout": "xtal_out",
+    "xo": "xtal_out",
+    "osc_out": "xtal_out",
+    "xtal_out": "xtal_out",
+    "vcc": "vcc",
+    "vdd": "vdd",
+    "gnd": "gnd",
+}
+
+
+def normalize_pin_role_name(name: str) -> str | None:
+    """Return the canonical role name for a raw role/pin label."""
+    raw = str(name or "").strip().lower()
+    if not raw:
+        return None
+    if raw.startswith("pin_"):
+        raw = raw[4:]
+    raw = raw.replace("+", "p").replace("-", "m")
+    raw = re.sub(r"[^a-z0-9_]+", "_", raw).strip("_")
+    return _PIN_ROLE_ALIASES.get(raw)
+
+
+def normalize_pin_roles(raw_roles: dict | None) -> dict[str, str]:
+    """Normalize a raw pin-role mapping to canonical role -> pin-number."""
+    out: dict[str, str] = {}
+    if not isinstance(raw_roles, dict):
+        return out
+    for raw_role, raw_pin in raw_roles.items():
+        role = normalize_pin_role_name(str(raw_role or ""))
+        pin = str(raw_pin or "").strip()
+        if role and pin and role not in out:
+            out[role] = pin
+    return out
+
+
+def infer_pin_roles_from_pins(pins: list["PinDef"]) -> dict[str, str]:
+    """Infer canonical interface roles from pin names when metadata is absent."""
+    out: dict[str, str] = {}
+    for pin in pins or []:
+        role = normalize_pin_role_name(pin.name)
+        if role and pin.number and role not in out:
+            out[role] = str(pin.number)
+    return out
+
+
 @dataclass
 class BypassCap:
     """A bypass/decoupling capacitor required by an IC."""
@@ -151,16 +242,23 @@ class ComponentDef:
     pins: list[PinDef] = field(default_factory=list)
     pin_nets: dict = field(default_factory=dict)  # {pin_num: net_name} — signal connections
     power_pins: dict = field(default_factory=dict)  # {pin_num: power_net} — power connections
+    pin_roles: dict[str, str] = field(default_factory=dict)  # normalized role -> pin number
 
     power_reqs: list[PowerReq] = field(default_factory=list)
     bypass_caps: list[BypassCap] = field(default_factory=list)
     straps: list[StrapConfig] = field(default_factory=list)
+    recommended_bypass: list[dict] = field(default_factory=list)  # optional datasheet-driven bypass policy
 
     # Pin numbers intentionally left unconnected (no-connect by design).
     # The generator will place NC markers on these pins without warnings.
     # Pins NOT in this set and not in pin_nets/power_pins are flagged
     # according to their electrical type (error for power_in, warning for input).
     explicit_no_connects: set = field(default_factory=set)
+
+    # Pins that a generic/data-driven builder knows must be routed through
+    # an explicit interface or per-part support network. Generation hard-fails
+    # if these reach schematic rendering still unmapped.
+    unmapped_required_pins: dict[str, str] = field(default_factory=dict)
 
     # For BGA ICs: callable that returns {ball: net} mapping
     pin_map_builder: object = None
@@ -192,6 +290,13 @@ class ComponentDef:
     def all_power_nets(self):
         """All power net names this component needs."""
         return set(self.power_pins.values()) | {r.net for r in self.power_reqs}
+
+    def resolved_pin_roles(self) -> dict[str, str]:
+        """Normalized role mapping, using explicit metadata plus pin-name inference."""
+        roles = normalize_pin_roles(self.pin_roles)
+        for role, pin_num in infer_pin_roles_from_pins(self.pins).items():
+            roles.setdefault(role, pin_num)
+        return roles
 
     def prefer_multi_column_symbol(self) -> bool:
         """Whether this component should use a multi-column generic symbol.
@@ -457,6 +562,7 @@ class ComponentRegistry:
                 pins=pins,
                 pin_nets={str(k): str(v) for k, v in entry.get("pin_nets", {}).items()},
                 power_pins={str(k): str(v) for k, v in entry.get("power_pins", {}).items()},
+                pin_roles=normalize_pin_roles(entry.get("pin_roles", {})),
                 bypass_caps=caps,
                 straps=straps,
             )
@@ -888,21 +994,66 @@ _GROUND_NETS = frozenset({"GND", "AGND", "DGND", "GNDA", "GNDD", "VSS", "VSSA"})
 _AUTO_BYPASS_MIN_PINS = 6
 
 
+def _bypass_counts(comp: ComponentDef) -> dict[tuple[str, str], int]:
+    counts: dict[tuple[str, str], int] = {}
+    for cap in comp.bypass_caps:
+        key = (cap.net, cap.value)
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _bypass_footprint_for_value(value: str) -> str:
+    upper = (value or "").strip().upper()
+    if "UF" in upper or "MF" in upper:
+        return _AUTO_BYPASS_FP_BULK
+    return _AUTO_BYPASS_FP_HF
+
+
+def _append_bypass_caps(
+    comp: ComponentDef,
+    *,
+    net: str,
+    gnd_net: str,
+    value: str,
+    count: int,
+    footprint: str | None = None,
+) -> int:
+    """Add the requested number of bypass caps without duplicating existing ones."""
+    existing = _bypass_counts(comp)
+    key = (net, value)
+    have = existing.get(key, 0)
+    if have >= count:
+        return 0
+    added = 0
+    for _ in range(count - have):
+        comp.bypass_caps.append(
+            BypassCap(
+                pin="auto",
+                net=net,
+                gnd_net=gnd_net,
+                value=value,
+                footprint=footprint or _bypass_footprint_for_value(value),
+            )
+        )
+        added += 1
+    return added
+
+
 def auto_generate_bypass_caps(components: list[ComponentDef]) -> int:
-    """Add basic decoupling caps to ICs that have power pins but no explicit bypass_caps.
+    """Add/augment decoupling caps for ICs with power pins.
 
-    For each IC with >= _AUTO_BYPASS_MIN_PINS pins and at least one non-ground power pin:
-    - Adds one 100nF HF cap per unique power net
-    - Adds one 10uF bulk cap if there are >= 3 unique power nets
+    The policy owner is centralized here rather than spread across builders.
+    If ``recommended_bypass`` is present on a component, that datasheet-driven
+    policy wins. Otherwise the generic heuristic applies:
+    - one 100nF HF cap per unique non-ground rail
+    - one 10uF bulk cap if there are >= 3 unique power rails
 
-    Returns the number of components that received auto-generated bypass caps.
-    This is a generic engine behavior, not project-specific.
+    Existing caps are preserved and missing caps are appended without
+    duplicating net/value pairs already present.
     """
     count = 0
     _power_categories = {"power", "regulator", "poe"}
     for comp in components:
-        if comp.bypass_caps:
-            continue  # already has explicit bypass caps
         if not comp.power_pins:
             continue  # no power pins assigned
         # Power ICs (regulators, etc.) always get decoupling regardless of pin count.
@@ -923,33 +1074,49 @@ def auto_generate_bypass_caps(components: list[ComponentDef]) -> int:
         if not power_nets:
             continue
 
-        # Generate one 100nF HF cap per unique power net
-        for net in sorted(power_nets):
-            comp.bypass_caps.append(
-                BypassCap(
-                    pin="auto",
+        added = 0
+        if comp.recommended_bypass:
+            main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[0]
+            for rec in comp.recommended_bypass:
+                if not isinstance(rec, dict):
+                    continue
+                net = str(rec.get("net") or main_rail).strip()
+                value = str(rec.get("value") or "").strip()
+                if not value or net not in power_nets:
+                    continue
+                rec_count = int(rec.get("count", 1) or 1)
+                added += _append_bypass_caps(
+                    comp,
+                    net=net,
+                    gnd_net=str(rec.get("gnd_net") or gnd_net),
+                    value=value,
+                    count=max(rec_count, 1),
+                    footprint=str(rec.get("footprint") or "") or None,
+                )
+        else:
+            for net in sorted(power_nets):
+                added += _append_bypass_caps(
+                    comp,
                     net=net,
                     gnd_net=gnd_net,
                     value="100nF",
+                    count=1,
                     footprint=_AUTO_BYPASS_FP_HF,
                 )
-            )
 
-        # Add one 10uF bulk cap if many power domains
-        if len(power_nets) >= 3:
-            # Bulk cap on the highest-voltage rail (heuristic: longest net name with "3P3" or "5V")
-            main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[0]
-            comp.bypass_caps.append(
-                BypassCap(
-                    pin="auto",
+            if len(power_nets) >= 3:
+                main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[0]
+                added += _append_bypass_caps(
+                    comp,
                     net=main_rail,
                     gnd_net=gnd_net,
                     value="10uF",
+                    count=1,
                     footprint=_AUTO_BYPASS_FP_BULK,
                 )
-            )
 
-        count += 1
+        if added:
+            count += 1
     return count
 
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuit-weaver"
-version = "0.30.5"
+version = "0.30.52"
 description = "Programmatic circuit design, validation, and KiCad artifact generation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -53,3 +53,8 @@ extend-exclude = ["src/circuit_weaver/_bundled_skills"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+markers = [
+  "network: tests that require live network access",
+]

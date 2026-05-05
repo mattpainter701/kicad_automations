@@ -507,6 +507,7 @@ def _apply_pinout_overrides(item: dict, comp: ComponentDef) -> None:
     if not normalized_pin_map:
         return
 
+    previous_nets = set(comp.pin_nets.values()) | set(comp.power_pins.values())
     ordered_pin_numbers = sorted(normalized_pin_map, key=_pin_sort_key)
     existing_by_number = {str(pin.number).strip(): copy.deepcopy(pin) for pin in comp.pins if str(pin.number).strip()}
 
@@ -553,6 +554,33 @@ def _apply_pinout_overrides(item: dict, comp: ComponentDef) -> None:
             comp.power_pins[pin_num] = net_name
         else:
             comp.pin_nets[pin_num] = net_name
+
+    new_nets = set(comp.pin_nets.values()) | set(comp.power_pins.values())
+    dropped_nets = previous_nets - new_nets
+    added_nets = new_nets - previous_nets
+
+    if dropped_nets and comp.template_boundary_ports:
+        comp.template_boundary_ports = [
+            port for port in comp.template_boundary_ports if port.name not in dropped_nets
+        ]
+
+    if added_nets:
+        existing_port_names = {port.name for port in comp.template_boundary_ports}
+        pin_type_by_num = {pin.number: pin.electrical_type for pin in comp.pins}
+        for pin_num, net_name in {**comp.pin_nets, **comp.power_pins}.items():
+            if net_name not in added_nets or net_name in existing_port_names:
+                continue
+            etype = pin_type_by_num.get(pin_num, "bidirectional")
+            if etype == "output":
+                direction = "output"
+            elif etype == "input":
+                direction = "input"
+            elif etype in ("power_in", "power_out"):
+                direction = "passive"
+            else:
+                direction = "bidirectional"
+            comp.template_boundary_ports.append(BoundaryPort(net_name, direction))
+            existing_port_names.add(net_name)
 
 
 def _try_easyeda_resolve(item: dict, ic_name: str, parts_lookup=None) -> ComponentDef | None:
@@ -615,6 +643,12 @@ def _resolve_component(
 
     ref = item.get("ref", "")
 
+    if template_type == "component":
+        # Compatibility: some external design specs use ``type: component``
+        # to mean "resolve this as a standalone part via the normal resolver
+        # chain", not "instantiate the narrow data-driven component topology".
+        template_type = ""
+
     if template_type:
         template = subcircuit_reg.get(template_type)
         if template is None:
@@ -647,6 +681,7 @@ def _resolve_component(
             primary.template_annotations.extend(result.annotations)
             primary.template_boundary_ports.extend(copy.deepcopy(result.boundary_ports))
             primary.template_local_wires.extend(copy.deepcopy(result.local_wires))
+            _apply_pinout_overrides(item, primary)
             # Sprint 41 — apply surgical pin overrides (pin_nets_extra,
             # power_pins_extra, no_connects) to the template's primary
             # component. Template-emitted ICs often have instance-
