@@ -124,9 +124,9 @@ class TestValidateCliWritesLog:
             text=True,
             timeout=60,
         )
-        # Exit code may be 0 or 1 depending on warnings; we only care that
+        # Exit code may be 0, 1, or 2 depending on warning promotion; we only care that
         # the log file exists and is populated.
-        assert result.returncode in (0, 1), f"validate returned {result.returncode}: stderr={result.stderr[:500]}"
+        assert result.returncode in (0, 1, 2), f"validate returned {result.returncode}: stderr={result.stderr[:500]}"
         log_path = dst_dir / "circuit-weaver.log"
         assert log_path.exists(), f"Expected log at {log_path} but only found: {list(dst_dir.iterdir())}"
         contents = log_path.read_text(encoding="utf-8")
