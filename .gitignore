@@ -52,6 +52,9 @@ mempalace.yaml
 entities.json
 
 # Local coding tool configs / caches
+.codex-tmp/
+.pytest-tmp/
+.test-tmp/
 .kilo/
 .opencode/
 AGENTS.md
@@ -60,6 +63,7 @@ rules/kicad.md
 .mypy_cache/
 .code-review-graph/
 .wt-*/
+kilo.json
 
 # Local session memory
 memory/

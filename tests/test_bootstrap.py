@@ -9,7 +9,7 @@ import circuit_weaver
 
 
 def test_package_import_exposes_version():
-    assert circuit_weaver.__version__ == "0.30.5"
+    assert circuit_weaver.__version__ == "0.30.52"
 
 
 def test_cli_reports_version():
@@ -20,7 +20,7 @@ def test_cli_reports_version():
         check=True,
     )
 
-    assert result.stdout.strip() == "0.30.5"
+    assert result.stdout.strip() == circuit_weaver.__version__
 
 
 def test_validate_command_accepts_example_spec():
@@ -56,6 +56,7 @@ def test_generate_command_writes_example_artifacts(tmp_path: Path):
             str(output_dir),
             "--no-svg",
             "--no-require-valid",
+            "--no-readiness-gate",
         ],
         capture_output=True,
         text=True,

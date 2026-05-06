@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import io
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -149,10 +150,11 @@ def _generate_to_zip(
     project_name = metadata.get("project", "project")
     company = metadata.get("company", "")
 
-    with tempfile.TemporaryDirectory(prefix="schematic_engine_") as tmpdir:
+    tmpdir = Path(tempfile.mkdtemp(prefix="schematic_engine_"))
+    try:
         generated_files = generate_from_components(
             components,
-            output_dir=tmpdir,
+            output_dir=str(tmpdir),
             project_name=project_name,
             company=company,
             validate=validate,
@@ -168,6 +170,8 @@ def _generate_to_zip(
                 zf.write(fpath, Path(fpath).name)
         buf.seek(0)
         return buf
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 def _validation_results_to_json(results: list[Any]) -> list[dict]:
@@ -339,6 +343,8 @@ def create_app() -> Any:
                 hierarchical=hierarchical,
                 pcb=pcb,
             )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Generation failed: {exc}")
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Generation failed: {exc}")
 
@@ -364,9 +370,10 @@ def create_app() -> Any:
         content = await file.read()
         csv_text = _decode_utf8(content, detail="Uploaded BOM must be valid UTF-8 CSV")
 
-        with tempfile.TemporaryDirectory(prefix="schematic_engine_bom_") as tmpdir:
+        tmpdir = Path(tempfile.mkdtemp(prefix="schematic_engine_bom_"))
+        try:
             # Write the CSV to a temp file for the BOM parser
-            csv_path = Path(tmpdir) / "upload.csv"
+            csv_path = tmpdir / "upload.csv"
             csv_path.write_text(csv_text, encoding="utf-8")
 
             from .generator import generate_from_bom as _gen_bom
@@ -374,7 +381,7 @@ def create_app() -> Any:
             try:
                 generated_files = _gen_bom(
                     str(csv_path),
-                    output_dir=tmpdir,
+                    output_dir=str(tmpdir),
                     project_name=project,
                     company=company,
                     validate=validate,
@@ -399,10 +406,12 @@ def create_app() -> Any:
                     if p.exists():
                         zf.write(fpath, p.name)
                 # Include any report if generated
-                report_path = Path(tmpdir) / "design_report.md"
+                report_path = tmpdir / "design_report.md"
                 if report_path.exists():
                     zf.write(str(report_path), report_path.name)
             buf.seek(0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
         return StreamingResponse(
             buf,
@@ -538,11 +547,12 @@ def create_app() -> Any:
         body_text = _decode_utf8(body, detail="Request body must be valid UTF-8")
         spec = _parse_spec_body_bytes(body_text, content_type)
 
-        with tempfile.TemporaryDirectory(prefix="schematic_engine_mvp_") as tmpdir:
+        tmpdir = Path(tempfile.mkdtemp(prefix="schematic_engine_mvp_"))
+        try:
             try:
                 result = generate_artifacts(
                     spec,
-                    output_dir=tmpdir,
+                    output_dir=str(tmpdir),
                     profile=profile,
                     require_valid=require_valid,
                     enrich_parts=enrich_parts,
@@ -553,10 +563,12 @@ def create_app() -> Any:
 
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for path in sorted(Path(tmpdir).rglob("*")):
+                for path in sorted(tmpdir.rglob("*")):
                     if path.is_file():
                         zf.write(path, path.relative_to(tmpdir).as_posix())
             buf.seek(0)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
         project_name = result.get("project", "project")
         return StreamingResponse(

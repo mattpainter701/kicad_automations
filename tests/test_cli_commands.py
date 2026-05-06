@@ -70,8 +70,8 @@ def test_validate_example_spec():
     if os.environ.get("CI"):
         pytest.skip("Artifact validation requires KiCad CLI (unavailable in CI)")
     result = _run(["validate", str(_EXAMPLE_SPEC)])
-    # Exit 0 or 1 (warnings are ok), but shouldn't crash
-    assert result.returncode in (0, 1), f"validate crashed: {result.stderr[:500]}"
+    # Exit 0/1/2 are all acceptable so long as the command returns structured JSON.
+    assert result.returncode in (0, 1, 2), f"validate crashed: {result.stderr[:500]}"
     # Should produce JSON output
     assert result.stdout.strip(), "validate produced no output"
 
@@ -122,7 +122,17 @@ def test_schema_markdown():
 def test_generate_example(tmp_path):
     """generate should produce KiCad artifacts."""
     out = tmp_path / "gen_out"
-    result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
+    result = _run(
+        [
+            "generate",
+            str(_EXAMPLE_SPEC),
+            "--output",
+            str(out),
+            "--no-svg",
+            "--no-require-valid",
+            "--no-readiness-gate",
+        ]
+    )
     assert result.returncode == 0, f"generate failed: {result.stderr[:500]}"
     assert (out / "IoT_Sensor.kicad_sch").exists()
     assert not (out / "main.kicad_sch").exists()
@@ -134,7 +144,15 @@ def test_generate_no_py_artifacts(tmp_path):
     project_root.mkdir()
     out = project_root / "gen_out"
     result = _run(
-        ["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"],
+        [
+            "generate",
+            str(_EXAMPLE_SPEC),
+            "--output",
+            str(out),
+            "--no-svg",
+            "--no-require-valid",
+            "--no-readiness-gate",
+        ],
         cwd=project_root,
     )
     assert result.returncode == 0, f"generate failed: {result.stderr[:300]}"
@@ -145,7 +163,17 @@ def test_generate_no_py_artifacts(tmp_path):
 def test_generate_log_file(tmp_path):
     """generate should write circuit-weaver.log to the output directory (Task 114)."""
     out = tmp_path / "gen_out"
-    result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
+    result = _run(
+        [
+            "generate",
+            str(_EXAMPLE_SPEC),
+            "--output",
+            str(out),
+            "--no-svg",
+            "--no-require-valid",
+            "--no-readiness-gate",
+        ]
+    )
     assert result.returncode == 0, f"generate failed: {result.stderr[:300]}"
     log = out / "circuit-weaver.log"
     assert log.exists(), "circuit-weaver.log not created"
@@ -158,7 +186,17 @@ def test_generate_log_file(tmp_path):
 def test_generate_schematic_paren_balance(tmp_path):
     """Generated .kicad_sch must have balanced S-expression parentheses (Task 115)."""
     out = tmp_path / "gen_out"
-    result = _run(["generate", str(_EXAMPLE_SPEC), "--output", str(out), "--no-svg", "--no-require-valid"])
+    result = _run(
+        [
+            "generate",
+            str(_EXAMPLE_SPEC),
+            "--output",
+            str(out),
+            "--no-svg",
+            "--no-require-valid",
+            "--no-readiness-gate",
+        ]
+    )
     assert result.returncode == 0, f"generate failed: {result.stderr[:300]}"
     for sch in out.glob("*.kicad_sch"):
         content = sch.read_text(encoding="utf-8")

@@ -1,3 +1,0 @@
-- [EDA Model Provider APIs](eda_model_providers.md) — DigiKey/SnapEDA/UL/Samacsys/EasyEDA programmatic access, endpoints, auth
-- [kicad_jlcimport architecture](kicad_jlcimport_architecture.md) — jvanderberg's KiCad plugin: EasyEDA JSON to KiCad S-expr conversion pipeline, API endpoints, file structure
-- [bomkit repo analysis](bomkit_analysis.md) — lamb356/bomkit: KiCad pcbnew JLCPCB BOM/CPL export plugin, field aliasing, rotation DB, cost estimation

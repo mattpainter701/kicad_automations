@@ -398,6 +398,12 @@ Files: `skills/circuit-weaver/SKILL.md`, `skills/design_wizard/SKILL.md`, bundle
 - The current remaining summary is `1 structural`, `59 electrical`, `9 implementation`, and `59 placement_readiness`.
 - The next product-side follow-on candidate is the `QSPI_SCLK` false-positive I2C pull-up classification exposed by that re-check; the remaining unresolved part/footprint issues are design-modeling gaps, not Sprint 51 regressions.
 
+### Next Sprint Follow-Up
+
+- Revisit agent compatibility for Codex, Claude, OpenCode, and Kilo after the next sprint.
+- Recover any config fragments that were gitignored only as a temporary unblocker, and move product-critical compatibility defaults back under source control.
+- Treat those configs as interface contracts, not user-local cache.
+
 ---
 
 ## Sprint 50 — Generic Builder Parity Cleanup (v0.30.5)

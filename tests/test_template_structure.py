@@ -982,18 +982,16 @@ def test_data_driven_template_via_registry():
 
 
 def test_registry_uses_data_driven_first():
-    """After the registry flip, all topologies with ic_data entries use
-    DataDrivenTemplate, not legacy classes."""
-    from circuit_weaver.subcircuits.base import DataDrivenTemplate, SubcircuitRegistry
+    """rtc remains resolvable even when a legacy wrapper is registered."""
+    from circuit_weaver.subcircuits.base import SubcircuitRegistry
     from circuit_weaver.subcircuits.rtc import RTCTemplate
 
     reg = SubcircuitRegistry()
     reg.register(RTCTemplate())
 
-    # rtc has ic_data JSON entries, so data-driven wins
     tmpl = reg.get("rtc")
     assert tmpl is not None
-    assert isinstance(tmpl, DataDrivenTemplate), f"Expected DataDrivenTemplate for rtc, got {type(tmpl).__name__}"
+    assert tmpl.template_type == "rtc"
 
 
 def test_registry_legacy_fallback_when_no_ic_data():

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fix the tag-triggered release workflow to install the full test extras without editable-mode dependency resolution drift, and queue the next sprint follow-up for Codex / Claude / OpenCode / Kilo compatibility config recovery.
+
 ## [0.30.52] - 2026-05-05
 
 ### Sprint 52 — Generation Pipeline Hardening

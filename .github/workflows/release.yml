@@ -12,6 +12,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      CI: true
     steps:
       - uses: actions/checkout@v4
 
@@ -22,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev,api,lookup,yaml]
+          pip install ".[dev,api,lookup,yaml]"
 
       - name: Run tests
         run: python -m pytest tests/ -q

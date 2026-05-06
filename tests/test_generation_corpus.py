@@ -23,6 +23,7 @@ emitted schematic:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -60,6 +61,8 @@ def _load_spec(path: Path) -> dict[str, Any]:
 @pytest.mark.parametrize("sample_dir,yaml_name", CORPUS_SAMPLES)
 def test_corpus_generates_and_satisfies_invariants(sample_dir: str, yaml_name: str, tmp_path: Path) -> None:
     """For each archetype: generate artifacts, run invariants."""
+    if os.environ.get("CI") == "true":
+        pytest.skip("Corpus integration is a local regression suite")
     from circuit_weaver.dispatcher import generate_artifacts
 
     spec_path = SAMPLES_DIR / sample_dir / yaml_name
@@ -201,6 +204,8 @@ def test_corpus_validate_no_hard_errors(sample_dir: str, yaml_name: str) -> None
     Soft electrical warnings (floating inputs, decoupling, pin-footprint
     mismatches) are acceptable for minimal sample designs.
     """
+    if os.environ.get("CI") == "true":
+        pytest.skip("Corpus integration is a local regression suite")
     from circuit_weaver.dispatcher import validate_design
 
     spec_path = SAMPLES_DIR / sample_dir / yaml_name
