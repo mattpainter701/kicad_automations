@@ -1009,6 +1009,44 @@ def _sidecar_slot_is_free(occupied: list[tuple[float, float]], x: float, y: floa
     return True
 
 
+def _reserve_occupancy(occupied: list[tuple[float, float]] | None, *points: tuple[float, float]) -> None:
+    """Record occupied passive/anchor centers for later topology motifs."""
+    if occupied is None:
+        return
+    for x, y in points:
+        point = (snap(x), snap(y))
+        if point not in occupied:
+            occupied.append(point)
+
+
+def _first_free_cluster_origin(
+    base_x: float,
+    base_y: float,
+    occupied: list[tuple[float, float]] | None,
+    footprint: list[tuple[float, float]],
+    *,
+    x_step: float = _SIDECAR_MIN_SEP,
+    y_step: float = _SIDECAR_MIN_SEP,
+) -> tuple[float, float]:
+    """Return a nearby origin whose footprint clears the sheet occupancy list."""
+    if not occupied:
+        return snap(base_x), snap(base_y)
+
+    offsets = [(0.0, 0.0)]
+    for ring in range(1, 8):
+        for dx in (0.0, ring * x_step, -ring * x_step):
+            for dy in (0.0, ring * y_step, -ring * y_step):
+                if dx != 0.0 or dy != 0.0:
+                    offsets.append((dx, dy))
+
+    for dx, dy in offsets:
+        ox = snap(base_x + dx)
+        oy = snap(base_y + dy)
+        if all(_sidecar_slot_is_free(occupied, snap(ox + px), snap(oy + py)) for px, py in footprint):
+            return ox, oy
+    return snap(base_x), snap(base_y)
+
+
 def _sidecar_candidates(pin_x: float, pin_y: float, side: str):
     """Yield (x, y, angle) candidate poses walking away from the pin.
 
@@ -1197,7 +1235,10 @@ _STRAP_LADDER_PITCH = snap(7.62)
 
 
 def _apply_topology_decoupling_bank(
-    layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]
+    layout: SheetLayout,
+    pc: PlacedComponent,
+    passives: list[PlacedPassive],
+    occupied: list[tuple[float, float]] | None = None,
 ) -> set[str]:
     """Stack decoupling caps that share a rail into a compact vertical bank.
 
@@ -1223,24 +1264,35 @@ def _apply_topology_decoupling_bank(
         if len(bank) < 2:
             continue
         ordered = sorted(bank, key=lambda c: c.ref)
-        bank_x = snap(center_x + bank_idx * _DECOUPLING_BANK_PITCH * 2)
+        preferred_x = snap(center_x + bank_idx * _DECOUPLING_BANK_PITCH * 2)
+        footprint = [(0.0, snap(-5.08))]
+        footprint.extend((0.0, snap(i * _DECOUPLING_BANK_PITCH)) for i in range(len(ordered)))
+        footprint.append((0.0, snap((len(ordered) - 1) * _DECOUPLING_BANK_PITCH + 5.08)))
+        bank_x, bank_y_local = _first_free_cluster_origin(preferred_x, bank_y, occupied, footprint)
 
-        _add_local_anchor(layout, rail_net, bank_x, snap(bank_y - 5.08), 270, "label", pc.ref)
+        rail_anchor = _add_local_anchor(layout, rail_net, bank_x, snap(bank_y_local - 5.08), 270, "label", pc.ref)
 
         for i, cap in enumerate(ordered):
-            cap_y = snap(bank_y + i * _DECOUPLING_BANK_PITCH)
+            cap_y = snap(bank_y_local + i * _DECOUPLING_BANK_PITCH)
             _set_passive_pose(cap, bank_x, cap_y, 90)
             processed.add(cap.ref)
 
         gnd_net = ordered[0].net2
-        gnd_y = snap(bank_y + (len(ordered) - 1) * _DECOUPLING_BANK_PITCH + 5.08)
-        _add_local_anchor(layout, gnd_net, bank_x, gnd_y, 90, "power", pc.ref)
+        gnd_y = snap(bank_y_local + (len(ordered) - 1) * _DECOUPLING_BANK_PITCH + 5.08)
+        gnd_anchor = _add_local_anchor(layout, gnd_net, bank_x, gnd_y, 90, "power", pc.ref)
+        _reserve_occupancy(occupied, (rail_anchor.x, rail_anchor.y), (gnd_anchor.x, gnd_anchor.y))
+        _reserve_occupancy(occupied, *((cap.x, cap.y) for cap in ordered))
         bank_idx += 1
 
     return processed
 
 
-def _apply_topology_strap_ladder(layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]) -> set[str]:
+def _apply_topology_strap_ladder(
+    layout: SheetLayout,
+    pc: PlacedComponent,
+    passives: list[PlacedPassive],
+    occupied: list[tuple[float, float]] | None = None,
+) -> set[str]:
     """Align strap resistors that share a rail into a tidy vertical column.
 
     Groups straps by their rail net (net2 for pull-ups/downs).  Ladders of
@@ -1276,21 +1328,31 @@ def _apply_topology_strap_ladder(layout: SheetLayout, pc: PlacedComponent, passi
         if len(ladder) < 2:
             continue
         ordered = sorted(ladder, key=lambda r: r.ref)
-        ladder_x = snap(center_x - 20.32 + ladder_idx * _STRAP_LADDER_PITCH * 2)
+        preferred_x = snap(center_x - 20.32 + ladder_idx * _STRAP_LADDER_PITCH * 2)
+        footprint = [(0.0, snap(i * _STRAP_LADDER_PITCH)) for i in range(len(ordered))]
+        footprint.append((0.0, snap((len(ordered) - 1) * _STRAP_LADDER_PITCH + 5.08)))
+        ladder_x, ladder_y_local = _first_free_cluster_origin(preferred_x, ladder_y, occupied, footprint)
 
         for i, strap in enumerate(ordered):
-            strap_y = snap(ladder_y + i * _STRAP_LADDER_PITCH)
+            strap_y = snap(ladder_y_local + i * _STRAP_LADDER_PITCH)
             _set_passive_pose(strap, ladder_x, strap_y, 90)
             processed.add(strap.ref)
 
-        rail_y = snap(ladder_y + (len(ordered) - 1) * _STRAP_LADDER_PITCH + 5.08)
-        _add_local_anchor(layout, rail_net, ladder_x, rail_y, 90, "power", pc.ref)
+        rail_y = snap(ladder_y_local + (len(ordered) - 1) * _STRAP_LADDER_PITCH + 5.08)
+        rail_anchor = _add_local_anchor(layout, rail_net, ladder_x, rail_y, 90, "power", pc.ref)
+        _reserve_occupancy(occupied, (rail_anchor.x, rail_anchor.y))
+        _reserve_occupancy(occupied, *((strap.x, strap.y) for strap in ordered))
         ladder_idx += 1
 
     return processed
 
 
-def _apply_topology_ldo_cluster(layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]) -> set[str]:
+def _apply_topology_ldo_cluster(
+    layout: SheetLayout,
+    pc: PlacedComponent,
+    passives: list[PlacedPassive],
+    occupied: list[tuple[float, float]] | None = None,
+) -> set[str]:
     """Place LDO support passives (CIN + COUT + optional enable) as a compact unit.
 
     Detects a power-category IC with one input cap and one output cap
@@ -1322,25 +1384,39 @@ def _apply_topology_ldo_cluster(layout: SheetLayout, pc: PlacedComponent, passiv
     cluster_y = snap(bottom + 10.16)
     spacing = snap(12.70)
 
-    _set_passive_pose(cin, snap(center_x - spacing / 2), cluster_y, 90)
-    _set_passive_pose(cout, snap(center_x + spacing / 2), cluster_y, 90)
+    has_enable_strap = len([pp for pp in passives if pp.sym_type == "R" and pp.role in ("pull_up", "strap")]) == 1
+    footprint = [
+        (snap(-spacing / 2), 0.0),
+        (snap(spacing / 2), 0.0),
+        (snap(-spacing / 2), snap(-5.08)),
+        (snap(spacing / 2), snap(-5.08)),
+        (0.0, snap(5.08)),
+    ]
+    if has_enable_strap:
+        footprint.append((spacing, 0.0))
+    cluster_x, cluster_y = _first_free_cluster_origin(center_x, cluster_y, occupied, footprint)
+
+    _set_passive_pose(cin, snap(cluster_x - spacing / 2), cluster_y, 90)
+    _set_passive_pose(cout, snap(cluster_x + spacing / 2), cluster_y, 90)
 
     # Shared rail labels
-    _add_local_anchor(layout, cin.net1, snap(center_x - spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
-    _add_local_anchor(layout, cout.net1, snap(center_x + spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
+    cin_anchor = _add_local_anchor(layout, cin.net1, snap(cluster_x - spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
+    cout_anchor = _add_local_anchor(layout, cout.net1, snap(cluster_x + spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
     # Shared ground
     gnd_net = cin.net2
     gnd_y = snap(cluster_y + 5.08)
-    _add_local_anchor(layout, gnd_net, snap(center_x), gnd_y, 90, "power", pc.ref)
+    gnd_anchor = _add_local_anchor(layout, gnd_net, snap(cluster_x), gnd_y, 90, "power", pc.ref)
 
     processed.update({cin.ref, cout.ref})
+    _reserve_occupancy(occupied, (cin.x, cin.y), (cout.x, cout.y), (cin_anchor.x, cin_anchor.y), (cout_anchor.x, cout_anchor.y), (gnd_anchor.x, gnd_anchor.y))
 
     # Handle enable strap if present
     straps = [pp for pp in passives if pp.sym_type == "R" and pp.role in ("pull_up", "strap")]
     if len(straps) == 1:
         en_strap = straps[0]
-        _set_passive_pose(en_strap, snap(center_x + spacing), cluster_y, 90)
+        _set_passive_pose(en_strap, snap(cluster_x + spacing), cluster_y, 90)
         processed.add(en_strap.ref)
+        _reserve_occupancy(occupied, (en_strap.x, en_strap.y))
 
     return processed
 
@@ -1408,10 +1484,11 @@ def _apply_topology_local_circuits(layout: SheetLayout) -> None:
         if pc is None:
             continue
 
+        anchor_start = len(layout.local_net_anchors)
         processed = _apply_topology_buck_cluster(layout, pc, passives)
         remainder = [pp for pp in passives if pp.ref not in processed]
         if remainder:
-            ldo_done = _apply_topology_ldo_cluster(layout, pc, remainder)
+            ldo_done = _apply_topology_ldo_cluster(layout, pc, remainder, occupied)
             processed.update(ldo_done)
             remainder = [pp for pp in remainder if pp.ref not in ldo_done]
         if remainder:
@@ -1419,22 +1496,23 @@ def _apply_topology_local_circuits(layout: SheetLayout) -> None:
             processed.update(cc_done)
             remainder = [pp for pp in remainder if pp.ref not in cc_done]
         if remainder:
-            bank_done = _apply_topology_decoupling_bank(layout, pc, remainder)
+            bank_done = _apply_topology_decoupling_bank(layout, pc, remainder, occupied)
             processed.update(bank_done)
             remainder = [pp for pp in remainder if pp.ref not in bank_done]
         if remainder:
-            ladder_done = _apply_topology_strap_ladder(layout, pc, remainder)
+            ladder_done = _apply_topology_strap_ladder(layout, pc, remainder, occupied)
             processed.update(ladder_done)
             remainder = [pp for pp in remainder if pp.ref not in ladder_done]
         for pp in passives:
             if pp.ref in processed:
-                occupied.append((pp.x, pp.y))
+                _reserve_occupancy(occupied, (pp.x, pp.y))
+        _reserve_occupancy(occupied, *((anchor.x, anchor.y) for anchor in layout.local_net_anchors[anchor_start:]))
         if remainder:
             sidecar_work.append((pc, remainder))
 
     # Junction anchors are wiring targets — a sidecar body parked on top of
     # one forces the connecting wire straight through the passive.
-    occupied.extend((anchor.x, anchor.y) for anchor in layout.local_net_anchors)
+    _reserve_occupancy(occupied, *((anchor.x, anchor.y) for anchor in layout.local_net_anchors))
 
     for pc, remainder in sidecar_work:
         _apply_topology_sidecar_cluster(layout, pc, remainder, occupied)

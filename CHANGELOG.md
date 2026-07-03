@@ -10,6 +10,7 @@
 - Cap "local" wiring at 50.8mm of Manhattan run — anchors and owner pins farther away fall back to net labels, eliminating the 60–130mm cross-sheet wires that made sheets unreadable.
 - Add a final wire-hygiene pass that rewrites any remaining emitted segment crossing a symbol body as an endpoint-preserving detour (T-joint-carrying segments are left alone). Wire-through-body segments across the corpus: 147 → 36; remaining cases are catalogued in TASKS.md as bank/ladder occupancy follow-ups.
 - Add `tests/test_layout_quality.py` — geometric analysis of generated `.kicad_sch` output gating zero symbol overlaps and per-sample wire-crossing ceilings, plus unit regressions for the sidecar, face-detection, routing, budget, and hygiene fixes.
+- Make decoupling-bank, strap-ladder, and LDO topology motifs occupancy-aware: each motif now walks a collision-free origin for its passive bodies and local anchors, then reserves those positions before later motifs or sidecars are placed. The shared occupancy pass now deduplicates reservations and immediately seeds anchors created by earlier topology parents before placing later motifs. This closes the first layout follow-up from the Sprint 53 audit and leaves only the post-occupancy endpoint/tapped-rail reductions open in `TASKS.md`.
 
 ### Sprint 52 completion — critical and high-priority generation fixes
 
