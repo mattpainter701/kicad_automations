@@ -231,13 +231,15 @@ Files most likely impacted: `subcircuits/topology_builders.py`, `subcircuits/bas
 
 **Goal:** Close the highest-leverage findings from the 2026-05-04 generation pipeline audit while keeping the engine part-neutral. Eliminate synthesized-net orphans, consolidate bypass-cap synthesis behind one datasheet-aware owner, tighten the placement-readiness gate across schematic and PCB paths, and convert catalog work into normalized, vendor-agnostic schema + ingest improvements rather than a per-part template backlog.
 
-### T228. Replace fallback signal-net synthesis with normalized interface routing (P1, HIGH) — IN PROGRESS
+### T228. Replace fallback signal-net synthesis with normalized interface routing (P1, HIGH) ✅ DONE
 
-- [ ] Reproduce the live `USB_DP_U1`, `USB_DM_U1`, `XTAL2_FE`, `~_U1` synthesized-net failures from `I:/my_circuit/val_output.txt` against the current build as normalized routing/schema failures, not as part-specific exceptions.
-- [ ] In `subcircuits/topology_builders.py:build_generic`, remove `f"{pin.name}_{ref}"` fallback synthesis for unresolved non-power signal pins; route only through normalized declared interfaces, pin electrical types, optional-pin annotations, and shared-bus metadata from `ic_data` / imported part data.
+- [x] Reproduce the live `USB_DP_U1`, `USB_DM_U1`, `XTAL2_FE`, `~_U1` synthesized-net failures from `I:/my_circuit/val_output.txt` against the current build as normalized routing/schema failures, not as part-specific exceptions: the new T228 regressions in `tests/test_template_structure.py` reproduce each class (USB pin-name routing, crystal role routing, `~`/`RESERVED` NC filtering) against synthetic parts.
+- [x] In `subcircuits/topology_builders.py:build_generic`, remove `f"{pin.name}_{ref}"` fallback synthesis for unresolved non-power signal pins; route only through normalized declared interfaces, pin electrical types, optional-pin annotations, and shared-bus metadata from `ic_data` / imported part data. Pin-name role inference (`infer_pin_roles_from_pins`) fills undeclared roles so imported parts land on shared buses; everything else stays unmapped and fails closed.
 - [x] Filter pin names against `_NC_PIN_NAME_PATTERNS` (e.g. `~`) before any net synthesis so they route to `explicit_no_connects` instead of becoming `~_{REF}` nets.
 - [x] Hard-fail generation when an unmapped non-power signal pin remains after declared-interface routing; surface the failure with pin name and component reference.
-- [ ] Add regression coverage proving imported USB, crystal, and ethernet-family parts no longer emit per-instance signal nets or synthesized `BoundaryPort` declarations when normalized metadata is sufficient, and fail closed when it is not.
+- [x] Add regression coverage proving imported USB, crystal, and ethernet-family parts no longer emit per-instance signal nets or synthesized `BoundaryPort` declarations when normalized metadata is sufficient, and fail closed when it is not.
+
+Follow-on hardening landed with this task: the T229 `orphan-net` gate now recognizes support-passive endpoints (straps, bypass/bootstrap caps, inductors, feedback dividers) as real second consumers, fixing false-positive errors on every regulator SW/FB/BST node and strap net that had turned the sample/corpus release gates red; `build_generic` no longer defaults chip-select to a per-instance `CS_{REF}` net (the mapped default blocked the SPI repair pass); and `MCP1700-1802E` joins `linear_regulator.json` so `oled_display_module` resolves without silent substitution.
 
 Closes audit findings F1, F2, partially F23.
 
@@ -287,26 +289,26 @@ Closes audit findings F4, F5.
 
 Files: `src/circuit_weaver/generator.py`, `src/circuit_weaver/dispatcher.py`, `src/circuit_weaver/placement_readiness.py`, `tests/`
 
-### T233. Extend repair using normalized interface roles (P2, MEDIUM) — IN PROGRESS
+### T233. Extend repair using normalized interface roles (P2, MEDIUM) ✅ DONE
 
 - [x] Add a dedicated `crystal_oscillator` builder that emits the load-cap network sized from the crystal datasheet's `CL` value, replacing the current `_GENERIC_TOPOLOGIES` fall-through with topology-level behavior.
 - [x] Extend `generational_repair.py` with SPI repair keyed to normalized controller/peripheral interface roles so floating chip-select pins complete onto an existing unique CS net shared by the same SPI bus, not via part-name allowlists.
 - [x] Extend `generational_repair.py` with UART repair keyed to normalized TX/RX roles so incomplete UART participants can complete onto an existing peer-direction net instead of relying on per-device rules.
-- [ ] Add optional flow-control / explicit-NC behavior for metadata-declared but intentionally unused UART handshake pins.
-- [ ] Add regression coverage proving the crystal, SPI, and UART repair paths work for both imported and curated parts from shared interface metadata alone.
+- [x] Add optional flow-control / explicit-NC behavior for metadata-declared but intentionally unused UART handshake pins: `_repair_uart_flow_control` completes an unmapped RTS/CTS pin onto the existing sibling flow-control net when derivable, and otherwise declares it an explicit no-connect (clearing the T228 fail-closed marker) whenever the component's TX/RX pair is actively wired.
+- [x] Add regression coverage proving the crystal, SPI, and UART repair paths work for both imported and curated parts from shared interface metadata alone: new tests cover pin-name-inference-only SPI/UART repair, curated `pin_roles` flow-control completion and NC fallback, and imported-`pin_roles` crystal building plus its fail-closed path.
 
 Closes audit findings F9, F12.
 
 Files: `src/circuit_weaver/subcircuits/topology_builders.py`, `src/circuit_weaver/generational_repair.py`, `src/circuit_weaver/ic_data/*.json`, `tests/`
 
-### T234. Turn catalog growth into a normalized ingest pipeline (P3, MEDIUM) — IN PROGRESS
+### T234. Turn catalog growth into a normalized ingest pipeline (P3, MEDIUM) — MOSTLY DONE
 
 - [x] Bulk-update `ic_data/connector.json` to replace the universal `"type": "passive"` with real normalized pin types so `_classify_unhandled_pin` no longer falls into the generic warning bucket.
 - [x] Add normalized `pin_roles` as a shared interface-role contract on `ComponentDef`, cache payloads, generic-builder outputs, and `ic_data` conversion so repairs/builders can consume capabilities instead of exact MPNs.
 - [x] Upgrade the EasyEDA ingest path to populate that schema from imported pin names, so imported parts expose vendor-agnostic interface roles without new Python templates.
-- [ ] Extend the same normalized schema propagation to datasheet-derived ingest and broader fields (optional/debug pins, power domains, recommended support passives, vendor aliases).
-- [ ] Use `samples/` and `I:/my_circuit/design.yaml` as an acceptance corpus for missing-part coverage, but treat named MPNs only as fixtures; do not add per-part engine behavior to make the corpus pass.
-- [ ] Add regression coverage showing representative buck, USB, memory, and audio/imported parts flow through normalized schema + generic/topology builders without synthetic-net or pin-type artifacts.
+- [x] Extend the same normalized schema propagation to datasheet-derived ingest and broader fields (optional/debug pins, power domains, recommended support passives, vendor aliases): `datasheet_parser.parse_datasheet_text` now extracts pin-function tables into normalized `pins` / `pin_roles` / `pin_vdd` / `pin_gnd` / `power_domains` / `explicit_no_connects` / `debug_pins`, recognizes datasheet-recommended bypass values into `recommended_bypass`, and `extract_specs` propagates index-declared `vendor_aliases` as sourcing metadata. `build_generic` honors declared `debug_pins` / `optional_pins` as safely-unrouted instead of hard-failing.
+- [x] Use `samples/` as an acceptance corpus for missing-part coverage, treating named MPNs only as fixtures (sample validate/generate gates plus a catalog-wide sweep asserting every generic-dispatched entry emits no synthetic nets). Re-checking `I:/my_circuit/design.yaml` remains for the maintainer's machine — the path is not available in this environment.
+- [x] Add regression coverage showing representative buck, USB, memory, and audio/imported parts flow through normalized schema + generic/topology builders without synthetic-net or pin-type artifacts: `test_t234_catalog_generic_entries_emit_no_synthetic_nets` sweeps every catalog entry that dispatches to `build_generic`, and the datasheet-ingest tests prove an imported pin table flows through `build_generic` end-to-end.
 
 Closes audit findings F20, F21.
 

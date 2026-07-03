@@ -213,6 +213,21 @@ def _swap_uart_direction(net_name: str) -> str | None:
     return None
 
 
+def _swap_uart_flow_direction(net_name: str) -> str | None:
+    """Return the sibling flow-control net name (RTS <-> CTS), if derivable."""
+    raw = str(net_name or "").strip()
+    if not raw:
+        return None
+    patterns = (
+        (re.compile(r"(?<![A-Za-z0-9])(RTS)(?![A-Za-z0-9])", re.IGNORECASE), "CTS"),
+        (re.compile(r"(?<![A-Za-z0-9])(CTS)(?![A-Za-z0-9])", re.IGNORECASE), "RTS"),
+    )
+    for pattern, replacement in patterns:
+        if pattern.search(raw):
+            return pattern.sub(lambda m: _match_case(replacement, m.group(1)), raw, count=1)
+    return None
+
+
 def _merge_component_pin_net(
     repairs: dict[str, ComponentRepair],
     *,
@@ -339,6 +354,79 @@ def _repair_uart_pairs(components: list[ComponentDef]) -> tuple[list[ComponentRe
     return list(repairs.values()), actions
 
 
+def _repair_uart_flow_control(components: list[ComponentDef]) -> tuple[list[ComponentRepair], list[RepairAction]]:
+    """Resolve metadata-declared UART handshake pins (RTS/CTS) on active UARTs.
+
+    T233 — when a component's normalized roles declare flow-control pins but
+    the design leaves them unmapped while TX/RX are wired, either:
+
+    - complete a handshake pin onto the sibling flow-control net when that
+      net already exists (own CTS on ``UART0_CTS`` implies RTS belongs on an
+      existing ``UART0_RTS``), or
+    - declare the pin an explicit no-connect — flow control is intentionally
+      unused on this UART, and the pin must not surface as a floating-input
+      or unmapped-required generation failure.
+
+    Components with no active UART (neither TX nor RX mapped) are skipped so
+    the pass never invents handshake behavior for parts that merely expose
+    the pins in metadata.
+    """
+    repairs: dict[str, ComponentRepair] = {}
+    actions: list[RepairAction] = []
+    existing_nets = {
+        str(net).strip()
+        for comp in components
+        for net in comp.pin_nets.values()
+        if str(net or "").strip()
+    }
+    for comp in components:
+        ref = _component_ref(comp)
+        roles = _component_roles(comp)
+        if not ref:
+            continue
+        handled = _handled_pins(comp)
+        tx_pin = roles.get("txd")
+        rx_pin = roles.get("rxd")
+        uart_active = bool((tx_pin and comp.pin_nets.get(tx_pin)) or (rx_pin and comp.pin_nets.get(rx_pin)))
+        if not uart_active:
+            continue
+        for own_role, peer_role in (("rts", "cts"), ("cts", "rts")):
+            pin = roles.get(own_role)
+            if not pin or pin in handled:
+                continue
+            sibling_pin = roles.get(peer_role)
+            sibling_net = comp.pin_nets.get(sibling_pin) if sibling_pin else None
+            candidate = _swap_uart_flow_direction(sibling_net) if sibling_net else None
+            if candidate and candidate in existing_nets:
+                if _merge_component_pin_net(repairs, ref=ref, pin=pin, net_name=candidate):
+                    actions.append(
+                        RepairAction(
+                            kind="uart_flow_control",
+                            rationale=(
+                                f"UART participant {ref} wired {peer_role.upper()} to {sibling_net} but left "
+                                f"{own_role.upper()} pin {pin} unmapped; connected it to existing sibling "
+                                f"net {candidate}."
+                            ),
+                            nets=[sibling_net, candidate],
+                        )
+                    )
+                continue
+            repair = repairs.setdefault(ref, ComponentRepair(ref=ref))
+            if pin not in repair.explicit_no_connects:
+                repair.explicit_no_connects.add(pin)
+                actions.append(
+                    RepairAction(
+                        kind="uart_handshake_nc",
+                        rationale=(
+                            f"UART participant {ref} has an active TX/RX pair but no flow-control wiring; "
+                            f"declared unused {own_role.upper()} pin {pin} an explicit no-connect."
+                        ),
+                        nets=[],
+                    )
+                )
+    return list(repairs.values()), actions
+
+
 def apply_component_repairs(components: list[ComponentDef], repairs: list[ComponentRepair]) -> None:
     """Apply component-local repairs in-place after resolution."""
     if not repairs:
@@ -352,6 +440,14 @@ def apply_component_repairs(components: list[ComponentDef], repairs: list[Compon
             if pin not in comp.pin_nets:
                 comp.pin_nets[pin] = net_name
         comp.explicit_no_connects.update(repair.explicit_no_connects)
+        # A repaired pin is no longer unmapped — drop it from the T228
+        # fail-closed marker so generation doesn't hard-fail on a pin the
+        # repair pass just resolved.
+        resolved = set(repair.pin_nets) | repair.explicit_no_connects
+        unmapped = getattr(comp, "unmapped_required_pins", None)
+        if unmapped:
+            for pin in resolved:
+                unmapped.pop(pin, None)
 
 
 def _pick_vdd_rail(power_nets: set[str]) -> str | None:
@@ -544,6 +640,11 @@ def auto_repair_design(
     uart_repairs, uart_actions = _repair_uart_pairs(components)
     component_repairs.extend(uart_repairs)
     actions.extend(uart_actions)
+
+    # --- UART flow-control completion / explicit NC ------------------------
+    flow_repairs, flow_actions = _repair_uart_flow_control(components)
+    component_repairs.extend(flow_repairs)
+    actions.extend(flow_actions)
 
     if not new_blocks:
         return ir, component_repairs, actions

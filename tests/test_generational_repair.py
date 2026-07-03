@@ -311,3 +311,133 @@ class TestAutoRepairDesign:
 
         apply_component_repairs(components, component_repairs)
         assert components[1].pin_nets["1"] == "UART0_RX"
+
+    # ------------------------------------------------------------------
+    # Sprint 52 / T233 — repair keyed to shared interface metadata alone
+    # ------------------------------------------------------------------
+
+    def test_spi_repair_works_from_pin_name_inference_alone(self):
+        """Imported parts with no pin_roles metadata still repair via
+        normalized pin-name inference (MOSI/MISO/SCLK/CS_N names)."""
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+            {"ref": "U2", "kind": "storage", "template_type": "memory"},
+        ])
+        components = [
+            self._make_component(
+                "U1",
+                {"1": "SPI_MOSI", "2": "SPI_MISO", "3": "SPI_SCLK", "4": "FLASH_CS"},
+                power_pins={"5": "VDD_3P3"},
+                pin_names={"1": "MOSI", "2": "MISO", "3": "SCLK", "4": "CS_N", "5": "VDD"},
+            ),
+            self._make_component(
+                "U2",
+                {"1": "SPI_MOSI", "2": "SPI_MISO", "3": "SPI_SCLK"},
+                power_pins={"5": "VDD_3P3"},
+                pin_names={"1": "MOSI", "2": "MISO", "3": "SCLK", "4": "CS_N", "5": "VDD"},
+            ),
+        ]
+
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
+
+        assert repaired is ir
+        assert any(a.kind == "spi_cs" for a in actions)
+        apply_component_repairs(components, component_repairs)
+        assert components[1].pin_nets["4"] == "FLASH_CS"
+
+    def test_uart_repair_works_from_pin_name_inference_alone(self):
+        """UART pair completion keys off inferred TXD/RXD roles, not MPNs."""
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+            {"ref": "U2", "kind": "digital", "template_type": "bridge"},
+        ])
+        components = [
+            self._make_component(
+                "U1",
+                {"1": "UART0_TX", "2": "UART0_RX"},
+                power_pins={"3": "VDD_3P3"},
+                pin_names={"1": "TXD", "2": "RXD", "3": "VDD"},
+            ),
+            self._make_component(
+                "U2",
+                {"2": "UART0_TX"},
+                power_pins={"3": "VDD_3P3"},
+                pin_names={"1": "TXD", "2": "RXD", "3": "VDD"},
+            ),
+        ]
+
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
+
+        assert any(a.kind == "uart_pair" for a in actions)
+        apply_component_repairs(components, component_repairs)
+        assert components[1].pin_nets["1"] == "UART0_RX"
+
+    def test_uart_flow_control_completes_onto_existing_sibling_net(self):
+        """RTS pin left unmapped completes onto the existing sibling CTS/RTS
+        net when the component already wires the other handshake line."""
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+            {"ref": "U2", "kind": "digital", "template_type": "bridge"},
+        ])
+        components = [
+            self._make_component(
+                "U1",
+                {"1": "UART0_TX", "2": "UART0_RX", "4": "UART0_RTS", "5": "UART0_CTS"},
+                power_pins={"3": "VDD_3P3"},
+                pin_roles={"txd": "1", "rxd": "2", "rts": "4", "cts": "5"},
+            ),
+            self._make_component(
+                "U2",
+                {"1": "UART0_RX", "2": "UART0_TX", "5": "UART0_RTS"},
+                power_pins={"3": "VDD_3P3"},
+                pin_roles={"txd": "1", "rxd": "2", "rts": "4", "cts": "5"},
+            ),
+        ]
+
+        repaired, component_repairs, actions = auto_repair_design(ir, components, enabled=True)
+
+        assert any(a.kind == "uart_flow_control" for a in actions)
+        apply_component_repairs(components, component_repairs)
+        # U2's CTS pin 5 carries UART0_RTS; its unmapped RTS pin 4 should
+        # land on the existing sibling net UART0_CTS.
+        assert components[1].pin_nets["4"] == "UART0_CTS"
+
+    def test_uart_flow_control_ncs_unused_handshake_pins(self):
+        """Metadata-declared RTS/CTS pins on an active UART with no
+        flow-control wiring anywhere become explicit no-connects."""
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+        ])
+        comp = self._make_component(
+            "U1",
+            {"1": "UART0_TX", "2": "UART0_RX"},
+            power_pins={"3": "VDD_3P3"},
+            pin_roles={"txd": "1", "rxd": "2", "rts": "4", "cts": "5"},
+        )
+        comp.unmapped_required_pins = {"4": "RTS", "5": "CTS"}
+
+        repaired, component_repairs, actions = auto_repair_design(ir, [comp], enabled=True)
+
+        nc_actions = [a for a in actions if a.kind == "uart_handshake_nc"]
+        assert len(nc_actions) == 2
+        apply_component_repairs([comp], component_repairs)
+        assert comp.explicit_no_connects >= {"4", "5"}
+        # The T228 fail-closed marker is cleared for the repaired pins.
+        assert comp.unmapped_required_pins == {}
+
+    def test_uart_flow_control_skips_inactive_uart(self):
+        """Handshake pins on a part whose UART is not wired stay untouched."""
+        ir = self._make_ir([
+            {"ref": "U1", "kind": "digital", "template_type": "mcu"},
+        ])
+        comp = self._make_component(
+            "U1",
+            {},
+            power_pins={"3": "VDD_3P3"},
+            pin_roles={"txd": "1", "rxd": "2", "rts": "4", "cts": "5"},
+        )
+
+        repaired, component_repairs, actions = auto_repair_design(ir, [comp], enabled=True)
+
+        assert not any(a.kind in ("uart_flow_control", "uart_handshake_nc") for a in actions)
+        assert comp.explicit_no_connects == set()

@@ -70,6 +70,158 @@ _PASSIVE_PATTERNS = {
     "temp_coeff": [re.compile(r"Temperature\s+Coefficient\s*[=:]\s*([\w]+)", re.IGNORECASE)],
 }
 
+# ---------------------------------------------------------------------------
+# T234 — normalized pin / interface schema extraction.
+#
+# Datasheet "Pin Functions" tables commonly follow a
+# ``<number> <NAME> <I/O-type> <description>`` row shape. Rows matched here
+# are converted into the same normalized fields the EasyEDA ingest emits
+# (``pins``, ``pin_roles``, ``pin_vdd`` / ``pin_gnd`` power domains,
+# ``explicit_no_connects``, ``debug_pins``), so datasheet-derived parts flow
+# through topology builders without per-part Python.
+# ---------------------------------------------------------------------------
+
+_PIN_ROW_RE = re.compile(
+    r"^\s*(\d{1,3})\s+([A-Z][A-Za-z0-9_/#+.\-~]{0,23})\s+(I/O|IO|I|O|P|PWR|G|GND|S|A|NC)\b",
+    re.MULTILINE,
+)
+
+_PIN_TYPE_MAP = {
+    "I": "input",
+    "O": "output",
+    "I/O": "bidirectional",
+    "IO": "bidirectional",
+    "P": "power_in",
+    "PWR": "power_in",
+    "S": "power_in",
+    "G": "power_in",
+    "GND": "power_in",
+    "A": "passive",
+    "NC": "no_connect",
+}
+
+_GND_PIN_NAME_RE = re.compile(r"^(GND|VSS\d*|AGND|DGND|PGND|SGND|EPAD|EP|VEE)$", re.IGNORECASE)
+_SUPPLY_PIN_NAME_RE = re.compile(r"^(VDD\w*|VCC\w*|VIN\w*|AVDD\w*|DVDD\w*|VBAT|VBUS|V\+)$", re.IGNORECASE)
+_NC_PIN_NAME_RE = re.compile(r"^(NC|DNC|N\.?C\.?|RESERVED|~)$", re.IGNORECASE)
+_DEBUG_PIN_NAME_RE = re.compile(
+    r"^(TEST\w*|DEBUG\w*|SWDIO|SWCLK|SWO|TDI|TDO|TMS|TCK|TRST#?|NTRST|JTAG\w*)$",
+    re.IGNORECASE,
+)
+
+_RECOMMENDED_BYPASS_PATTERNS = [
+    # "... a 0.1 µF ceramic bypass capacitor ..." / "... 100 nF decoupling cap ..."
+    re.compile(
+        r"([\d.]+)\s*([µu]F|nF|pF)\s+(?:X\d[RS]\s+)?(?:ceramic\s+)?(?:bypass|decoupling)\s+cap",
+        re.IGNORECASE,
+    ),
+    # "... bypass the VDD pin with a 0.1 µF capacitor ..."
+    re.compile(
+        r"(?:bypass|decouple)[^.\n]{0,60}?(?:with|using)\s+(?:a\s+)?([\d.]+)\s*([µu]F|nF|pF)",
+        re.IGNORECASE,
+    ),
+]
+
+
+def _parse_pin_table_text(text: str) -> list[dict]:
+    """Extract normalized pin rows from datasheet text.
+
+    Returns a list of ``{"number", "name", "type", "side"}`` dicts in the
+    engine's normalized pin schema. Duplicate pin numbers keep the first
+    occurrence (pin tables repeat across package variants).
+    """
+    pins: list[dict] = []
+    seen: set[str] = set()
+    for match in _PIN_ROW_RE.finditer(text or ""):
+        number, name, raw_type = match.group(1), match.group(2), match.group(3)
+        if number in seen:
+            continue
+        seen.add(number)
+        etype = _PIN_TYPE_MAP.get(raw_type.upper(), "unspecified")
+        # Name-based enrichment mirrors the EasyEDA ingest so both paths
+        # normalize identically.
+        if _GND_PIN_NAME_RE.match(name) or _SUPPLY_PIN_NAME_RE.match(name):
+            etype = "power_in"
+        elif _NC_PIN_NAME_RE.match(name):
+            etype = "no_connect"
+        pins.append({"number": number, "name": name, "type": etype, "side": "L"})
+    return pins
+
+
+def _normalize_pin_schema(pins: list[dict]) -> dict:
+    """Derive normalized interface fields from extracted pins.
+
+    Emits the shared vendor-agnostic contract consumed by topology builders:
+    ``pin_roles`` (canonical role -> pin number), ``pin_vdd`` / ``pin_gnd``
+    power-domain lists, ``power_domains`` (distinct supply names),
+    ``explicit_no_connects``, and ``debug_pins`` (optional pins that are
+    safe to leave unrouted).
+    """
+    from .component_db import PinDef, infer_pin_roles_from_pins
+
+    if not pins:
+        return {}
+
+    pin_defs = [PinDef(p["number"], p["name"], p["type"], p.get("side", "L")) for p in pins]
+    out: dict = {"pins": pins}
+
+    vdd_pins: list[str] = []
+    gnd_pins: list[str] = []
+    domains: list[str] = []
+    ncs: list[str] = []
+    debug: list[str] = []
+    for p in pins:
+        name = p["name"]
+        if _GND_PIN_NAME_RE.match(name):
+            gnd_pins.append(p["number"])
+        elif _SUPPLY_PIN_NAME_RE.match(name):
+            vdd_pins.append(p["number"])
+            base = name.upper()
+            if base not in domains:
+                domains.append(base)
+        elif _NC_PIN_NAME_RE.match(name) or p["type"] == "no_connect":
+            ncs.append(p["number"])
+        elif _DEBUG_PIN_NAME_RE.match(name):
+            debug.append(p["number"])
+
+    roles = infer_pin_roles_from_pins(pin_defs)
+    if roles:
+        out["pin_roles"] = roles
+    if vdd_pins:
+        out["pin_vdd"] = vdd_pins
+    if gnd_pins:
+        out["pin_gnd"] = gnd_pins
+    if domains:
+        out["power_domains"] = domains
+    if ncs:
+        out["explicit_no_connects"] = ncs
+    if debug:
+        out["debug_pins"] = debug
+    return out
+
+
+def _extract_recommended_bypass(text: str) -> list[dict]:
+    """Extract datasheet-recommended bypass capacitors, if stated.
+
+    Returns entries in the ``recommended_bypass`` schema consumed by
+    :func:`component_db.auto_generate_bypass_caps`:
+    ``[{"net": "VDD", "value": "100nF", "count": 1}]``.
+    """
+    for pattern in _RECOMMENDED_BYPASS_PATTERNS:
+        match = pattern.search(text or "")
+        if not match:
+            continue
+        try:
+            value = float(match.group(1))
+        except ValueError:
+            continue
+        unit = match.group(2).replace("µ", "u")
+        unit = "uF" if unit.lower() == "uf" else unit.lower().replace("f", "F")
+        # Normalize sub-unity microfarads: 0.1uF -> 100nF
+        if unit == "uF" and value < 1:
+            value, unit = value * 1000, "nF"
+        return [{"net": "VDD", "value": f"{value:g}{unit}", "count": 1}]
+    return []
+
 
 def _apply_patterns(text: str, patterns: dict[str, list[re.Pattern]]) -> dict[str, float | str]:
     """Apply regex patterns to text and return matched values."""
@@ -85,6 +237,39 @@ def _apply_patterns(text: str, patterns: dict[str, list[re.Pattern]]) -> dict[st
                     results[key] = val
                 break
     return results
+
+
+def parse_datasheet_text(text: str) -> dict:
+    """Extract structured metadata from raw datasheet text.
+
+    Pure-text core of :func:`parse_datasheet`, exposed so the ingest can be
+    tested (and reused by non-PDF sources) without pypdf. Emits scalar specs
+    plus, when a pin-function table is recognized, the normalized schema
+    fields shared with the EasyEDA ingest: ``pins``, ``pin_roles``,
+    ``pin_vdd`` / ``pin_gnd``, ``power_domains``, ``explicit_no_connects``,
+    ``debug_pins``, and ``recommended_bypass``.
+    """
+    ic_specs = _apply_patterns(text, _PATTERNS)
+
+    if "pdiss_max_mw" in ic_specs and "pdiss_max_w" not in ic_specs:
+        ic_specs["pdiss_max_w"] = ic_specs.pop("pdiss_max_mw") / 1000.0
+    elif "pdiss_max_mw" in ic_specs:
+        del ic_specs["pdiss_max_mw"]
+
+    if "fsw_khz" in ic_specs and "fsw_mhz" not in ic_specs:
+        ic_specs["fsw_mhz"] = ic_specs.pop("fsw_khz") / 1000.0
+    elif "fsw_khz" in ic_specs:
+        del ic_specs["fsw_khz"]
+
+    passive_specs = _apply_patterns(text, _PASSIVE_PATTERNS)
+    result = {**ic_specs, **passive_specs}
+
+    # T234 — normalized pin/interface schema propagation.
+    result.update(_normalize_pin_schema(_parse_pin_table_text(text)))
+    recommended = _extract_recommended_bypass(text)
+    if recommended:
+        result["recommended_bypass"] = recommended
+    return result
 
 
 def parse_datasheet(pdf_path: str | Path) -> dict:
@@ -107,20 +292,7 @@ def parse_datasheet(pdf_path: str | Path) -> dict:
     if not text.strip():
         return {"status": "no_text", "file": pdf_path.name}
 
-    ic_specs = _apply_patterns(text, _PATTERNS)
-
-    if "pdiss_max_mw" in ic_specs and "pdiss_max_w" not in ic_specs:
-        ic_specs["pdiss_max_w"] = ic_specs.pop("pdiss_max_mw") / 1000.0
-    elif "pdiss_max_mw" in ic_specs:
-        del ic_specs["pdiss_max_mw"]
-
-    if "fsw_khz" in ic_specs and "fsw_mhz" not in ic_specs:
-        ic_specs["fsw_mhz"] = ic_specs.pop("fsw_khz") / 1000.0
-    elif "fsw_khz" in ic_specs:
-        del ic_specs["fsw_khz"]
-
-    passive_specs = _apply_patterns(text, _PASSIVE_PATTERNS)
-    result = {**ic_specs, **passive_specs}
+    result = parse_datasheet_text(text)
     result["file"] = pdf_path.name
     result["extracted_timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ")
     return result
@@ -188,6 +360,12 @@ def extract_specs(datasheets_dir: str | Path, output_dir: str | Path) -> dict:
         if mpn in parts:
             result["manufacturer"] = parts[mpn].get("manufacturer", "")
             result["description"] = parts[mpn].get("description", "")
+            # T234 — vendor aliases are sourcing metadata, never behavior
+            # selectors; propagate them so imported entries keep their
+            # distributor cross-references.
+            aliases = parts[mpn].get("aliases") or []
+            if aliases:
+                result["vendor_aliases"] = [str(a) for a in aliases if str(a or "").strip()]
 
         metadata[mpn] = result
         extracted += 1

@@ -173,6 +173,42 @@
     "pin_out": "2",
     "pin_en": null
   },
+  "MCP1700-1802E": {
+    "topology": "ldo",
+    "description": "250mA LDO 1.8V Low-Iq",
+    "footprint": "SOT-23",
+    "vout_fixed": 1.8,
+    "adjustable": false,
+    "iout_max": 0.25,
+    "vdropout": 0.178,
+    "iq_ua": 1.6,
+    "cin": 1e-06,
+    "cout": 1e-06,
+    "pins": [
+      {
+        "number": "1",
+        "name": "GND",
+        "type": "power_in",
+        "side": "B"
+      },
+      {
+        "number": "2",
+        "name": "OUT",
+        "type": "power_out",
+        "side": "R"
+      },
+      {
+        "number": "3",
+        "name": "IN",
+        "type": "power_in",
+        "side": "L"
+      }
+    ],
+    "pin_vin": "3",
+    "pin_gnd": "1",
+    "pin_out": "2",
+    "pin_en": null
+  },
   "LM2776": {
     "topology": "charge_pump",
     "description": "Inverting Charge Pump -VIN 100mA SOT-23-5",

@@ -119,3 +119,91 @@ class TestExtractSpecs:
         result = extract_specs(datasheets_dir, tmp_path / "out")
         assert result.get("status") == "error"
         assert "pypdf" in result.get("message", "")
+
+
+class TestNormalizedPinSchema:
+    """Sprint 52 / T234 — datasheet ingest emits the shared normalized schema."""
+
+    PIN_TABLE_TEXT = """
+Pin Functions
+1 VDD P Supply voltage
+2 GND G Ground
+3 USB_DP I/O USB D+ differential pair
+4 USB_DM I/O USB D- differential pair
+5 XTAL1 I Crystal input
+6 XTAL2 O Crystal output
+7 SWDIO I/O Serial wire debug data
+8 NC NC No internal connection
+9 EN I Enable input
+
+Bypass the VDD pin with a 0.1 µF ceramic capacitor placed close to the pin.
+"""
+
+    def test_pin_table_rows_are_extracted(self):
+        from circuit_weaver.datasheet_parser import _parse_pin_table_text
+
+        pins = _parse_pin_table_text(self.PIN_TABLE_TEXT)
+        assert [p["number"] for p in pins] == [str(n) for n in range(1, 10)]
+        by_num = {p["number"]: p for p in pins}
+        assert by_num["1"]["type"] == "power_in"
+        assert by_num["3"]["type"] == "bidirectional"
+        assert by_num["5"]["type"] == "input"
+        assert by_num["6"]["type"] == "output"
+        assert by_num["8"]["type"] == "no_connect"
+
+    def test_normalized_fields_match_easyeda_contract(self):
+        from circuit_weaver.datasheet_parser import parse_datasheet_text
+
+        result = parse_datasheet_text(self.PIN_TABLE_TEXT)
+        assert result["pin_vdd"] == ["1"]
+        assert result["pin_gnd"] == ["2"]
+        assert result["power_domains"] == ["VDD"]
+        assert result["explicit_no_connects"] == ["8"]
+        assert result["debug_pins"] == ["7"]
+        # Canonical interface roles inferred from pin names.
+        assert result["pin_roles"]["dp"] == "3"
+        assert result["pin_roles"]["dm"] == "4"
+        assert result["pin_roles"]["xtal_in"] == "5"
+        assert result["pin_roles"]["xtal_out"] == "6"
+
+    def test_recommended_bypass_extracted_and_normalized(self):
+        from circuit_weaver.datasheet_parser import parse_datasheet_text
+
+        result = parse_datasheet_text(self.PIN_TABLE_TEXT)
+        assert result["recommended_bypass"] == [{"net": "VDD", "value": "100nF", "count": 1}]
+
+    def test_text_without_pin_table_emits_no_schema_fields(self):
+        from circuit_weaver.datasheet_parser import parse_datasheet_text
+
+        result = parse_datasheet_text("Output Voltage: 3.3 V, nothing else here")
+        assert "pins" not in result
+        assert "pin_roles" not in result
+        assert "recommended_bypass" not in result
+
+    def test_datasheet_entry_flows_through_build_generic_without_artifacts(self):
+        """Corpus regression: a datasheet-derived part must route USB and
+        crystal pins onto shared buses and NC pins into explicit no-connects
+        with no synthetic {PIN}_{REF} nets or phantom boundary ports."""
+        from circuit_weaver.datasheet_parser import parse_datasheet_text
+        from circuit_weaver.subcircuits.topology_builders import build_generic
+
+        ic_data = parse_datasheet_text(self.PIN_TABLE_TEXT)
+        ic_data["_mpn"] = "DS_IMPORTED_MCU"
+        ic_data["topology"] = "component"
+
+        result = build_generic(ic_data, {"ic": "DS_IMPORTED_MCU", "ref": "U9"})
+        comp = result.components[0]
+        assert comp.power_pins["1"].startswith("VDD")
+        assert comp.power_pins["2"] == "GND"
+        assert comp.pin_nets["3"] == "USB_DP"
+        assert comp.pin_nets["4"] == "USB_DM"
+        assert comp.pin_nets["5"] == "XTAL_IN"
+        assert comp.pin_nets["6"] == "XTAL_OUT"
+        assert "8" in comp.explicit_no_connects
+        assert comp.recommended_bypass == [{"net": "VDD", "value": "100nF", "count": 1}]
+        # The EN pin has no declared interface — fail closed, not FOO_U9.
+        assert comp.unmapped_required_pins.get("9") == "EN"
+        # Declared debug pins are optional: unrouted SWDIO must not hard-fail.
+        assert "7" not in comp.unmapped_required_pins
+        for net in list(comp.pin_nets.values()) + [p.name for p in result.boundary_ports]:
+            assert not net.endswith("_U9"), f"synthetic per-instance net leaked: {net}"

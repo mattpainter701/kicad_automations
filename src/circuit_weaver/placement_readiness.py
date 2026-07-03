@@ -176,6 +176,29 @@ def _is_allowlisted_single_consumer_net(net: str, consumers: set[str], comp_by_r
     return ref_prefix == "TP" or source_ref.startswith("TP")
 
 
+def _support_passive_nets(components) -> set[str]:
+    """Nets terminated by a support passive (strap, bypass, inductor, divider).
+
+    Unlike the ``orphan-interface`` contract — where a pull strap does not
+    satisfy "another functional block consumes this interface" — the
+    ``orphan-net`` check is about physical connectivity. A regulator's SW
+    node ending at its inductor, an FB node at its feedback divider, or an
+    enable pin at its RC strap all have a real second component on the net
+    and must not be flagged as one-ended.
+    """
+    nets: set[str] = set()
+    for comp in components:
+        for cap in getattr(comp, "bypass_caps", []) or []:
+            for net in (getattr(cap, "net", ""), getattr(cap, "gnd_net", "")):
+                if net:
+                    nets.add(net)
+        for strap in getattr(comp, "straps", []) or []:
+            for net in (getattr(strap, "net", ""), getattr(strap, "rail", "")):
+                if net:
+                    nets.add(net)
+    return nets
+
+
 def _single_consumer_net_issues(
     compiled_ir: "DesignIR",
     components,
@@ -192,6 +215,7 @@ def _single_consumer_net_issues(
     from .subcircuits.base import _is_power_net
 
     net_to_refs, comp_by_ref = _build_net_to_refs(components)
+    support_nets = _support_passive_nets(components)
     declared_interfaces = {
         (iface.name or "").strip()
         for block in compiled_ir.blocks
@@ -205,6 +229,8 @@ def _single_consumer_net_issues(
         if len(consumers) > 1:
             continue
         if net in declared_interfaces or net in existing_validator_nets:
+            continue
+        if net in support_nets:
             continue
         if _is_allowlisted_single_consumer_net(net, consumers, comp_by_ref):
             continue
