@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Sprint 53 — schematic layout quality (congestion, overlaps, readability)
+
+- Stop support passives from stacking at identical coordinates: the sidecar cluster pass now groups by resolved parent-pin location and walks collision-free slots against a sheet-wide occupancy list seeded with cluster poses and junction anchors. Symbol-body overlaps across the nine-sample corpus: 11 → 0.
+- Fix passive face detection to trust the pin's angle (top-face pins near a body corner were classified "left", parking buck support parts on the wrong face), and make the buck cluster face-aware so CIN, the SW/FB junction anchors, COUT, and the feedback divider grow away from the pin's actual face instead of hanging below the IC and wiring straight through it.
+- Route local passive connections around *all* nearby symbol bodies: `_route_local_connection` now takes sibling-passive/own-body/neighbor-IC keep-out boxes, generates detours around every blocker, and logs a warning when it must relax clearance instead of silently emitting a direct line through symbols (audit F6).
+- Cap "local" wiring at 50.8mm of Manhattan run — anchors and owner pins farther away fall back to net labels, eliminating the 60–130mm cross-sheet wires that made sheets unreadable.
+- Add a final wire-hygiene pass that rewrites any remaining emitted segment crossing a symbol body as an endpoint-preserving detour (T-joint-carrying segments are left alone). Wire-through-body segments across the corpus: 147 → 36; remaining cases are catalogued in TASKS.md as bank/ladder occupancy follow-ups.
+- Add `tests/test_layout_quality.py` — geometric analysis of generated `.kicad_sch` output gating zero symbol overlaps and per-sample wire-crossing ceilings, plus unit regressions for the sidecar, face-detection, routing, budget, and hygiene fixes.
+
 ### Sprint 52 completion — critical and high-priority generation fixes
 
 - Fix the T229 `orphan-net` placement-readiness gate to recognize support-passive endpoints (straps, bypass/bootstrap caps, inductors, feedback dividers) as real second consumers. Regulator SW/FB/BST nodes, ESP32 EN/IO0 strap nets, charger PROG/CELL/QSTRT programming nets, and display IREF/charge-pump nets no longer raise false-positive errors — this restores the sample and corpus release gates from 24 failing tests to green.

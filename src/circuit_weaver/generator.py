@@ -598,6 +598,114 @@ def _polyline_length(points: list[tuple[float, float]]) -> float:
     return sum(abs(x2 - x1) + abs(y2 - y1) for (x1, y1), (x2, y2) in zip(points, points[1:]))
 
 
+_WIRE_PTS_RE = re.compile(
+    r"\(wire\s+\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\)"
+)
+_DETOUR_MARGIN = snap(2.54)
+
+
+def _detour_wires_around_bodies(
+    wires: list[str],
+    body_boxes: list[tuple[float, float, float, float]],
+) -> list[str]:
+    """Final hygiene pass: reroute wire segments that cross a symbol body.
+
+    Individual emitters route defensively, but several passes (label
+    collision shifts, endpoint stubs, cluster motifs) can still leave a
+    segment slicing through an IC or passive body. This pass rewrites such
+    segments as an L/U detour around the offending box while preserving
+    both endpoints, so net connectivity is untouched. Segments that carry a
+    T-joint (another wire ends on their interior) are left alone — moving
+    them would break the junction.
+    """
+    if not body_boxes or not wires:
+        return wires
+
+    parsed: list[tuple[str, tuple[float, float, float, float] | None]] = []
+    endpoints: list[tuple[float, float]] = []
+    for w in wires:
+        m = _WIRE_PTS_RE.search(w)
+        if not m:
+            parsed.append((w, None))
+            continue
+        seg = (float(m.group(1)), float(m.group(2)), float(m.group(3)), float(m.group(4)))
+        parsed.append((w, seg))
+        endpoints.append((seg[0], seg[1]))
+        endpoints.append((seg[2], seg[3]))
+
+    eps = 0.01
+
+    def _has_interior_tap(x1: float, y1: float, x2: float, y2: float) -> bool:
+        for ex, ey in endpoints:
+            if abs(x1 - x2) < eps and abs(ex - x1) < eps and min(y1, y2) + eps < ey < max(y1, y2) - eps:
+                return True
+            if abs(y1 - y2) < eps and abs(ey - y1) < eps and min(x1, x2) + eps < ex < max(x1, x2) - eps:
+                return True
+        return False
+
+    def _endpoint_inside(box: tuple[float, float, float, float], x: float, y: float) -> bool:
+        left, top, right, bottom = box
+        return left - eps <= x <= right + eps and top - eps <= y <= bottom + eps
+
+    out: list[str] = []
+    for w, seg in parsed:
+        if seg is None:
+            out.append(w)
+            continue
+        x1, y1, x2, y2 = seg
+        orthogonal = abs(x1 - x2) < eps or abs(y1 - y2) < eps
+        crossing = [box for box in body_boxes if _segment_hits_box(x1, y1, x2, y2, box)]
+        # Boxes that contain an endpoint cannot be detoured around — the
+        # wire terminates there by design.
+        crossing = [box for box in crossing if not _endpoint_inside(box, x1, y1) and not _endpoint_inside(box, x2, y2)]
+        if not crossing or not orthogonal or _has_interior_tap(x1, y1, x2, y2):
+            out.append(w)
+            continue
+
+        rerouted = False
+        for box in crossing:
+            left, top, right, bottom = box
+            if abs(x1 - x2) < eps:
+                lanes = sorted(
+                    (snap(left - _DETOUR_MARGIN), snap(right + _DETOUR_MARGIN)),
+                    key=lambda lane: abs(lane - x1),
+                )
+                candidates = [[(x1, y1), (lane, y1), (lane, y2), (x2, y2)] for lane in lanes]
+            else:
+                lanes = sorted(
+                    (snap(top - _DETOUR_MARGIN), snap(bottom + _DETOUR_MARGIN)),
+                    key=lambda lane: abs(lane - y1),
+                )
+                candidates = [[(x1, y1), (x1, lane), (x2, lane), (x2, y2)] for lane in lanes]
+            for pts in candidates:
+                segs = [
+                    (a[0], a[1], b[0], b[1])
+                    for a, b in zip(pts, pts[1:])
+                    if abs(a[0] - b[0]) > eps or abs(a[1] - b[1]) > eps
+                ]
+                if any(
+                    _segment_hits_box(sx1, sy1, sx2, sy2, bb) for sx1, sy1, sx2, sy2 in segs for bb in body_boxes
+                ):
+                    continue
+                for sx1, sy1, sx2, sy2 in segs:
+                    out.append(sexpr_wire(sx1, sy1, sx2, sy2))
+                rerouted = True
+                break
+            if rerouted:
+                break
+
+        if not rerouted:
+            _logger.warning(
+                "wire (%.2f,%.2f)->(%.2f,%.2f) crosses a symbol body and no clean detour was found",
+                x1,
+                y1,
+                x2,
+                y2,
+            )
+            out.append(w)
+    return out
+
+
 def _normalize_polyline(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
     normalized = []
     for x, y in points:
@@ -728,26 +836,50 @@ def _route_local_connection(
     wires: list[str],
     obstacle: tuple[float, float, float, float] | None = None,
     route_state: dict[str, dict] | None = None,
+    obstacles: list[tuple[float, float, float, float]] | None = None,
 ) -> None:
-    """Route a local passive connection, detouring around the parent symbol body."""
+    """Route a local passive connection, detouring around symbol bodies.
+
+    ``obstacle`` is the parent IC body (expanded by the routing clearance);
+    ``obstacles`` are additional raw keep-out boxes — sibling passive bodies,
+    the routed passive's own body, neighboring IC bodies — that the route
+    must not cross. When no candidate clears every box, clearance is relaxed
+    progressively (drop sibling boxes, then the parent box) with a warning,
+    so a dirty route is at least loud instead of silent. (F6)
+    """
     start = (snap(x1), snap(y1))
     end = (snap(x2), snap(y2))
     expanded_box = _expand_box(obstacle) if obstacle is not None else None
 
-    def _pick_best(candidates: list[list[tuple[float, float]]]) -> list[tuple[float, float]] | None:
+    def _contains(box: tuple[float, float, float, float], point: tuple[float, float]) -> bool:
+        left, top, right, bottom = box
+        return left - 0.01 <= point[0] <= right + 0.01 and top - 0.01 <= point[1] <= bottom + 0.01
+
+    blockers: list[tuple[float, float, float, float]] = []
+    if expanded_box is not None:
+        blockers.append(expanded_box)
+    if obstacles:
+        # A box containing an endpoint cannot be avoided — the wire must
+        # terminate there (junction anchors often sit on a passive's pin).
+        blockers.extend(box for box in obstacles if not _contains(box, start) and not _contains(box, end))
+
+    def _pick_best(
+        candidates: list[list[tuple[float, float]]],
+        boxes: list[tuple[float, float, float, float]],
+    ) -> list[tuple[float, float]] | None:
         valid = []
         for candidate in candidates:
             polyline = _normalize_polyline(candidate)
             if len(polyline) < 2:
                 continue
-            if _polyline_is_clear(polyline, expanded_box):
+            if all(_polyline_is_clear(polyline, box) for box in boxes):
                 valid.append(polyline)
         if not valid:
             return None
         return min(valid, key=lambda pts: (_polyline_length(pts), len(pts)))
 
     if expanded_box is not None and route_state is not None:
-        lane_best = _pick_best(_lane_route_candidates(start, end, expanded_box, route_state))
+        lane_best = _pick_best(_lane_route_candidates(start, end, expanded_box, route_state), blockers)
         if lane_best is not None:
             _emit_polyline(lane_best, wires)
             return
@@ -757,8 +889,10 @@ def _route_local_connection(
         [start, (start[0], end[1]), end],
     ]
 
-    if expanded_box is not None:
-        left, top, right, bottom = expanded_box
+    # Detour waypoints hug every blocking box, not just the parent body, so
+    # a route blocked by a sibling passive can slide around it.
+    for box in blockers:
+        left, top, right, bottom = box
         candidates.extend(
             [
                 [start, (left, start[1]), (left, end[1]), end],
@@ -768,11 +902,34 @@ def _route_local_connection(
             ]
         )
 
-    best = _pick_best(candidates)
+    best = _pick_best(candidates, blockers)
     if best is not None:
         _emit_polyline(best, wires)
         return
 
+    # Relax: allow crossing sibling passive bodies but never the parent IC.
+    if len(blockers) > 1 and expanded_box is not None:
+        best = _pick_best(candidates, [expanded_box])
+        if best is not None:
+            _logger.warning(
+                "local route (%.2f,%.2f)->(%.2f,%.2f) could not clear nearby passives; "
+                "emitting a route that may cross a passive body",
+                start[0],
+                start[1],
+                end[0],
+                end[1],
+            )
+            _emit_polyline(best, wires)
+            return
+
+    _logger.warning(
+        "local route (%.2f,%.2f)->(%.2f,%.2f) has no clear path; falling back to a "
+        "direct wire that may cross symbol bodies",
+        start[0],
+        start[1],
+        end[0],
+        end[1],
+    )
     connect_points(start[0], start[1], end[0], end[1], wires)
 
 
@@ -823,16 +980,39 @@ def _render_passive_net_endpoint(
     label_fn(net_name)(pin_x, pin_y, pin_angle, net_name, wires, labels, wire_len=wire_len)
 
 
+# A "local" wire that has to travel farther than this is not local: drawing
+# it produces the long cross-sheet runs that make generated schematics read
+# as sloppy, and it inevitably crosses unrelated clusters. Beyond the cap,
+# connectivity falls back to net labels — the professional idiom.
+_LOCAL_WIRE_MAX_RUN = snap(50.8)
+
+
+def _local_run_within_budget(x1: float, y1: float, x2: float, y2: float) -> bool:
+    """True when an orthogonal route between the points stays sheet-local."""
+    return abs(x1 - x2) + abs(y1 - y2) <= _LOCAL_WIRE_MAX_RUN
+
+
 def _nearest_local_anchor(layout: SheetLayout, net_name: str, x: float, y: float):
-    """Return the closest local anchor for ``net_name`` on this sheet, if any."""
+    """Return the closest local anchor for ``net_name`` on this sheet, if any.
+
+    Anchors farther than the local-wire budget are ignored so distant
+    clusters connect by net label instead of a wire spanning the sheet.
+    """
     candidates = [anchor for anchor in layout.local_net_anchors if anchor.name == net_name]
     if not candidates:
         return None
-    return min(candidates, key=lambda anchor: (anchor.x - x) ** 2 + (anchor.y - y) ** 2)
+    nearest = min(candidates, key=lambda anchor: (anchor.x - x) ** 2 + (anchor.y - y) ** 2)
+    if not _local_run_within_budget(nearest.x, nearest.y, x, y):
+        return None
+    return nearest
 
 
 def _topology_parent_pin_point(parent_pc, parent_pins: dict, pp, net_name: str):
-    """Return the owning parent pin point for topology-local routing, if applicable."""
+    """Return the owning parent pin point for topology-local routing, if applicable.
+
+    Distant owner pins fall back to label rendering for the same reason as
+    distant anchors: the wire would cross half the sheet.
+    """
     if parent_pc is None or not pp.owner_pin:
         return None
     owner_net = parent_pc.comp.pin_nets.get(pp.owner_pin) or parent_pc.comp.power_pins.get(pp.owner_pin)
@@ -841,7 +1021,10 @@ def _topology_parent_pin_point(parent_pc, parent_pins: dict, pp, net_name: str):
     points = parent_pins.get(net_name, [])
     if not points:
         return None
-    return points[0]
+    point = points[0]
+    if not _local_run_within_budget(point[0], point[1], pp.x, pp.y):
+        return None
+    return point
 
 
 def _sheet_comment2(layout: SheetLayout) -> str:
@@ -1991,6 +2174,21 @@ def _render_sheet(
 
     # --- Place passives with local wiring to parent IC ---
     local_route_states: dict[str, dict[str, dict]] = {}
+    # Keep-out boxes for local routing: every passive body (including the
+    # routed passive's own body — a wire from its bottom pin to an anchor
+    # above must go around, not through) plus non-parent IC bodies. The
+    # rendered R/C/L review bodies are ~3.81mm squares centered on the pose.
+    _passive_half = 1.905
+    passive_body_boxes = [
+        (
+            snap(pp.x - _passive_half),
+            snap(pp.y - _passive_half),
+            snap(pp.x + _passive_half),
+            snap(pp.y + _passive_half),
+        )
+        for pp in layout.placed_passives
+    ]
+    ic_body_boxes = {ref: component_body_bounds(pc) for ref, pc in placed_ic_map.items()}
     for pp in layout.placed_passives:
         if pp.symbol_variant == "review":
             endpoint_stub_len = 6.35
@@ -2023,6 +2221,9 @@ def _render_sheet(
         parent_pc = placed_ic_map.get(pp.parent_ref)
         parent_body = component_body_bounds(parent_pc) if parent_pc else None
         route_state = local_route_states.setdefault(pp.parent_ref or "_sheet", {})
+        route_obstacles = passive_body_boxes + [
+            box for ref, box in ic_body_boxes.items() if ref != pp.parent_ref
+        ]
 
         use_literal_local = pp.presentation == "literal_local"
         use_topology_local = pp.presentation == "topology_local"
@@ -2032,17 +2233,17 @@ def _render_sheet(
         if anchor1 is not None:
             _route_local_connection(
                 p1_x, p1_y, anchor1.x, anchor1.y, wires, obstacle=parent_body, route_state=route_state
-            )
+            , obstacles=route_obstacles)
         else:
             topology_owner1 = (
                 _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net1) if use_topology_local else None
             )
             if topology_owner1 is not None:
                 ic_x, ic_y = topology_owner1
-                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
+                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
             elif use_literal_local and pp.net1 in parent_pins and parent_pins[pp.net1]:
                 ic_x, ic_y = parent_pins[pp.net1][0]
-                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
+                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
             else:
                 _render_passive_net_endpoint(
                     pp.net1,
@@ -2065,17 +2266,17 @@ def _render_sheet(
         if anchor2 is not None:
             _route_local_connection(
                 p2_x, p2_y, anchor2.x, anchor2.y, wires, obstacle=parent_body, route_state=route_state
-            )
+            , obstacles=route_obstacles)
         else:
             topology_owner2 = (
                 _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net2) if use_topology_local else None
             )
             if topology_owner2 is not None:
                 ic_x, ic_y = topology_owner2
-                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
+                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
             elif use_literal_local and pp.net2 in parent_pins and parent_pins[pp.net2]:
                 ic_x, ic_y = parent_pins[pp.net2][0]
-                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state)
+                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
             else:
                 _render_passive_net_endpoint(
                     pp.net2,
@@ -2253,6 +2454,19 @@ def _render_sheet(
 
     # Add power instances to the instances list
     instances.extend(power_instances)
+
+    # --- Wire hygiene: detour any remaining segment that crosses a symbol body ---
+    hygiene_boxes = [component_body_bounds(placed) for placed in layout.placed_ics]
+    hygiene_boxes += [
+        (
+            snap(pp.x - _passive_half),
+            snap(pp.y - _passive_half),
+            snap(pp.x + _passive_half),
+            snap(pp.y + _passive_half),
+        )
+        for pp in layout.placed_passives
+    ]
+    wires = _detour_wires_around_bodies(wires, hygiene_boxes)
 
     # Add bus notation (Phase 3b): wires go with wires, entries+labels are bus_elements
     wires.extend(bus_wires_all)

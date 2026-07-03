@@ -2,6 +2,30 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 53 — Schematic Layout Quality (congestion / overlaps / readability)
+
+**Goal:** Make generated schematics read as professional: no stacked symbols, no wires slicing through symbol bodies, no cross-sheet "local" wires. Closes audit findings F6 and F14; F13/F15 remain open below.
+
+### T235. Eliminate support-passive stacking and route-through-body wiring (P1, HIGH) ✅ DONE
+
+- [x] Fix `_apply_topology_sidecar_cluster` to group passives by *resolved* parent-pin location and walk collision-free candidate slots against a sheet-wide occupancy list (previously, distinct owner labels resolving to one pin stacked C/R bodies at identical coordinates — 7 overlapping pairs on `oled_display_module` alone).
+- [x] Seed the occupancy list with every cluster-motif pose and every junction anchor so sidecars never park on a wiring target.
+- [x] Fix `_passive_pin_side` to treat the pin angle as authoritative (distance-based inference misclassified top-face pins near a body corner as "left", parking buck-cluster passives on the wrong face).
+- [x] Make `_apply_topology_buck_cluster` face-aware: CIN/SW-anchor/FB-anchor/COUT/divider columns grow away from the pin's actual face instead of assuming side-face pins and hanging everything below the IC.
+- [x] Route buck-cluster local wires around the IC body (`_wire_points_around`) instead of drawing pin-to-anchor straight lines through it.
+- [x] Extend `_route_local_connection` to take multiple keep-out boxes (sibling passives, own body, neighbor ICs), generate detour candidates around every blocker, relax progressively with a logged warning instead of silently falling back to a direct line (closes F6).
+- [x] Cap "local" wiring distance (`_LOCAL_WIRE_MAX_RUN` = 50.8mm): anchors/owner pins beyond the budget fall back to net labels, killing 60–130mm cross-sheet wire runs.
+- [x] Add a final wire-hygiene pass (`_detour_wires_around_bodies`) that rewrites any remaining emitted segment crossing a symbol body as an endpoint-preserving detour, skipping segments carrying T-joints.
+- [x] Add `tests/test_layout_quality.py`: geometric S-expression analysis of generated samples asserting zero symbol-body overlaps and per-sample wire-crossing ceilings, plus unit regressions for each fix.
+
+Measured across the nine-sample corpus: symbol-body overlaps 11 → 0; wire-through-body segments 147 → 36.
+
+### Layout follow-ups (open)
+
+- [ ] Make `_apply_topology_decoupling_bank` / `_apply_topology_strap_ladder` / `_apply_topology_ldo_cluster` occupancy-aware; the ~23 remaining wire-body crossings are wires terminating on anchors adjacent to bank/ladder cap bodies (ENDPOINT-INSIDE class), plus 5 tapped rails through IC bodies on multi-tap nets.
+- [ ] F13 — replace the connector-heavy boolean threshold in `placer.py` with a continuous density score.
+- [ ] F15 — when A0 still overflows, split the largest sheet and re-allocate (or fail with a clear "design too large" error) instead of emitting a crammed page.
+
 ## Generation Pipeline Audit (2026-05-04)
 
 > Scoping document for Sprint 52+. Reviews the schematic, passive-synthesis,
