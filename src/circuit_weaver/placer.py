@@ -874,10 +874,22 @@ def _bus_net_groups(components: list) -> dict[str, list[str]]:
 
 
 def _passive_pin_side(pc: PlacedComponent, pin_point: tuple[float, float, int] | None) -> str:
-    """Infer which body side a parent pin exits from."""
+    """Infer which body side a parent pin exits from.
+
+    The pin's own angle is authoritative — a pin points into the body, so
+    angle 0 exits the left face, 180 the right, 270 the top, 90 the bottom.
+    Distance-based inference (the old behavior) misclassifies pins near a
+    body corner (e.g. a top-face pin 2.5mm from the left edge read as
+    "left"), which parked support passives on the wrong face and forced
+    their wires straight through the symbol. Distance remains the fallback
+    for nonstandard angles only.
+    """
     if pin_point is None:
         return "right"
-    px, py, _angle = pin_point
+    px, py, angle = pin_point
+    by_angle = {0: "left", 180: "right", 270: "top", 90: "bottom"}.get(int(angle) % 360)
+    if by_angle is not None:
+        return by_angle
     left, top, right, bottom = component_body_bounds(pc)
     distances = {
         "left": abs(px - left),
@@ -919,68 +931,169 @@ def _wire_points(layout: SheetLayout, start: tuple[float, float], end: tuple[flo
     layout.local_wires.append((snap(start[0]), snap(start[1]), snap(end[0]), snap(end[1])))
 
 
+def _segment_crosses_rect(
+    x1: float, y1: float, x2: float, y2: float, rect: tuple[float, float, float, float]
+) -> bool:
+    """True when an orthogonal segment passes through a rect interior."""
+    eps = 0.01
+    left, top, right, bottom = rect
+    if abs(x1 - x2) < eps:
+        if not (left + eps < x1 < right - eps):
+            return False
+        seg_top, seg_bottom = sorted((y1, y2))
+        return max(seg_top, top + eps) < min(seg_bottom, bottom - eps)
+    if abs(y1 - y2) < eps:
+        if not (top + eps < y1 < bottom - eps):
+            return False
+        seg_left, seg_right = sorted((x1, x2))
+        return max(seg_left, left + eps) < min(seg_right, right - eps)
+    return False
+
+
+def _wire_points_around(
+    layout: SheetLayout,
+    pc: PlacedComponent,
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> None:
+    """Emit local wire segments from ``start`` to ``end`` avoiding the IC body.
+
+    Cluster motifs historically assumed their pins exit on a side face and
+    drew straight pin-to-anchor lines; parts whose SW/FB pins sit on the top
+    face got a wire straight through the symbol body. Try the direct line
+    and both L-bends first, then detour around the nearer vertical edge of
+    the body. Falls back to the straight line if nothing clears.
+    """
+    body = component_body_bounds(pc)
+    sx, sy = snap(start[0]), snap(start[1])
+    ex, ey = snap(end[0]), snap(end[1])
+
+    candidates: list[list[tuple[float, float]]] = [
+        [(sx, sy), (ex, ey)],
+        [(sx, sy), (ex, sy), (ex, ey)],
+        [(sx, sy), (sx, ey), (ex, ey)],
+    ]
+    left, _top, right, _bottom = body
+    detour_margin = snap(3.81)
+    detour_x = snap(right + detour_margin) if abs(sx - right) <= abs(sx - left) else snap(left - detour_margin)
+    candidates.append([(sx, sy), (detour_x, sy), (detour_x, ey), (ex, ey)])
+
+    for candidate in candidates:
+        segments = [
+            (p1[0], p1[1], p2[0], p2[1])
+            for p1, p2 in zip(candidate, candidate[1:])
+            if abs(p1[0] - p2[0]) > 0.01 or abs(p1[1] - p2[1]) > 0.01
+        ]
+        if all(abs(x1 - x2) < 0.01 or abs(y1 - y2) < 0.01 for x1, y1, x2, y2 in segments) and not any(
+            _segment_crosses_rect(x1, y1, x2, y2, body) for x1, y1, x2, y2 in segments
+        ):
+            for x1, y1, x2, y2 in segments:
+                layout.local_wires.append((snap(x1), snap(y1), snap(x2), snap(y2)))
+            return
+
+    _wire_points(layout, start, end)
+
+
+# Minimum center-to-center separation between sidecar passive bodies. A
+# rendered review passive body is ~3.81mm plus ref/value labels; 7.62mm
+# (3 grid units) keeps bodies and text clear of each other.
+_SIDECAR_MIN_SEP = snap(7.62)
+_SIDECAR_INLINE_OFFSET = snap(8.89)
+
+
+def _sidecar_slot_is_free(occupied: list[tuple[float, float]], x: float, y: float) -> bool:
+    """True when a candidate passive center keeps clearance from placed peers."""
+    for ox, oy in occupied:
+        if abs(x - ox) < _SIDECAR_MIN_SEP and abs(y - oy) < _SIDECAR_MIN_SEP:
+            return False
+    return True
+
+
+def _sidecar_candidates(pin_x: float, pin_y: float, side: str):
+    """Yield (x, y, angle) candidate poses walking away from the pin.
+
+    Candidates start inline with the pin and step outward along the pin's
+    exit axis, then fan one lane to either side, so a taken slot pushes the
+    next passive into a clean stagger instead of a stack.
+    """
+    for k in range(6):
+        primary = snap(_SIDECAR_INLINE_OFFSET + k * _SIDECAR_MIN_SEP)
+        for lateral in (0.0, _SIDECAR_MIN_SEP, -_SIDECAR_MIN_SEP):
+            if side == "left":
+                yield (snap(pin_x - primary), snap(pin_y + lateral), 180)
+            elif side == "right":
+                yield (snap(pin_x + primary), snap(pin_y + lateral), 0)
+            elif side == "top":
+                yield (snap(pin_x + lateral), snap(pin_y - primary), 270)
+            else:
+                yield (snap(pin_x + lateral), snap(pin_y + primary), 90)
+
+
 def _apply_topology_sidecar_cluster(
-    layout: SheetLayout, pc: PlacedComponent, passives: list[PlacedPassive]
+    layout: SheetLayout,
+    pc: PlacedComponent,
+    passives: list[PlacedPassive],
+    occupied: list[tuple[float, float]] | None = None,
 ) -> set[str]:
-    """Place shunt/bias/filter passives near their owning pins with short explicit topology."""
+    """Place shunt/bias/filter passives near their owning pins with short explicit topology.
+
+    Groups by the *resolved* parent-pin location rather than the owner-pin
+    label: distinct owner labels (e.g. ``CVDD`` / ``CVDD_BULK`` / ``RRES``)
+    frequently resolve to the same physical pin, and treating them as
+    independent groups used to stack their passives at identical
+    coordinates. Every pose is checked against an occupancy list so no two
+    sidecar passives (including those from other parents on the same sheet)
+    ever land closer than ``_SIDECAR_MIN_SEP``.
+    """
     processed: set[str] = set()
     if not passives:
         return processed
+    if occupied is None:
+        occupied = []
 
-    pin_groups: dict[str, list[PlacedPassive]] = {}
+    # Group passives by resolved pin coordinate so co-located owners share
+    # one cluster instead of stacking.
+    point_groups: dict[tuple[float, float], list[tuple[PlacedPassive, tuple[float, float, int]]]] = {}
     for pp in passives:
-        if pp.owner_pin:
-            pin_groups.setdefault(pp.owner_pin, []).append(pp)
-
-    for owner_pin, group in pin_groups.items():
-        parent_pin = _parent_pin_point(pc, owner_pin, group[0].net1)
+        if not pp.owner_pin:
+            continue
+        parent_pin = _parent_pin_point(pc, pp.owner_pin, pp.net1)
         if parent_pin is None:
             continue
+        key = (round(parent_pin[0], 2), round(parent_pin[1], 2))
+        point_groups.setdefault(key, []).append((pp, parent_pin))
+
+    for key in sorted(point_groups):
+        group = point_groups[key]
+        parent_pin = group[0][1]
         pin_x, pin_y, _pin_angle = parent_pin
         side = _passive_pin_side(pc, parent_pin)
-        ordered = sorted(group, key=lambda item: (item.role, item.ref))
+        ordered = sorted((pp for pp, _pt in group), key=lambda item: (item.role, item.ref))
 
-        # Single passive: place inline with the pin (closer, same axis)
-        if len(ordered) == 1:
-            pp = ordered[0]
-            inline_offset = snap(8.89)  # tighter than grid offset
-            if side == "left":
-                _set_passive_pose(pp, snap(pin_x - inline_offset), pin_y, 180)
-            elif side == "right":
-                _set_passive_pose(pp, snap(pin_x + inline_offset), pin_y, 0)
-            elif side == "top":
-                _set_passive_pose(pp, pin_x, snap(pin_y - inline_offset), 270)
-            else:
-                _set_passive_pose(pp, pin_x, snap(pin_y + inline_offset), 90)
-            processed.add(pp.ref)
-            continue
-
-        # Multiple passives: use grid layout
-        rows = max(1, math.ceil(len(ordered) / 2))
-        for idx, pp in enumerate(ordered):
-            row = idx % rows
-            col = idx // rows
-            primary = snap(_TOPOLOGY_BLOCK_PRIMARY_OFFSET + col * _TOPOLOGY_BLOCK_SECONDARY_OFFSET)
-            row_axis = snap(pin_y - (rows - 1) * (_TOPOLOGY_BLOCK_ROW_PITCH / 2.0) + row * _TOPOLOGY_BLOCK_ROW_PITCH)
-            col_axis = snap(pin_x - (rows - 1) * (_TOPOLOGY_BLOCK_ROW_PITCH / 2.0) + row * _TOPOLOGY_BLOCK_ROW_PITCH)
-            if side == "left":
-                x = snap(pin_x - primary)
-                y = row_axis
-                angle = 180
-            elif side == "right":
-                x = snap(pin_x + primary)
-                y = row_axis
-                angle = 0
-            elif side == "top":
-                x = col_axis
-                y = snap(pin_y - primary)
-                angle = 270
-            else:
-                x = col_axis
-                y = snap(pin_y + primary)
-                angle = 90
-            _set_passive_pose(pp, x, y, angle)
-            processed.add(pp.ref)
+        for pp in ordered:
+            placed = False
+            for x, y, angle in _sidecar_candidates(pin_x, pin_y, side):
+                if _sidecar_slot_is_free(occupied, x, y):
+                    _set_passive_pose(pp, x, y, angle)
+                    occupied.append((x, y))
+                    processed.add(pp.ref)
+                    placed = True
+                    break
+            if not placed:
+                # Every nearby slot is taken — fall back to the farthest
+                # inline slot rather than silently stacking.
+                primary = snap(_SIDECAR_INLINE_OFFSET + (6 + len(occupied) % 4) * _SIDECAR_MIN_SEP)
+                if side == "left":
+                    pose = (snap(pin_x - primary), pin_y, 180)
+                elif side == "right":
+                    pose = (snap(pin_x + primary), pin_y, 0)
+                elif side == "top":
+                    pose = (pin_x, snap(pin_y - primary), 270)
+                else:
+                    pose = (pin_x, snap(pin_y + primary), 90)
+                _set_passive_pose(pp, *pose)
+                occupied.append((pose[0], pose[1]))
+                processed.add(pp.ref)
 
     return processed
 
@@ -1020,30 +1133,60 @@ def _apply_topology_buck_cluster(layout: SheetLayout, pc: PlacedComponent, passi
     sw_x, sw_y, _sw_angle = sw_pin
     fb_x, fb_y, _fb_angle = fb_pin
 
-    cin_y = snap(max(bottom, vin_y) + 10.16)
-    _set_passive_pose(cin, vin_x, cin_y, 90)
+    # Face-aware placement: the textbook motif historically assumed side-face
+    # pins and hung everything below the IC. Parts whose VIN/SW/FB pins sit
+    # on the top face got junction anchors and caps on the far side of the
+    # body — every connection then ran straight through the symbol.
+    def _away(side: str) -> tuple[float, float]:
+        return {"left": (-1.0, 0.0), "right": (1.0, 0.0), "top": (0.0, -1.0), "bottom": (0.0, 1.0)}[side]
 
-    sw_anchor = _add_local_anchor(
-        layout, ind.net1, snap(sw_x), snap(max(bottom + 7.62, sw_y + 7.62)), 270, "junction", pc.ref
-    )
-    fb_anchor = _add_local_anchor(layout, fbb.net1, snap(fb_x + 8.89), snap(fb_y), 0, "junction", pc.ref)
+    vin_side = _passive_pin_side(pc, vin_pin)
+    sw_side = _passive_pin_side(pc, sw_pin)
+    fb_side = _passive_pin_side(pc, fb_pin)
 
-    _set_passive_pose(cbst, snap(sw_anchor.x + 2.54), snap(top - 6.35), 90)
+    vin_dx, vin_dy = _away(vin_side)
+    if vin_side in ("top", "bottom"):
+        cin_pos = (vin_x, snap(vin_y + vin_dy * 10.16))
+    else:
+        cin_pos = (snap(vin_x + vin_dx * 10.16), snap(vin_y + 5.08))
+    _set_passive_pose(cin, cin_pos[0], cin_pos[1], 90)
+
+    sw_dx, sw_dy = _away(sw_side)
+    if sw_side in ("top", "bottom"):
+        sw_anchor_y = snap(sw_y + sw_dy * 7.62)
+    else:
+        sw_anchor_y = snap(max(bottom + 7.62, sw_y + 7.62))
+    sw_anchor = _add_local_anchor(layout, ind.net1, snap(sw_x), sw_anchor_y, 270, "junction", pc.ref)
+    fb_dx, fb_dy = _away(fb_side)
+    if fb_side in ("top", "bottom"):
+        fb_anchor = _add_local_anchor(
+            layout, fbb.net1, snap(fb_x), snap(fb_y + fb_dy * 7.62), 0, "junction", pc.ref
+        )
+    else:
+        fb_anchor = _add_local_anchor(layout, fbb.net1, snap(fb_x + 8.89), snap(fb_y), 0, "junction", pc.ref)
+
+    if sw_side == "top":
+        _set_passive_pose(cbst, snap(sw_anchor.x + 2.54), snap(sw_anchor.y - 7.62), 90)
+    else:
+        _set_passive_pose(cbst, snap(sw_anchor.x + 2.54), snap(top - 6.35), 90)
     _set_passive_pose(ind, snap(sw_anchor.x + 12.70), snap(sw_anchor.y), 0)
 
     (_sw_pin_x, _sw_pin_y), (vout_pin_x, vout_pin_y) = passive_pin_xy(ind.x, ind.y, ind.angle)
     vout_anchor = _add_local_anchor(layout, ind.net2, snap(vout_pin_x + 8.89), snap(vout_pin_y), 0, "label", pc.ref)
 
-    _set_passive_pose(cout, vout_anchor.x, snap(vout_anchor.y + 11.43), 90)
+    # Grow the output/divider columns away from the body, not into it.
+    grow = -1.0 if sw_side == "top" else 1.0
+    _set_passive_pose(cout, vout_anchor.x, snap(vout_anchor.y + grow * 11.43), 90)
 
     if fbt_item is not None:
         _set_passive_pose(fbt_item, snap(fb_anchor.x + 12.70), snap(fb_anchor.y), 0)
         processed.add(fbt_item.ref)
 
-    _set_passive_pose(fbb, fb_anchor.x, snap(fb_anchor.y + 11.43), 90)
+    fb_grow = -1.0 if fb_side == "top" else 1.0
+    _set_passive_pose(fbb, fb_anchor.x, snap(fb_anchor.y + fb_grow * 11.43), 90)
 
-    _wire_points(layout, (sw_x, sw_y), (sw_anchor.x, sw_anchor.y))
-    _wire_points(layout, (fb_x, fb_y), (fb_anchor.x, fb_anchor.y))
+    _wire_points_around(layout, pc, (sw_x, sw_y), (sw_anchor.x, sw_anchor.y))
+    _wire_points_around(layout, pc, (fb_x, fb_y), (fb_anchor.x, fb_anchor.y))
 
     processed.update({cin.ref, cbst.ref, ind.ref, cout.ref, fbb.ref})
     return processed
@@ -1254,6 +1397,12 @@ def _apply_topology_local_circuits(layout: SheetLayout) -> None:
             continue
         by_parent.setdefault(pp.parent_ref, []).append(pp)
 
+    # Sheet-wide occupancy for the sidecar fallback: seeded with every pose
+    # decided by the deliberate cluster motifs so late sidecars never stack
+    # onto them (or onto each other across parents).
+    occupied: list[tuple[float, float]] = []
+    sidecar_work: list[tuple[PlacedComponent, list[PlacedPassive]]] = []
+
     for parent_ref, passives in by_parent.items():
         pc = placed_ic_map.get(parent_ref)
         if pc is None:
@@ -1277,8 +1426,18 @@ def _apply_topology_local_circuits(layout: SheetLayout) -> None:
             ladder_done = _apply_topology_strap_ladder(layout, pc, remainder)
             processed.update(ladder_done)
             remainder = [pp for pp in remainder if pp.ref not in ladder_done]
+        for pp in passives:
+            if pp.ref in processed:
+                occupied.append((pp.x, pp.y))
         if remainder:
-            _apply_topology_sidecar_cluster(layout, pc, remainder)
+            sidecar_work.append((pc, remainder))
+
+    # Junction anchors are wiring targets — a sidecar body parked on top of
+    # one forces the connecting wire straight through the passive.
+    occupied.extend((anchor.x, anchor.y) for anchor in layout.local_net_anchors)
+
+    for pc, remainder in sidecar_work:
+        _apply_topology_sidecar_cluster(layout, pc, remainder, occupied)
 
 
 # ================================================================

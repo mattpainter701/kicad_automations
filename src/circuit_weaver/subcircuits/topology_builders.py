@@ -17,6 +17,7 @@ from ..component_db import (
     ComponentDef,
     PinDef,
     StrapConfig,
+    infer_pin_roles_from_pins,
     normalize_pin_role_name,
     normalize_pin_roles,
 )
@@ -55,16 +56,6 @@ _NC_PIN_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Audit F1/F2 affected interface-heavy parts where synthesized per-instance
-# signal nets create phantom ports instead of wiring into the real shared bus.
-_DECLARED_INTERFACE_ONLY_TOPOLOGIES = frozenset(
-    {
-        "usb_controller",
-        "usb_hub",
-        "ethernet_phy",
-        "crystal_oscillator",
-    }
-)
 _SAFE_UNMAPPED_PIN_TYPES = frozenset(
     {
         "output",
@@ -1615,14 +1606,24 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     # T228/T234 — shared interface routing now keys off normalized pin roles
     # rather than a fixed list of `pin_<role>` field names. This lets both
     # curated ic_data entries and imported parts converge on one contract.
+    # Pin-name inference fills roles the metadata didn't declare so parts
+    # whose pins are named USB_DP / SDA / XTAL1 land on the shared buses
+    # instead of leaving those pins unmapped.
     pin_roles = _collect_pin_roles(ic_data)
+    for role, pin_num in infer_pin_roles_from_pins(pins).items():
+        if role not in pin_roles and pin_num not in power_pins:
+            pin_roles.setdefault(role, pin_num)
     shared_role_nets = {
         "sda": params.get("sda_net", "I2C_SDA"),
         "scl": params.get("scl_net", "I2C_SCL"),
         "mosi": params.get("mosi_net", "SPI_MOSI"),
         "miso": params.get("miso_net", "SPI_MISO"),
         "sclk": params.get("sclk_net", params.get("sck_net", "SPI_SCLK")),
-        "cs": params.get("cs_net", f"CS_{ref}"),
+        # Chip-select is genuinely per-device, so there is no safe shared
+        # default. Map it only when the caller names the net — otherwise the
+        # pin stays unmapped where the SPI repair pass (or the fail-closed
+        # generation guard) can deal with it honestly.
+        "cs": params.get("cs_net", ""),
         # USB high-speed differential pair — shared with the USB connector.
         "dp": params.get("usb_dp_net", "USB_DP"),
         "dm": params.get("usb_dm_net", "USB_DM"),
@@ -1642,7 +1643,7 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     pin_nets: dict[str, str] = {}
     for role, net_name in shared_role_nets.items():
         pin_num = pin_roles.get(role)
-        if pin_num and str(pin_num) not in power_pins:
+        if net_name and pin_num and str(pin_num) not in power_pins:
             pin_nets[str(pin_num)] = net_name
 
     # ic_data may also declare arbitrary pin -> net mappings via signal_nets.
@@ -1672,9 +1673,17 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         for pin_num in declared_ncs:
             explicit_ncs.add(str(pin_num))
 
+    # T234 — metadata-declared optional pins (debug/test interfaces, strap
+    # options) may stay unrouted without failing generation; the emit-time
+    # classifier still surfaces them as reviewable warnings.
+    optional_pins: set[str] = set()
+    for key in ("debug_pins", "optional_pins"):
+        declared = ic_data.get(key) or []
+        if isinstance(declared, (list, tuple, set)):
+            optional_pins.update(str(p) for p in declared)
+
     power_types = {"power_in", "power_out"}
     topo = str(ic_data.get("topology", "") or "").strip().lower()
-    interface_only = topo in _DECLARED_INTERFACE_ONLY_TOPOLOGIES
     for pin in pins:
         if pin.number in power_pins:
             continue
@@ -1689,14 +1698,15 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         if _NC_PIN_NAME_RE.match(pin.name) or pin.name.upper().startswith(("NC", "RESERVED")):
             explicit_ncs.add(pin.number)
             continue
-        if interface_only:
-            if pin.electrical_type not in _SAFE_UNMAPPED_PIN_TYPES:
-                unmapped_required_pins[pin.number] = pin.name
+        if pin.number in optional_pins:
             continue
-        # Non-interface-heavy generic parts still use local synthesized nets
-        # until they graduate into dedicated builders or catalog entries.
-        net_name = f"{pin.name}_{ref}"
-        pin_nets[pin.number] = net_name
+        # T228 — never synthesize per-instance signal nets like `{PIN}_{REF}`.
+        # A signal pin either routes through declared metadata (pin roles,
+        # signal_nets, params) or it stays unmapped: output-like pins become
+        # silent no-connects at emit; everything else is recorded so
+        # generation fails closed with the pin name and component reference.
+        if pin.electrical_type not in _SAFE_UNMAPPED_PIN_TYPES:
+            unmapped_required_pins[pin.number] = pin.name
 
     # Detect ref_prefix based on topology / component type
     detected_ref_prefix = "U"

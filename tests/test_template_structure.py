@@ -86,8 +86,10 @@ def _assert_no_unhandled_critical_pins(result) -> None:
     """Assert that no power_in or input pins are silently left floating.
 
     Every pin must be in pin_nets, power_pins, straps, explicit_no_connects,
-    or have an NC-like name.  power_in pins trigger hard failures; input pins
-    trigger soft failures with an explanatory message.
+    unmapped_required_pins (T228 fail-closed marker that hard-fails
+    generation with the pin name), or have an NC-like name.  power_in pins
+    trigger hard failures; input pins trigger soft failures with an
+    explanatory message.
     """
     for comp in result.components:
         # Only check ICs
@@ -95,6 +97,7 @@ def _assert_no_unhandled_critical_pins(result) -> None:
             continue
 
         handled = set(comp.pin_nets) | set(comp.power_pins) | comp.explicit_no_connects
+        handled |= set(getattr(comp, "unmapped_required_pins", {}) or {})
         for strap in comp.straps:
             handled.add(strap.pin)
 
@@ -1178,6 +1181,72 @@ def test_t228_build_generic_honors_param_supplied_usb_nets():
     assert comp.pin_nets["4"] == "USB1_DM"
 
 
+def test_t228_build_generic_infers_shared_roles_from_pin_names():
+    """Parts with no pin-role metadata but pins literally named USB_DP /
+    USB_DM / XTAL1 / XTAL2 must land on the shared buses instead of
+    per-instance phantom nets (live failure class: USB_DP_U1, XTAL2_FE)."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    ic_data = {
+        "_mpn": "FAKE_MCU",
+        "topology": "component",
+        "description": "Imported MCU with role-inferable pin names",
+        "footprint": "QFN-56",
+        "pins": [
+            {"number": "1", "name": "VDD", "type": "power_in", "side": "T"},
+            {"number": "2", "name": "GND", "type": "power_in", "side": "B"},
+            {"number": "43", "name": "USB_DP", "type": "bidirectional", "side": "L"},
+            {"number": "44", "name": "USB_DM", "type": "bidirectional", "side": "L"},
+            {"number": "20", "name": "XTAL1", "type": "input", "side": "R"},
+            {"number": "21", "name": "XTAL2", "type": "output", "side": "R"},
+        ],
+        "pin_vdd": "1",
+        "pin_gnd": "2",
+    }
+    result = build_generic(ic_data, {"ic": "FAKE_MCU", "ref": "U1"})
+    comp = result.components[0]
+    assert comp.pin_nets["43"] == "USB_DP"
+    assert comp.pin_nets["44"] == "USB_DM"
+    assert comp.pin_nets["20"] == "XTAL_IN"
+    assert comp.pin_nets["21"] == "XTAL_OUT"
+    assert comp.unmapped_required_pins == {}
+    for net in comp.pin_nets.values():
+        assert not net.endswith("_U1"), f"synthesized per-instance net leaked: {net}"
+
+
+def test_t228_build_generic_never_synthesizes_per_instance_nets():
+    """Ethernet-family part with undeclared signal pins must fail closed:
+    required pins are recorded for the generation guard, and neither
+    pin_nets nor boundary ports contain synthesized {PIN}_{REF} names."""
+    from circuit_weaver.subcircuits.topology_builders import build_generic
+
+    ic_data = {
+        "_mpn": "FAKE_PHY",
+        "topology": "ethernet_phy",
+        "description": "Ethernet PHY missing interface metadata",
+        "footprint": "QFN-32",
+        "pins": [
+            {"number": "1", "name": "VDD", "type": "power_in", "side": "T"},
+            {"number": "2", "name": "GND", "type": "power_in", "side": "B"},
+            {"number": "3", "name": "TXP", "type": "bidirectional", "side": "L"},
+            {"number": "4", "name": "TXN", "type": "bidirectional", "side": "L"},
+            {"number": "5", "name": "LED0", "type": "output", "side": "R"},
+        ],
+        "pin_vdd": "1",
+        "pin_gnd": "2",
+    }
+    result = build_generic(ic_data, {"ic": "FAKE_PHY", "ref": "U7"})
+    comp = result.components[0]
+    # Required signal pins fail closed instead of getting TXP_U7 / TXN_U7.
+    assert comp.unmapped_required_pins == {"3": "TXP", "4": "TXN"}
+    # Unused output-like pins are left for the silent no-connect classifier.
+    assert "5" not in comp.pin_nets
+    port_names = {p.name for p in result.boundary_ports}
+    for name in ("TXP_U7", "TXN_U7", "LED0_U7"):
+        assert name not in comp.pin_nets.values()
+        assert name not in port_names
+
+
 def test_t228_build_generic_signal_nets_dict_routes_arbitrary_pins():
     """ic_data['signal_nets'] should map arbitrary pins to declared nets."""
     from circuit_weaver.subcircuits.topology_builders import build_generic
@@ -1234,3 +1303,78 @@ def test_t233_crystal_builder_emits_load_caps_and_feedback():
     assert comp.pin_nets["3"] == "XTAL2_RP"
     assert len([cap for cap in comp.bypass_caps if cap.role == "load_cap"]) == 2
     assert any(strap.role == "feedback" for strap in comp.straps)
+
+
+def test_t233_crystal_builder_works_from_imported_pin_roles_alone():
+    """An imported crystal exposing only a normalized pin_roles mapping —
+    no curated pin_xtal1/pin_xtal2 keys — must build the same load-cap
+    network. Repair/builder behavior keys off shared metadata, not MPNs."""
+    from circuit_weaver.subcircuits.topology_builders import build_crystal_oscillator
+
+    ic_data = {
+        "_mpn": "IMPORTED_XTAL",
+        "topology": "crystal_oscillator",
+        "description": "Imported 4-pad crystal",
+        "footprint": "Crystal_SMD_3225-4Pin",
+        "pins": [
+            {"number": "1", "name": "XIN", "type": "passive", "side": "L"},
+            {"number": "2", "name": "GND", "type": "power_in", "side": "B"},
+            {"number": "3", "name": "XOUT", "type": "passive", "side": "R"},
+            {"number": "4", "name": "GND", "type": "power_in", "side": "B"},
+        ],
+        "pin_roles": {"xtal_in": "1", "xtal_out": "3"},
+        "gnd_pins": ["2", "4"],
+    }
+    result = build_crystal_oscillator(
+        ic_data,
+        {"ic": "IMPORTED_XTAL", "ref": "X9", "freq": 8_000_000.0, "cl_spec": 18},
+    )
+    comp = result.components[0]
+    assert comp.pin_nets["1"] == "XTAL_IN"
+    assert comp.pin_nets["3"] == "XTAL_OUT"
+    assert len([cap for cap in comp.bypass_caps if cap.role == "load_cap"]) == 2
+    assert any(strap.role == "feedback" for strap in comp.straps)
+
+
+def test_t233_crystal_builder_fails_closed_without_xtal_roles():
+    """Missing xtal pin roles must raise, not silently mis-wire the crystal."""
+    import pytest
+
+    from circuit_weaver.subcircuits.topology_builders import build_crystal_oscillator
+
+    ic_data = {
+        "_mpn": "BAD_XTAL",
+        "topology": "crystal_oscillator",
+        "pins": [
+            {"number": "1", "name": "A", "type": "passive", "side": "L"},
+            {"number": "2", "name": "B", "type": "passive", "side": "R"},
+        ],
+    }
+    with pytest.raises(ValueError, match="xtal pin roles"):
+        build_crystal_oscillator(ic_data, {"ic": "BAD_XTAL", "ref": "X1", "freq": 8e6, "cl_spec": 18})
+
+
+def test_t234_catalog_generic_entries_emit_no_synthetic_nets():
+    """Acceptance sweep: every catalog entry that dispatches to build_generic
+    must flow through the normalized schema without emitting synthetic
+    per-instance nets or phantom boundary ports. Named parts here are corpus
+    fixtures — the assertion is about the generic path, not any one MPN."""
+    from circuit_weaver.ic_data import get_all_ics
+    from circuit_weaver.subcircuits.topology_builders import build_generic, get_builder
+
+    ref = "U77"
+    checked = 0
+    for mpn, data in sorted(get_all_ics().items()):
+        topology = str(data.get("topology", "") or "")
+        if not topology or get_builder(topology) is not build_generic:
+            continue
+        result = build_generic({**data, "_mpn": mpn}, {"ic": mpn, "ref": ref})
+        comp = result.components[0]
+        offenders = [
+            net
+            for net in list(comp.pin_nets.values()) + [p.name for p in result.boundary_ports]
+            if net.endswith(f"_{ref}")
+        ]
+        assert not offenders, f"{mpn} ({topology}) leaked synthetic nets: {offenders}"
+        checked += 1
+    assert checked >= 10, f"expected a representative corpus of generic entries, got {checked}"

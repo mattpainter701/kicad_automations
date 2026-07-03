@@ -257,6 +257,49 @@ def test_single_consumer_net_excludes_internal_power_rails():
     assert out == []
 
 
+def test_single_consumer_net_exempts_nets_terminated_by_own_straps():
+    """A regulator FB node ending at its feedback divider is two-ended."""
+    comp = _comp(
+        "U1",
+        pin_nets={"4": "FB_U1"},
+        straps=[
+            StrapConfig("FBT", "FB_U1", "VDD_3P3", "100k", "R_0402"),
+            StrapConfig("FBB", "FB_U1", "GND", "33k", "R_0402"),
+        ],
+    )
+    out = placement_readiness_issues([], _ir(), [comp])
+
+    assert out == []
+
+
+def test_single_consumer_net_exempts_nets_terminated_by_own_bypass_caps():
+    """A buck SW node ending at its inductor/bootstrap cap is two-ended."""
+    comp = _comp(
+        "U1",
+        pin_nets={"2": "SW_U1", "5": "BST_U1"},
+        bypass_caps=[
+            BypassCap("L", "SW_U1", "VDD_5V", "10uH", "L_0805"),
+            BypassCap("CBST", "BST_U1", "SW_U1", "100nF", "C_0402"),
+        ],
+    )
+    out = placement_readiness_issues([], _ir(), [comp])
+
+    assert out == []
+
+
+def test_single_consumer_net_still_fires_without_support_passives():
+    """The support-passive exemption must not swallow genuinely dangling nets."""
+    comp = _comp(
+        "U1",
+        pin_nets={"1": "PHANTOM_BUS", "4": "FB_U1"},
+        straps=[StrapConfig("FBT", "FB_U1", "VDD_3P3", "100k", "R_0402")],
+    )
+    out = placement_readiness_issues([], _ir(), [comp])
+
+    assert [issue.code for issue in out] == ["orphan-net"]
+    assert "PHANTOM_BUS" in out[0].message
+
+
 def test_single_consumer_net_does_not_duplicate_validator_single_pin_issue():
     validator_issue = ValidationIssue(
         code="single-pin-net",

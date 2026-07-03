@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Sprint 53 — schematic layout quality (congestion, overlaps, readability)
+
+- Stop support passives from stacking at identical coordinates: the sidecar cluster pass now groups by resolved parent-pin location and walks collision-free slots against a sheet-wide occupancy list seeded with cluster poses and junction anchors. Symbol-body overlaps across the nine-sample corpus: 11 → 0.
+- Fix passive face detection to trust the pin's angle (top-face pins near a body corner were classified "left", parking buck support parts on the wrong face), and make the buck cluster face-aware so CIN, the SW/FB junction anchors, COUT, and the feedback divider grow away from the pin's actual face instead of hanging below the IC and wiring straight through it.
+- Route local passive connections around *all* nearby symbol bodies: `_route_local_connection` now takes sibling-passive/own-body/neighbor-IC keep-out boxes, generates detours around every blocker, and logs a warning when it must relax clearance instead of silently emitting a direct line through symbols (audit F6).
+- Cap "local" wiring at 50.8mm of Manhattan run — anchors and owner pins farther away fall back to net labels, eliminating the 60–130mm cross-sheet wires that made sheets unreadable.
+- Add a final wire-hygiene pass that rewrites any remaining emitted segment crossing a symbol body as an endpoint-preserving detour (T-joint-carrying segments are left alone). Wire-through-body segments across the corpus: 147 → 36; remaining cases are catalogued in TASKS.md as bank/ladder occupancy follow-ups.
+- Add `tests/test_layout_quality.py` — geometric analysis of generated `.kicad_sch` output gating zero symbol overlaps and per-sample wire-crossing ceilings, plus unit regressions for the sidecar, face-detection, routing, budget, and hygiene fixes.
+
+### Sprint 52 completion — critical and high-priority generation fixes
+
+- Fix the T229 `orphan-net` placement-readiness gate to recognize support-passive endpoints (straps, bypass/bootstrap caps, inductors, feedback dividers) as real second consumers. Regulator SW/FB/BST nodes, ESP32 EN/IO0 strap nets, charger PROG/CELL/QSTRT programming nets, and display IREF/charge-pump nets no longer raise false-positive errors — this restores the sample and corpus release gates from 24 failing tests to green.
+- (T228) Complete the removal of `build_generic`'s per-instance signal-net synthesis: unresolved non-power signal pins are never given `{PIN}_{REF}` phantom nets. Pins route through normalized declared interfaces and shared-bus metadata, pin-name role inference fills undeclared roles (so imported parts with pins named `USB_DP` / `SDA` / `XTAL1` land on the shared buses), NC-named pins become explicit no-connects, metadata-declared optional/debug pins stay safely unrouted, and everything else fails generation closed with the pin name and component reference.
+- (T228) Stop defaulting SPI chip-select to a per-instance `CS_{REF}` net in `build_generic` — the mapped default made the pin look handled and blocked the SPI chip-select repair pass. CS now maps only when the caller names the net.
+- (T233) Add UART flow-control repair: metadata-declared RTS/CTS pins on an actively wired UART complete onto the existing sibling flow-control net when derivable, and otherwise become explicit no-connects instead of floating-input or unmapped-required generation failures. Component repairs now also clear the T228 fail-closed marker for pins they resolve.
+- (T234) Propagate the normalized schema to datasheet-derived ingest: `parse_datasheet_text` extracts pin-function tables into normalized `pins`, `pin_roles`, `pin_vdd` / `pin_gnd`, `power_domains`, `explicit_no_connects`, and `debug_pins`; datasheet-recommended bypass values land in `recommended_bypass`; `extract_specs` propagates index-declared `vendor_aliases` as sourcing metadata.
+- Add `MCP1700-1802E` to the linear-regulator catalog (1.8V sibling of the existing `MCP1700-3302E` entry) so `samples/oled_display_module` resolves without silent substitution.
+- Add regression coverage: T228 synthesized-net and fail-closed paths, support-passive orphan-net exemptions, pin-name-inference-only SPI/UART repair, UART flow-control completion and NC fallback, imported-`pin_roles` crystal building, datasheet pin-table ingest flowing end-to-end through `build_generic`, and a catalog-wide sweep asserting every generic-dispatched entry emits no synthetic nets. Full suite: 1062 passed, 1 skipped.
 - Fix the tag-triggered release workflow to install the full test extras without editable-mode dependency resolution drift, and queue the next sprint follow-up for Codex / Claude / OpenCode / Kilo compatibility config recovery.
 
 ## [0.30.52] - 2026-05-05
