@@ -353,6 +353,66 @@ def test_route_local_connection_detours_around_sibling_bodies():
             assert not (max(min(x1, x2), sibling[0]) < min(max(x1, x2), sibling[2]))
 
 
+def test_decoupling_bank_walks_away_from_occupied_anchor():
+    """Decoupling banks reserve anchors/passive bodies before selecting the next bank."""
+    from circuit_weaver.component_db import ComponentDef
+    from circuit_weaver.placer import (
+        PlacedComponent,
+        PlacedPassive,
+        SheetLayout,
+        _apply_topology_decoupling_bank,
+    )
+
+    pc = PlacedComponent(ComponentDef(mpn="U", value="U"), "U1", 100.0, 100.0)
+    passives = [
+        PlacedPassive("C1", "100n", "", 0, 0, "VDD", "GND", "C", parent_ref="U1", role="decoupling"),
+        PlacedPassive("C2", "100n", "", 0, 0, "VDD", "GND", "C", parent_ref="U1", role="decoupling"),
+        PlacedPassive("C3", "100n", "", 0, 0, "AVDD", "GND", "C", parent_ref="U1", role="decoupling"),
+        PlacedPassive("C4", "100n", "", 0, 0, "AVDD", "GND", "C", parent_ref="U1", role="decoupling"),
+    ]
+    layout = SheetLayout("s", "s", "A4", placed_ics=[pc], placed_passives=passives)
+    occupied: list[tuple[float, float]] = []
+
+    assert _apply_topology_decoupling_bank(layout, pc, passives, occupied) == {"C1", "C2", "C3", "C4"}
+
+    first_bank = [(pp.x, pp.y) for pp in passives[:2]] + [(a.x, a.y) for a in layout.local_net_anchors[:2]]
+    second_bank = [(pp.x, pp.y) for pp in passives[2:]] + [(a.x, a.y) for a in layout.local_net_anchors[2:]]
+    for x1, y1 in first_bank:
+        for x2, y2 in second_bank:
+            assert abs(x1 - x2) >= 7.62 or abs(y1 - y2) >= 7.62
+
+
+def test_ldo_cluster_respects_preoccupied_topology_slot():
+    """LDO cluster placement walks when its preferred cap/anchor positions are reserved."""
+    from circuit_weaver.component_db import ComponentDef
+    from circuit_weaver.placer import PlacedComponent, PlacedPassive, SheetLayout, _apply_topology_ldo_cluster
+
+    pc = PlacedComponent(ComponentDef(mpn="LDO", value="LDO", category="power"), "U1", 100.0, 100.0)
+    caps = [
+        PlacedPassive("CIN", "1u", "", 0, 0, "VIN", "GND", "C", parent_ref="U1", owner_pin="IN", role="decoupling"),
+        PlacedPassive("COUT", "1u", "", 0, 0, "VOUT", "GND", "C", parent_ref="U1", owner_pin="OUT", role="decoupling"),
+    ]
+    layout = SheetLayout("s", "s", "A4", placed_ics=[pc], placed_passives=caps)
+    # Reserve the preferred CIN center for a zero-pin generic symbol at (100,100):
+    # center_x=100, cluster_y=110.16, CIN x=93.65.
+    occupied = [(93.65, 110.16)]
+
+    assert _apply_topology_ldo_cluster(layout, pc, caps, occupied) == {"CIN", "COUT"}
+    assert (caps[0].x, caps[0].y) != (93.65, 110.16)
+    assert all(abs(caps[0].x - x) >= 7.62 or abs(caps[0].y - y) >= 7.62 for x, y in [(93.65, 110.16)])
+
+
+def test_occupancy_reservation_deduplicates_anchor_points():
+    """Repeated cluster/anchor reservations must not bloat the shared occupancy list."""
+    from circuit_weaver.placer import _reserve_occupancy
+
+    occupied: list[tuple[float, float]] = []
+    _reserve_occupancy(occupied, (10.0, 20.0), (10.0, 20.0))
+    _reserve_occupancy(occupied, (10.0, 20.0))
+
+    assert occupied == [(10.16, 20.32)]
+
+
 def test_detour_wires_around_bodies_rewrites_through_segments():
     """The final hygiene pass reroutes a wire crossing a symbol body."""
     from circuit_weaver.generator import _WIRE_PTS_RE, _detour_wires_around_bodies

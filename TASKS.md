@@ -22,7 +22,8 @@ Measured across the nine-sample corpus: symbol-body overlaps 11 → 0; wire-thro
 
 ### Layout follow-ups (open)
 
-- [ ] Make `_apply_topology_decoupling_bank` / `_apply_topology_strap_ladder` / `_apply_topology_ldo_cluster` occupancy-aware; the ~23 remaining wire-body crossings are wires terminating on anchors adjacent to bank/ladder cap bodies (ENDPOINT-INSIDE class), plus 5 tapped rails through IC bodies on multi-tap nets.
+- [x] Make `_apply_topology_decoupling_bank` / `_apply_topology_strap_ladder` / `_apply_topology_ldo_cluster` occupancy-aware so cluster bodies and their local anchors reserve sheet-wide slots before later motifs are placed; deduplicate shared reservations and add unit regressions for bank, LDO, and occupancy reservation behavior.
+- [ ] Reduce the remaining ENDPOINT-INSIDE wire-body crossings after the bank/ladder/LDO occupancy pass, including the tapped rails that still run through IC bodies on multi-tap nets.
 - [ ] F13 — replace the connector-heavy boolean threshold in `placer.py` with a continuous density score.
 - [ ] F15 — when A0 still overflows, split the largest sheet and re-allocate (or fail with a clear "design too large" error) instead of emitting a crammed page.
 
