@@ -2426,18 +2426,43 @@ def _render_sheet(
         anchor1 = _nearest_local_anchor(layout, pp.net1, p1_x, p1_y) if use_topology_local else None
         if anchor1 is not None:
             _route_local_connection(
-                p1_x, p1_y, anchor1.x, anchor1.y, wires, obstacle=parent_body, route_state=route_state
-            , obstacles=route_obstacles)
+                p1_x,
+                p1_y,
+                anchor1.x,
+                anchor1.y,
+                wires,
+                obstacle=parent_body,
+                route_state=route_state,
+                obstacles=route_obstacles,
+            )
         else:
             topology_owner1 = (
                 _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net1) if use_topology_local else None
             )
             if topology_owner1 is not None:
                 ic_x, ic_y = topology_owner1
-                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
+                _route_local_connection(
+                    p1_x,
+                    p1_y,
+                    ic_x,
+                    ic_y,
+                    wires,
+                    obstacle=parent_body,
+                    route_state=route_state,
+                    obstacles=route_obstacles,
+                )
             elif use_literal_local and pp.net1 in parent_pins and parent_pins[pp.net1]:
                 ic_x, ic_y = parent_pins[pp.net1][0]
-                _route_local_connection(p1_x, p1_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
+                _route_local_connection(
+                    p1_x,
+                    p1_y,
+                    ic_x,
+                    ic_y,
+                    wires,
+                    obstacle=parent_body,
+                    route_state=route_state,
+                    obstacles=route_obstacles,
+                )
             else:
                 _render_passive_net_endpoint(
                     pp.net1,
@@ -2460,18 +2485,43 @@ def _render_sheet(
         anchor2 = _nearest_local_anchor(layout, pp.net2, p2_x, p2_y) if use_topology_local else None
         if anchor2 is not None:
             _route_local_connection(
-                p2_x, p2_y, anchor2.x, anchor2.y, wires, obstacle=parent_body, route_state=route_state
-            , obstacles=route_obstacles)
+                p2_x,
+                p2_y,
+                anchor2.x,
+                anchor2.y,
+                wires,
+                obstacle=parent_body,
+                route_state=route_state,
+                obstacles=route_obstacles,
+            )
         else:
             topology_owner2 = (
                 _topology_parent_pin_point(parent_pc, parent_pins, pp, pp.net2) if use_topology_local else None
             )
             if topology_owner2 is not None:
                 ic_x, ic_y = topology_owner2
-                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
+                _route_local_connection(
+                    p2_x,
+                    p2_y,
+                    ic_x,
+                    ic_y,
+                    wires,
+                    obstacle=parent_body,
+                    route_state=route_state,
+                    obstacles=route_obstacles,
+                )
             elif use_literal_local and pp.net2 in parent_pins and parent_pins[pp.net2]:
                 ic_x, ic_y = parent_pins[pp.net2][0]
-                _route_local_connection(p2_x, p2_y, ic_x, ic_y, wires, obstacle=parent_body, route_state=route_state, obstacles=route_obstacles)
+                _route_local_connection(
+                    p2_x,
+                    p2_y,
+                    ic_x,
+                    ic_y,
+                    wires,
+                    obstacle=parent_body,
+                    route_state=route_state,
+                    obstacles=route_obstacles,
+                )
             else:
                 _render_passive_net_endpoint(
                     pp.net2,
