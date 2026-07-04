@@ -288,10 +288,24 @@ circuit-weaver design-wizard [--dry-run] [--resume <path>]
 Route a KiCad PCB using Freerouting.
 
 ```bash
-circuit-weaver autoroute <board.kicad_pcb> [--output <file>]
+circuit-weaver autoroute <board.kicad_pcb> [--output <file>] [--effort fast|medium|high] [--timeout <seconds>]
 ```
 
+| Flag | Description |
+|-|-|
+| `--output`, `-o` | Output session/PCB path (default: `<name>.ses` via kicad-cli, else `<name>_routed.kicad_pcb`) |
+| `--effort` | Freerouting optimization-pass budget: `fast`, `medium` (default), `high` |
+| `--timeout` | Routing timeout in seconds (default: 300) |
+
 Requires Freerouting to be installed separately.
+
+The board is preflighted before routing: placement previews
+(`*_placement.kicad_pcb`, which carry no pads by design) and boards with no
+pads or named nets fail closed with a message pointing at KiCad
+forward-annotation. When `kicad-cli` is available the router uses the
+supported Specctra pipeline (`.dsn` export → Freerouting → `.ses` session,
+imported in KiCad via *File → Import → Specctra Session*); otherwise it
+falls back to routing the `.kicad_pcb` directly.
 
 ---
 

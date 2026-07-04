@@ -160,3 +160,78 @@ def test_generate_from_components_hard_fails_floating_power_pin(tmp_path: Path):
 
     with pytest.raises(ValueError, match="FLOATING power_in pin 'VDD'"):
         generate_from_components([comp], output_dir=tmp_path, validate=False, readiness_gate=False)
+
+
+# ================================================================
+# T238 (F15) — A0 overflow splits the sheet or fails clearly
+# ================================================================
+
+
+def test_split_sheet_allocation_balances_by_area():
+    from circuit_weaver.allocator import SheetAllocation
+    from circuit_weaver.placer import split_sheet_allocation
+
+    comps = [_test_comp(ref=f"U{i + 1}") for i in range(4)]
+    alloc = SheetAllocation(name="main", title="Main", paper="A3", components=comps)
+    halves = split_sheet_allocation(alloc)
+    assert halves is not None and len(halves) == 2
+    assert halves[0].name == "main_1" and halves[1].name == "main_2"
+    assert [c.source_ref for c in halves[0].components + halves[1].components] == [
+        "U1",
+        "U2",
+        "U3",
+        "U4",
+    ]
+    assert halves[0].components and halves[1].components
+
+
+def test_split_sheet_allocation_single_component_returns_none():
+    from circuit_weaver.allocator import SheetAllocation
+    from circuit_weaver.placer import split_sheet_allocation
+
+    alloc = SheetAllocation(name="main", title="Main", paper="A3", components=[_test_comp()])
+    assert split_sheet_allocation(alloc) is None
+
+
+def test_generate_splits_overflowing_sheet(tmp_path: Path, monkeypatch):
+    """A sheet that overflows A0 is split into two half-sheets that render."""
+    import circuit_weaver.generator as generator_module
+
+    real_layout_sheet = generator_module.layout_sheet
+
+    def overflow_multi_component(sheet_alloc, **kwargs):
+        layout = real_layout_sheet(sheet_alloc, **kwargs)
+        if len(sheet_alloc.components) > 1:
+            layout.overflow = True
+        return layout
+
+    monkeypatch.setattr(generator_module, "layout_sheet", overflow_multi_component)
+
+    comps = [_test_comp(ref="U1"), _test_comp(ref="U2")]
+    comps[1].mpn = "TEST_U2"
+    files = generate_from_components(
+        comps, output_dir=tmp_path, validate=False, readiness_gate=False
+    )
+    names = {Path(f).name for f in files}
+    sch_names = {n for n in names if n.endswith(".kicad_sch")}
+    assert any("_1" in n for n in sch_names), f"expected split sheet files, got {sch_names}"
+    assert any("_2" in n for n in sch_names), f"expected split sheet files, got {sch_names}"
+
+
+def test_generate_fails_clearly_when_sheet_cannot_split(tmp_path: Path, monkeypatch):
+    """A single-component sheet that still overflows A0 is a hard failure."""
+    import circuit_weaver.generator as generator_module
+
+    real_layout_sheet = generator_module.layout_sheet
+
+    def always_overflow(sheet_alloc, **kwargs):
+        layout = real_layout_sheet(sheet_alloc, **kwargs)
+        layout.overflow = True
+        return layout
+
+    monkeypatch.setattr(generator_module, "layout_sheet", always_overflow)
+
+    with pytest.raises(ValueError, match="Design too large"):
+        generate_from_components(
+            [_test_comp()], output_dir=tmp_path, validate=False, readiness_gate=False
+        )

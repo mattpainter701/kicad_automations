@@ -499,3 +499,112 @@ class TestPaperSizeSelection:
         assert layout.paper in ("A2", "A1", "A0"), (
             f"Expected A2+ for 40 dense ICs, got {layout.paper}"
         )
+
+
+# ================================================================
+# Tests — connector-density layout strategy (F13, T237)
+# ================================================================
+
+
+class TestConnectorDominance:
+    """_connector_dominance replaces the boolean connector-heavy cliff."""
+
+    @staticmethod
+    def _pins(count: int, side: str | None = None):
+        from circuit_weaver.component_db import PinDef
+
+        return [
+            PinDef(
+                number=str(idx + 1),
+                name=f"P{idx}",
+                electrical_type="bidirectional",
+                side=side or ("L", "R", "T", "B")[idx % 4],
+            )
+            for idx in range(count)
+        ]
+
+    def _connector(self, idx: int, pin_count: int = 4):
+        from circuit_weaver.component_db import ComponentDef
+
+        # Real headers are single-sided; spreading pins over four sides
+        # would inflate the symbol body far past a realistic connector.
+        return ComponentDef(
+            mpn=f"CONN_{idx}",
+            ref_prefix="J",
+            category="connector",
+            description="board connector",
+            pins=self._pins(pin_count, side="L"),
+            source_ref=f"J{idx + 1}",
+            footprint="Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+        )
+
+    def _big_mcu(self):
+        from circuit_weaver.component_db import ComponentDef
+
+        return ComponentDef(
+            mpn="STM32F103C8T6",
+            ref_prefix="U",
+            category="mcu",
+            description="48-pin MCU",
+            pins=self._pins(48),
+            source_ref="U1",
+            footprint="Package_QFP:LQFP-48_7x7mm_P0.5mm",
+        )
+
+    def _small_regulator(self):
+        from circuit_weaver.component_db import ComponentDef
+
+        return ComponentDef(
+            mpn="MCP1700",
+            ref_prefix="U",
+            category="power",
+            description="small LDO",
+            pins=self._pins(3),
+            source_ref="U2",
+            footprint="Package_TO_SOT_SMD:SOT-23",
+        )
+
+    def test_seven_connectors_alone_dominate(self):
+        """A 7-connector board scores as connector-dominated (the old
+        boolean needed >= 8 and fell back to the sparse layout)."""
+        from circuit_weaver.placer import _CONNECTOR_DOMINANCE_THRESHOLD, _connector_dominance
+
+        connectors = [self._connector(i) for i in range(7)]
+        assert _connector_dominance(connectors, []) >= _CONNECTOR_DOMINANCE_THRESHOLD
+
+    def test_small_regulator_does_not_flip_strategy(self):
+        """Eight connectors plus one SOT-23 regulator still read as a
+        connector board (the old boolean required zero regulators)."""
+        from circuit_weaver.placer import _CONNECTOR_DOMINANCE_THRESHOLD, _connector_dominance
+
+        connectors = [self._connector(i) for i in range(8)]
+        score = _connector_dominance(connectors, [self._small_regulator()])
+        assert score >= _CONNECTOR_DOMINANCE_THRESHOLD
+
+    def test_large_mcu_pulls_score_below_threshold(self):
+        """A handful of connectors around one large MCU is an IC board, not
+        a connector board — the MCU's area dominates."""
+        from circuit_weaver.placer import _CONNECTOR_DOMINANCE_THRESHOLD, _connector_dominance
+
+        connectors = [self._connector(i) for i in range(4)]
+        score = _connector_dominance(connectors, [self._big_mcu()])
+        assert 0.0 < score < _CONNECTOR_DOMINANCE_THRESHOLD
+
+    def test_few_connectors_score_zero(self):
+        """Below the minimum count the score is 0 — strategy never flips
+        for a couple of headers."""
+        from circuit_weaver.placer import _connector_dominance
+
+        connectors = [self._connector(i) for i in range(3)]
+        assert _connector_dominance(connectors, []) == 0.0
+
+    def test_score_is_continuous_in_ic_area(self):
+        """Adding IC area monotonically lowers the score."""
+        from circuit_weaver.placer import _connector_dominance
+
+        connectors = [self._connector(i) for i in range(8)]
+        bare = _connector_dominance(connectors, [])
+        with_reg = _connector_dominance(connectors, [self._small_regulator()])
+        with_mcu = _connector_dominance(connectors, [self._small_regulator(), self._big_mcu()])
+        assert bare == 1.0
+        assert bare > with_reg > with_mcu

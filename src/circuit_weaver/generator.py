@@ -603,6 +603,105 @@ _WIRE_PTS_RE = re.compile(
 )
 _DETOUR_MARGIN = snap(2.54)
 
+# Net-marker glyph clearance used when picking stub lengths: a power symbol
+# arrow or label text extends roughly this far beyond the wire endpoint in
+# the stub direction, and about half this laterally.
+_STUB_MARKER_REACH = snap(5.08)
+_STUB_MARKER_HALF_WIDTH = snap(1.905)
+_STUB_STEP = snap(1.27)
+_STUB_MAX_EXTENSION = snap(12.7)
+
+
+def _point_in_box(box: tuple[float, float, float, float], x: float, y: float, eps: float = 0.05) -> bool:
+    left, top, right, bottom = box
+    return left + eps < x < right - eps and top + eps < y < bottom - eps
+
+
+def _stub_endpoint(cx: float, cy: float, pin_angle: int, length: float) -> tuple[float, float]:
+    """Endpoint of a net-marker stub drawn from a pin in its exit direction."""
+    if pin_angle == 180:
+        return snap(cx + length), snap(cy)
+    if pin_angle == 270:
+        return snap(cx), snap(cy - length)
+    if pin_angle == 90:
+        return snap(cx), snap(cy + length)
+    return snap(cx - length), snap(cy)
+
+
+def _stub_marker_clear(
+    cx: float,
+    cy: float,
+    pin_angle: int,
+    length: float,
+    boxes: list[tuple[float, float, float, float]],
+) -> bool:
+    """True when the stub endpoint and its net-marker glyph avoid every box."""
+    wx, wy = _stub_endpoint(cx, cy, pin_angle, length)
+    if pin_angle in (0, 180):
+        reach = -_STUB_MARKER_REACH if pin_angle == 0 else _STUB_MARKER_REACH
+        gx1, gx2 = sorted((wx, wx + reach))
+        gy1, gy2 = wy - _STUB_MARKER_HALF_WIDTH, wy + _STUB_MARKER_HALF_WIDTH
+    else:
+        reach = -_STUB_MARKER_REACH if pin_angle == 270 else _STUB_MARKER_REACH
+        gy1, gy2 = sorted((wy, wy + reach))
+        gx1, gx2 = wx - _STUB_MARKER_HALF_WIDTH, wx + _STUB_MARKER_HALF_WIDTH
+    for box in boxes:
+        if _point_in_box(box, wx, wy):
+            return False
+        left, top, right, bottom = box
+        if gx1 < right and gx2 > left and gy1 < bottom and gy2 > top:
+            return False
+    return True
+
+
+def _clear_stub_length(
+    cx: float,
+    cy: float,
+    pin_angle: int,
+    desired: float,
+    body_boxes: list[tuple[float, float, float, float]] | None,
+) -> float:
+    """Pick a stub length whose endpoint and marker glyph avoid symbol bodies.
+
+    Stub emitters historically only avoided the owning symbol's own body, so
+    a label or power-symbol marker could land inside a neighboring passive —
+    the dominant source of remaining wire-through-body crossings. Candidates
+    deviate from the requested length in 1.27mm steps (shrink to 1.27mm,
+    extend up to +12.7mm); among clear candidates, ones whose stub segment
+    does not pass through any body win, then the smallest deviation. Falls
+    back to the requested length when nothing is clear — the final detour
+    hygiene pass still gets a chance at the segment.
+    """
+    if not body_boxes:
+        return desired
+    foreign = [box for box in body_boxes if not _point_in_box(box, cx, cy)]
+    if not foreign:
+        return desired
+
+    candidates: list[float] = [snap(desired)]
+    step = _STUB_STEP
+    length = snap(desired - step)
+    while length >= _STUB_STEP - 0.01:
+        candidates.append(length)
+        length = snap(length - step)
+    length = snap(desired + step)
+    while length <= desired + _STUB_MAX_EXTENSION + 0.01:
+        candidates.append(length)
+        length = snap(length + step)
+
+    best: tuple[int, float, float] | None = None
+    best_len = snap(desired)
+    for cand in candidates:
+        if not _stub_marker_clear(cx, cy, pin_angle, cand, foreign):
+            continue
+        wx, wy = _stub_endpoint(cx, cy, pin_angle, cand)
+        crossings = sum(1 for box in foreign if _segment_hits_box(cx, cy, wx, wy, box))
+        score = (1 if crossings else 0, abs(cand - desired), cand)
+        if best is None or score < best:
+            best = score
+            best_len = cand
+    return best_len
+
 
 def _detour_wires_around_bodies(
     wires: list[str],
@@ -615,8 +714,10 @@ def _detour_wires_around_bodies(
     segment slicing through an IC or passive body. This pass rewrites such
     segments as an L/U detour around the offending box while preserving
     both endpoints, so net connectivity is untouched. Segments that carry a
-    T-joint (another wire ends on their interior) are left alone — moving
-    them would break the junction.
+    T-joint (another wire ends on their interior) are split at each tap
+    point first — the taps become piece endpoints, so every junction is
+    preserved — and each piece is detoured independently. Multi-tap rails
+    running through IC bodies used to be skipped wholesale for this reason.
     """
     if not body_boxes or not wires:
         return wires
@@ -635,34 +736,32 @@ def _detour_wires_around_bodies(
 
     eps = 0.01
 
-    def _has_interior_tap(x1: float, y1: float, x2: float, y2: float) -> bool:
+    def _interior_taps(x1: float, y1: float, x2: float, y2: float) -> list[tuple[float, float]]:
+        taps: list[tuple[float, float]] = []
         for ex, ey in endpoints:
             if abs(x1 - x2) < eps and abs(ex - x1) < eps and min(y1, y2) + eps < ey < max(y1, y2) - eps:
-                return True
-            if abs(y1 - y2) < eps and abs(ey - y1) < eps and min(x1, x2) + eps < ex < max(x1, x2) - eps:
-                return True
-        return False
+                taps.append((x1, ey))
+            elif abs(y1 - y2) < eps and abs(ey - y1) < eps and min(x1, x2) + eps < ex < max(x1, x2) - eps:
+                taps.append((ex, y1))
+        return taps
 
     def _endpoint_inside(box: tuple[float, float, float, float], x: float, y: float) -> bool:
         left, top, right, bottom = box
         return left - eps <= x <= right + eps and top - eps <= y <= bottom + eps
 
-    out: list[str] = []
-    for w, seg in parsed:
-        if seg is None:
-            out.append(w)
-            continue
-        x1, y1, x2, y2 = seg
-        orthogonal = abs(x1 - x2) < eps or abs(y1 - y2) < eps
+    def _detour_segment(x1: float, y1: float, x2: float, y2: float) -> list[str] | None:
+        """Replacement wires for one tap-free piece, or None when stuck.
+
+        Pieces that cross nothing come back unchanged; pieces crossing a
+        body come back as an L/U detour clear of every body.
+        """
         crossing = [box for box in body_boxes if _segment_hits_box(x1, y1, x2, y2, box)]
         # Boxes that contain an endpoint cannot be detoured around — the
         # wire terminates there by design.
         crossing = [box for box in crossing if not _endpoint_inside(box, x1, y1) and not _endpoint_inside(box, x2, y2)]
-        if not crossing or not orthogonal or _has_interior_tap(x1, y1, x2, y2):
-            out.append(w)
-            continue
+        if not crossing:
+            return [sexpr_wire(x1, y1, x2, y2)]
 
-        rerouted = False
         for box in crossing:
             left, top, right, bottom = box
             if abs(x1 - x2) < eps:
@@ -687,14 +786,46 @@ def _detour_wires_around_bodies(
                     _segment_hits_box(sx1, sy1, sx2, sy2, bb) for sx1, sy1, sx2, sy2 in segs for bb in body_boxes
                 ):
                     continue
-                for sx1, sy1, sx2, sy2 in segs:
-                    out.append(sexpr_wire(sx1, sy1, sx2, sy2))
-                rerouted = True
-                break
-            if rerouted:
-                break
+                return [sexpr_wire(sx1, sy1, sx2, sy2) for sx1, sy1, sx2, sy2 in segs]
+        return None
 
-        if not rerouted:
+    out: list[str] = []
+    for w, seg in parsed:
+        if seg is None:
+            out.append(w)
+            continue
+        x1, y1, x2, y2 = seg
+        orthogonal = abs(x1 - x2) < eps or abs(y1 - y2) < eps
+        needs_fix = orthogonal and any(
+            _segment_hits_box(x1, y1, x2, y2, box)
+            and not _endpoint_inside(box, x1, y1)
+            and not _endpoint_inside(box, x2, y2)
+            for box in body_boxes
+        )
+        if not needs_fix:
+            out.append(w)
+            continue
+
+        # Split at tap points so junctions land on piece endpoints.
+        taps = _interior_taps(x1, y1, x2, y2)
+        if abs(x1 - x2) < eps:
+            ordered = sorted({y1, y2, *(ty for _tx, ty in taps)}, reverse=y1 > y2)
+            points = [(x1, ty) for ty in ordered]
+        else:
+            ordered = sorted({x1, x2, *(tx for tx, _ty in taps)}, reverse=x1 > x2)
+            points = [(tx, y1) for tx in ordered]
+
+        replacement: list[str] = []
+        for (px1, py1), (px2, py2) in zip(points, points[1:]):
+            piece = _detour_segment(px1, py1, px2, py2)
+            if piece is None:
+                replacement = []
+                break
+            replacement.extend(piece)
+
+        if replacement:
+            out.extend(replacement)
+        else:
             _logger.warning(
                 "wire (%.2f,%.2f)->(%.2f,%.2f) crosses a symbol body and no clean detour was found",
                 x1,
@@ -947,8 +1078,11 @@ def _render_passive_net_endpoint(
     root_uuid: str,
     sheet_uuid: str,
     wire_len: float = 1.27,
+    body_boxes: list[tuple[float, float, float, float]] | None = None,
 ) -> None:
     """Render a passive pin endpoint symbolically via a short stub and net marker."""
+    if body_boxes:
+        wire_len = _clear_stub_length(pin_x, pin_y, pin_angle, wire_len, body_boxes)
     if _is_power_net(net_name):
         if pin_angle == 0:
             wx, wy = pin_x - wire_len, pin_y
@@ -1325,10 +1459,40 @@ def generate_from_components(
             post_allocate(sheets)
         _logger.info("Allocated %d components to %d sheet(s)", len(components), len(sheets))
 
-        # 1b. Layout all sheets first (needed for boundary net computation)
+        # 1b. Layout all sheets first (needed for boundary net computation).
+        # F15 (T238): a sheet that overflows every paper size up to A0 is
+        # split into two area-balanced halves and re-laid-out instead of
+        # shipping a crammed page. A sheet that cannot be split further
+        # (single component) is a hard "design too large" failure.
+        from .placer import _restore_ref_state, _snapshot_ref_state, split_sheet_allocation
+
         layouts = []
-        for sheet_alloc in sheets:
+        pending = list(sheets)
+        split_rounds = 0
+        _MAX_SHEET_SPLITS = 8
+        idx = 0
+        while idx < len(pending):
+            sheet_alloc = pending[idx]
+            ref_state = _snapshot_ref_state()
             layout = layout_sheet(sheet_alloc, presentation_wiring_policy=resolved_presentation_wiring_policy)
+            if layout.overflow:
+                halves = split_sheet_allocation(sheet_alloc) if split_rounds < _MAX_SHEET_SPLITS else None
+                if halves is None:
+                    raise ValueError(
+                        f"Design too large: sheet '{sheet_alloc.name}' does not fit on A0 "
+                        "and cannot be split further. Reduce the design or partition it "
+                        "into explicit functional blocks."
+                    )
+                split_rounds += 1
+                _restore_ref_state(ref_state)
+                _logger.warning(
+                    "Sheet '%s' overflows A0 — splitting into '%s' and '%s'",
+                    sheet_alloc.name,
+                    halves[0].name,
+                    halves[1].name,
+                )
+                pending[idx : idx + 1] = halves
+                continue
             layouts.append(layout)
             _logger.info(
                 "  %s: %d ICs, %d passives on %s",
@@ -1337,6 +1501,8 @@ def generate_from_components(
                 len(layout.placed_passives),
                 layout.paper,
             )
+            idx += 1
+        sheets = pending
 
         # 1b'. Optional aesthetics scoring
         if score:
@@ -1428,6 +1594,18 @@ def generate_from_components(
 
         generated_files = [str(si["filepath"]) for si in sheet_infos]
 
+        # 2b. Layout-quality gate (T239): analyze what was actually emitted
+        # and surface overlaps / wire-body crossings as warnings so real
+        # designs get the same geometric scrutiny as the test corpus.
+        from .layout_quality import analyze_schematic_file
+
+        layout_quality_reports: dict[str, "object"] = {}
+        for si in sheet_infos:
+            quality = analyze_schematic_file(si["filepath"])
+            layout_quality_reports[si["filename"]] = quality
+            if not quality.clean:
+                _logger.warning("Layout quality (%s): %s", si["filename"], quality.summary())
+
         # 3. Multi-sheet: add cross-sheet stubs + generate root schematic
         if len(sheets) > 1:
             _add_cross_sheet_stubs(sheet_infos)
@@ -1451,7 +1629,11 @@ def generate_from_components(
                 components,
                 validation_results=validation_results,
                 output_path=report_path,
-                metadata={"project": project_name, "company": company},
+                metadata={
+                    "project": project_name,
+                    "company": company,
+                    "layout_quality": layout_quality_reports,
+                },
             )
             generated_files.append(str(report_path))
             _logger.info("  -> %s (design report)", report_path)
@@ -1992,6 +2174,25 @@ def _render_sheet(
     pin_point_map: dict[str, dict[str, list[tuple[float, float]]]] = {}
     placed_ic_map: dict[str, object] = {}
 
+    # Sheet-wide symbol body boxes (left, top, right, bottom). Stub emitters
+    # consult these so label/power markers never land inside a neighboring
+    # body; the final wire-hygiene detour pass reuses the same set. Corners
+    # must stay un-snapped: snap() rounds to the 1.27mm wire grid, which can
+    # shrink a box past a crossing wire and hide the collision.
+    _passive_half = 1.905
+    sheet_body_boxes: list[tuple[float, float, float, float]] = [
+        component_body_bounds(placed) for placed in layout.placed_ics
+    ]
+    sheet_body_boxes += [
+        (
+            pp.x - _passive_half,
+            pp.y - _passive_half,
+            pp.x + _passive_half,
+            pp.y + _passive_half,
+        )
+        for pp in layout.placed_passives
+    ]
+
     # --- Place ICs ---
     for placed in layout.placed_ics:
         comp = placed.comp
@@ -2049,6 +2250,7 @@ def _render_sheet(
                 px, py, pangle, plen, pname, ptype = pin_pos[pin_num]
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
                 wlen = pin_stub_lengths.get(pin_num, _safe_label_stub_length(px, py, pangle, body_rects))
+                wlen = _clear_stub_length(cx, cy, pangle, wlen, sheet_body_boxes)
                 signal_pin_coords.setdefault(net_name, []).append((cx, cy, pangle, ptype, wlen))
                 ic_signal_pin_coords.setdefault(net_name, []).append((cx, cy, pangle, ptype))
                 ic_pin_points.setdefault(net_name, []).append((cx, cy))
@@ -2060,6 +2262,7 @@ def _render_sheet(
                 px, py, pangle, plen, pname, ptype = pin_pos[pin_num]
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
                 wire_len = pin_stub_lengths.get(pin_num, _safe_label_stub_length(px, py, pangle, body_rects))
+                wire_len = _clear_stub_length(cx, cy, pangle, wire_len, sheet_body_boxes)
 
                 # Create wire stub (cx -> wx based on pin angle)
                 if pangle == 0:
@@ -2178,16 +2381,7 @@ def _render_sheet(
     # routed passive's own body — a wire from its bottom pin to an anchor
     # above must go around, not through) plus non-parent IC bodies. The
     # rendered R/C/L review bodies are ~3.81mm squares centered on the pose.
-    _passive_half = 1.905
-    passive_body_boxes = [
-        (
-            snap(pp.x - _passive_half),
-            snap(pp.y - _passive_half),
-            snap(pp.x + _passive_half),
-            snap(pp.y + _passive_half),
-        )
-        for pp in layout.placed_passives
-    ]
+    passive_body_boxes = sheet_body_boxes[len(layout.placed_ics):]
     ic_body_boxes = {ref: component_body_bounds(pc) for ref, pc in placed_ic_map.items()}
     for pp in layout.placed_passives:
         if pp.symbol_variant == "review":
@@ -2259,6 +2453,7 @@ def _render_sheet(
                     root_uuid,
                     sheet_uuid,
                     wire_len=endpoint_stub_len,
+                    body_boxes=sheet_body_boxes,
                 )
 
         # Net2 (pin 2): local route only when explicitly requested.
@@ -2292,6 +2487,7 @@ def _render_sheet(
                     root_uuid,
                     sheet_uuid,
                     wire_len=endpoint_stub_len,
+                    body_boxes=sheet_body_boxes,
                 )
 
     # --- Explicit local anchor labels / power symbols for topology-aware motifs ---
@@ -2312,6 +2508,7 @@ def _render_sheet(
             root_uuid,
             sheet_uuid,
             wire_len=1.27,
+            body_boxes=sheet_body_boxes,
         )
 
     # --- Explicit local wires declared by the subcircuit template ---
@@ -2456,17 +2653,7 @@ def _render_sheet(
     instances.extend(power_instances)
 
     # --- Wire hygiene: detour any remaining segment that crosses a symbol body ---
-    hygiene_boxes = [component_body_bounds(placed) for placed in layout.placed_ics]
-    hygiene_boxes += [
-        (
-            snap(pp.x - _passive_half),
-            snap(pp.y - _passive_half),
-            snap(pp.x + _passive_half),
-            snap(pp.y + _passive_half),
-        )
-        for pp in layout.placed_passives
-    ]
-    wires = _detour_wires_around_bodies(wires, hygiene_boxes)
+    wires = _detour_wires_around_bodies(wires, sheet_body_boxes)
 
     # Add bus notation (Phase 3b): wires go with wires, entries+labels are bus_elements
     wires.extend(bus_wires_all)
