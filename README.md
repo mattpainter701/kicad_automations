@@ -298,12 +298,15 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.30.x
+## What's New in v0.31.0
 
-Release numbering now tracks sprint number within the `0.30.x` series. Sprint 52 ships as `v0.30.52`.
+Circuit Weaver `v0.31.0` collects the Sprint 53-54 schematic layout quality work and graduates the prior `0.30.x` sprint-release series into a minor release.
 
 | Sprint | Feature |
 |-|-|
+| 54 | **Layout quality zero-crossing gate** — all quality-gated sample schematics now target zero wire-through-body crossings, with body-aware stubs, tapped-rail splitting, unrounded keep-outs, and generator-visible layout-quality warnings/reports. |
+| 54 | **Density, sheet splitting, and autorouter hardening** — connector-heavy layouts now use a continuous density score, oversized sheets split instead of cramming onto A0, and Freerouting preflight/effort/timeout handling fail closed with clearer remediation. |
+| 53 | **Schematic readability and passive placement** — sidecar passives, passive motifs, and local wiring now use occupancy-aware placement and body-aware routing to remove symbol overlaps and sharply reduce wire-body crossings. |
 | 52 | **Part-neutral repair and schema plumbing** — normalized `pin_roles` now flow through `ComponentDef`, `ic_data`, EasyEDA imports, generic-builder outputs, and cache round-trips, so SPI/UART repair can operate from shared capabilities instead of exact MPN branches. |
 | 52 | **Generation and placement hardening** — readiness gating now lives in `generate_from_components`, generic bypass policy is centralized, orphan non-power nets are hard-gated in placement-readiness, and PCB placement preview now penalizes long connected pairs instead of staying purely zone-based. |
 | 51 | **Restart and validation flows are more truthful** — `log-status` works for validate-only sessions, persisted validation summaries now reflect the final verdict, Windows text-mode validation falls back to ASCII, and bad data-driven `ic` resolution now fails closed instead of silently substituting another part. |

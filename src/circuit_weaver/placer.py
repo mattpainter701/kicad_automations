@@ -1408,15 +1408,26 @@ def _apply_topology_ldo_cluster(
     _set_passive_pose(cout, snap(cluster_x + spacing / 2), cluster_y, 90)
 
     # Shared rail labels
-    cin_anchor = _add_local_anchor(layout, cin.net1, snap(cluster_x - spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
-    cout_anchor = _add_local_anchor(layout, cout.net1, snap(cluster_x + spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref)
+    cin_anchor = _add_local_anchor(
+        layout, cin.net1, snap(cluster_x - spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref
+    )
+    cout_anchor = _add_local_anchor(
+        layout, cout.net1, snap(cluster_x + spacing / 2), snap(cluster_y - 5.08), 270, "label", pc.ref
+    )
     # Shared ground
     gnd_net = cin.net2
     gnd_y = snap(cluster_y + 5.08)
     gnd_anchor = _add_local_anchor(layout, gnd_net, snap(cluster_x), gnd_y, 90, "power", pc.ref)
 
     processed.update({cin.ref, cout.ref})
-    _reserve_occupancy(occupied, (cin.x, cin.y), (cout.x, cout.y), (cin_anchor.x, cin_anchor.y), (cout_anchor.x, cout_anchor.y), (gnd_anchor.x, gnd_anchor.y))
+    _reserve_occupancy(
+        occupied,
+        (cin.x, cin.y),
+        (cout.x, cout.y),
+        (cin_anchor.x, cin_anchor.y),
+        (cout_anchor.x, cout_anchor.y),
+        (gnd_anchor.x, gnd_anchor.y),
+    )
 
     # Handle enable strap if present
     straps = [pp for pp in passives if pp.sym_type == "R" and pp.role in ("pull_up", "strap")]
