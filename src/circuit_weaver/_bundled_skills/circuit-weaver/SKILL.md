@@ -124,13 +124,13 @@ Rules:
 Paste back a short banner before the menu, for example:
 
 ```text
-Circuit Weaver installed: v0.30.52
+Circuit Weaver installed: v0.31.0
 ```
 
 If only the fallback worked:
 
 ```text
-Circuit Weaver local/imported version: v0.30.52
+Circuit Weaver local/imported version: v0.31.0
 ```
 
 ### Step -1 — Auto-Detection
