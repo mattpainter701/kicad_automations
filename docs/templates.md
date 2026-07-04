@@ -1,8 +1,9 @@
 # Template Reference
 
 Auto-generated from `param_schema` of all registered subcircuit templates.
+Regenerate with `python scripts/gen_template_docs.py` — do not edit by hand.
 
-**37 templates available.**
+**42 templates available.**
 
 ---
 
@@ -117,7 +118,7 @@ power:
 
 ## `boost`
 
-Boost DC-DC step-up converter with feedback divider
+Boost DC-DC step-up converter with feedback divider and calculated inductor
 
 ### Parameters
 
@@ -126,13 +127,15 @@ Boost DC-DC step-up converter with feedback divider
 | `vin` | number | Yes |  | Input voltage in volts |
 | `vout` | number | Yes |  | Output voltage in volts |
 | `iout` | number | Yes |  | Maximum output current in amps |
-| `ic` | string |  | TPS61230A | Boost regulator IC MPN |
+| `ic` | string |  |  | Regulator IC MPN from the IC catalog |
 | `ref` | string |  | U | Reference designator for the IC |
-| `rail_name` | string |  |  | Output rail net name |
+| `rail_name` | string |  |  | Output rail net name; defaults to VDD_{vout} |
 | `vin_net` | string |  | VIN | Input rail net name |
 | `en_net` | string |  |  | Enable net name; defaults to vin_net |
 | `fsw` | number |  |  | Switching frequency override in hertz |
 | `r_fbb` | number |  |  | Bottom feedback resistor override in ohms |
+| `ripple_ratio` | number |  | 0.3 | Target inductor ripple ratio |
+| `vout_ripple` | number |  | 0.02 | Target output ripple in volts |
 
 ### Example
 
@@ -140,8 +143,8 @@ Boost DC-DC step-up converter with feedback divider
 power:
   - type: boost
     ref: U1
-    vin: 12
-    vout: 3.3
+    vin: 3.7
+    vout: 5
     iout: 1
 ```
 
@@ -149,7 +152,7 @@ power:
 
 ## `buck`
 
-Synchronous buck DC-DC converter with feedback divider
+Synchronous buck DC-DC converter with feedback divider and calculated LC filter
 
 ### Parameters
 
@@ -158,9 +161,9 @@ Synchronous buck DC-DC converter with feedback divider
 | `vin` | number | Yes |  | Input voltage in volts |
 | `vout` | number | Yes |  | Output voltage in volts |
 | `iout` | number | Yes |  | Maximum output current in amps |
-| `ic` | string |  | AP62300 | Buck regulator IC MPN |
+| `ic` | string |  |  | Regulator IC MPN from the IC catalog |
 | `ref` | string |  | U | Reference designator for the IC |
-| `rail_name` | string |  |  | Output rail net name |
+| `rail_name` | string |  |  | Output rail net name; defaults to VDD_{vout} |
 | `vin_net` | string |  | VIN | Input rail net name |
 | `en_net` | string |  |  | Enable net name; defaults to vin_net |
 | `fsw` | number |  |  | Switching frequency override in hertz |
@@ -183,23 +186,25 @@ power:
 
 ## `buck_boost`
 
-Buck-Boost DC-DC converter with feedback divider
+Buck-boost DC-DC converter with feedback divider
 
 ### Parameters
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `vin` | number | Yes |  | Nominal input voltage in volts |
+| `vin` | number | Yes |  | Input voltage in volts |
 | `vout` | number | Yes |  | Output voltage in volts |
 | `iout` | number | Yes |  | Maximum output current in amps |
-| `vin_min` | number |  |  | Minimum input voltage (for inductor sizing); defaults to vin |
-| `vin_max` | number |  |  | Maximum input voltage |
-| `ic` | string |  | TPS63020 | Buck-boost regulator IC MPN |
+| `ic` | string |  |  | Regulator IC MPN from the IC catalog |
 | `ref` | string |  | U | Reference designator for the IC |
-| `rail_name` | string |  |  | Output rail net name |
-| `vin_net` | string |  | VBAT | Input rail net name |
+| `rail_name` | string |  |  | Output rail net name; defaults to VDD_{vout} |
+| `vin_net` | string |  | VIN | Input rail net name |
 | `en_net` | string |  |  | Enable net name; defaults to vin_net |
+| `fsw` | number |  |  | Switching frequency override in hertz |
 | `r_fbb` | number |  |  | Bottom feedback resistor override in ohms |
+| `ripple_ratio` | number |  | 0.3 | Target inductor ripple ratio |
+| `vout_ripple` | number |  | 0.02 | Target output ripple in volts |
+| `vin_min` | number |  |  | Minimum input voltage for inductor sizing; defaults to 0.8 * vin |
 
 ### Example
 
@@ -207,9 +212,9 @@ Buck-Boost DC-DC converter with feedback divider
 power:
   - type: buck_boost
     ref: U1
-    vin: 12
+    vin: 3.7
     vout: 3.3
-    iout: 1
+    iout: 0.5
 ```
 
 ---
@@ -222,11 +227,11 @@ CAN bus transceiver with decoupling and optional split termination
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `ic` | string |  | SN65HVD230 | CAN transceiver IC MPN |
-| `ref` | string |  | U | Reference designator for the transceiver |
+| `ic` | string |  |  | CAN transceiver IC MPN from the IC catalog |
+| `ref` | string |  | U | Reference designator for the IC |
 | `vdd_net` | string |  | VDD_3P3 | Supply rail net name |
-| `txd_net` | string |  |  | TXD signal net from MCU |
-| `rxd_net` | string |  |  | RXD signal net to MCU |
+| `txd_net` | string |  |  | TXD net from MCU; defaults to CAN_TXD_{ref} |
+| `rxd_net` | string |  |  | RXD net to MCU; defaults to CAN_RXD_{ref} |
 | `bus_net_prefix` | string |  | CAN | Prefix for CANH/CANL bus nets |
 | `termination` | boolean |  | False | Enable split termination (2x60R + 4.7nF) |
 | `slope_control` | boolean |  | False | Enable slope control via 10k on RS pin (otherwise RS to GND) |
@@ -291,6 +296,29 @@ clocking:
 
 ---
 
+## `component`
+
+Catalog-defined IC placed from normalized pin and interface metadata
+
+### Parameters
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `ic` | string |  |  | IC MPN from the catalog or imported part data |
+| `ref` | string |  | U | Reference designator for the IC |
+| `vdd_net` | string |  | VDD_3P3 | Supply rail net name |
+| `gnd_net` | string |  | GND | Ground net name |
+
+### Example
+
+```yaml
+blocks:
+  - type: component
+    ref: U1
+```
+
+---
+
 ## `connector`
 
 Barrel jack, pin header, or JST connector with optional decoupling
@@ -300,6 +328,7 @@ Barrel jack, pin header, or JST connector with optional decoupling
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
 | `ic` | string |  | BARREL_JACK_2.1MM | Connector MPN/type |
+| `subtype` | string |  |  | Convenience connector family alias (for example 'usb-a') |
 | `ref` | string |  | J | Reference designator for the connector |
 | `positive_net` | string |  | VIN | Positive/power net name (power connectors) |
 | `negative_net` | string |  | GND | Negative/ground net name (power connectors) |
@@ -311,7 +340,7 @@ Barrel jack, pin header, or JST connector with optional decoupling
 ```yaml
 connectors:
   - type: connector
-    ref: U1
+    ref: J1
 ```
 
 ---
@@ -337,9 +366,9 @@ Crystal oscillator with load capacitors and feedback resistor
 ```yaml
 clocking:
   - type: crystal_oscillator
-    ref: U1
+    ref: Y1
     freq: 8000000
-    cl_spec: 9e-12
+    cl_spec: 12
 ```
 
 ---
@@ -405,6 +434,29 @@ analog:
 
 ---
 
+## `diode`
+
+Discrete diode (rectifier/Schottky/signal) with anode/cathode net wiring
+
+### Parameters
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `ic` | string |  |  | Device MPN from the IC catalog |
+| `ref` | string |  | D | Reference designator for the device |
+| `anode_net` | string |  |  | Anode net name; defaults to A_{ref} |
+| `cathode_net` | string |  |  | Cathode net name; defaults to K_{ref} |
+
+### Example
+
+```yaml
+blocks:
+  - type: diode
+    ref: D1
+```
+
+---
+
 ## `display_driver`
 
 OLED/LCD display driver with reset circuit and interface config
@@ -434,19 +486,19 @@ interfaces:
 
 ## `eeprom`
 
-I2C EEPROM or SPI flash with address config and write protect
+I2C EEPROM or SPI flash with address configuration and write protect
 
 ### Parameters
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `ic` | string |  | 24LC256 | EEPROM/flash IC MPN |
+| `ic` | string |  |  | EEPROM/flash IC MPN from the IC catalog |
 | `ref` | string |  | U | Reference designator for the IC |
 | `vdd_net` | string |  | VDD_3P3 | Supply rail net name |
 | `i2c_addr_offset` | integer |  | 0 | I2C address offset (0-7) set by A0/A1/A2 pins |
 | `sda_net` | string |  | I2C_SDA | I2C SDA net name |
 | `scl_net` | string |  | I2C_SCL | I2C SCL net name |
-| `cs_net` | string |  |  | SPI chip select net name (SPI flash only) |
+| `cs_net` | string |  |  | SPI chip select net name (SPI flash only); defaults to FLASH_CS_{ref} |
 | `mosi_net` | string |  | SPI_MOSI | SPI MOSI net name (SPI flash only) |
 | `miso_net` | string |  | SPI_MISO | SPI MISO net name (SPI flash only) |
 | `sclk_net` | string |  | SPI_SCLK | SPI SCLK net name (SPI flash only) |
@@ -498,12 +550,12 @@ Gate driver IC with bootstrap and decoupling
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `ic` | string |  | UCC27524 |  |
-| `ref` | string |  | U |  |
-| `vdd_net` | string |  | VDD_12V |  |
-| `gnd_net` | string |  | GND |  |
-| `hin_net` | string |  |  |  |
-| `lin_net` | string |  |  |  |
+| `ic` | string |  | UCC27524 | Gate driver IC MPN |
+| `ref` | string |  | U | Reference designator for the IC |
+| `vdd_net` | string |  | VDD_12V | Driver supply rail net name |
+| `gnd_net` | string |  | GND | Ground net name |
+| `hin_net` | string |  |  | High-side PWM input net name; defaults to HIN_{ref} |
+| `lin_net` | string |  |  | Low-side PWM input net name; defaults to LIN_{ref} |
 
 ### Example
 
@@ -543,14 +595,14 @@ I2C bus pull-ups or level shifter with auto-calculated resistance
 ```yaml
 interfaces:
   - type: i2c_bus
-    ref: U1
+    ref: RP1
 ```
 
 ---
 
 ## `ldo`
 
-LDO linear regulator with decoupling
+LDO linear regulator with input/output decoupling and dropout/dissipation checks
 
 ### Parameters
 
@@ -558,10 +610,10 @@ LDO linear regulator with decoupling
 |------|------|----------|---------|-------------|
 | `vin` | number | Yes |  | Input voltage in volts |
 | `vout` | number |  |  | Output voltage in volts; inferred from fixed-output ICs when omitted |
-| `iout` | number |  |  | Maximum output current in amps |
-| `ic` | string |  | TLV75518 | LDO IC MPN; fixed-output parts can imply vout |
+| `iout` | number |  |  | Maximum output current in amps; defaults to the IC's rated current |
+| `ic` | string |  |  | LDO IC MPN from the IC catalog |
 | `ref` | string |  | U | Reference designator for the IC |
-| `rail_name` | string |  |  | Output rail net name |
+| `rail_name` | string |  |  | Output rail net name; defaults to VDD_{vout} |
 | `vin_net` | string |  | VIN | Input rail net name |
 | `en_net` | string |  |  | Enable net name; defaults to vin_net |
 
@@ -572,6 +624,29 @@ power:
   - type: ldo
     ref: U1
     vin: 12
+```
+
+---
+
+## `led`
+
+Discrete LED with anode/cathode net wiring (pair with a series resistor or LED driver)
+
+### Parameters
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `ic` | string |  |  | Device MPN from the IC catalog |
+| `ref` | string |  | D | Reference designator for the device |
+| `anode_net` | string |  |  | Anode net name; defaults to A_{ref} |
+| `cathode_net` | string |  |  | Cathode net name; defaults to K_{ref} |
+
+### Example
+
+```yaml
+blocks:
+  - type: led
+    ref: D1
 ```
 
 ---
@@ -611,17 +686,40 @@ Bidirectional voltage level shifter
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `ic` | string |  | TXS0102 |  |
-| `ref` | string |  | U |  |
-| `vcca_net` | string |  | VDD_1P8 |  |
-| `vccb_net` | string |  | VDD_3P3 |  |
-| `gnd_net` | string |  | GND |  |
+| `ic` | string |  | TXS0102 | Level shifter IC MPN |
+| `ref` | string |  | U | Reference designator for the IC |
+| `vcca_net` | string |  | VDD_1P8 | Low-voltage side supply rail net name (A port) |
+| `vccb_net` | string |  | VDD_3P3 | High-voltage side supply rail net name (B port) |
+| `gnd_net` | string |  | GND | Ground net name |
 
 ### Example
 
 ```yaml
 interfaces:
   - type: level_shifter
+    ref: U1
+```
+
+---
+
+## `logic`
+
+Logic-family IC (gates, buffers, glue logic) built from catalog pin metadata
+
+### Parameters
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `ic` | string |  |  | IC MPN from the catalog or imported part data |
+| `ref` | string |  | U | Reference designator for the IC |
+| `vdd_net` | string |  | VDD_3P3 | Supply rail net name |
+| `gnd_net` | string |  | GND | Ground net name |
+
+### Example
+
+```yaml
+blocks:
+  - type: logic
     ref: U1
 ```
 
@@ -649,7 +747,7 @@ Low-side or high-side MOSFET switch with gate protection
 ```yaml
 power:
   - type: mosfet_switch
-    ref: U1
+    ref: Q1
     iload: 0.5
 ```
 
@@ -691,16 +789,19 @@ Op-amp with configurable gain and feedback
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `ic` | string |  | LM358 |  |
-| `ref` | string |  | U |  |
-| `config` | string |  | non_inverting | Options: non_inverting, inverting, follower, differential |
+| `ic` | string |  | LM358 | Op-amp IC MPN |
+| `ref` | string |  | U | Reference designator for the IC |
+| `config` | string |  | non_inverting | Amplifier topology (non_inverting, inverting, follower, differential, comparator) |
 | `gain` | number |  | 1.0 | Voltage gain (absolute value) |
 | `rf` | number |  |  | Feedback resistor in ohms (overrides gain calculation) |
 | `rin` | number |  |  | Input resistor in ohms (overrides gain calculation) |
-| `vdd_net` | string |  | VDD_3P3 |  |
-| `gnd_net` | string |  | GND |  |
-| `in_net` | string |  |  |  |
-| `out_net` | string |  |  |  |
+| `vdd_net` | string |  | VDD_3P3 | Positive supply rail net name |
+| `gnd_net` | string |  | GND | Ground net name |
+| `in_net` | string |  |  | Signal input net name; defaults to OPAMP_IN_{ref} |
+| `out_net` | string |  |  | Signal output net name; defaults to OPAMP_OUT_{ref} |
+| `threshold_high` | string |  | 100k | Comparator threshold divider top resistor (comparator config) |
+| `threshold_low` | string |  | 10k | Comparator threshold divider bottom resistor (comparator config) |
+| `output_pullup` | string |  | 100k | Open-drain output pull-up resistor (comparator config) |
 
 ### Example
 
@@ -739,15 +840,15 @@ power:
 
 ## `protection`
 
-Protection circuit (TVS, ESD, reverse polarity)
+Passive TVS/ESD protection device clamping a target net
 
 ### Parameters
 
 | Name | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `ic` | string |  | SMBJ5.0A | Protection device MPN |
-| `ref` | string |  | D | Reference designator for the protection device |
 | `protect_net` | string | Yes |  | Net to protect (e.g., VBUS_5V, USB_DP) |
+| `ic` | string |  |  | Protection device MPN from the IC catalog |
+| `ref` | string |  | D | Reference designator for the device |
 | `gnd_net` | string |  | GND | Ground reference net name |
 | `protection_type` | string |  | tvs | Protection type: TVS for power lines, ESD for signal lines (tvs, esd) |
 
@@ -756,7 +857,7 @@ Protection circuit (TVS, ESD, reverse polarity)
 ```yaml
 protection:
   - type: protection
-    ref: U1
+    ref: D1
     protect_net: VBUS_5V
 ```
 
@@ -845,6 +946,29 @@ digital:
 
 ---
 
+## `sensor`
+
+Sensor IC with decoupling and shared-bus wiring from catalog metadata
+
+### Parameters
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `ic` | string |  |  | IC MPN from the catalog or imported part data |
+| `ref` | string |  | U | Reference designator for the IC |
+| `vdd_net` | string |  | VDD_3P3 | Supply rail net name |
+| `gnd_net` | string |  | GND | Ground net name |
+
+### Example
+
+```yaml
+blocks:
+  - type: sensor
+    ref: U1
+```
+
+---
+
 ## `sensor_frontend`
 
 Instrumentation amplifier front-end with gain resistor and filtering
@@ -899,7 +1023,7 @@ SPI bus series termination or level shifter
 ```yaml
 interfaces:
   - type: spi_bus
-    ref: U1
+    ref: RP1
 ```
 
 ---
@@ -914,7 +1038,8 @@ USB Type-C receptacle with CC resistors and VBUS decoupling
 |------|------|----------|---------|-------------|
 | `ic` | string |  | USB4125-GF-A | USB-C connector MPN |
 | `ref` | string |  | J | Reference designator for the connector |
-| `role` | string |  | device | USB role: device (5.1k pull-down) or source (Rp to VBUS) (device, source) |
+| `role` | string |  | device | USB role: device (5.1k pull-down on CC) or source (Rp pull-up on CC) (device, source) |
+| `source_current` | string |  | default | For role=source: Rp value advertising USB-C current capability. 'default' = 56k (USB 2.0/500 mA), '1.5A' = 22k, '3A' = 10k. (default, 1.5A, 3A) |
 | `vbus_net` | string |  | VBUS | VBUS power net name |
 | `dp_net` | string |  | USB_DP | USB D+ signal net name |
 | `dn_net` | string |  | USB_DN | USB D- signal net name |
@@ -926,7 +1051,7 @@ USB Type-C receptacle with CC resistors and VBUS decoupling
 ```yaml
 interfaces:
   - type: usb_c_connector
-    ref: U1
+    ref: J1
 ```
 
 ---

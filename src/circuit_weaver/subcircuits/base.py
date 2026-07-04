@@ -699,9 +699,10 @@ class DataDrivenTemplate(SubcircuitTemplate):
         topology: str,
         ic_database: dict[str, dict],
         param_schema: list | None = None,
+        description: str | None = None,
     ):
         self.template_type = template_type
-        self.description = f"Data-driven {template_type} template"
+        self.description = description or f"Data-driven {template_type} template"
         self._topology = topology
         self._ic_database = ic_database
         self.param_schema = param_schema or []
@@ -779,10 +780,15 @@ class SubcircuitRegistry:
         if not ics:
             return None
 
+        from .topology_builders import TOPOLOGY_TEMPLATE_INFO
+
+        info = TOPOLOGY_TEMPLATE_INFO.get(type_name, {})
         return DataDrivenTemplate(
             template_type=type_name,
             topology=type_name,
             ic_database=ics,
+            param_schema=info.get("param_schema"),
+            description=info.get("description"),
         )
 
     def available_types(self) -> list[str]:

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Release prep — professional templates and deliverables
+
+- Give data-driven templates real documentation contracts: topologies served by `DataDrivenTemplate` (`buck`, `boost`, `buck_boost`, `ldo`, `can_transceiver`, `eeprom`, `protection`, `diode`, `led`, `component`, `logic`, `sensor`) now carry curated descriptions and parameter schemas (`TOPOLOGY_TEMPLATE_INFO` in `topology_builders.py`) instead of the placeholder "Data-driven X template" with no parameters. Required params (`vin`/`vout`/`iout`, `protect_net`) now fail validation with a clear message instead of a KeyError inside the builder.
+- Add the missing parameter descriptions to the `gate_driver`, `level_shifter`, and `opamp` template schemas.
+- Fix `scripts/gen_template_docs.py` example snippets: reference designators now use each template's own prefix (`J1` for connectors, `D1` for protection, `Y1` for crystals, `Q1` for MOSFETs, `RP1` for pull-up packs) instead of a hardcoded `U1`; the crystal `cl_spec` example is `12` (pF, matching the parameter's unit) instead of `9e-12`; boost/buck-boost examples use physically sensible voltages (3.7V in → 5V out for a boost). Regenerated `docs/templates.md`, which was stale at 37 templates (now 42, including the comparator opamp config).
+- Make the generated design report's Power Tree truthful and readable: regulator output rails are credited to the regulator that produces them (a buck reached through its external inductor previously showed as `external ->`), per-instance internal nodes (`SW_x`, `BST_x`) and support-passive plumbing no longer appear as rails, consumers are deduplicated per component (no more `U1:auto` / `U1:CBST` noise), a rail's source is not repeated in its consumer list, and unconsumed rails read `(no consumers)`.
+- Polish the report deliverable: the spec's `description` renders under the title, the BOM summary labels are accurate ("Placed components" / "Support passives" instead of "Total ICs" for a count that includes connectors and passives), and the report ends with a generator version footer.
+- Refresh the checked-in `*_report.md` for all nine bundled samples with the corrected report output.
+
 ## [0.31.0] - 2026-07-04
 
 ### Sprint 54 — layout quality zero-crossing gate, density strategy, sheet splitting, autorouter hardening

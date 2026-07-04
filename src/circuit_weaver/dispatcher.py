@@ -1034,6 +1034,7 @@ def _generate_compiled_artifacts(
         str(output_dir),
         project_name=compiled.metadata.get("project", "project"),
         company=compiled.metadata.get("company", ""),
+        description=compiled.metadata.get("description", ""),
         stable_uuids=True,
         validate=True,
         pcb=True,
