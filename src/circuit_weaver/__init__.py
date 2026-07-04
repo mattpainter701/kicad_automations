@@ -36,4 +36,4 @@ __all__ = [
     "update_board_placements",
 ]
 
-__version__ = "0.30.52"
+__version__ = "0.31.0"

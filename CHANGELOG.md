@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-07-04
+
 ### Sprint 54 — layout quality zero-crossing gate, density strategy, sheet splitting, autorouter hardening
 
 - (T236) Drive the remaining wire-through-body crossings on the quality-gated samples to **zero** (13 -> 0):

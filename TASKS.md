@@ -2,7 +2,7 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
-## Sprint 54 — Layout Quality Zero Gate, Density Strategy, Sheet Splitting, Autorouter Hardening
+## Sprint 54 — Layout Quality Zero Gate, Density Strategy, Sheet Splitting, Autorouter Hardening (v0.31.0)
 
 **Goal:** Close the remaining Sprint 53 layout follow-ups (ENDPOINT-INSIDE crossings, F13, F15), give real designs the same geometric scrutiny as the test corpus, and turn the Freerouting wrapper from a placeholder into a fail-closed, pipeline-correct integration.
 
