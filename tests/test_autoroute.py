@@ -4,6 +4,7 @@ import subprocess
 from unittest import mock
 
 from circuit_weaver.autoroute import (
+    _find_freerouting_command,
     _find_freerouting_jar,
     _parse_routing_stats,
     autoroute_pcb,
@@ -89,7 +90,7 @@ class TestPreflight:
 
 
 class TestFindFreeroutingJar:
-    """Test Freerouting JAR discovery."""
+    """Test Freerouting discovery."""
 
     def test_find_jar_in_home_directory(self, tmp_path):
         """Test finding JAR in ~/.freerouting/ directory."""
@@ -104,25 +105,23 @@ class TestFindFreeroutingJar:
 
         assert result == jar_file
 
-    def test_find_jar_in_path(self, tmp_path):
-        """Test finding JAR in PATH via 'which'."""
-        jar_path = str(tmp_path / "freerouting")
+    def test_find_launcher_in_path(self, tmp_path):
+        """Package-manager launchers are used directly instead of as JARs."""
+        launcher = str(tmp_path / "freerouting")
 
-        with mock.patch("subprocess.run") as mock_run:
-            mock_run.return_value = mock.Mock(returncode=0, stdout=f"{jar_path}\n")
-            result = _find_freerouting_jar()
+        with mock.patch("circuit_weaver.autoroute.shutil.which", return_value=launcher):
+            with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=None):
+                result = _find_freerouting_command()
 
-        assert str(result) == jar_path
-        mock_run.assert_called_once()
+        assert result == [launcher]
 
     def test_jar_not_found(self, tmp_path):
         """Test when Freerouting is not found."""
         home = tmp_path
 
         with mock.patch("pathlib.Path.home", return_value=home):
-            with mock.patch("subprocess.run") as mock_run:
-                mock_run.return_value = mock.Mock(returncode=1, stdout="")
-                result = _find_freerouting_jar()
+            with mock.patch("circuit_weaver.autoroute.shutil.which", return_value=None):
+                result = _find_freerouting_command()
 
         assert result is None
 
@@ -137,13 +136,12 @@ class TestFindFreeroutingJar:
         path_jar = str(tmp_path / "alt_freerouting")
 
         with mock.patch("pathlib.Path.home", return_value=home):
-            with mock.patch("subprocess.run") as mock_run:
-                mock_run.return_value = mock.Mock(returncode=0, stdout=f"{path_jar}\n")
-                result = _find_freerouting_jar()
+            with mock.patch("circuit_weaver.autoroute.shutil.which", return_value=path_jar) as mock_which:
+                result = _find_freerouting_command()
 
         # Home directory should be checked first and found
-        assert result == home_jar
-        mock_run.assert_not_called()  # Shouldn't even check PATH
+        assert result == ["java", "-jar", str(home_jar)]
+        mock_which.assert_not_called()  # Shouldn't even check PATH
 
 
 class TestParseRoutingStats:
@@ -221,7 +219,7 @@ class TestAutoroutePcb:
         """Test graceful failure when Freerouting is not installed."""
         pcb_file = _routable_board(tmp_path)
 
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=None):
+        with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=None):
             result = autoroute_pcb(str(pcb_file))
 
         assert result["status"] == "error"
@@ -236,7 +234,10 @@ class TestAutoroutePcb:
 
         mock_output = "Routed: 347 traces, 89 vias"
 
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
+        with mock.patch(
+            "circuit_weaver.autoroute._find_freerouting_command",
+            return_value=["java", "-jar", str(jar_file)],
+        ):
             with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value=None):
                 with mock.patch("subprocess.run") as mock_run:
                     mock_run.return_value = mock.Mock(returncode=0, stdout=mock_output, stderr="")
@@ -267,7 +268,10 @@ class TestAutoroutePcb:
                 return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="Routed: 12 traces, 3 vias", stderr="")
 
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
+        with mock.patch(
+            "circuit_weaver.autoroute._find_freerouting_command",
+            return_value=["java", "-jar", str(jar_file)],
+        ):
             with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value="kicad-cli"):
                 with mock.patch("subprocess.run", side_effect=fake_run):
                     result = autoroute_pcb(str(pcb_file), effort="high")
@@ -286,7 +290,10 @@ class TestAutoroutePcb:
         jar_file = tmp_path / "freerouting.jar"
         jar_file.touch()
 
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
+        with mock.patch(
+            "circuit_weaver.autoroute._find_freerouting_command",
+            return_value=["java", "-jar", str(jar_file)],
+        ):
             with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value=None):
                 with mock.patch("subprocess.run") as mock_run:
                     mock_run.return_value = mock.Mock(
@@ -303,7 +310,10 @@ class TestAutoroutePcb:
         jar_file = tmp_path / "freerouting.jar"
         jar_file.touch()
 
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
+        with mock.patch(
+            "circuit_weaver.autoroute._find_freerouting_command",
+            return_value=["java", "-jar", str(jar_file)],
+        ):
             with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value=None):
                 with mock.patch("subprocess.run") as mock_run:
                     mock_run.side_effect = subprocess.TimeoutExpired("java", 300)
@@ -318,7 +328,10 @@ class TestAutoroutePcb:
         jar_file = tmp_path / "freerouting.jar"
         jar_file.touch()
 
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
+        with mock.patch(
+            "circuit_weaver.autoroute._find_freerouting_command",
+            return_value=["java", "-jar", str(jar_file)],
+        ):
             with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value=None):
                 with mock.patch("subprocess.run") as mock_run:
                     mock_run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
@@ -334,7 +347,10 @@ class TestAutoroutePcb:
         jar_file = tmp_path / "freerouting.jar"
         jar_file.touch()
 
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
+        with mock.patch(
+            "circuit_weaver.autoroute._find_freerouting_command",
+            return_value=["java", "-jar", str(jar_file)],
+        ):
             with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value=None):
                 with mock.patch("subprocess.run") as mock_run:
                     mock_run.return_value = mock.Mock(returncode=0, stdout="", stderr="")
@@ -349,7 +365,10 @@ class TestAutoroutePcb:
         jar_file.touch()
 
         mock_output = "Routed: 40 traces, 8 vias, 2 incomplete"
-        with mock.patch("circuit_weaver.autoroute._find_freerouting_jar", return_value=jar_file):
+        with mock.patch(
+            "circuit_weaver.autoroute._find_freerouting_command",
+            return_value=["java", "-jar", str(jar_file)],
+        ):
             with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value=None):
                 with mock.patch("subprocess.run") as mock_run:
                     mock_run.return_value = mock.Mock(returncode=0, stdout=mock_output, stderr="")

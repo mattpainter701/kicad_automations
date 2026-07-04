@@ -117,31 +117,31 @@ def preflight_pcb(pcb_path: str | Path) -> dict[str, Any]:
 
 
 def _find_freerouting_jar() -> Path | None:
-    """Locate the Freerouting JAR file.
-
-    Searches in order:
-    1. ~/.freerouting/freerouting.jar (default install location)
-    2. PATH (if installed via package manager)
-    3. None if not found
-    """
+    """Locate a manually installed Freerouting JAR file."""
     # Check user home directory
     home_jar = Path.home() / ".freerouting" / "freerouting.jar"
     if home_jar.exists():
         return home_jar
 
-    # Check if 'freerouting' is in PATH (package manager install)
-    try:
-        result = subprocess.run(
-            ["which", "freerouting"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return Path(result.stdout.strip())
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    return None
 
+
+def _find_freerouting_command() -> list[str] | None:
+    """Return the command prefix used to invoke Freerouting.
+
+    Manual installs are usually a JAR under ``~/.freerouting`` and must be
+    launched with ``java -jar``. Package-manager installs (for example
+    Homebrew) expose a ``freerouting`` launcher on PATH; running those through
+    ``java -jar /path/to/freerouting`` fails because the launcher is a script,
+    not a JAR.
+    """
+    jar = _find_freerouting_jar()
+    if jar is not None:
+        return ["java", "-jar", str(jar)]
+
+    exe = shutil.which("freerouting")
+    if exe:
+        return [exe]
     return None
 
 
@@ -248,8 +248,8 @@ def autoroute_pcb(
         }
 
     # Check if Freerouting is installed
-    jar = _find_freerouting_jar()
-    if jar is None:
+    freerouting_cmd = _find_freerouting_command()
+    if freerouting_cmd is None:
         return {
             "status": "error",
             "message": (
@@ -275,9 +275,7 @@ def autoroute_pcb(
             if exported["status"] != "ok":
                 return {**exported, "preflight": preflight}
             cmd = [
-                "java",
-                "-jar",
-                str(jar),
+                *freerouting_cmd,
                 "-de",
                 str(dsn_path),
                 "-do",
@@ -294,9 +292,7 @@ def autoroute_pcb(
             if output_path is None:
                 output_path = str(pcb.parent / f"{pcb.stem}_routed.kicad_pcb")
             cmd = [
-                "java",
-                "-jar",
-                str(jar),
+                *freerouting_cmd,
                 "-dr",
                 str(pcb),
                 "-out",
