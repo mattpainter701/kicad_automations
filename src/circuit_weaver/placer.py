@@ -90,6 +90,9 @@ class SheetLayout:
     local_net_anchors: list[LocalNetAnchor] = field(default_factory=list)
     local_wires: list[tuple[float, float, float, float]] = field(default_factory=list)
     presentation_wiring_policy: PresentationWiringPolicy = field(default_factory=PresentationWiringPolicy)
+    # True when the content overflowed every paper size up to A0 — the
+    # caller must split the sheet or fail, not ship a crammed page (F15).
+    overflow: bool = False
 
 
 # Reference designator counters
@@ -326,13 +329,18 @@ def _component_body_rect_extents(comp: ComponentDef) -> tuple[float, float, floa
 
 
 def component_body_bounds(pc: PlacedComponent) -> tuple[float, float, float, float]:
-    """Return the placed symbol body's exact bounds, excluding passives and notes."""
+    """Return the placed symbol body's exact bounds, excluding passives and notes.
+
+    The corners are deliberately not snapped: callers use these bounds as
+    collision keep-outs, and rounding to the 1.27mm wire grid can shrink a
+    box past a wire running just inside its true edge, hiding the collision.
+    """
     left, right, top, bottom = _component_body_rect_extents(pc.comp)
     return (
-        snap(pc.x - left),
-        snap(pc.y - top),
-        snap(pc.x + right),
-        snap(pc.y + bottom),
+        pc.x - left,
+        pc.y - top,
+        pc.x + right,
+        pc.y + bottom,
     )
 
 
@@ -1522,6 +1530,41 @@ def _apply_topology_local_circuits(layout: SheetLayout) -> None:
 # Layout engine
 # ================================================================
 
+# F13 — continuous connector-density strategy selection. A sheet whose
+# estimated occupied area is mostly connectors packs them width-first
+# across the page; below the threshold connectors stay in a side column.
+_CONNECTOR_DOMINANCE_THRESHOLD = 0.7
+_CONNECTOR_DENSITY_MIN_COUNT = 4
+
+
+def _connector_dominance(connectors: list, ics: list) -> float:
+    """Fraction of estimated occupied block area contributed by connectors.
+
+    Replaces the old boolean cliff (``>= 8 connectors and no regulators and
+    few ICs``): a 7-connector board or an 8-connector board with one small
+    regulator used to fall back to the sparse single-column layout, while a
+    12-connector board with one large MCU was forced into the dense
+    connector grid even when the normal layout fit. Area-weighting makes
+    the decision proportional — one big MCU pulls the score down as much
+    as several small ICs, and a page genuinely dominated by connector area
+    pulls it up regardless of the exact connector count.
+    """
+    if len(connectors) < _CONNECTOR_DENSITY_MIN_COUNT:
+        return 0.0
+
+    def _block_area(comps: list) -> float:
+        total = 0.0
+        for comp in comps:
+            w, h = component_block_size(comp)
+            total += max(w, 1.0) * max(h, 1.0)
+        return total
+
+    connector_area = _block_area(connectors)
+    total_area = connector_area + _block_area(ics)
+    if total_area <= 0:
+        return 0.0
+    return connector_area / total_area
+
 
 def layout_sheet(
     sheet_alloc,
@@ -1552,7 +1595,7 @@ def layout_sheet(
         key=lambda c: (-len(c.pins), _component_sort_key(c)),
     )
 
-    connector_heavy = len(connectors) >= 8 and not regulators and len(other_ics) <= max(6, len(connectors) // 3)
+    connector_heavy = _connector_dominance(connectors, regulators + other_ics) >= _CONNECTOR_DOMINANCE_THRESHOLD
 
     def _port_name(port) -> str:
         if isinstance(port, dict):
@@ -1851,6 +1894,7 @@ def layout_sheet(
 
     layout = last_layout if last_layout is not None else _build_layout("A0")
     _restore_ref_state(last_state)
+    layout.overflow = True
 
     pw, ph = PAPER_SIZES.get(layout.paper, PAPER_SIZES["A3"])
     usable_h = ph - TITLE_BLOCK_H
@@ -1870,3 +1914,56 @@ def layout_sheet(
         )
 
     return layout
+
+
+def split_sheet_allocation(sheet_alloc) -> list | None:
+    """Split an overflowing sheet allocation into two area-balanced halves.
+
+    Components keep their allocation order (they were grouped by function),
+    and the cut point balances estimated block area rather than count so a
+    half with a few huge parts doesn't immediately overflow again. Returns
+    ``None`` when the sheet cannot be split (fewer than two components) —
+    the caller must then fail with a clear "design too large" error instead
+    of emitting a crammed page (F15).
+    """
+    from .allocator import SheetAllocation
+
+    components = list(sheet_alloc.components)
+    if len(components) < 2:
+        return None
+
+    areas = []
+    for comp in components:
+        w, h = component_block_size(comp)
+        areas.append(max(w, 1.0) * max(h, 1.0))
+    total = sum(areas)
+
+    cut = 1
+    running = areas[0]
+    for idx in range(1, len(components)):
+        if running >= total / 2.0:
+            break
+        running += areas[idx]
+        cut = idx + 1
+    cut = min(cut, len(components) - 1)
+
+    halves = []
+    for suffix, part in (("1", components[:cut]), ("2", components[cut:])):
+        # Sheet-level bypass/strap lists mirror the member components' own
+        # support passives — recompute per half rather than duplicating.
+        half_bypass = [cap for comp in part for cap in comp.bypass_caps]
+        half_straps = [strap for comp in part for strap in comp.straps]
+        halves.append(
+            SheetAllocation(
+                name=f"{sheet_alloc.name}_{suffix}",
+                title=f"{sheet_alloc.title} ({suffix}/2)",
+                paper=sheet_alloc.paper,
+                components=part,
+                bypass_caps=half_bypass,
+                straps=half_straps,
+                sheet_annotations=list(sheet_alloc.sheet_annotations),
+                lock_paper_size=False,
+                presentation_wiring_policy=sheet_alloc.presentation_wiring_policy,
+            )
+        )
+    return halves

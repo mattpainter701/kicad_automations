@@ -2269,7 +2269,19 @@ def main() -> None:
     autoroute_p.add_argument(
         "--output",
         "-o",
-        help="Output routed PCB (default: <name>_routed.kicad_pcb)",
+        help="Output routed session/PCB (default: <name>.ses via kicad-cli, else <name>_routed.kicad_pcb)",
+    )
+    autoroute_p.add_argument(
+        "--effort",
+        choices=["fast", "medium", "high"],
+        default="medium",
+        help="Freerouting optimization-pass budget (default: medium)",
+    )
+    autoroute_p.add_argument(
+        "--timeout",
+        type=float,
+        default=300,
+        help="Routing timeout in seconds (default: 300)",
     )
 
     install_p = subparsers.add_parser(
@@ -3266,6 +3278,8 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             lambda: autoroute_pcb(
                 args.kicad_pcb,
                 output_path=args.output,
+                effort=args.effort,
+                timeout_seconds=args.timeout,
             )
         )
 

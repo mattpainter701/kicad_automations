@@ -2,6 +2,48 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Sprint 54 — Layout Quality Zero Gate, Density Strategy, Sheet Splitting, Autorouter Hardening
+
+**Goal:** Close the remaining Sprint 53 layout follow-ups (ENDPOINT-INSIDE crossings, F13, F15), give real designs the same geometric scrutiny as the test corpus, and turn the Freerouting wrapper from a placeholder into a fail-closed, pipeline-correct integration.
+
+### T236. Drive remaining wire-body crossings to zero (P1, HIGH) ✅ DONE
+
+- [x] Make net-marker stub emission body-aware: `_clear_stub_length` picks a stub length whose endpoint and marker glyph clear every neighboring symbol body (candidates deviate in 1.27mm steps, non-crossing candidates preferred, fall back to the requested length). Applied to IC signal-pin labels, IC power-pin stubs, passive endpoints, and topology anchors. This closed the dominant ENDPOINT-INSIDE class — power symbols/labels parked inside adjacent cap bodies.
+- [x] Split T-joint-carrying segments at their tap points in `_detour_wires_around_bodies` so tapped rails can be detoured per piece with every junction preserved as a piece endpoint (the previous pass skipped them wholesale).
+- [x] Stop grid-snapping collision keep-out boxes (`component_body_bounds`, sheet-wide body-box set): rounding corners to the 1.27mm wire grid could shrink a box past a wire running just inside its true edge, hiding the collision from every detour pass.
+- [x] Lower `tests/test_layout_quality.py` ceilings to zero for all three gated samples and add unit regressions for tap-splitting, junction preservation, and stub clearance.
+
+Measured across the quality-gated samples: wire-body crossings 13 → 0 (motor_controller 2→0, oled_display_module 8→0, usb_regulated_supply 3→0).
+
+### T237. Continuous connector-density layout strategy (P2, MEDIUM) ✅ DONE — closes F13
+
+- [x] Replace the boolean `connector_heavy` cliff (`>= 8 connectors and no regulators and few ICs`) with `_connector_dominance`: the fraction of estimated occupied block area contributed by connectors, gated on a minimum of 4 connectors and a 0.7 dominance threshold.
+- [x] Verify the audit's cliff cases: a 7-connector board and an 8-connector board with one small regulator now pack width-first; a few headers around one large MCU keep the normal layout.
+- [x] Add unit regressions covering both sides of the threshold and score monotonicity in IC area.
+
+### T238. Split A0-overflowing sheets or fail clearly (P2, MEDIUM) ✅ DONE — closes F15
+
+- [x] Mark layouts that overflow every paper size up to A0 (`SheetLayout.overflow`) instead of only printing warnings.
+- [x] Add `split_sheet_allocation`: area-balanced two-way split of an overflowing sheet's components (allocation order preserved; per-half support-passive lists recomputed).
+- [x] In `generate_from_components`, re-layout split halves (bounded rounds, ref-state restored between attempts) and raise a clear `Design too large` error when a single-component sheet still overflows.
+- [x] Add regressions for the balanced split, the unsplittable case, the split-then-render path, and the hard-failure path.
+
+### T239. Layout-quality validation for real designs (P2, MEDIUM) ✅ DONE
+
+- [x] Promote the geometric `.kicad_sch` analysis (symbol-body overlaps, wire-body crossings) from `tests/test_layout_quality.py` into `circuit_weaver.layout_quality` with a stable `analyze_schematic_file` / `analyze_schematic_text` API.
+- [x] Analyze every emitted sheet in `generate_from_components` and log a warning with the per-sheet summary when a sheet is not geometrically clean.
+- [x] Add a per-sheet "Layout Quality" section to the generated design report.
+- [x] Point the test suite at the shared module and add unit coverage for the analyzer and the report section.
+
+### T240. Autorouter preflight + Specctra pipeline (P2, MEDIUM) ✅ DONE
+
+- [x] Add `preflight_pcb`: fail closed before invoking Freerouting on the engine's own placement-preview boards (zero pads by design), pad-less boards, and boards without named nets — each with a remediation message pointing at KiCad forward-annotation.
+- [x] Use the supported Specctra pipeline when `kicad-cli` is available: `kicad-cli pcb export specctra` → Freerouting `-de board.dsn -do board.ses` → import hint for *File → Import → Specctra Session*. Keep the direct `.kicad_pcb` invocation as the fallback.
+- [x] Add `--effort fast|medium|high` (Freerouting `-mp` pass budget) and `--timeout` to the CLI; surface incomplete-route counts in the result stats and message.
+- [x] Rework `tests/test_autoroute.py` around routable fixture boards; add preflight, DSN-pipeline, effort-budget, and end-to-end placement-preview-rejection coverage. Update `docs/cli-reference.md` / `docs/user_workflow.md`, which previously told users to autoroute the pad-less placement preview.
+
+---
+
 ## Sprint 53 — Schematic Layout Quality (congestion / overlaps / readability)
 
 **Goal:** Make generated schematics read as professional: no stacked symbols, no wires slicing through symbol bodies, no cross-sheet "local" wires. Closes audit findings F6 and F14; F13/F15 remain open below.
@@ -20,12 +62,12 @@
 
 Measured across the nine-sample corpus: symbol-body overlaps 11 → 0; wire-through-body segments 147 → 36.
 
-### Layout follow-ups (open)
+### Layout follow-ups
 
 - [x] Make `_apply_topology_decoupling_bank` / `_apply_topology_strap_ladder` / `_apply_topology_ldo_cluster` occupancy-aware so cluster bodies and their local anchors reserve sheet-wide slots before later motifs are placed; deduplicate shared reservations and add unit regressions for bank, LDO, and occupancy reservation behavior.
-- [ ] Reduce the remaining ENDPOINT-INSIDE wire-body crossings after the bank/ladder/LDO occupancy pass, including the tapped rails that still run through IC bodies on multi-tap nets.
-- [ ] F13 — replace the connector-heavy boolean threshold in `placer.py` with a continuous density score.
-- [ ] F15 — when A0 still overflows, split the largest sheet and re-allocate (or fail with a clear "design too large" error) instead of emitting a crammed page.
+- [x] Reduce the remaining ENDPOINT-INSIDE wire-body crossings after the bank/ladder/LDO occupancy pass, including the tapped rails that still run through IC bodies on multi-tap nets. → Closed by T236 (Sprint 54): body-aware stub lengths + tap-splitting detours + un-snapped keep-out boxes drove the gated samples to zero crossings.
+- [x] F13 — replace the connector-heavy boolean threshold in `placer.py` with a continuous density score. → Closed by T237 (Sprint 54).
+- [x] F15 — when A0 still overflows, split the largest sheet and re-allocate (or fail with a clear "design too large" error) instead of emitting a crammed page. → Closed by T238 (Sprint 54).
 
 ## Generation Pipeline Audit (2026-05-04)
 

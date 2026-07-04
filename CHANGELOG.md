@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Sprint 54 — layout quality zero-crossing gate, density strategy, sheet splitting, autorouter hardening
+
+- (T236) Drive the remaining wire-through-body crossings on the quality-gated samples to **zero** (13 -> 0):
+  - Make net-marker stub emission body-aware: label and power-symbol stubs now pick a length whose endpoint *and* marker glyph clear every neighboring symbol body (`_clear_stub_length`), instead of only avoiding the owning symbol's own geometry. This was the dominant crossing class — power symbols and labels parked inside adjacent capacitor bodies.
+  - Teach the final wire-hygiene pass to handle T-joint-carrying segments: tapped rails are split at each tap point (taps become piece endpoints, preserving every junction) and each piece is detoured around bodies independently, instead of skipping the segment wholesale.
+  - Stop grid-snapping collision keep-out boxes: `component_body_bounds` and the sheet-wide body-box set no longer round corners to the 1.27mm wire grid, which could shrink a box past a wire running just inside its true edge and hide the collision from every detour pass.
+  - Lower the `tests/test_layout_quality.py` ceilings to zero for all three gated samples.
+- (T237 / audit F13) Replace the connector-heavy boolean cliff in `placer.py` with a continuous density score: `_connector_dominance` computes the fraction of estimated block area contributed by connectors, so a 7-connector board or an 8-connector board with one small regulator now packs width-first, while a few headers around one large MCU keep the normal layout.
+- (T238 / audit F15) Stop emitting crammed A0 pages: a sheet that overflows every paper size up to A0 is now split into two area-balanced half-sheets (`split_sheet_allocation`) and re-laid-out; a sheet that cannot be split further raises a clear "Design too large" generation error instead of shipping an unreadable page.
+- (T239) Promote the geometric layout-quality analysis from the test suite into `circuit_weaver.layout_quality`: the generator analyzes every emitted sheet, logs warnings for overlaps / wire-body crossings on real designs, and the design report gains a per-sheet "Layout Quality" section. `tests/test_layout_quality.py` now consumes the shared module.
+- (T240) Harden the Freerouting autorouter integration:
+  - Preflight every board before routing (`preflight_pcb`): the engine's own `*_placement.kicad_pcb` preview (zero pads by design), pad-less boards, and boards without named nets fail closed with a forward-annotation remediation message.
+  - Use the supported Specctra pipeline when `kicad-cli` is available: DSN export -> Freerouting `-de/-do` -> `.ses` session with a KiCad import hint; fall back to direct `.kicad_pcb` invocation otherwise.
+  - Add `--effort fast|medium|high` (Freerouting `-mp` pass budget) and `--timeout` CLI options, and surface incomplete-route counts in results.
+- Full suite: 1107 passed, 1 skipped.
+
 ### Sprint 53 — schematic layout quality (congestion, overlaps, readability)
 
 - Stop support passives from stacking at identical coordinates: the sidecar cluster pass now groups by resolved parent-pin location and walks collision-free slots against a sheet-wide occupancy list seeded with cluster poses and junction anchors. Symbol-body overlaps across the nine-sample corpus: 11 → 0.

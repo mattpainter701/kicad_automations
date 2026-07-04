@@ -289,6 +289,36 @@ def verify_report_fidelity(report_text: str, components: list[ComponentDef]) -> 
     }
 
 
+def _layout_quality_section(reports: dict) -> str:
+    """Render per-sheet geometric layout-quality results (T239).
+
+    ``reports`` maps sheet filename -> LayoutQualityReport from
+    ``layout_quality.analyze_schematic_file``.
+    """
+    lines = ["## Layout Quality\n"]
+    lines.append("| Sheet | Symbols | Body overlaps | Wire-body crossings |")
+    lines.append("|-------|---------|---------------|---------------------|")
+    any_dirty = False
+    for filename, report in sorted(reports.items()):
+        overlaps = len(getattr(report, "overlaps", []) or [])
+        crossings = getattr(report, "wire_body_crossings", 0)
+        symbols = getattr(report, "symbols", 0)
+        if overlaps or crossings:
+            any_dirty = True
+        lines.append(f"| `{filename}` | {symbols} | {overlaps} | {crossings} |")
+    if any_dirty:
+        lines.append("")
+        lines.append(
+            "⚠️ Sheets with overlaps or crossings will read as cluttered in KiCad — "
+            "review placement before fabrication sign-off."
+        )
+    else:
+        lines.append("")
+        lines.append("All sheets are geometrically clean (no overlaps, no wire-body crossings).")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def generate_report(
     components: list[ComponentDef],
     validation_results=None,
@@ -326,6 +356,8 @@ def generate_report(
     sections.append(_fab_notes_section(components))
     if validation_results is not None:
         sections.append(_validation_section(validation_results))
+    if metadata.get("layout_quality"):
+        sections.append(_layout_quality_section(metadata["layout_quality"]))
 
     content = "\n".join(sections)
     output_path = Path(output_path)

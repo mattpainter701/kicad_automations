@@ -359,8 +359,11 @@ circuit-weaver placement-viewer design.yaml -o output/placement.html
 # Optional: export editable SVG for visual placement in Inkscape
 circuit-weaver generate design.yaml -o output/ --svg-placement
 
-# Optional: autoroute non-critical nets (requires Freerouting)
-circuit-weaver autoroute output/main_placement.kicad_pcb -o output/routed.kicad_pcb
+# Optional: autoroute non-critical nets (requires Freerouting).
+# Note: run this on the real forward-annotated PCB, not the
+# *_placement.kicad_pcb preview — the preview has no pads and the
+# autoroute preflight rejects it.
+circuit-weaver autoroute output/MyBoard.kicad_pcb -o output/MyBoard.ses
 
 # DFM check against manufacturer rules
 circuit-weaver check-dfm output/main_placement.kicad_pcb
@@ -418,8 +421,14 @@ for power vs. signal nets.
 `brew install freerouting`), you can autoroute signal nets:
 
 ```bash
-circuit-weaver autoroute output/MyBoard.kicad_pcb -o routed.kicad_pcb
+circuit-weaver autoroute output/MyBoard.kicad_pcb --effort high
 ```
+
+The board must be a real forward-annotated PCB (Tools → Update PCB from
+Schematic in KiCad) — the generated `*_placement.kicad_pcb` preview has no
+pads and fails the routing preflight with a pointer to this step. With
+`kicad-cli` installed the router uses the supported Specctra pipeline and
+writes a `.ses` session you import via *File → Import → Specctra Session*.
 
 Freerouting routes simple circuits 100% automatically and complex circuits
 ~90%. If you don't have Freerouting or prefer manual control, use KiCad's
