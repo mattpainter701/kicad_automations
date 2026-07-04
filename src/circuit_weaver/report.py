@@ -17,61 +17,78 @@ from .component_db import ComponentDef
 
 
 def _power_tree_section(components: list[ComponentDef]) -> str:
-    """Generate a text-based power tree from component power pin assignments."""
+    """Generate a text-based power tree from component power pin assignments.
+
+    Only real power rails appear: nets attached to component power pins or
+    produced as a regulator output. Per-instance internal nodes (switch
+    nodes, bootstrap nets) and support-passive plumbing stay out of the tree.
+    """
     lines = ["## Power Tree\n"]
     ground_nets = {"GND", "AGND", "DGND", "PGND", "GNDA"}
 
-    # Collect all power rails and which components source/sink them
-    rail_sources: dict[str, list[str]] = {}  # rail -> list of source refs
-    rail_sinks: dict[str, list[str]] = {}  # rail -> list of sink refs
+    rail_sources: dict[str, list[str]] = {}  # rail -> source refs
+    rail_sinks: dict[str, list[str]] = {}  # rail -> consumer refs
+    power_rail_nets: set[str] = set()  # nets that qualify as rails
+
+    def _add(bucket: dict[str, list[str]], net: str, ref: str) -> None:
+        refs = bucket.setdefault(net, [])
+        if ref not in refs:
+            refs.append(ref)
 
     for comp in components:
         ref = comp.source_ref or comp.mpn
         pin_types = {pin.number: pin.electrical_type for pin in comp.pins}
-        output_nets = set()
+
+        # Rails this component produces (regulator outputs). Detected from
+        # power_out pins plus the output-cap / feedback-divider metadata,
+        # which covers regulators whose rail is reached through an external
+        # inductor rather than a direct output pin.
+        output_nets: set[str] = set()
         if comp.category == "power":
             for bc in comp.bypass_caps:
-                if bc.pin.upper() in ("COUT", "OUT", "L"):
+                if bc.role == "output_cap" or bc.pin.upper() in ("COUT", "OUT"):
                     output_nets.add(bc.net)
             for strap in comp.straps:
                 if "FB" in strap.pin.upper():
                     output_nets.add(strap.rail)
+        output_nets -= ground_nets
 
         for pin_num, net in comp.power_pins.items():
             if net in ground_nets:
                 continue
-            pin_type = pin_types.get(pin_num, "")
-            if pin_type == "power_out" or (comp.category == "power" and net in output_nets):
-                rail_sources.setdefault(net, [])
-                if ref not in rail_sources[net]:
-                    rail_sources[net].append(ref)
+            power_rail_nets.add(net)
+            if pin_types.get(pin_num) == "power_out" or net in output_nets:
+                _add(rail_sources, net, ref)
             else:
-                rail_sinks.setdefault(net, [])
-                if ref not in rail_sinks[net]:
-                    rail_sinks[net].append(ref)
+                _add(rail_sinks, net, ref)
 
-        # Bypass caps also indicate rail usage
+        for net in output_nets:
+            power_rail_nets.add(net)
+            _add(rail_sources, net, ref)
+
+        # Decoupling on a rail marks the component as one of its consumers.
         for bc in comp.bypass_caps:
-            if bc.net not in ground_nets:
-                rail_sinks.setdefault(bc.net, []).append(f"{ref}:{bc.pin}")
+            if bc.net not in ground_nets and bc.net not in output_nets:
+                _add(rail_sinks, bc.net, ref)
 
-    if not rail_sources and not rail_sinks:
+    rails = sorted(net for net in (set(rail_sources) | set(rail_sinks)) if net in power_rail_nets)
+    if not rails:
         lines.append("No power rail information available.\n")
         return "\n".join(lines)
 
-    # Build tree
-    all_rails = sorted(set(rail_sources.keys()) | set(rail_sinks.keys()))
     lines.append("```")
-    for rail in all_rails:
-        sources = rail_sources.get(rail, ["external"])
-        sinks = rail_sinks.get(rail, [])
+    for rail in rails:
+        sources = rail_sources.get(rail) or ["external"]
         src_str = ", ".join(sources[:3])
         if len(sources) > 3:
             src_str += f" +{len(sources) - 3}"
-        ordered_sinks = sorted(sinks, key=lambda item: (":" in item, item))
-        sink_str = ", ".join(ordered_sinks[:5])
-        if len(sinks) > 5:
-            sink_str += f" +{len(sinks) - 5}"
+        # A rail's source is not also listed among its consumers.
+        sinks = [r for r in rail_sinks.get(rail, []) if r not in sources]
+        sink_str = ", ".join(sinks[:6])
+        if len(sinks) > 6:
+            sink_str += f" +{len(sinks) - 6}"
+        if not sink_str:
+            sink_str = "(no consumers)"
         lines.append(f"  {src_str} -> [{rail}] -> {sink_str}")
     lines.append("```\n")
     return "\n".join(lines)
@@ -91,8 +108,8 @@ def _bom_summary_section(components: list[ComponentDef]) -> str:
 
     passive_count = sum(len(comp.bypass_caps) + len(comp.straps) for comp in components)
 
-    lines.append(f"- **Total ICs:** {len(components)}")
-    lines.append(f"- **Total passive instances:** {passive_count}")
+    lines.append(f"- **Placed components:** {len(components)}")
+    lines.append(f"- **Support passives (bypass caps, straps):** {passive_count}")
     lines.append(f"- **Total pins:** {total_pins}")
     lines.append("")
 
@@ -338,10 +355,13 @@ def generate_report(
     metadata = metadata or {}
     project = metadata.get("project", "Project")
     company = metadata.get("company", "")
+    description = metadata.get("description", "")
     date = datetime.date.today().isoformat()
 
     sections = []
     sections.append(f"# {project} — Design Report\n")
+    if description:
+        sections.append(f"{description}\n")
     if company:
         sections.append(f"**Company:** {company}  ")
     sections.append(f"**Date:** {date}  ")
@@ -358,6 +378,14 @@ def generate_report(
         sections.append(_validation_section(validation_results))
     if metadata.get("layout_quality"):
         sections.append(_layout_quality_section(metadata["layout_quality"]))
+
+    try:
+        from . import __version__ as _cw_version
+    except ImportError:  # pragma: no cover
+        _cw_version = "unknown"
+    sections.append(
+        f"---\n\n*Generated by [Circuit Weaver](https://pypi.org/project/circuit-weaver/) v{_cw_version}.*\n"
+    )
 
     content = "\n".join(sections)
     output_path = Path(output_path)

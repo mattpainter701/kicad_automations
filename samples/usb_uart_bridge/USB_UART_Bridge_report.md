@@ -1,25 +1,24 @@
 # USB_UART_Bridge — Design Report
 
+USB-to-UART serial bridge with integrated ESD protection
+
 **Company:** Demo Corp  
-**Date:** 2026-04-23  
+**Date:** 2026-07-04  
 **Components:** 5  
 
 ## Power Tree
 
 ```
-  external -> [AVDD] -> U2, U2:C_BULK_AVDD, U2:C_HF_AVDD
-  external -> [DVDDIO] -> U2, U2:C_BULK_DVDDIO, U2:C_HF_DVDDIO
-  external -> [VBUS] -> U2, U2:C_BULK_VBUS, U2:C_HF_VBUS
-  J1 -> [VBUS_5V] -> J1, U1, J1:auto, U1:CIN
-  external -> [VDD] -> U2, U2:C_BULK_VDD, U2:C_HF_VDD
-  U1 -> [VDD_3P3] -> U1:COUT
+  J1 -> [VBUS_5V] -> U1
+  external -> [VCC] -> U2
+  U1 -> [VDD_3P3] -> (no consumers)
 ```
 
 ## BOM Summary
 
-- **Total ICs:** 5
-- **Total passive instances:** 15
-- **Total pins:** 40
+- **Placed components:** 5
+- **Support passives (bypass caps, straps):** 9
+- **Total pins:** 31
 
 | Category | Count |
 |-|-|
@@ -32,49 +31,44 @@
 
 | Ref | MPN | Value | Category | Pins | Bypass | Straps |
 |-|-|-|-|-|-|-|
-| U1 | TLV75518 | TLV75518 | power | 5 | 2 | 0 |
-| U2 | CYUSB3014 | CYUSB3014 | usb | 25 | 8 | 2 |
-| D1 | SMBJ5.0A | SMBJ5.0A | misc | 2 | 0 | 0 |
-| D2 | SMBJ5.0A | SMBJ5.0A | misc | 2 | 0 | 0 |
+| U1 | AP2112K-3.3 | AP2112K-3.3 | power | 5 | 4 | 0 |
+| U2 | CH340G | CH340G | usb | 16 | 2 | 0 |
+| D1 | PESD5V0S1BA | PESD5V0S1BA | misc | 2 | 0 | 0 |
+| D2 | PESD5V0S1BA | PESD5V0S1BA | misc | 2 | 0 | 0 |
 | J1 | USB-C-PWR | USB-C | connector | 6 | 1 | 2 |
 
 ## Design Rationale
 
-### U1 — TLV75518
+### U1 — AP2112K-3.3
 
-- VDD_3P3: 3.3V from VBUS_5V at 0.5A (TLV75518)
-- Dropout: 0.180V, Pdiss: 0.85W, Iq: 35uA
-- WARNING: Pdiss=0.85W > 500mW — needs heatsink or copper pour
+- VDD_3P3: 3.3V from VBUS_5V at 0.6A (AP2112K-3.3)
+- Dropout: 0.250V, Pdiss: 1.02W, Iq: 55uA
+- WARNING: Pdiss=1.02W > 500mW — needs heatsink
 
-### U2 — CYUSB3014
+### U2 — CH340G
 
-- USB device controller: CYUSB3014
-- Bus: UART, Boot: SPI slave boot (PMODE[2:0]=1,0,Z)
-- Decoupling VDD: 100nF + 10uF (1.2V)
-- Decoupling VBUS: 100nF + 10uF (5.0V)
-- Decoupling DVDDIO: 100nF + 10uF (1.8V)
-- Decoupling AVDD: 100nF + 10uF (1.2V)
-- Unused: PMODE2(H3): NC, PMODE1(H2): NC
+- USB device controller: CH340G
+- Bus: UART, Boot: default boot
+- Decoupling VCC: 100nF + 10uF (3.3V)
 
-### D1 — SMBJ5.0A
+### D1 — PESD5V0S1BA
 
-- Protection: SMBJ5.0A (unidirectional) on VBUS_5V
-- Vrwm=5.0V, Vbr=6.4V, Vc=9.2V
+- Protection: PESD5V0S1BA (bidirectional) on USB_DM
+- Vrwm=5.0V, Vbr=6.0V, Vc=11.0V
 
-### D2 — SMBJ5.0A
+### D2 — PESD5V0S1BA
 
-- Protection: SMBJ5.0A (unidirectional) on USB_DP
-- Vrwm=5.0V, Vbr=6.4V, Vc=9.2V
+- Protection: PESD5V0S1BA (bidirectional) on USB_DP
+- Vrwm=5.0V, Vbr=6.0V, Vc=11.0V
 
 ## Fabrication Notes
 
 **PCB Specification:**
-- Layer count: 4-layer minimum (recommended 6-layer for thermal)
-- Surface finish: ENIG (mandatory for BGA)
+- Layer count: 2-layer sufficient
+- Surface finish: ENIG or HASL lead-free (ENIG preferred for reliability)
 - Solder type: Lead-free (RoHS)
 
 **Assembly Notes:**
-- **BGA Assembly** — Requires X-ray inspection and controlled reflow profile
 - **SMT Assembly** — Stencil, pick-and-place, and reflow furnace required
 
 **Design Checklist:**
@@ -86,6 +80,8 @@
 
 ## Circuit Validation
 
+All checks passed — no algebraic circuit issues detected.
+
 - PASS: Pinout verification
 - PASS: Feedback dividers
 - PASS: RC/LC filters
@@ -93,30 +89,22 @@
 - PASS: Decoupling coverage
 - PASS: Inductor selection
 - PASS: Capacitor voltage ratings
-- **WARN**: Net connectivity
-  - [WARNING] U2 CYUSB3014: Net 'USB_DP_U2' has only one connection (pin J1 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'USB_DM_U2' has only one connection (pin J2 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SSRX_P_U2' has only one connection (pin K1 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SSRX_N_U2' has only one connection (pin K2 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SSTX_P_U2' has only one connection (pin K3 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SSTX_N_U2' has only one connection (pin K4 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'GPIF_D0_U2' has only one connection (pin C1 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'GPIF_D1_U2' has only one connection (pin C2 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'GPIF_CLK_U2' has only one connection (pin C3 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'GPIF_CTL0_U2' has only one connection (pin C4 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SPI_CLK_U2' has only one connection (pin G1 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SPI_SSN_U2' has only one connection (pin G2 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SPI_MISO_U2' has only one connection (pin G3 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'SPI_MOSI_U2' has only one connection (pin G4 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'RESET_N_U2' has only one connection (pin F1 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'XTALIN_U2' has only one connection (pin E1 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'XTALOUT_U2' has only one connection (pin E2 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'PMODE2_U2' has only one connection (pin H3 on U2) — likely dangling
-  - [WARNING] U2 CYUSB3014: Net 'PMODE1_U2' has only one connection (pin H2 on U2) — likely dangling
-  - [WARNING] D2 SMBJ5.0A: Net 'USB_DP' has only one connection (pin 1 on D2) — likely dangling
+- PASS: Net connectivity
 - PASS: Enable/shutdown pins
 - PASS: Bus completeness
 - PASS: Pin type conflicts (ERC)
 - PASS: Power budget
 - PASS: Thermal limits
 - PASS: Signal integrity
+
+## Layout Quality
+
+| Sheet | Symbols | Body overlaps | Wire-body crossings |
+|-------|---------|---------------|---------------------|
+| `USB_UART_Bridge.kicad_sch` | 14 | 0 | 1 |
+
+⚠️ Sheets with overlaps or crossings will read as cluttered in KiCad — review placement before fabrication sign-off.
+
+---
+
+*Generated by [Circuit Weaver](https://pypi.org/project/circuit-weaver/) v0.31.0.*

@@ -1826,3 +1826,200 @@ for _topo in _GENERIC_TOPOLOGIES:
 def get_builder(topology: str):
     """Look up the builder function for a topology."""
     return TOPOLOGY_BUILDERS.get(topology, build_generic)
+
+
+# ================================================================
+# Topology-level template metadata (T-release-prep)
+#
+# Descriptions and parameter schemas for topologies served by
+# DataDrivenTemplate (no registered template class). This is
+# topology-family data, not per-part behavior: the schema documents
+# what the builder functions above consume, independent of which
+# catalog IC is selected.
+# ================================================================
+
+_SWITCHER_COMMON_SCHEMA: list[dict[str, Any]] = [
+    {"name": "vin", "type": "number", "required": True, "description": "Input voltage in volts"},
+    {"name": "vout", "type": "number", "required": True, "description": "Output voltage in volts"},
+    {"name": "iout", "type": "number", "required": True, "description": "Maximum output current in amps"},
+    {"name": "ic", "type": "string", "description": "Regulator IC MPN from the IC catalog"},
+    {"name": "ref", "type": "string", "default": "U", "description": "Reference designator for the IC"},
+    {"name": "rail_name", "type": "string", "description": "Output rail net name; defaults to VDD_{vout}"},
+    {"name": "vin_net", "type": "string", "default": "VIN", "description": "Input rail net name"},
+    {"name": "en_net", "type": "string", "description": "Enable net name; defaults to vin_net"},
+    {"name": "fsw", "type": "number", "description": "Switching frequency override in hertz"},
+    {"name": "r_fbb", "type": "number", "description": "Bottom feedback resistor override in ohms"},
+    {"name": "ripple_ratio", "type": "number", "default": 0.3, "description": "Target inductor ripple ratio"},
+    {"name": "vout_ripple", "type": "number", "default": 0.02, "description": "Target output ripple in volts"},
+]
+
+_GENERIC_CATALOG_SCHEMA: list[dict[str, Any]] = [
+    {"name": "ic", "type": "string", "description": "IC MPN from the catalog or imported part data"},
+    {"name": "ref", "type": "string", "default": "U", "description": "Reference designator for the IC"},
+    {"name": "vdd_net", "type": "string", "default": "VDD_3P3", "description": "Supply rail net name"},
+    {"name": "gnd_net", "type": "string", "default": "GND", "description": "Ground net name"},
+]
+
+_DIODE_SCHEMA: list[dict[str, Any]] = [
+    {"name": "ic", "type": "string", "description": "Device MPN from the IC catalog"},
+    {"name": "ref", "type": "string", "default": "D", "description": "Reference designator for the device"},
+    {"name": "anode_net", "type": "string", "description": "Anode net name; defaults to A_{ref}"},
+    {"name": "cathode_net", "type": "string", "description": "Cathode net name; defaults to K_{ref}"},
+]
+
+TOPOLOGY_TEMPLATE_INFO: dict[str, dict[str, Any]] = {
+    "buck": {
+        "description": "Synchronous buck DC-DC converter with feedback divider and calculated LC filter",
+        "param_schema": _SWITCHER_COMMON_SCHEMA,
+    },
+    "boost": {
+        "description": "Boost DC-DC step-up converter with feedback divider and calculated inductor",
+        "param_schema": _SWITCHER_COMMON_SCHEMA,
+    },
+    "buck_boost": {
+        "description": "Buck-boost DC-DC converter with feedback divider",
+        "param_schema": _SWITCHER_COMMON_SCHEMA
+        + [
+            {
+                "name": "vin_min",
+                "type": "number",
+                "description": "Minimum input voltage for inductor sizing; defaults to 0.8 * vin",
+            },
+        ],
+    },
+    "ldo": {
+        "description": "LDO linear regulator with input/output decoupling and dropout/dissipation checks",
+        "param_schema": [
+            {"name": "vin", "type": "number", "required": True, "description": "Input voltage in volts"},
+            {
+                "name": "vout",
+                "type": "number",
+                "description": "Output voltage in volts; inferred from fixed-output ICs when omitted",
+            },
+            {
+                "name": "iout",
+                "type": "number",
+                "description": "Maximum output current in amps; defaults to the IC's rated current",
+            },
+            {"name": "ic", "type": "string", "description": "LDO IC MPN from the IC catalog"},
+            {"name": "ref", "type": "string", "default": "U", "description": "Reference designator for the IC"},
+            {"name": "rail_name", "type": "string", "description": "Output rail net name; defaults to VDD_{vout}"},
+            {"name": "vin_net", "type": "string", "default": "VIN", "description": "Input rail net name"},
+            {"name": "en_net", "type": "string", "description": "Enable net name; defaults to vin_net"},
+        ],
+    },
+    "can_transceiver": {
+        "description": "CAN bus transceiver with decoupling and optional split termination",
+        "param_schema": [
+            {"name": "ic", "type": "string", "description": "CAN transceiver IC MPN from the IC catalog"},
+            {"name": "ref", "type": "string", "default": "U", "description": "Reference designator for the IC"},
+            {"name": "vdd_net", "type": "string", "default": "VDD_3P3", "description": "Supply rail net name"},
+            {"name": "txd_net", "type": "string", "description": "TXD net from MCU; defaults to CAN_TXD_{ref}"},
+            {"name": "rxd_net", "type": "string", "description": "RXD net to MCU; defaults to CAN_RXD_{ref}"},
+            {
+                "name": "bus_net_prefix",
+                "type": "string",
+                "default": "CAN",
+                "description": "Prefix for CANH/CANL bus nets",
+            },
+            {
+                "name": "termination",
+                "type": "boolean",
+                "default": False,
+                "description": "Enable split termination (2x60R + 4.7nF)",
+            },
+            {
+                "name": "slope_control",
+                "type": "boolean",
+                "default": False,
+                "description": "Enable slope control via 10k on RS pin (otherwise RS to GND)",
+            },
+        ],
+    },
+    "eeprom": {
+        "description": "I2C EEPROM or SPI flash with address configuration and write protect",
+        "param_schema": [
+            {"name": "ic", "type": "string", "description": "EEPROM/flash IC MPN from the IC catalog"},
+            {"name": "ref", "type": "string", "default": "U", "description": "Reference designator for the IC"},
+            {"name": "vdd_net", "type": "string", "default": "VDD_3P3", "description": "Supply rail net name"},
+            {
+                "name": "i2c_addr_offset",
+                "type": "integer",
+                "default": 0,
+                "description": "I2C address offset (0-7) set by A0/A1/A2 pins",
+            },
+            {"name": "sda_net", "type": "string", "default": "I2C_SDA", "description": "I2C SDA net name"},
+            {"name": "scl_net", "type": "string", "default": "I2C_SCL", "description": "I2C SCL net name"},
+            {
+                "name": "cs_net",
+                "type": "string",
+                "description": "SPI chip select net name (SPI flash only); defaults to FLASH_CS_{ref}",
+            },
+            {
+                "name": "mosi_net",
+                "type": "string",
+                "default": "SPI_MOSI",
+                "description": "SPI MOSI net name (SPI flash only)",
+            },
+            {
+                "name": "miso_net",
+                "type": "string",
+                "default": "SPI_MISO",
+                "description": "SPI MISO net name (SPI flash only)",
+            },
+            {
+                "name": "sclk_net",
+                "type": "string",
+                "default": "SPI_SCLK",
+                "description": "SPI SCLK net name (SPI flash only)",
+            },
+            {
+                "name": "write_protect",
+                "type": "boolean",
+                "default": False,
+                "description": "Enable hardware write protection (WP tied high)",
+            },
+        ],
+    },
+    "protection": {
+        "description": "Passive TVS/ESD protection device clamping a target net",
+        "param_schema": [
+            {
+                "name": "protect_net",
+                "type": "string",
+                "required": True,
+                "description": "Net to protect (e.g., VBUS_5V, USB_DP)",
+            },
+            {"name": "ic", "type": "string", "description": "Protection device MPN from the IC catalog"},
+            {"name": "ref", "type": "string", "default": "D", "description": "Reference designator for the device"},
+            {"name": "gnd_net", "type": "string", "default": "GND", "description": "Ground reference net name"},
+            {
+                "name": "protection_type",
+                "type": "string",
+                "default": "tvs",
+                "options": ["tvs", "esd"],
+                "description": "Protection type: TVS for power lines, ESD for signal lines",
+            },
+        ],
+    },
+    "diode": {
+        "description": "Discrete diode (rectifier/Schottky/signal) with anode/cathode net wiring",
+        "param_schema": _DIODE_SCHEMA,
+    },
+    "led": {
+        "description": "Discrete LED with anode/cathode net wiring (pair with a series resistor or LED driver)",
+        "param_schema": _DIODE_SCHEMA,
+    },
+    "component": {
+        "description": "Catalog-defined IC placed from normalized pin and interface metadata",
+        "param_schema": _GENERIC_CATALOG_SCHEMA,
+    },
+    "logic": {
+        "description": "Logic-family IC (gates, buffers, glue logic) built from catalog pin metadata",
+        "param_schema": _GENERIC_CATALOG_SCHEMA,
+    },
+    "sensor": {
+        "description": "Sensor IC with decoupling and shared-bus wiring from catalog metadata",
+        "param_schema": _GENERIC_CATALOG_SCHEMA,
+    },
+}

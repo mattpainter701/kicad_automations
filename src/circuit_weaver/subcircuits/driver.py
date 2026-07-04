@@ -26,12 +26,40 @@ class GateDriverTemplate(SubcircuitTemplate):
     template_type = "gate_driver"
     description = "Gate driver IC with bootstrap and decoupling"
     param_schema = [
-        {"name": "ic", "type": "string", "required": False, "default": "UCC27524"},
-        {"name": "ref", "type": "string", "required": False, "default": "U"},
-        {"name": "vdd_net", "type": "string", "required": False, "default": "VDD_12V"},
-        {"name": "gnd_net", "type": "string", "required": False, "default": "GND"},
-        {"name": "hin_net", "type": "string", "required": False},
-        {"name": "lin_net", "type": "string", "required": False},
+        {
+            "name": "ic",
+            "type": "string",
+            "required": False,
+            "default": "UCC27524",
+            "description": "Gate driver IC MPN",
+        },
+        {
+            "name": "ref",
+            "type": "string",
+            "required": False,
+            "default": "U",
+            "description": "Reference designator for the IC",
+        },
+        {
+            "name": "vdd_net",
+            "type": "string",
+            "required": False,
+            "default": "VDD_12V",
+            "description": "Driver supply rail net name",
+        },
+        {"name": "gnd_net", "type": "string", "required": False, "default": "GND", "description": "Ground net name"},
+        {
+            "name": "hin_net",
+            "type": "string",
+            "required": False,
+            "description": "High-side PWM input net name; defaults to HIN_{ref}",
+        },
+        {
+            "name": "lin_net",
+            "type": "string",
+            "required": False,
+            "description": "Low-side PWM input net name; defaults to LIN_{ref}",
+        },
     ]
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:
@@ -134,11 +162,35 @@ class LevelShifterTemplate(SubcircuitTemplate):
     template_type = "level_shifter"
     description = "Bidirectional voltage level shifter"
     param_schema = [
-        {"name": "ic", "type": "string", "required": False, "default": "TXS0102"},
-        {"name": "ref", "type": "string", "required": False, "default": "U"},
-        {"name": "vcca_net", "type": "string", "required": False, "default": "VDD_1P8"},
-        {"name": "vccb_net", "type": "string", "required": False, "default": "VDD_3P3"},
-        {"name": "gnd_net", "type": "string", "required": False, "default": "GND"},
+        {
+            "name": "ic",
+            "type": "string",
+            "required": False,
+            "default": "TXS0102",
+            "description": "Level shifter IC MPN",
+        },
+        {
+            "name": "ref",
+            "type": "string",
+            "required": False,
+            "default": "U",
+            "description": "Reference designator for the IC",
+        },
+        {
+            "name": "vcca_net",
+            "type": "string",
+            "required": False,
+            "default": "VDD_1P8",
+            "description": "Low-voltage side supply rail net name (A port)",
+        },
+        {
+            "name": "vccb_net",
+            "type": "string",
+            "required": False,
+            "default": "VDD_3P3",
+            "description": "High-voltage side supply rail net name (B port)",
+        },
+        {"name": "gnd_net", "type": "string", "required": False, "default": "GND", "description": "Ground net name"},
     ]
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:

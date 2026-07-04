@@ -23,12 +23,19 @@ _EXAMPLE_VALUES: dict[str, object] = {
     "ichg": 0.5,
     "gain": 10,
     "freq": 8e6,
-    "cl_spec": 9e-12,
+    "cl_spec": 12,  # pF — matches the param unit, not farads
     "vm": 7.4,
     "imotor": 1.0,
     "vcoil": 12,
     "icoil": 0.05,
     "protect_net": "VBUS_5V",
+}
+
+# Per-template overrides for required-param example values, for cases where
+# the global defaults would be physically wrong (e.g. a boost must step UP).
+_EXAMPLE_OVERRIDES: dict[str, dict[str, object]] = {
+    "boost": {"vin": 3.7, "vout": 5, "iout": 1.0},
+    "buck_boost": {"vin": 3.7, "vout": 3.3, "iout": 0.5},
 }
 
 # Map template_type to the YAML section key used in design specs.
@@ -82,13 +89,13 @@ _TYPE_TO_SECTION: dict[str, str] = {
 }
 
 
-def _example_value(spec: dict) -> str:
+def _example_value(spec: dict, ttype: str = "") -> str:
     """Pick a sensible example value for a required parameter."""
     name = spec.get("name", "")
 
-    # Check our curated map first
-    if name in _EXAMPLE_VALUES:
-        val = _EXAMPLE_VALUES[name]
+    # Check the per-template overrides, then our curated map
+    if name in _EXAMPLE_OVERRIDES.get(ttype, {}) or name in _EXAMPLE_VALUES:
+        val = _EXAMPLE_OVERRIDES.get(ttype, {}).get(name, _EXAMPLE_VALUES.get(name))
         if isinstance(val, float) and val == int(val):
             return str(int(val))
         return str(val)
@@ -109,12 +116,28 @@ def _example_value(spec: dict) -> str:
     return "<value>"
 
 
+def _example_ref(schema: list[dict]) -> str:
+    """Build the example reference designator from the template's own ref prefix.
+
+    Templates declare their canonical prefix as the ``ref`` param default
+    (U for ICs, J for connectors, D for protection, Y for crystals, Q for
+    MOSFETs, RP for resistor packs).
+    """
+    prefix = "U"
+    for spec in schema:
+        if spec.get("name") == "ref" and spec.get("default"):
+            prefix = str(spec["default"])
+            break
+    return f"{prefix}1"
+
+
 def main() -> None:
     registry = get_default_registry()
     lines = [
         "# Template Reference",
         "",
         "Auto-generated from `param_schema` of all registered subcircuit templates.",
+        "Regenerate with `python scripts/gen_template_docs.py` — do not edit by hand.",
         "",
         f"**{len(list(registry.available_types()))} templates available.**",
         "",
@@ -156,13 +179,13 @@ def main() -> None:
         lines.append("```yaml")
         lines.append(f"{section}:")
         lines.append(f"  - type: {ttype}")
-        lines.append("    ref: U1")
+        lines.append(f"    ref: {_example_ref(schema)}")
         for spec in schema:
             name = spec.get("name", "")
             if name in ("ref",):
                 continue
             if spec.get("required"):
-                lines.append(f"    {name}: {_example_value(spec)}")
+                lines.append(f"    {name}: {_example_value(spec, ttype)}")
         lines.append("```")
         lines.append("")
         lines.append("---")

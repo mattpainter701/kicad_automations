@@ -29,14 +29,21 @@ class OpAmpTemplate(SubcircuitTemplate):
     template_type = "opamp"
     description = "Op-amp with configurable gain and feedback"
     param_schema = [
-        {"name": "ic", "type": "string", "required": False, "default": "LM358"},
-        {"name": "ref", "type": "string", "required": False, "default": "U"},
+        {"name": "ic", "type": "string", "required": False, "default": "LM358", "description": "Op-amp IC MPN"},
+        {
+            "name": "ref",
+            "type": "string",
+            "required": False,
+            "default": "U",
+            "description": "Reference designator for the IC",
+        },
         {
             "name": "config",
             "type": "string",
             "required": False,
             "default": "non_inverting",
             "options": ["non_inverting", "inverting", "follower", "differential", "comparator"],
+            "description": "Amplifier topology",
         },
         {
             "name": "gain",
@@ -57,13 +64,47 @@ class OpAmpTemplate(SubcircuitTemplate):
             "required": False,
             "description": "Input resistor in ohms (overrides gain calculation)",
         },
-        {"name": "vdd_net", "type": "string", "required": False, "default": "VDD_3P3"},
-        {"name": "gnd_net", "type": "string", "required": False, "default": "GND"},
-        {"name": "in_net", "type": "string", "required": False},
-        {"name": "out_net", "type": "string", "required": False},
-        {"name": "threshold_high", "type": "string", "required": False, "default": "100k"},
-        {"name": "threshold_low", "type": "string", "required": False, "default": "10k"},
-        {"name": "output_pullup", "type": "string", "required": False, "default": "100k"},
+        {
+            "name": "vdd_net",
+            "type": "string",
+            "required": False,
+            "default": "VDD_3P3",
+            "description": "Positive supply rail net name",
+        },
+        {"name": "gnd_net", "type": "string", "required": False, "default": "GND", "description": "Ground net name"},
+        {
+            "name": "in_net",
+            "type": "string",
+            "required": False,
+            "description": "Signal input net name; defaults to OPAMP_IN_{ref}",
+        },
+        {
+            "name": "out_net",
+            "type": "string",
+            "required": False,
+            "description": "Signal output net name; defaults to OPAMP_OUT_{ref}",
+        },
+        {
+            "name": "threshold_high",
+            "type": "string",
+            "required": False,
+            "default": "100k",
+            "description": "Comparator threshold divider top resistor (comparator config)",
+        },
+        {
+            "name": "threshold_low",
+            "type": "string",
+            "required": False,
+            "default": "10k",
+            "description": "Comparator threshold divider bottom resistor (comparator config)",
+        },
+        {
+            "name": "output_pullup",
+            "type": "string",
+            "required": False,
+            "default": "100k",
+            "description": "Open-drain output pull-up resistor (comparator config)",
+        },
     ]
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:

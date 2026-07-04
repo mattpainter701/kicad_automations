@@ -109,3 +109,73 @@ def test_user_reported_iot_audit_would_be_caught():
     result = verify_report_fidelity(report_text, comps)
     assert {"U2", "LED1", "R4", "SW1"}.issubset(set(result["ghost_refs"]))
     assert "VBAT" in result["ghost_nets"]
+
+
+# ---------------------------------------------------------------------------
+# Power tree section — release-prep regressions
+# ---------------------------------------------------------------------------
+
+from circuit_weaver.component_db import BypassCap, StrapConfig  # noqa: E402
+from circuit_weaver.report import _power_tree_section  # noqa: E402
+
+
+def _buck(ref: str = "U1") -> ComponentDef:
+    """A buck regulator whose output rail is only reachable through the
+    external inductor — no power pin carries the rail net directly."""
+    return ComponentDef(
+        mpn="GENERIC-BUCK",
+        ref_prefix="U",
+        value="GENERIC-BUCK",
+        footprint="Package_TO_SOT_SMD:SOT-23-6",
+        category="power",
+        source_ref=ref,
+        pins=[
+            PinDef("1", "VIN", "power_in", "L"),
+            PinDef("2", "GND", "power_in", "L"),
+            PinDef("3", "SW", "output", "R"),
+            PinDef("4", "FB", "input", "R"),
+        ],
+        power_pins={"1": "VBUS_5V", "2": "GND"},
+        pin_nets={"3": f"SW_{ref}", "4": f"FB_{ref}"},
+        bypass_caps=[
+            BypassCap("CIN", "VBUS_5V", "GND", "10uF", "C_0805", role="input_cap"),
+            BypassCap("COUT", "VDD_3P3", "GND", "22uF", "C_0805", role="output_cap"),
+            BypassCap("L", f"SW_{ref}", "VDD_3P3", "3.3uH", "L_0806", role="inductor"),
+            BypassCap("CBST", f"BST_{ref}", f"SW_{ref}", "100nF", "C_0402", role="bootstrap_cap"),
+        ],
+        straps=[
+            StrapConfig("4", f"FB_{ref}", "VDD_3P3", "100k", "R_0402", role="feedback_top"),
+        ],
+    )
+
+
+def test_power_tree_credits_regulator_output_rail_to_the_regulator():
+    """A buck whose rail is reached through the inductor must still show as
+    the rail's source, not 'external'."""
+    tree = _power_tree_section([_buck("U1"), _mcu("U2")])
+    assert "U1 -> [VDD_3P3]" in tree, tree
+    assert "external -> [VDD_3P3]" not in tree, tree
+    assert "U2" in tree.split("[VDD_3P3]")[1].splitlines()[0], tree
+
+
+def test_power_tree_excludes_internal_switching_nodes():
+    """SW_x / BST_x per-instance nets are regulator plumbing, not rails."""
+    tree = _power_tree_section([_buck("U1"), _mcu("U2")])
+    assert "SW_U1" not in tree, tree
+    assert "BST_U1" not in tree, tree
+
+
+def test_power_tree_does_not_repeat_source_as_consumer():
+    """The rail's source must not also be listed among its consumers, and
+    support-passive suffixes like 'U1:CBST' must not appear."""
+    tree = _power_tree_section([_buck("U1"), _mcu("U2")])
+    rail_line = next(line for line in tree.splitlines() if "[VDD_3P3]" in line)
+    consumers = rail_line.split("->")[-1]
+    assert "U1" not in consumers, tree
+    assert ":" not in consumers, tree
+
+
+def test_power_tree_marks_unconsumed_rails():
+    tree = _power_tree_section([_buck("U1")])
+    rail_line = next(line for line in tree.splitlines() if "[VDD_3P3]" in line)
+    assert "(no consumers)" in rail_line, tree

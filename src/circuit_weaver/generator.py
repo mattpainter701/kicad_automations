@@ -1371,6 +1371,7 @@ def generate_from_components(
     output_dir: str = ".",
     project_name: str = "project",
     company: str = "",
+    description: str = "",
     stable_uuids: bool | None = None,
     post_allocate=None,
     validate: bool = True,
@@ -1632,6 +1633,7 @@ def generate_from_components(
                 metadata={
                     "project": project_name,
                     "company": company,
+                    "description": description,
                     "layout_quality": layout_quality_reports,
                 },
             )
