@@ -95,6 +95,22 @@ matching `design.log` entry records the canonical JSON path for later audit.
 
 ---
 
+## Branch Maintenance
+
+Use `scripts/cleanup_branches.py` to audit stale local branches before pruning them.
+The command is dry-run by default and only targets merged, unprotected branches,
+so dated work can be reviewed without risking useful code. When run with
+`--delete`, deleted branch tips are archived under `refs/archive/branches/<name>`
+unless `--no-archive` is explicitly supplied.
+
+```bash
+python scripts/cleanup_branches.py                 # audit only
+python scripts/cleanup_branches.py --delete        # prune merged stale branches and keep archives
+python scripts/cleanup_branches.py --force-unmerged # include unmerged branches only when intentionally forced
+```
+
+---
+
 ## What You Get
 
 Every `generate` run produces a complete artifact bundle:
