@@ -826,7 +826,15 @@ def resolve_project_spec(
     if component_reg is None:
         component_reg = BUILTIN_REGISTRY
     # Load project-local component database (JSON) if specified or auto-detected
+    # A design owns its verified parts in ``components.json`` next to the
+    # design spec.  The explicit ``components_db`` field remains available
+    # for shared registries, but projects should not need a global install or
+    # machine-specific KiCad setup to resolve approved components.
     components_db = spec.get("components_db", "")
+    if not components_db:
+        sibling_registry = Path(spec.get("_source_path", "")).with_name("components.json")
+        if sibling_registry.is_file():
+            components_db = str(sibling_registry)
     if components_db:
         from pathlib import Path as _P
 
@@ -901,6 +909,7 @@ def load_project(
     Returns (components, metadata) where metadata has project name, company, etc.
     """
     spec = _parse_yaml(yaml_path)
+    spec["_source_path"] = str(Path(yaml_path).resolve())
     components, metadata = resolve_project_spec(
         spec,
         subcircuit_reg=subcircuit_reg,
