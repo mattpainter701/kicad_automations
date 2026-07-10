@@ -146,6 +146,10 @@ jobs:
           sudo add-apt-repository --yes ppa:kicad/kicad-${{ matrix.kicad-major }}.0-releases
           sudo apt-get update
           sudo apt-get install --yes kicad
+          test -s /usr/share/kicad/template/fp-lib-table
+          install -D --mode=0644 \
+            /usr/share/kicad/template/fp-lib-table \
+            "$HOME/.config/kicad/${{ matrix.kicad-major }}.0/fp-lib-table"
           kicad-cli version
 
       - name: Generate and verify representative final schematics

@@ -153,6 +153,41 @@ def test_successful_staging_refuses_to_overwrite_unowned_path_collision(
     assert stale_sheet.is_file()
 
 
+def test_publication_rejects_nested_live_parent_symlink_escape(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec, output, root, stale_sheet = _seed_owned_output(tmp_path / "project")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel.txt"
+    sentinel.write_text("do not touch\n", encoding="utf-8")
+    try:
+        (output / "reports").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Symlink creation is unavailable: {exc}")
+
+    def generate_nested_report(_spec: dict, *, output_dir: str | Path, **_kwargs) -> dict:
+        staging = Path(output_dir)
+        report = staging / "reports" / "validation.json"
+        report.parent.mkdir()
+        report.write_text('{"valid": true}\n', encoding="utf-8")
+        return {"output_dir": str(staging), "project": "Transactional", "files": [str(report)]}
+
+    monkeypatch.setattr(dispatcher, "_generate_artifacts_in_place", generate_nested_report)
+
+    with pytest.raises(ValueError, match="Refusing to write output outside"):
+        dispatcher.generate_artifacts(
+            {"project": "Transactional", "blocks": []},
+            output_dir=output,
+            spec_path=spec,
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "do not touch\n"
+    assert not (outside / "validation.json").exists()
+    assert root.read_text(encoding="utf-8") == "(kicad_sch old-root)"
+    assert stale_sheet.is_file()
+
+
 def test_failed_state_commit_rolls_back_published_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

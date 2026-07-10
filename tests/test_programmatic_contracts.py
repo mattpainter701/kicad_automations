@@ -151,14 +151,25 @@ def _patch_generation_dependencies(
         return _stub_generation(output_path)
 
     monkeypatch.setattr(dispatcher, "_generate_compiled_artifacts", generate)
-    monkeypatch.setattr(
-        test_point_gen,
-        "generate_test_point_artifacts",
-        lambda *_args, schematic_path=None, **_kwargs: (
-            annotation_targets.append(schematic_path)
-            or {"csv_path": "", "test_point_count": 0, "test_points": [], "annotated_schematic": False}
-        ),
-    )
+    def generate_test_points(
+        _ir,
+        output_dir: Path,
+        *,
+        project_name: str,
+        schematic_path=None,
+        **_kwargs,
+    ):
+        annotation_targets.append(schematic_path)
+        csv_path = output_dir / f"{project_name}_test_points.csv"
+        csv_path.write_text("reference,net,x_mm,y_mm,side,notes\n", encoding="utf-8")
+        return {
+            "csv_path": str(csv_path),
+            "test_point_count": 0,
+            "test_points": [],
+            "annotated_schematic": False,
+        }
+
+    monkeypatch.setattr(test_point_gen, "generate_test_point_artifacts", generate_test_points)
     monkeypatch.setattr(firmware_export, "is_mcu", lambda _component: False)
     monkeypatch.setattr(erc_runner, "run_erc", lambda _schematic: erc_result)
     return annotation_targets
@@ -393,7 +404,7 @@ def test_post_generation_target_symlink_escape_is_never_opened(
     monkeypatch: pytest.MonkeyPatch,
     reserved_name: str,
 ) -> None:
-    outside = tmp_path / f"outside-{reserved_name}"
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-{reserved_name}"
     outside.write_text("sentinel\n", encoding="utf-8")
     _symlink_or_skip(tmp_path / reserved_name, outside)
     _patch_generation_dependencies(

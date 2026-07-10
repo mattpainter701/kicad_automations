@@ -13,6 +13,7 @@
 - Replace the non-blocking Windows smoke leg with full blocking tests on Windows Python 3.12/3.13, expand Linux coverage to Python 3.10-3.14, install complete test dependencies, and run the integration corpus instead of suppressing it through `CI=true`.
 - Build release distributions exactly once, run `twine check`, inspect wheel metadata, install and test the exact wheel across the support matrix, and publish that same artifact only after all gates pass.
 - Add blocking KiCad 8, KiCad 9, and KiCad 10 gates from KiCad's official stable Ubuntu PPAs that generate both an IoT design and a complex FPGA power carrier, then parse and run ERC on their root schematics with `kicad-cli`.
+- Initialize each headless KiCad gate from KiCad's installed official `fp-lib-table`, so KiCad 10 resolves real standard footprints and the zero-violation gate is not distorted by an uninitialized user profile.
 - Validate every provenance-manifest path lexically and by resolved containment before skill upgrades, so crafted traversal, Windows device/ADS names, or symlink escapes cannot read, overwrite, or delete files outside the installed skill.
 - Reconcile the Codex, Claude, and OpenCode skills with the shipped CLI, use each platform's current skill location and naming contract, and remove provenance-owned legacy skill copies during upgrade so agents cannot discover a stale workflow beside the new CLI.
 - Make installed sample guidance truthful: source checkouts enumerate only real `samples/` directories, while PyPI-installed skills discover and copy the packaged IoT example through `importlib.resources` instead of advertising an absent 13-design gallery.
@@ -42,6 +43,7 @@
 - Keep reruns into an existing output directory isolated from stale artifacts, and carry portable artifact identity plus final validation/ERC state through the manifest, HTTP ZIP, and MCP response.
 - Lease each output directory across processes and serialize in-process generation around the process-global logging bridge, preventing concurrent runs from invalidating manifests, mixing project logs, or leaking lock files into API/MCP/archive results.
 - Reject non-portable or path-like project names before creating output, and containment-check every generator/dispatcher-managed target so pre-existing symlinks cannot redirect writes outside the requested output directory.
+- Re-check every staged source and live publication destination immediately before backup or replacement, rejecting generated symlinks and nested live-parent escapes that are invisible while generation is isolated in its staging directory.
 - Stage each rerun outside the published output and atomically replace the prior successful delivery only after final verification, so a failed or partial rerun cannot destroy or mislabel the last known-good result.
 - Require full PyYAML parsing throughout file-based and programmatic workflows, removing the lossy fallback parser from release-critical paths.
 - Treat PCB placement previews, padless boards, and zero-copper boards as review-only or incomplete; static analysis is explicitly `unverified` and can never report vacuous routing success.

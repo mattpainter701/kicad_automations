@@ -76,3 +76,21 @@ def test_release_workflow_rejects_tag_version_mismatch() -> None:
     assert 'kicad-major: ["8", "9", "10"]' in workflow_text
     assert "circuit_weaver/examples/iot_sensor.yaml" in workflow_text
     assert "__pycache__" in workflow_text
+
+
+def test_kicad_workflows_initialize_official_footprint_table_before_generation() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    source_table = "/usr/share/kicad/template/fp-lib-table"
+    configured_table = '"$HOME/.config/kicad/${{ matrix.kicad-major }}.0/fp-lib-table"'
+
+    for workflow_name in ("ci.yml", "release.yml"):
+        workflow = repo_root / ".github" / "workflows" / workflow_name
+        workflow_text = workflow.read_text(encoding="utf-8")
+
+        assert f"test -s {source_table}" in workflow_text
+        install_at = workflow_text.index("install -D --mode=0644")
+        source_at = workflow_text.index(source_table, install_at)
+        configured_at = workflow_text.index(configured_table, source_at)
+        generate_at = workflow_text.index("python -m circuit_weaver generate")
+
+        assert install_at < source_at < configured_at < generate_at

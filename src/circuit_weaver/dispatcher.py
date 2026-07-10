@@ -25,7 +25,7 @@ import time
 import warnings
 from dataclasses import asdict, dataclass, field
 from functools import wraps
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Iterable, Iterator, Mapping
 from xml.etree import ElementTree as ET
 
@@ -2452,6 +2452,34 @@ def _staged_generation_paths(staging_dir: Path) -> dict[str, Path]:
     return paths
 
 
+def _contained_publication_target(output_dir: Path, relative: Path) -> Path:
+    """Resolve one staged artifact destination without following an escape.
+
+    Generation happens in a sibling staging directory, so containment checks
+    performed while creating staged files cannot see symlinks already present
+    in the live output tree.  Re-check every publication destination against
+    the live tree before collision handling or backup mutation.
+    """
+    if (
+        not relative.parts
+        or relative.is_absolute()
+        or ".." in relative.parts
+        or PureWindowsPath(str(relative)).drive
+    ):
+        raise ValueError(f"Generated artifact path must be relative to the output directory: {relative}")
+
+    output_root = output_dir.resolve(strict=False)
+    target = output_dir / relative
+    try:
+        resolved_target = target.resolve(strict=False)
+        resolved_target.relative_to(output_root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError(
+            f"Refusing to write output outside '{output_root}': {target}"
+        ) from exc
+    return target
+
+
 def _remove_publication_path(path: Path) -> None:
     if path.is_symlink() or path.is_file():
         path.unlink(missing_ok=True)
@@ -2532,8 +2560,19 @@ def _publish_staged_generation(
 ) -> tuple[list[Path], Any]:
     """Commit one staged generation and rollback files if finalization fails."""
     current = _staged_generation_paths(staging_dir)
-    output_root = output_dir.resolve(strict=False)
     touched = {**previous_owned, **current}
+    # Staged generation has no authority to publish symlinks, and a live
+    # symlink (including one in a parent directory) must be rejected as an
+    # output escape rather than treated like an ordinary unowned-file clash.
+    for relative in current.values():
+        staged_source = _contained_publication_target(staging_dir, relative)
+        if staged_source.is_symlink():
+            raise ValueError(f"Refusing to publish a generated symbolic link: {relative}")
+    publication_targets = {
+        key: _contained_publication_target(output_dir, relative)
+        for key, relative in touched.items()
+    }
+    output_root = output_dir.resolve(strict=False)
     # The CLI logging bridge opens these in the final output before dispatch
     # and keeps them open through publication on Windows.  They are explicitly
     # append-only/nonblocking state artifacts; when already live, retain that
@@ -2559,7 +2598,7 @@ def _publish_staged_generation(
             for key in sorted(current)
             if key not in previous_owned
             and key not in live_log_keys
-            and ((output_dir / current[key]).exists() or (output_dir / current[key]).is_symlink())
+            and (publication_targets[key].exists() or publication_targets[key].is_symlink())
         ]
         if unowned_collisions:
             preview = ", ".join(str(path) for path in unowned_collisions[:12])
@@ -2574,7 +2613,7 @@ def _publish_staged_generation(
             if key in live_log_keys:
                 continue
             relative = touched[key]
-            target = output_dir / relative
+            target = publication_targets[key]
             parent = target.parent.resolve(strict=False)
             if not parent.is_relative_to(output_root):
                 raise RuntimeError(f"Generated artifact parent escapes output directory: {relative}")
