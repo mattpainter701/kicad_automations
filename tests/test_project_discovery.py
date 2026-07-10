@@ -1,6 +1,7 @@
 """Tests for project discovery and auto-detection."""
 
 import json
+import sys
 
 import pytest
 
@@ -163,7 +164,7 @@ class TestDiscoverCLI:
         import subprocess
 
         result = subprocess.run(
-            ["python", "-m", "circuit_weaver", "discover", "--root", str(workspace), "--json"],
+            [sys.executable, "-m", "circuit_weaver", "discover", "--root", str(workspace), "--json"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0
@@ -176,7 +177,7 @@ class TestDiscoverCLI:
         import subprocess
 
         result = subprocess.run(
-            ["python", "-m", "circuit_weaver", "discover", "--root", str(workspace)],
+            [sys.executable, "-m", "circuit_weaver", "discover", "--root", str(workspace)],
             capture_output=True, text=True,
         )
         assert result.returncode == 0

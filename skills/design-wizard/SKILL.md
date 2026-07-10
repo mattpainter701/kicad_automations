@@ -1,13 +1,11 @@
 ---
-name: design_wizard
+name: design-wizard
 description: >
-  Interactive circuit design wizard — a guided, step-by-step console workflow
-  that takes users from a blank slate to a quote-ready KiCad project. Covers
-  requirements capture, AI-driven IC selection, research-backed BOM assembly,
-  manufacturing preferences, schematic generation, and PCB layout guidance.
-  Trigger on phrases like "new design", "start a project", "design wizard",
-  "circuit wizard", "help me design", "I want to build", "new board",
-  "new circuit", or "walk me through".
+  Run the explicit, human-in-the-loop Circuit Weaver questionnaire from requirements
+  through a validated design and KiCad handoff. Use only when the user asks for the
+  design-wizard skill, the offline interactive wizard, or a slow step-by-step guided
+  questionnaire. Do not trigger for ordinary new-design requests; use circuit-weaver
+  for automatic end-to-end orchestration.
 ---
 
 # Circuit Design Wizard
@@ -16,10 +14,10 @@ An interactive, console-level question-and-answer workflow that hand-holds
 users through the full Circuit Weaver pipeline — from vague idea to
 quote-ready KiCad outputs.
 
-> **Disambiguation:** This is the **step-by-step guided** wizard with human-in-the-loop control at every step. For **automatic same-agent** design orchestration (faster, less manual prompting), use `/circuit-weaver`. For **analyzing existing KiCad files**, use `/kicad`.
+> **Disambiguation:** This is the **step-by-step guided** wizard with human-in-the-loop control at every step. For **automatic same-agent** design orchestration, use `$circuit-weaver`. For **analyzing existing KiCad files**, use `$kicad`.
 
 **About this skill:** This is the **manual, step-by-step guide** with human-in-the-loop control. Compare with:
-- **`/circuit-weaver` skill** — Automatic, same-agent orchestration for IC research and design assembly; supports `fast` vs `normal` research depth, and uses `sonar-pro` when configured and compatible, otherwise native web tooling
+- **`$circuit-weaver` skill** — Automatic, same-agent orchestration for IC research and design assembly; supports `fast` vs `normal` research depth, and uses `sonar-pro` when configured and compatible, otherwise native web tooling
 - **`circuit-weaver design-wizard` CLI** — Offline interactive wizard (no agents, works standalone, good for learning)
 
 **How this skill works:** You (the AI agent) drive a multi-step conversation.
@@ -39,7 +37,7 @@ When presenting CLI command output to the user, follow these rules for clarity:
 | `validate` | `"Validation passed: X errors, Y warnings"` or full categories if issues exist | List each error with code + message |
 | `apply-patch` | `"Added [ref] ([topology]) to design.yaml"` | List errors from patch validation |
 | `scaffold` | Print the generated YAML snippet | Report error with details |
-| `generate` | `"Generated N files to [output_dir]"` with file list | Report generation failure reason |
+| `generate` | JSON containing `artifact_manifest`; the manifest contains `root_schematic` and `artifacts` | Report generation failure reason |
 | `export-jlcpcb` | `"JLCPCB export: [bom_rows] rows, [missing_lcsc] need manual lookup"` | Report export error |
 | `cost-bom` | Print formatted BOM table with totals | List pricing lookup failures |
 
@@ -656,6 +654,12 @@ This creates a minimal spec with the first power block. Present the output to th
 
 For each additional IC, create a patch JSON file and apply it.
 
+Give every architectural block a stable unique `id` and a descriptive
+functional `section`. Use separate sections for each major power stage,
+processing, sensing/analog, communications, external I/O, UI, and debug/test.
+Generation preserves those explicit sections as professional sub-sheets even
+for small designs and keeps support passives with their owning block.
+
 Note: the patch schema still uses legacy internal field names like
 `kind: "template"` and `template_type`. In workflow terms, think of these as
 "generated block" and "topology name".
@@ -689,7 +693,7 @@ For each new block, present ONLY the newly-added components (from `diff.added_bl
 ```
 === Block Added: U2 LDO ===
 
-U2  TLV75533  1.8V → 3.3V LDO, 500mA
+U2  TLV75533  3.3V → 1.8V LDO, 500mA
   Bypass caps: C2, C3 (100nF on input/output)
   Enable pulled to VDD_3P3
 
@@ -738,10 +742,13 @@ Run the generation pipeline:
 
 ```bash
 # Generate artifacts
-circuit-weaver generate [spec.yaml] --output [output_dir]
+circuit-weaver generate "${SPEC_PATH}" --output "${OUTPUT_DIR}"
 
 # Validate the generated output
-circuit-weaver validate [spec.yaml]
+circuit-weaver validate "${SPEC_PATH}"
+
+# Before a release-quality/handoff claim, require real KiCad on the final hierarchy
+circuit-weaver generate "${SPEC_PATH}" --output "${OUTPUT_DIR}" --require-kicad
 ```
 
 Report results:
@@ -754,7 +761,10 @@ Files created:
   [x] power.kicad_sch            (power sheet)
   [x] digital.kicad_sch          (MCU + peripherals)
   [x] project_report.md          (design report)
-  [x] placer_hints.json          (PCB placement guide)
+  [x] assembly_manifest.json     (physical-part inventory)
+  [x] placement_result.json      (review status and blockers)
+  [x] placement_review_context.json (official/reference context)
+  [x] placement.svg + placement_editor.html (review-only proposal)
 
 Validation:
   Structural:      PASS (12/12 checks)
@@ -762,6 +772,10 @@ Validation:
   Implementation:  PASS (6/6 checks) [or WARN with details]
   Presentation:    PASS (4/4 checks)
 ```
+
+Internal validation is not real KiCad verification. Read
+`artifact_manifest.json` and claim release-quality generation only when it says
+`kicad_verified: true` and `verification_status: verified`.
 
 ### 4c. What's Automated vs. Manual
 
@@ -772,7 +786,7 @@ setting expectations:
 === What's Done vs. What You'll Finish ===
 
 DONE (generated automatically):
-  - All symbol placements with correct pin mappings
+  - Symbol placement and declared pin mappings for review
   - Power connections and decoupling capacitors
   - Net labels for all buses (I2C, SPI, UART, etc.)
   - Hierarchical sheet structure
@@ -787,7 +801,7 @@ YOU'LL FINISH IN KICAD (~10-20% of the schematic work):
   - Fine-tune sheet aesthetics (alignment, spacing)
 
 Open the schematic:
-  kicad [output_dir]/[project].kicad_sch
+  Open `artifact_manifest.json`, then open its `root_schematic` path in KiCad.
 ```
 
 ---
@@ -804,10 +818,10 @@ Run the generated schematic through the validation tools:
 
 ```bash
 # Full schematic validation
-circuit-weaver validate [spec.yaml] --enhanced --verbose
+circuit-weaver validate "${SPEC_PATH}" --enhanced --verbose
 
 # Full confidence report (validation + simulation + thermal + DFM + cross-reference)
-circuit-weaver confidence [spec.yaml] --run-sims -o [output_dir]/confidence_report.html
+circuit-weaver confidence "${SPEC_PATH}" --run-sims -o "${OUTPUT_DIR}/confidence_report.html"
 ```
 
 **Confidence Report:** The `confidence` command aggregates all available checks
@@ -889,10 +903,10 @@ score before the user invests time in PCB layout.
 
 ```bash
 # Run confidence report with simulations
-circuit-weaver confidence [spec.yaml] --run-sims -o [output_dir]/confidence_report.html
+circuit-weaver confidence "${SPEC_PATH}" --run-sims -o "${OUTPUT_DIR}/confidence_report.html"
 
 # For enhanced validation (includes cross-reference audit)
-circuit-weaver validate [spec.yaml] --enhanced --verbose
+circuit-weaver validate "${SPEC_PATH}" --enhanced --verbose
 ```
 
 The confidence dashboard aggregates:
@@ -952,18 +966,18 @@ what can be scripted vs. what requires manual KiCad work.
 
 ### 7a. PCB Kickoff — Automated Layout Assistance
 
-The generated PCB file has initial component positions. Before manual routing,
-run the automated layout tools:
+`generate` emits an exhaustive review-only bundle:
+`placement_result.json`, `placement_review_context.json`, `placement.svg`, and
+`placement_editor.html`. It does not emit an electrical PCB. Read the result
+and context first, surface every blocker, and use linked manufacturer
+datasheets/reference layouts as the placement authority.
 
 ```bash
 # 1. Optimize placement (simulated annealing for thermal/SI/DFM)
-circuit-weaver optimize-placement [spec.yaml] -o [output_dir]
+circuit-weaver optimize-placement "${SPEC_PATH}" -o "${OUTPUT_DIR}/placement.json"
 
-# 2. Generate interactive placement viewer (HTML with thermal heatmap)
-circuit-weaver placement-viewer [spec.yaml] -o [output_dir]/placement.html
-
-# 3. Optional: Export editable SVG placement (for Inkscape/CorelDRAW editing)
-circuit-weaver generate [spec.yaml] -o [output_dir] --svg-placement
+# 2. Optionally generate an alternate standalone viewer
+circuit-weaver placement-viewer "${SPEC_PATH}" -o "${OUTPUT_DIR}/placement.html"
 ```
 
 Present results:
@@ -973,11 +987,13 @@ Present results:
 
 Automated steps completed:
   [x] Placement optimized (thermal + SI + DFM scoring)
-  [x] Interactive viewer: output/placement.html
-  [x] Placement PCB: output/main_placement.kicad_pcb
+  [x] Review status: output/placement_result.json
+  [x] Official/reference context: output/placement_review_context.json
+  [x] Interactive editor: output/placement_editor.html
+  [x] Editable vector: output/placement.svg
 
-Open placement.html in a browser to review component positions,
-net connections, and thermal heatmap before routing.
+Open placement_editor.html to review or drag the exact assembly inventory.
+The placement files always remain `fabrication_ready: false`.
 
 WHAT YOU'LL DO IN KICAD:
   - Board outline and edge cuts
@@ -987,9 +1003,9 @@ WHAT YOU'LL DO IN KICAD:
   - Silkscreen labels and polarity markers
 
 WHAT WE CAN HELP WITH:
-  - Trace width suggestions (use /ee skill)
+  - Trace width suggestions (use `$ee`)
   - Layer stackup recommendation (2-layer vs 4-layer)
-  - Autorouting of non-critical nets (see 7c below)
+  - Autorouting of non-critical nets after an electrical PCB exists (see 7c)
 ```
 
 If mechanical constraints were captured in Step 1a-mech, incorporate them now:
@@ -998,22 +1014,23 @@ If mechanical constraints were captured in Step 1a-mech, incorporate them now:
 - Connectors placed on specified edges
 - Height-restricted zones marked as keep-outs
 
-### 7b. SVG Placement Editor (Optional)
+### 7b. Create the Electrical PCB
 
-For users who want to visually drag components in an editor before routing:
+Open the manifest returned by `generate`, then open its `root_schematic`, assign
+and verify footprints, and run **Update PCB from Schematic** in KiCad. Save the resulting
+electrically annotated `.kicad_pcb` under a user-confirmed path. Record that path
+as `${ELECTRICAL_PCB}` for routing, DFM, and fabrication steps.
+
+Dry-run the edited SVG against the real board before applying it. Exact
+SVG↔PCB reference matching is the default; use `--allow-partial` only for an
+explicit subset update.
 
 ```bash
-# Export placement as editable SVG
-circuit-weaver generate [spec.yaml] -o [output_dir] --svg-placement
-
-# User edits output/placement.svg in Inkscape...
-
-# Import edited positions back into KiCad PCB
-circuit-weaver import-placement output/main_placement.kicad_pcb --svg output/placement.svg
+circuit-weaver import-placement "${OUTPUT_DIR}/placement.svg" \
+  "${ELECTRICAL_PCB}" -o "${OUTPUT_DIR}/placed.kicad_pcb" --dry-run
+circuit-weaver import-placement "${OUTPUT_DIR}/placement.svg" \
+  "${ELECTRICAL_PCB}" -o "${OUTPUT_DIR}/placed.kicad_pcb"
 ```
-
-For beginners: "This lets you drag components around in a drawing program and
-we'll update the PCB file automatically."
 
 ### 7c. Routing Guidance
 
@@ -1026,39 +1043,37 @@ Based on the design:
 
 **Autorouting with Freerouting (Optional)**
 
-If the user has Freerouting installed, offer to auto-route the PCB:
+If the user has Freerouting installed, offer to auto-route only a real
+pad-bearing named-net PCB or a user-exported Specctra DSN. Output is a validated
+Specctra session, not a routed PCB:
 
 ```bash
-circuit-weaver autoroute output/[project].kicad_pcb -o output/routed.kicad_pcb
+circuit-weaver autoroute "${ELECTRICAL_PCB}" -o "${OUTPUT_DIR}/routed.ses"
 ```
 
-**Note:** Freerouting must be installed separately. Best for non-critical signal
-nets — power and high-speed traces should be routed manually. For detailed
-autorouting workflow options, see the `/autoroute` project-skill.
+If `kicad-cli` does not advertise Specctra export, export a DSN in KiCad PCB
+Editor and route that file. Treat exit code 2 / `status: partial` as incomplete.
+Import the SES in KiCad and run DRC. Route power, switching loops,
+differential/high-speed pairs, RF, clocks, and crystals manually.
 
 ### 7d. DFM Check (Recommended Before Ordering)
 
 Run DFM checks against the target manufacturer:
 
 ```bash
-# Check against JLCPCB rules (default)
-circuit-weaver check-dfm output/main_placement.kicad_pcb
-
-# Check against PCBWay rules
-circuit-weaver check-dfm output/main_placement.kicad_pcb --profile pcbway
+circuit-weaver check-dfm "${ELECTRICAL_PCB}"
 ```
 
 If DFM issues are found, present them and offer to fix (adjust trace widths,
 via sizes, clearances).
 
-#### Related Project-Skills
+#### Optional Repository Templates
 
-For advanced PCB workflows beyond what the wizard covers:
-- `/kicad_pcb_place` — constraint-based placement with pcbnew API integration
-- `/autoroute` — detailed Freerouting workflow with DSN/SES file management
-- `/kicad_pinmap` — pin-to-net audit and verification
-- `/kicad_hierarchy` — hierarchical schematic sheet management
-- `/kicad_gen` — programmatic schematic generation for large ICs (BGAs)
+A source checkout can contain optional `project-skills/` templates for advanced
+placement, autorouting, pin-map, hierarchy, and custom-generation work. These
+templates are not installed from PyPI. Read a template only after verifying its
+`SKILL.md` exists in the current repository; otherwise continue with the built-in
+CLI and KiCad steps in this wizard.
 
 ### 7e. Manufacturing Checklist
 
@@ -1159,11 +1174,6 @@ Throughout the wizard, follow these principles:
 | `kicad` | 4, 5 | Schematic analysis, validation, and design review |
 | `jlcpcb` | 3, 7 | DFM rules, assembly ordering |
 | `pcbway` | 3, 7 | Alternative fab DFM rules |
-| `sim` | 6 | Circuit simulation (SPICE power/signal analysis) |
-| `kicad_pcb_place` | 7 | Advanced constraint-based PCB placement |
-| `autoroute` | 7 | Freerouting PCB autorouting workflow |
-| `kicad_validate` | 5, 6 | Cross-reference validation audit |
-| `kicad_pinmap` | 5 | Pin-to-net audit and verification |
 
 ---
 
@@ -1171,12 +1181,20 @@ Throughout the wizard, follow these principles:
 
 If the user returns and says "continue my design" or "where were we":
 
-1. Look for a saved YAML spec in the project directory
-2. Determine which step was last completed based on spec completeness:
+1. Reconcile durable state before inferring progress from filenames:
+
+   ```bash
+   circuit-weaver status "${PROJECT_DIR}"
+   circuit-weaver resume "${PROJECT_DIR}"
+   ```
+
+2. Treat `resume` as a plan only; it never executes the next action.
+3. Use its `current_phase`, reconciliation findings, and `next_actions`. If no
+   manifest exists, fall back to saved YAML completeness:
    - Has requirements but no ICs → resume at Step 2
    - Has ICs but no sourcing data → resume at Step 3
    - Has full spec but no generated files → resume at Step 4
    - Has generated schematics but no review → resume at Step 5
    - Has reviewed schematics → resume at Step 6 (confidence check)
    - Has confidence report → resume at Step 7 (PCB layout)
-3. Summarize the current state and confirm with the user before proceeding
+4. Summarize the current state and confirm with the user before proceeding.

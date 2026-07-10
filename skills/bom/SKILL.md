@@ -1,11 +1,17 @@
 ---
 name: bom
-description: "BOM (Bill of Materials) management for electronics projects — the primary orchestrator skill that coordinates DigiKey, Mouser, LCSC, element14, JLCPCB, PCBWay, and KiCad skills into a unified workflow. Create, update, and maintain BOMs with part numbers, costs, quantities stored as KiCad symbol properties. ALWAYS trigger this skill for any task involving component sourcing, pricing, ordering, distributor searches, BOM export, or fabrication preparation — even if the user names a specific distributor or fab house (e.g. \"search DigiKey for...\", \"generate JLCPCB BOM\", \"order from Mouser\"). This skill decides which distributor/fab skills to invoke and in what order. Also trigger on phrases like \"what parts do I need\", \"order components\", \"how much will this cost\", \"export for JLCPCB\", \"find parts for this board\", \"cost estimate\", \"compare pricing\", or \"check stock\"."
+description: >
+  Manage an electronics bill of materials across distributors and fabricators: part
+  selection, stock, pricing, alternates, ordering, KiCad properties, and BOM/CPL export.
+  Use for distributor-neutral sourcing, cost comparison, order preparation, or requests
+  such as "what parts do I need" and "export for JLCPCB". Do not take over schematic
+  analysis or a complete new-design workflow unless the requested task is specifically
+  its sourcing/manufacturing stage.
 ---
 
 # BOM Management
 
-> **Disambiguation:** This skill handles BOM sourcing, pricing, and ordering. For *schematic analysis* (tracing nets, reviewing designs, checking ERC), use `/kicad`. For *creating new designs from scratch*, use `/circuit-weaver`.
+> **Disambiguation:** This skill handles BOM sourcing, pricing, and ordering. For schematic analysis use `kicad`; for a complete new design use `circuit-weaver`.
 
 BOM data lives in **KiCad schematic symbol properties** as the single source of truth. This skill orchestrates the full lifecycle: analyze the schematic, search distributors, validate parts, write properties back, export tracking CSVs, and generate order files.
 
@@ -301,4 +307,4 @@ Keep `bom/bom.csv` tracked — it contains user-curated data (Chosen_Distributor
 
 - **Claude Code**: Present BOM tables inline with pricing. Use AskUserQuestion for sourcing preferences.
 - **Codex/OpenCode**: Present BOM as formatted table, ask user to confirm or modify.
-- **CLI**: `circuit-weaver cost-bom design.yaml --qty 1,10,100` for pricing, `circuit-weaver export-jlcpcb` for assembly export.
+- **CLI**: Use `circuit-weaver cost-bom design.yaml --qty 1,10,100` for pricing. `circuit-weaver export-jlcpcb design.yaml -o delivery` is BOM-only unless a real reconciled board is supplied with `--pcb board.kicad_pcb`; never treat heuristic placement as CPL data.

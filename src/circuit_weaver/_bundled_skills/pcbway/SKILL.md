@@ -176,4 +176,4 @@ Documentation: `https://api-partner.pcbway.com/Help`
 
 - **Claude Code**: Present DFM results and pricing inline. Use AskUserQuestion for assembly options.
 - **Codex/OpenCode**: Present options as numbered lists. Ask user to confirm choices.
-- **CLI**: Export operations available via `circuit-weaver export-jlcpcb` and `circuit-weaver check-dfm`.
+- **CLI**: Use `circuit-weaver check-dfm board.kicad_pcb --profile pcbway` for the real board. `export-jlcpcb` produces JLCPCB-named delivery files, not a PCBWay-native order package; without `--pcb` it is BOM-only and with `--pcb` it requires exact physical placement reconciliation.

@@ -70,6 +70,22 @@ class SheetAllocation:
     sheet_annotations: list = field(default_factory=list)  # per-sheet description lines
     lock_paper_size: bool = False  # if True, don't optimize paper size; use preset value
     presentation_wiring_policy: PresentationWiringPolicy | None = None
+    explicit_group: bool = False  # user-authored section/presentation boundary; never auto-merge
+
+    @property
+    def support_part_count(self) -> int:
+        """Number of generated two-pin parts that render on this sheet."""
+        return len(self.bypass_caps) + len(self.straps)
+
+    @property
+    def render_component_count(self) -> int:
+        """Total rendered symbols, including generated support parts."""
+        return len(self.components) + self.support_part_count
+
+    @property
+    def render_pin_count(self) -> int:
+        """Approximate rendered pin count used for paper-size planning."""
+        return sum(len(comp.pins) for comp in self.components) + 2 * self.support_part_count
 
 
 def classify_component(comp: ComponentDef) -> str:
@@ -121,7 +137,14 @@ def pick_paper_size(num_components: int, total_pins: int) -> str:
 
 
 _PASSIVE_PREFIXES = {"R", "C", "L", "D", "F", "FB", "Y", "FL"}
-_REVIEW_PARTITION_MIN_TOTAL_PINS = 220
+
+
+@dataclass(frozen=True)
+class _AllocationGroup:
+    key: str
+    name: str
+    title: str
+    explicit: bool = False
 
 
 def _base_sheet_name(sheet_name: str) -> str:
@@ -138,6 +161,67 @@ def _group_display_name(name: str) -> str:
     return text.title() if text else "Cluster"
 
 
+def _sheet_name_for_section(section: str) -> str:
+    """Normalize a canonical functional section to a stable sheet filename."""
+    normalized = re.sub(r"[^a-z0-9]+", "_", (section or "").strip().lower()).strip("_")
+    aliases = {
+        "communications": "comm",
+        "communication": "comm",
+        "connectors": "connectors",
+        "digital": "mcu",
+        "sensing": "sensors",
+        "sensor": "sensors",
+        "sensors": "sensors",
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    mapped = CATEGORY_SHEET_MAP.get(normalized)
+    return mapped or normalized or "misc"
+
+
+def _allocation_group(comp: ComponentDef) -> _AllocationGroup:
+    """Return the functional/presentation group that owns *comp*."""
+    presentation_group = (comp.presentation_group or "").strip()
+    if presentation_group:
+        return _AllocationGroup(
+            key=f"presentation:{presentation_group.casefold()}",
+            name=_slug_group_name(presentation_group),
+            title=_group_display_name(presentation_group),
+            explicit=True,
+        )
+
+    functional_section = (getattr(comp, "functional_section", "") or "").strip()
+    if functional_section:
+        name = _sheet_name_for_section(functional_section)
+        return _AllocationGroup(
+            key=f"sheet:{name}",
+            name=name,
+            title=SHEET_TITLES.get(name, _group_display_name(functional_section)),
+            explicit=True,
+        )
+
+    name = classify_component(comp)
+    return _AllocationGroup(
+        key=f"sheet:{name}",
+        name=name,
+        title=SHEET_TITLES.get(name, name.title()),
+    )
+
+
+def _render_metrics(components: list[ComponentDef]) -> tuple[int, int]:
+    """Return ``(rendered symbols, rendered pins)`` for paper planning."""
+    support_count = sum(len(comp.bypass_caps) + len(comp.straps) for comp in components)
+    return (
+        len(components) + support_count,
+        sum(len(comp.pins) for comp in components) + 2 * support_count,
+    )
+
+
+def _paper_for_components(components: list[ComponentDef]) -> str:
+    rendered_components, rendered_pins = _render_metrics(components)
+    return pick_paper_size(rendered_components, rendered_pins)
+
+
 def _is_merge_candidate(sheet: SheetAllocation, threshold: int) -> bool:
     """A sheet is a merge candidate if it has only simple passives and no real ICs.
 
@@ -151,6 +235,8 @@ def _is_merge_candidate(sheet: SheetAllocation, threshold: int) -> bool:
     Sheets with a mix of ICs and passives use the threshold.
     """
     if sheet.name == "power":
+        return False
+    if sheet.explicit_group:
         return False
     all_passive = True
     for comp in sheet.components:
@@ -241,9 +327,8 @@ def _merge_candidates(sheets: list[SheetAllocation], threshold: int) -> None:
         target.straps.extend(cand.straps)
         target.sheet_annotations.extend(cand.sheet_annotations)
 
-        # Recalculate paper size for the enlarged target
-        total_pins = sum(len(c.pins) for c in target.components)
-        target.paper = pick_paper_size(len(target.components), total_pins)
+        # Recalculate paper size for the enlarged target, including support parts.
+        target.paper = _paper_for_components(target.components)
 
         print(f"  Merged '{cand.name}' ({len(cand.components)} parts) into '{target.name}'")
         sheets.remove(cand)
@@ -265,10 +350,7 @@ def _review_partition_groups(sheet: SheetAllocation) -> list[tuple[str, list[Com
 
 def _should_partition_for_review(sheet: SheetAllocation) -> bool:
     groups = _review_partition_groups(sheet)
-    if len(groups) < 2:
-        return False
-    total_pins = sum(len(comp.pins) for comp in sheet.components)
-    return total_pins >= _REVIEW_PARTITION_MIN_TOTAL_PINS
+    return len(groups) >= 2
 
 
 def _partition_sheet_for_review(sheet: SheetAllocation) -> list[SheetAllocation]:
@@ -279,15 +361,14 @@ def _partition_sheet_for_review(sheet: SheetAllocation) -> list[SheetAllocation]
     ranked = sorted(
         groups,
         key=lambda item: (
-            -sum(len(comp.pins) for comp in item[1]),
-            -len(item[1]),
+            -_render_metrics(item[1])[1],
+            -_render_metrics(item[1])[0],
             item[0],
         ),
     )
 
     partitioned: list[SheetAllocation] = []
     for idx, (group_name, comps) in enumerate(ranked):
-        total_pins = sum(len(comp.pins) for comp in comps)
         all_bypass = []
         all_straps = []
         for comp in comps:
@@ -297,23 +378,25 @@ def _partition_sheet_for_review(sheet: SheetAllocation) -> list[SheetAllocation]
         if idx == 0:
             name = sheet.name
             title = sheet.title
-            annotations = list(sheet.sheet_annotations)
+            annotations = list(dict.fromkeys([*sheet.sheet_annotations, *_sheet_template_annotations(comps)]))
         else:
             suffix = _slug_group_name(group_name)
             name = f"{sheet.name}_{suffix}"
             title = f"{sheet.title} — {_group_display_name(group_name)}"
-            annotations = []
+            annotations = _sheet_template_annotations(comps)
 
         partitioned.append(
             SheetAllocation(
                 name=name,
                 title=title,
-                paper=pick_paper_size(len(comps), total_pins),
+                paper=sheet.paper if sheet.lock_paper_size else _paper_for_components(comps),
                 components=list(comps),
                 bypass_caps=all_bypass,
                 straps=all_straps,
                 sheet_annotations=annotations,
+                lock_paper_size=sheet.lock_paper_size,
                 presentation_wiring_policy=sheet.presentation_wiring_policy,
+                explicit_group=True,
             )
         )
 
@@ -325,25 +408,52 @@ def _partition_sheet_for_review(sheet: SheetAllocation) -> list[SheetAllocation]
 
 
 def partition_review_sheets(sheets: list[SheetAllocation]) -> list[SheetAllocation]:
-    """Split very large review sheets by declared presentation groups."""
+    """Split sheets by declared presentation groups regardless of design size."""
     result: list[SheetAllocation] = []
     for sheet in sheets:
         result.extend(_partition_sheet_for_review(sheet))
-    return result
+    return ensure_unique_sheet_names(result)
+
+
+def ensure_unique_sheet_names(sheets: list[SheetAllocation]) -> list[SheetAllocation]:
+    """Make allocation names deterministic and unique for output filenames.
+
+    Review-group names such as ``"A-B"`` and ``"A B"`` intentionally
+    normalize to the same slug.  A schematic filename is derived directly
+    from ``SheetAllocation.name``, so leaving that collision unresolved would
+    make the later sheet overwrite the earlier one.  Treat names as
+    case-insensitive because the same output directory may be consumed on
+    Windows even when generation happened on a case-sensitive platform.
+    """
+    used: set[str] = set()
+    for sheet in sheets:
+        base = (sheet.name or "sheet").strip() or "sheet"
+        candidate = base
+        suffix = 2
+        while candidate.casefold() in used:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        sheet.name = candidate
+        used.add(candidate.casefold())
+    return sheets
 
 
 def allocate_sheets(components: list[ComponentDef], single_sheet_threshold: int = 8) -> list[SheetAllocation]:
     """Allocate components to schematic sheets.
 
-    If total component count is small enough, put everything on one sheet.
-    Otherwise, split by category.
+    Small legacy designs remain on one sheet. Explicit functional sections or
+    presentation groups always win over that shortcut, allowing a compact
+    professional design to retain its architectural page boundaries.
     """
     if not components:
         return []
 
-    # Small designs: everything on one sheet
-    if len(components) <= single_sheet_threshold:
-        total_pins = sum(len(c.pins) for c in components)
+    allocation_groups = [_allocation_group(comp) for comp in components]
+    distinct_group_keys = {group.key for group in allocation_groups}
+    force_functional_partition = any(group.explicit for group in allocation_groups) and len(distinct_group_keys) > 1
+
+    # Small ungrouped designs: everything on one sheet.
+    if len(components) <= single_sheet_threshold and not force_functional_partition:
         all_bypass = []
         all_straps = []
         for c in components:
@@ -353,7 +463,7 @@ def allocate_sheets(components: list[ComponentDef], single_sheet_threshold: int 
             SheetAllocation(
                 name="main",
                 title="Schematic",
-                paper=pick_paper_size(len(components), total_pins),
+                paper=_paper_for_components(components),
                 components=list(components),
                 bypass_caps=all_bypass,
                 straps=all_straps,
@@ -361,33 +471,41 @@ def allocate_sheets(components: list[ComponentDef], single_sheet_threshold: int 
             )
         ]
 
-    # Larger designs: group by category
-    sheets_map = {}  # sheet_name -> list of ComponentDef
-    for comp in components:
-        sheet_name = classify_component(comp)
-        if sheet_name not in sheets_map:
-            sheets_map[sheet_name] = []
-        sheets_map[sheet_name].append(comp)
+    # Larger or explicitly grouped designs: group by presentation/section/category.
+    sheets_map: dict[str, tuple[_AllocationGroup, list[ComponentDef]]] = {}
+    for comp, group in zip(components, allocation_groups):
+        if group.key not in sheets_map:
+            sheets_map[group.key] = (group, [])
+        sheets_map[group.key][1].append(comp)
 
     # Build SheetAllocation objects
     result = []
-    for sheet_name, comps in sheets_map.items():
-        total_pins = sum(len(c.pins) for c in comps)
+    used_names: set[str] = set()
+    for group, comps in sheets_map.values():
         all_bypass = []
         all_straps = []
         for c in comps:
             all_bypass.extend(c.bypass_caps)
             all_straps.extend(c.straps)
 
+        base_name = group.name
+        sheet_name = base_name
+        suffix = 2
+        while sheet_name in used_names:
+            sheet_name = f"{base_name}_{suffix}"
+            suffix += 1
+        used_names.add(sheet_name)
+
         result.append(
             SheetAllocation(
                 name=sheet_name,
-                title=SHEET_TITLES.get(sheet_name, sheet_name.title()),
-                paper=pick_paper_size(len(comps), total_pins),
+                title=group.title,
+                paper=_paper_for_components(comps),
                 components=comps,
                 bypass_caps=all_bypass,
                 straps=all_straps,
                 sheet_annotations=_sheet_template_annotations(comps),
+                explicit_group=group.explicit,
             )
         )
 

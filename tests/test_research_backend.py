@@ -171,7 +171,7 @@ class TestWorkflowDocsKeepResearchInCurrentAgent:
 
     def test_design_wizard_describes_same_agent_circuit_weaver_flow(self):
         repo_root = Path(__file__).resolve().parent.parent
-        skill_text = (repo_root / "skills" / "design_wizard" / "SKILL.md").read_text(encoding="utf-8")
+        skill_text = (repo_root / "skills" / "design-wizard" / "SKILL.md").read_text(encoding="utf-8")
 
         assert "same-agent orchestration" in skill_text
         assert "spawns research agents" not in skill_text

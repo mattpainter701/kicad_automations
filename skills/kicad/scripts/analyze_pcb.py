@@ -968,12 +968,100 @@ def analyze_connectivity(footprints: list[dict], tracks: dict, vias: dict,
                 "pads": pads,
             })
 
+    routable_net_count = sum(1 for pads in pad_nets.values() if len(pads) >= 2)
+    routing_complete = routable_net_count > 0 and len(unrouted) == 0
+
     return {
         "total_nets_with_pads": len(pad_nets),
+        "routable_net_count": routable_net_count,
         "routed_nets": len(routed_nets & set(pad_nets.keys())),
         "unrouted_count": len(unrouted),
-        "routing_complete": len(unrouted) == 0,
+        # Do not treat an empty/padless board as vacuously routed.  At least
+        # one net with two or more pads must exist before routing can be
+        # considered complete.
+        "routing_complete": routing_complete,
+        "routing_status": "complete" if routing_complete else "incomplete",
         "unrouted": sorted(unrouted, key=lambda u: u["net_name"]),
+    }
+
+
+def assess_routing_readiness(footprints: list[dict], connectivity: dict,
+                             generator_name: str, tracks: dict, vias: dict,
+                             zones: list[dict]) -> dict:
+    """Classify whether a board is a routable PCB or a review-only artifact.
+
+    Circuit Weaver's ``*_placement.kicad_pcb`` output deliberately contains
+    footprint outlines but no pads.  Such a file is useful for placement
+    review, but reporting it as successfully routed because it has no
+    *unrouted* nets is dangerously misleading.
+    """
+    pad_count = sum(len(fp.get("pads", [])) for fp in footprints)
+    routable_net_count = int(connectivity.get("routable_net_count", 0))
+    copper_item_count = (
+        int(tracks.get("total_count", 0))
+        + int(vias.get("count", 0))
+        + sum(1 for zone in zones if not zone.get("is_keepout", False))
+    )
+    has_copper = copper_item_count > 0
+    generator_marker = (generator_name or "").lower().replace("-", "_")
+    placement_preview = (
+        "placement_preview" in generator_marker
+        or ("circuit weaver" in generator_marker and "preview" in generator_marker)
+    )
+
+    routable = not placement_preview and pad_count > 0 and routable_net_count > 0
+    routing_complete = routable and has_copper and bool(connectivity.get("routing_complete", False))
+
+    if placement_preview:
+        classification = "placement_preview"
+        reason = (
+            "Circuit Weaver placement previews are review-only and contain no "
+            "authoritative pads or routable connectivity. Forward-annotate the "
+            "schematic into a real KiCad PCB before routing."
+        )
+    elif pad_count == 0:
+        classification = "non_routable"
+        reason = "Board has no pads and cannot be assessed as successfully routed."
+    elif routable_net_count == 0:
+        classification = "non_routable"
+        reason = "Board has no nets connecting two or more pads; there is nothing routable."
+    elif not has_copper:
+        classification = "routable_board"
+        reason = "Board has routable pads but no tracks, vias, or copper zones; routing is incomplete."
+    else:
+        classification = "routable_board"
+        reason = "" if routing_complete else "Board contains routable nets but routing is incomplete."
+
+    if not routable:
+        status = "review_only"
+    elif routing_complete:
+        status = "complete_unverified"
+    else:
+        status = "incomplete"
+
+    verification_reason = (
+        "Static S-expression analysis does not run kicad-cli; KiCad loadability "
+        "and DRC remain unverified."
+    )
+
+    return {
+        "status": status,
+        "classification": classification,
+        "routable": routable,
+        "review_only": not routable,
+        "workflow": "review_only" if not routable else "pcb_routing",
+        "placement_preview": placement_preview,
+        "routing_complete": routing_complete,
+        "routing_status": "complete" if routing_complete else "incomplete",
+        "pad_count": pad_count,
+        "routable_net_count": routable_net_count,
+        "has_copper": has_copper,
+        "copper_item_count": copper_item_count,
+        "source_generator": generator_name or "unknown",
+        "kicad_verified": False,
+        "verification_status": "unverified",
+        "verification_reason": verification_reason,
+        "reason": reason,
     }
 
 
@@ -3467,10 +3555,25 @@ def analyze_pcb(path: str, *, proximity: bool = False) -> dict:
     # Connectivity analysis (zone-aware)
     connectivity = analyze_connectivity(footprints, tracks, vias, net_names, zones)
 
-    stats = compute_statistics(footprints, tracks, vias, zones, outline, connectivity, net_names)
-
     version = get_value(root, "version") or "unknown"
     generator_version = get_value(root, "generator_version") or "unknown"
+    generator_name = get_value(root, "generator") or "unknown"
+    routing_assessment = assess_routing_readiness(
+        footprints, connectivity, generator_name, tracks, vias, zones,
+    )
+
+    stats = compute_statistics(footprints, tracks, vias, zones, outline, connectivity, net_names)
+    stats.update({
+        "pad_count": routing_assessment["pad_count"],
+        "routable_net_count": routing_assessment["routable_net_count"],
+        "routable": routing_assessment["routable"],
+        "review_only": routing_assessment["review_only"],
+        "routing_complete": routing_assessment["routing_complete"],
+        "routing_status": routing_assessment["routing_status"],
+        "placement_preview": routing_assessment["placement_preview"],
+        "has_copper": routing_assessment["has_copper"],
+        "copper_item_count": routing_assessment["copper_item_count"],
+    })
 
     # Component grouping by reference prefix
     component_groups = group_components(footprints)
@@ -3547,7 +3650,13 @@ def analyze_pcb(path: str, *, proximity: bool = False) -> dict:
         "file": str(path),
         "kicad_version": generator_version,
         "file_version": version,
+        "source_generator": generator_name,
+        "status": routing_assessment["status"],
+        "kicad_verified": routing_assessment["kicad_verified"],
+        "verification_status": routing_assessment["verification_status"],
+        "verification_reason": routing_assessment["verification_reason"],
         "statistics": stats,
+        "routing_assessment": routing_assessment,
         "layers": layers,
         "setup": setup,
         "nets": {v: k for k, v in net_names.items() if v},  # net_name -> net_index

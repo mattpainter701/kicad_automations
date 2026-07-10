@@ -6,51 +6,217 @@ on:
       - "v*.*.*"
 
 permissions:
-  id-token: write
-  contents: write
+  contents: read
 
 jobs:
-  test:
+  build:
+    name: Build release distributions
     runs-on: ubuntu-latest
-    env:
-      CI: true
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ".[dev,api,lookup,yaml]"
-
-      - name: Run tests
-        run: python -m pytest tests/ -q
-
-      - name: Run ruff checks
-        run: python -m ruff check src/ tests/
-
-  build-and-publish:
-    needs: test
-    runs-on: ubuntu-latest
-    environment: pypi
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Install build tools
         run: |
           python -m pip install --upgrade pip
-          pip install build
+          python -m pip install "build>=1.2,<2" "twine>=5,<7"
 
-      - name: Build distribution
+      - name: Verify tag matches package version
+        id: version
+        shell: bash
+        run: |
+          package_version=$(PYTHONPATH=src python -c "import circuit_weaver; print(circuit_weaver.__version__)")
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_NAME" != "v${package_version}" ]; then
+            echo "::error::Tag/version mismatch: tag is $GITHUB_REF_NAME but package is $package_version"
+            exit 1
+          fi
+
+      - name: Build distributions
         run: python -m build
+
+      - name: Validate distributions
+        run: python -m twine check dist/*
+
+      - name: Verify built wheel metadata
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python - <<'PY'
+          import email
+          import glob
+          import os
+          import tarfile
+          import zipfile
+
+          wheels = glob.glob("dist/*.whl")
+          archives = glob.glob("dist/*.tar.gz")
+          assert len(wheels) == 1, wheels
+          assert len(archives) == 1, archives
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              names = wheel.namelist()
+              assert not any("__pycache__" in name or name.endswith((".pyc", ".pyo")) for name in names)
+              assert "circuit_weaver/examples/iot_sensor.yaml" in names
+              metadata_files = [name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")]
+              assert len(metadata_files) == 1, metadata_files
+              package_metadata = email.message_from_bytes(wheel.read(metadata_files[0]))
+          with tarfile.open(archives[0], "r:gz") as source_archive:
+              source_names = source_archive.getnames()
+          assert any(name.endswith("/src/circuit_weaver/examples/iot_sensor.yaml") for name in source_names)
+          assert not any(
+              "__pycache__" in name or name.endswith((".pyc", ".pyo"))
+              for name in source_names
+          )
+          assert package_metadata["Name"] == "circuit-weaver"
+          assert package_metadata["Version"] == os.environ["PACKAGE_VERSION"]
+          PY
+
+      - name: Upload release distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  test-wheel:
+    name: Test wheel / Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.13"
+    steps:
+      - name: Checkout tests
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download exact release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist
+
+      - name: Install exact release wheel with test dependencies
+        shell: bash
+        run: |
+          wheel=$(find dist -maxdepth 1 -name 'circuit_weaver-*.whl' -print -quit)
+          test -n "$wheel"
+          python -m pip install --upgrade pip
+          python -m pip install "${wheel}[test]"
+
+      - name: Verify installed version and provenance
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from importlib.metadata import version
+          from pathlib import Path
+
+          import circuit_weaver
+
+          expected = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          installed_path = Path(circuit_weaver.__file__).resolve()
+          assert circuit_weaver.__version__ == version("circuit-weaver") == expected
+          assert "site-packages" in installed_path.parts or "dist-packages" in installed_path.parts
+          PY
+
+      - name: Ruff
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: python -m ruff check src tests
+
+      - name: Test exact wheel (full suite, including integration corpus)
+        run: >-
+          python -c "import os, pytest;
+          os.environ.pop('CI', None);
+          raise SystemExit(pytest.main(['tests', '-q']))"
+
+  kicad-validation:
+    name: Validate generated schematics with KiCad ${{ matrix.kicad-major }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        kicad-major: ["8", "9", "10"]
+    steps:
+      - name: Checkout samples
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Download exact release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist
+
+      - name: Install exact release wheel
+        shell: bash
+        run: |
+          wheel=$(find dist -maxdepth 1 -name 'circuit_weaver-*.whl' -print -quit)
+          test -n "$wheel"
+          python -m pip install "${wheel}"
+
+      - name: Install KiCad from the official stable PPA
+        run: |
+          sudo add-apt-repository --yes ppa:kicad/kicad-${{ matrix.kicad-major }}.0-releases
+          sudo apt-get update
+          sudo apt-get install --yes kicad
+          test -s /usr/share/kicad/template/fp-lib-table
+          install -D --mode=0644 \
+            /usr/share/kicad/template/fp-lib-table \
+            "$HOME/.config/kicad/${{ matrix.kicad-major }}.0/fp-lib-table"
+          kicad-cli version
+
+      - name: Generate representative simple and complex designs
+        run: |
+          python -m circuit_weaver generate samples/iot_sensor_node/iot_sensor_node.yaml --output .release-kicad/iot --require-kicad --no-svg --no-require-valid --no-readiness-gate
+          python -m circuit_weaver generate samples/fpga_power_carrier/fpga_power_carrier.yaml --output .release-kicad/fpga --require-kicad --no-svg --no-require-valid --no-readiness-gate
+
+      - name: Parse and run ERC with KiCad CLI
+        run: |
+          kicad-cli sch erc --exit-code-violations --format json --output .release-kicad/iot/erc.json .release-kicad/iot/IoT_Sensor_Node.kicad_sch
+          kicad-cli sch erc --exit-code-violations --format json --output .release-kicad/fpga/erc.json .release-kicad/fpga/FPGA_Power_Carrier.kicad_sch
+          test -s .release-kicad/iot/erc.json
+          test -s .release-kicad/fpga/erc.json
+
+  publish:
+    name: Publish exact tested distributions
+    needs: [build, test-wheel, kicad-validation]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Download exact tested distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

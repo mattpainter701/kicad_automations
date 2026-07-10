@@ -97,7 +97,8 @@ def test_preview_pcb_never_fabricates_soic8_fallback(tmp_path):
     ]
     pcb_file, _placements = generate_pcb_placement(comps, tmp_path, project_name="preview_test")
 
-    pcb_text = (tmp_path / "preview_test_placement.kicad_pcb").read_text(encoding="utf-8")
+    assert pcb_file == str(tmp_path / "preview_test_placement_preview.kicad_pcb")
+    pcb_text = (tmp_path / "preview_test_placement_preview.kicad_pcb").read_text(encoding="utf-8")
 
     assert "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm" not in pcb_text, (
         "preview PCB must never fall back to the SOIC-8 default when a component has no footprint binding"
@@ -148,7 +149,8 @@ def test_preview_pcb_never_emits_synthetic_pads(tmp_path):
     ]
     pcb_file, _placements = generate_pcb_placement(comps, tmp_path, project_name="preview_test")
 
-    pcb_text = (tmp_path / "preview_test_placement.kicad_pcb").read_text(encoding="utf-8")
+    assert pcb_file == str(tmp_path / "preview_test_placement_preview.kicad_pcb")
+    pcb_text = (tmp_path / "preview_test_placement_preview.kicad_pcb").read_text(encoding="utf-8")
 
     fp_blocks = _extract_footprint_blocks(pcb_text)
     assert fp_blocks, "generator emitted no footprint blocks at all"
@@ -168,8 +170,9 @@ def test_preview_pcb_self_identifies_in_generator_field(tmp_path):
     from circuit_weaver.pcb_export import generate_pcb_placement
 
     comps = [_make_component(mpn="X", ref="U1", footprint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", pin_count=8)]
-    generate_pcb_placement(comps, tmp_path, project_name="ident_test")
-    pcb_text = (tmp_path / "ident_test_placement.kicad_pcb").read_text(encoding="utf-8")
+    pcb_file, _placements = generate_pcb_placement(comps, tmp_path, project_name="ident_test")
+    assert pcb_file.endswith("ident_test_placement_preview.kicad_pcb")
+    pcb_text = (tmp_path / "ident_test_placement_preview.kicad_pcb").read_text(encoding="utf-8")
     assert "placement_preview" in pcb_text, (
         "placement .kicad_pcb must self-identify as a preview in the generator field"
     )
@@ -185,7 +188,7 @@ def test_preview_pcb_uses_kicad_fixed_layer_ids(tmp_path):
 
     comps = [_make_component(mpn="X", ref="U1", footprint="Package_SO:SOIC-8_3.9x4.9mm_P1.27mm", pin_count=8)]
     generate_pcb_placement(comps, tmp_path, project_name="layer_hash_test")
-    pcb_text = (tmp_path / "layer_hash_test_placement.kicad_pcb").read_text(encoding="utf-8")
+    pcb_text = (tmp_path / "layer_hash_test_placement_preview.kicad_pcb").read_text(encoding="utf-8")
 
     expected_markers = [
         '(0 "F.Cu" signal)',

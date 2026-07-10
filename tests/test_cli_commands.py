@@ -179,8 +179,50 @@ def test_generate_log_file(tmp_path):
     assert log.exists(), "circuit-weaver.log not created"
     content = log.read_text(encoding="utf-8")
     assert "Allocated" in content, "log missing component allocation entry"
-    assert "main: " in content, "log missing per-sheet allocation summary"
+    assert "5 sheet(s)" in content, "log missing professional multi-sheet allocation"
+    assert all(f"{name}: " in content for name in ("power", "mcu", "sensors", "connectors", "buses"))
     assert "IoT_Sensor.kicad_sch" in content, "log missing generated file path"
+
+
+def test_generate_placement_review_is_exhaustive_and_editable(tmp_path):
+    """--svg-placement must never regress to an empty board-outline artifact."""
+    out = tmp_path / "placement_review"
+    result = _run(
+        [
+            "generate",
+            str(_SAMPLE_SPEC),
+            "--output",
+            str(out),
+            "--no-svg",
+            "--no-require-valid",
+            "--no-readiness-gate",
+            "--svg-placement",
+        ]
+    )
+    assert result.returncode == 0, result.stderr[:500]
+
+    payload = json.loads(result.stdout)
+    manifest = json.loads((out / "assembly_manifest.json").read_text(encoding="utf-8"))
+    placement = json.loads((out / "placement_result.json").read_text(encoding="utf-8"))
+    references = {item["reference"] for item in manifest["items"]}
+
+    assert placement["status"] == "review_required"
+    assert placement["fabrication_ready"] is False
+    assert set(placement["placements"]) == references
+    assert placement["reference_reconciliation"]["exact_match"] is True
+    assert payload["placement_review"]["status"] == "review_required"
+
+    svg = (out / "placement.svg").read_text(encoding="utf-8")
+    html = (out / "placement_editor.html").read_text(encoding="utf-8")
+    assert all(f'data-ref="{reference}"' in svg for reference in references)
+    assert all(f'data-ref="{reference}"' in html for reference in references)
+    assert "Export Editable SVG" in html
+    assert not list(out.glob("*_placement_preview.kicad_pcb"))
+    assert not list(out.glob("*_placement.kicad_pcb"))
+    state = json.loads((out / ".circuit-weaver" / "project.json").read_text(encoding="utf-8"))
+    assert state["status"] == "generated"
+    assert state["current_phase"] == "placement_review"
+    assert payload["project_state"] == str(out / ".circuit-weaver" / "project.json")
 
 
 def test_generate_schematic_paren_balance(tmp_path):
@@ -268,13 +310,19 @@ def test_cost_bom_sample():
 
 
 def test_export_jlcpcb_sample(tmp_path):
-    """export-jlcpcb should produce BOM + CPL files."""
+    """Without a physical PCB, export-jlcpcb is truthful BOM-only output."""
     if not _SAMPLE_SPEC.exists():
         pytest.skip("Sample spec not found")
     out = tmp_path / "jlcpcb"
     result = _run(["export-jlcpcb", str(_SAMPLE_SPEC), "--output", str(out)])
     assert result.returncode == 0, f"export-jlcpcb failed: {result.stderr[:500]}"
     assert (out / "bom_jlcpcb.csv").exists()
+    assert (out / "assembly_manifest.json").exists()
+    assert (out / "delivery_manifest.json").exists()
+    assert not (out / "cpl_jlcpcb.csv").exists()
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "bom_only"
+    assert payload["cpl"] == ""
 
 
 def _extract_json(text: str) -> dict:
@@ -310,6 +358,40 @@ def test_optimize_placement_example():
     assert "placements" in data
 
 
+def test_optimize_placement_applies_constraints_from_spec(tmp_path):
+    constrained_spec = tmp_path / "constrained.yaml"
+    constrained_spec.write_text(
+        _EXAMPLE_SPEC.read_text(encoding="utf-8")
+        + """
+
+pcb_constraints:
+  - kind: placement
+    target: board
+    board_width_mm: 42
+    board_height_mm: 31
+""",
+        encoding="utf-8",
+    )
+
+    result = _run(
+        [
+            "optimize-placement",
+            str(constrained_spec),
+            "--json",
+            "--iterations",
+            "20",
+            "--seed",
+            "7",
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    data = _extract_json(result.stdout)
+    assert data["board_width_mm"] == 42
+    assert data["board_height_mm"] == 31
+    assert data["constraint_evaluation"]["board_dimension_source"] == "constraints"
+
+
 def test_panelize():
     """panelize should suggest panel layout."""
     result = _run(["panelize", "--board-width", "50", "--board-height", "40", "--qty", "100", "--json"])
@@ -319,13 +401,14 @@ def test_panelize():
     assert len(data["panel_options"]) >= 1
 
 
-def test_export_dual_cpl_example(tmp_path):
-    """export-dual-cpl should produce top + bottom CPL files."""
+def test_export_dual_cpl_requires_physical_pcb(tmp_path):
+    """Manufacturing CPL export must never default to heuristic placement."""
     out = tmp_path / "dual_cpl"
     result = _run(["export-dual-cpl", str(_EXAMPLE_SPEC), "--output", str(out)])
-    assert result.returncode == 0, f"export-dual-cpl failed: {result.stderr[:500]}"
-    assert (out / "cpl_top.csv").exists()
-    assert (out / "cpl_bottom.csv").exists()
+    assert result.returncode != 0
+    assert "--pcb" in result.stderr
+    assert not (out / "cpl_top.csv").exists()
+    assert not (out / "cpl_bottom.csv").exists()
 
 
 def test_placement_viewer_example(tmp_path):

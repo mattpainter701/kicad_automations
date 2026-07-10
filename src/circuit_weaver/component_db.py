@@ -237,6 +237,13 @@ class ComponentDef:
     template_boundary_ports: list = field(default_factory=list)  # BoundaryPort-like objects from template
     template_local_wires: list = field(default_factory=list)  # LocalWire-like objects from template
     presentation_group: str = ""  # optional review-sheet partition grouping
+    # Canonical design ownership metadata.  ``functional_section`` preserves
+    # the user's architectural section (power, sensing, communications, ...)
+    # through component resolution so the allocator can build professional
+    # functional sheets even for small designs.  ``block_id`` keeps generated
+    # support parts traceable to the originating design block.
+    functional_section: str = ""
+    block_id: str = ""
     presentation_wiring_policy: PresentationWiringPolicy | None = None  # optional component-level rendering override
 
     pins: list[PinDef] = field(default_factory=list)
@@ -248,6 +255,14 @@ class ComponentDef:
     bypass_caps: list[BypassCap] = field(default_factory=list)
     straps: list[StrapConfig] = field(default_factory=list)
     recommended_bypass: list[dict] = field(default_factory=list)  # optional datasheet-driven bypass policy
+    # Manufacturer-owned evidence surfaced in placement_review_context.json.
+    # These fields deliberately live on the component record so custom
+    # registries and data-driven topology definitions can provide the same
+    # traceable placement guidance as bundled parts without MPN conditionals
+    # in the optimizer.
+    datasheet_url: str = ""
+    reference_layout_url: str = ""
+    official_references: list[dict[str, str]] = field(default_factory=list)
 
     # Pin numbers intentionally left unconnected (no-connect by design).
     # The generator will place NC markers on these pins without warnings.
@@ -565,6 +580,13 @@ class ComponentRegistry:
                 pin_roles=normalize_pin_roles(entry.get("pin_roles", {})),
                 bypass_caps=caps,
                 straps=straps,
+                datasheet_url=str(entry.get("datasheet_url", "")),
+                reference_layout_url=str(entry.get("reference_layout_url", "")),
+                official_references=[
+                    {str(key): str(value) for key, value in item.items()}
+                    for item in entry.get("official_references", [])
+                    if isinstance(item, dict)
+                ],
             )
             self.register(comp)
             count += 1
@@ -1219,6 +1241,26 @@ def _builtin_components():
                 StrapConfig("3", "ESP_EN", "VDD_3P3", "10k", "Resistor_SMD:R_0402_1005Metric"),
                 StrapConfig("25", "ESP_IO0", "VDD_3P3", "10k", "Resistor_SMD:R_0402_1005Metric"),
             ],
+            official_references=[
+                {
+                    "title": "ESP32-WROOM-32E/32UE datasheet",
+                    "url": (
+                        "https://documentation.espressif.com/esp32-wroom-32e_"
+                        "esp32-wroom-32ue_datasheet_en.html"
+                    ),
+                    "publisher": "Espressif Systems",
+                    "why": "Module land pattern, antenna area, dimensions, and operating limits.",
+                },
+                {
+                    "title": "ESP32 PCB layout design guidelines",
+                    "url": (
+                        "https://docs.espressif.com/projects/esp-hardware-design-guidelines/"
+                        "en/latest/esp32/pcb-layout-design.html"
+                    ),
+                    "publisher": "Espressif Systems",
+                    "why": "Antenna-edge placement, keepout, grounding, power, and RF layout guidance.",
+                },
+            ],
         )
     )
 
@@ -1270,7 +1312,7 @@ def _builtin_components():
             mpn="BME280",
             ref_prefix="U",
             value="BME280",
-            footprint="Package_LGA:Bosch_LGA-8_2.5x2.5mm",
+            footprint="Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
             description="Temperature/Humidity/Pressure Sensor I2C/SPI",
             category="sensor",
             pins=[
@@ -1278,7 +1320,11 @@ def _builtin_components():
                 PinDef("2", "CSB", "input", "L"),
                 PinDef("3", "SDI", "bidirectional", "L"),
                 PinDef("4", "SCK", "input", "L"),
-                PinDef("5", "SDO", "output", "R"),
+                # SDO is an SPI output but becomes the sampled I2C address
+                # strap in I2C mode.  ``passive`` models the mode-dependent
+                # electrical role without a false output-vs-power conflict
+                # when a design intentionally straps it to GND or VDDIO.
+                PinDef("5", "SDO", "passive", "R"),
                 PinDef("6", "VDDIO", "power_in", "T"),
                 PinDef("7", "GND2", "power_in", "B"),
                 PinDef("8", "VDD", "power_in", "T"),
@@ -1289,6 +1335,10 @@ def _builtin_components():
             bypass_caps=[
                 BypassCap("8", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric"),
             ],
+            datasheet_url=(
+                "https://www.bosch-sensortec.com/media/boschsensortec/downloads/"
+                "datasheets/bst-bme280-ds002.pdf"
+            ),
         )
     )
 
@@ -1419,6 +1469,7 @@ def _builtin_components():
                 PinDef("18", "SWDCLK", "input", "R"),
                 PinDef("19", "SWDIO", "bidirectional", "R"),
                 PinDef("20", "nRESET", "input", "R"),
+                PinDef("32", "ANT", "output", "R"),
                 PinDef("34", "VDD", "power_in", "T"),
                 PinDef("35", "GND", "power_in", "B"),
             ],

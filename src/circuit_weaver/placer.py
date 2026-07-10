@@ -98,6 +98,7 @@ class SheetLayout:
 # Reference designator counters
 _ref_counters = {}
 _used_refs = set()
+_claimed_explicit_refs = set()
 
 
 def _next_ref(prefix: str) -> str:
@@ -106,8 +107,9 @@ def _next_ref(prefix: str) -> str:
     while True:
         _ref_counters[prefix] += 1
         ref = f"{prefix}{_ref_counters[prefix]}"
-        if ref not in _used_refs:
-            _used_refs.add(ref)
+        ref_key = ref.casefold()
+        if ref_key not in _used_refs:
+            _used_refs.add(ref_key)
             return ref
 
 
@@ -115,7 +117,7 @@ def _reserve_ref(ref: str):
     """Reserve an explicit BOM reference so auto-generated refs skip it."""
     if not ref:
         return
-    _used_refs.add(ref)
+    _used_refs.add(ref.casefold())
     match = re.match(r"^([A-Za-z]+)(\d+)$", ref)
     if not match:
         return
@@ -126,29 +128,66 @@ def _reserve_ref(ref: str):
 
 def _component_ref(comp: ComponentDef) -> str:
     """Use an explicit BOM ref when present, otherwise allocate the next free ref."""
-    if comp.source_ref and comp.source_ref not in _used_refs:
-        _reserve_ref(comp.source_ref)
-        return comp.source_ref
+    if comp.source_ref:
+        explicit_ref = comp.source_ref.strip()
+        if not explicit_ref or explicit_ref != comp.source_ref:
+            raise ValueError(
+                f"Explicit reference {comp.source_ref!r} must not contain surrounding whitespace"
+            )
+        ref_key = explicit_ref.casefold()
+        if ref_key in _claimed_explicit_refs:
+            raise ValueError(f"Duplicate explicit reference '{explicit_ref}'")
+        _claimed_explicit_refs.add(ref_key)
+        _reserve_ref(explicit_ref)
+        return explicit_ref
     return _next_ref(comp.ref_prefix)
+
+
+def reserve_explicit_refs(components: list[ComponentDef]) -> None:
+    """Reserve every explicit reference before allocating anonymous ones.
+
+    Placement order is intentionally different from BOM order.  Without a
+    preflight reservation, an anonymous quantity copy can consume ``U1`` and
+    silently force the component explicitly named ``U1`` to another reference.
+    """
+    seen: dict[str, str] = {}
+    for comp in components:
+        raw_ref = comp.source_ref or ""
+        ref = raw_ref.strip()
+        if raw_ref and raw_ref != ref:
+            raise ValueError(
+                f"Explicit reference {raw_ref!r} must not contain surrounding whitespace"
+            )
+        if not ref:
+            continue
+        key = ref.casefold()
+        if key in seen:
+            raise ValueError(f"Duplicate explicit reference '{ref}' (already reserved as '{seen[key]}')")
+        seen[key] = ref
+    for ref in seen.values():
+        _reserve_ref(ref)
 
 
 def reset_ref_counters():
     _ref_counters.clear()
     _used_refs.clear()
+    _claimed_explicit_refs.clear()
 
 
-def _snapshot_ref_state() -> tuple[dict[str, int], set[str]]:
+def _snapshot_ref_state() -> tuple[dict[str, int], set[str], set[str]]:
     """Capture the current global ref-allocation state."""
-    return dict(_ref_counters), set(_used_refs)
+    return dict(_ref_counters), set(_used_refs), set(_claimed_explicit_refs)
 
 
-def _restore_ref_state(state: tuple[dict[str, int], set[str]]) -> None:
+def _restore_ref_state(state: tuple[dict[str, int], set[str], set[str]]) -> None:
     """Restore a previously captured global ref-allocation state."""
-    counters, used = state
+    counters, used, claimed = state
     _ref_counters.clear()
     _ref_counters.update(counters)
     _used_refs.clear()
     _used_refs.update(used)
+    _claimed_explicit_refs.clear()
+    _claimed_explicit_refs.update(claimed)
 
 
 _BODY_LEFT_GUTTER = snap(18)
@@ -1769,7 +1808,11 @@ def layout_sheet(
 
             for idx, bc in enumerate(comp.bypass_caps):
                 sym_type, ref_prefix = _bypass_sym_type_and_prefix(bc.value, bc.footprint, bc.role)
-                cap_ref = _next_ref(ref_prefix)
+                cap_ref = str(getattr(bc, "source_ref", "") or "")
+                if cap_ref:
+                    _reserve_ref(cap_ref)
+                else:
+                    cap_ref = _next_ref(ref_prefix)
                 col = idx % cols
                 row = idx // cols
                 cap_x = snap(x_origin + col * col_pitch)
@@ -1806,7 +1849,11 @@ def layout_sheet(
             strap_pitch = _strap_pitch(comp)
 
             for strap in comp.straps:
-                res_ref = _next_ref("R")
+                res_ref = str(getattr(strap, "source_ref", "") or "")
+                if res_ref:
+                    _reserve_ref(res_ref)
+                else:
+                    res_ref = _next_ref("R")
                 layout.placed_passives.append(
                     PlacedPassive(
                         ref=res_ref,
@@ -1854,9 +1901,9 @@ def layout_sheet(
         return layout
 
     baseline_state = _snapshot_ref_state()
-    fitting_layouts: list[tuple[SheetLayout, tuple[dict[str, int], set[str]]]] = []
+    fitting_layouts: list[tuple[SheetLayout, tuple[dict[str, int], set[str], set[str]]]] = []
     last_layout: SheetLayout | None = None
-    last_state: tuple[dict[str, int], set[str]] = baseline_state
+    last_state: tuple[dict[str, int], set[str], set[str]] = baseline_state
 
     # Start from the allocator's chosen paper size instead of A4.
     # Density-scaled gaps expand with paper area, which can cause
@@ -1975,6 +2022,7 @@ def split_sheet_allocation(sheet_alloc) -> list | None:
                 sheet_annotations=list(sheet_alloc.sheet_annotations),
                 lock_paper_size=False,
                 presentation_wiring_policy=sheet_alloc.presentation_wiring_policy,
+                explicit_group=sheet_alloc.explicit_group,
             )
         )
     return halves

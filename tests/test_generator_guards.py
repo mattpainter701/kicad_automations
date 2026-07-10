@@ -74,6 +74,66 @@ def _test_comp(
     )
 
 
+@pytest.mark.parametrize(
+    "project_name",
+    [
+        "../escape",
+        "..\\escape",
+        "nested/escape",
+        "nested\\escape",
+        "/tmp/absolute-escape",
+        r"C:\absolute-escape",
+        r"C:drive-relative-escape",
+    ],
+)
+def test_generate_rejects_project_path_forms_before_creating_output(
+    tmp_path: Path,
+    project_name: str,
+):
+    output_dir = tmp_path / "out"
+
+    with pytest.raises(ValueError, match="Project name"):
+        generate_from_components(
+            [_test_comp(pin_nets={"1": "SIG"})],
+            output_dir=output_dir,
+            project_name=project_name,
+            validate=False,
+            readiness_gate=False,
+        )
+
+    assert not output_dir.exists()
+
+
+def test_generate_accepts_portable_project_name_and_writes_only_inside_output(tmp_path: Path):
+    output_dir = tmp_path / "out"
+    project_name = "Board-v1.2_alpha 01"
+
+    files = generate_from_components(
+        [_test_comp(pin_nets={"1": "SIG"})],
+        output_dir=output_dir,
+        project_name=project_name,
+        validate=False,
+        readiness_gate=False,
+    )
+
+    schematic = output_dir / f"{project_name}.kicad_sch"
+    assert schematic.exists()
+    assert schematic.resolve().is_relative_to(output_dir.resolve())
+    assert schematic in {Path(path) for path in files}
+
+
+def test_generate_artifacts_rejects_project_traversal_before_logging(tmp_path: Path):
+    output_dir = tmp_path / "out"
+
+    with pytest.raises(ValueError, match="Project name"):
+        generate_artifacts(
+            {"project": "../outside", "blocks": []},
+            output_dir=output_dir,
+        )
+
+    assert not output_dir.exists()
+
+
 def test_generate_from_components_blocks_placement_readiness_for_direct_call(tmp_path: Path, monkeypatch):
     import circuit_weaver.generator as generator_module
 

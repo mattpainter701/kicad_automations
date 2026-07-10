@@ -1037,6 +1037,8 @@ _LABEL_RE = re.compile(
 _WIRE_RE = re.compile(
     r'\(wire\s+\(pts\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\s+\(xy\s+([-\d.]+)\s+([-\d.]+)\)\)'
 )
+_JUNCTION_RE = re.compile(r"\(junction\s+\(at\s+([-\d.]+)\s+([-\d.]+)\)")
+_NO_CONNECT_RE = re.compile(r"\(no_connect\s+\(at\s+([-\d.]+)\s+([-\d.]+)\)")
 
 
 def _boxes_overlap(
@@ -1070,124 +1072,346 @@ def _shift_direction(angle: int) -> tuple[float, float]:
     return (0.0, 0.0)
 
 
+def _orthogonal_segment_hits_box(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    box: tuple[float, float, float, float],
+) -> bool:
+    """Return whether an orthogonal wire segment enters a body-box interior."""
+    left, top, right, bottom = box
+    epsilon = 0.01
+    if abs(x1 - x2) < epsilon:
+        if not (left + epsilon < x1 < right - epsilon):
+            return False
+        seg_top, seg_bottom = sorted((y1, y2))
+        return max(seg_top, top + epsilon) < min(seg_bottom, bottom - epsilon)
+    if abs(y1 - y2) < epsilon:
+        if not (top + epsilon < y1 < bottom - epsilon):
+            return False
+        seg_left, seg_right = sorted((x1, x2))
+        return max(seg_left, left + epsilon) < min(seg_right, right - epsilon)
+    return False
+
+
 def _resolve_label_collisions(
     labels: list[str],
     wires: list[str],
+    obstacle_boxes: list[tuple[float, float, float, float]] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Detect and resolve label collisions by extending wire stubs.
+    """Resolve label overlaps while preserving every label-to-wire endpoint.
 
-    Labels that share the same orientation axis and have overlapping
-    bounding boxes are shifted further from their associated pins by
-    2.54mm increments, and the connecting wire is extended to match.
-    Max 5 shifts per label.
+    A label and its associated wire are moved as one atomic operation.  The
+    fixed-point pass restarts after every move so later moves cannot silently
+    recreate an overlap that was already checked.
     """
     if len(labels) < 2:
         return labels, wires
 
-    # --- Parse labels ---
     parsed_labels: list[dict] = []
     for i, lab in enumerate(labels):
-        m = _LABEL_RE.search(lab)
-        if not m:
+        match = _LABEL_RE.search(lab)
+        if not match:
             continue
-        kind = m.group(1)
-        text = m.group(2)
-        x = float(m.group(3))
-        y = float(m.group(4))
-        angle = int(m.group(5))
-        left, top, right, bottom = _label_bbox(x, y, text, angle)
-        parsed_labels.append({
-            "idx": i, "kind": kind, "text": text,
-            "x": x, "y": y, "angle": angle,
-            "bbox": (left, top, right, bottom),
-            "shifts": 0,
-        })
+        text = match.group(2)
+        x = float(match.group(3))
+        y = float(match.group(4))
+        angle = int(match.group(5))
+        parsed_labels.append(
+            {
+                "idx": i,
+                "kind": match.group(1),
+                "text": text,
+                "x": x,
+                "y": y,
+                "angle": angle,
+                "bbox": _label_bbox(x, y, text, angle),
+                "shifts": 0,
+                "wire_idx": None,
+            }
+        )
 
-    # --- Parse wires ---
-    parsed_wires: list[dict] = []
-    for i, w in enumerate(wires):
-        m = _WIRE_RE.search(w)
-        if not m:
+    wire_by_idx: dict[int, dict] = {}
+    endpoint_wires: dict[tuple[float, float], list[int]] = {}
+    for i, wire in enumerate(wires):
+        match = _WIRE_RE.search(wire)
+        if not match:
             continue
-        x1 = float(m.group(1))
-        y1 = float(m.group(2))
-        x2 = float(m.group(3))
-        y2 = float(m.group(4))
-        parsed_wires.append({"idx": i, "x1": x1, "y1": y1, "x2": x2, "y2": y2})
+        parsed = {
+            "idx": i,
+            "x1": float(match.group(1)),
+            "y1": float(match.group(2)),
+            "x2": float(match.group(3)),
+            "y2": float(match.group(4)),
+        }
+        wire_by_idx[i] = parsed
+        key = (round(parsed["x2"], 2), round(parsed["y2"], 2))
+        endpoint_wires.setdefault(key, []).append(i)
 
-    # --- Build label-endpoint → wire-index map ---
-    # A wire ending at (x2,y2) connects to the label at that position.
-    ep_to_wire: dict[tuple[float, float], int] = {}
-    for pw in parsed_wires:
-        key = (round(pw["x2"], 2), round(pw["y2"], 2))
-        ep_to_wire[key] = pw["idx"]
+    # Claim endpoint-matched wires once.  Multiple labels at one endpoint are
+    # paired deterministically with multiple wires in their emission order.
+    for label in parsed_labels:
+        key = (round(label["x"], 2), round(label["y"], 2))
+        candidates = endpoint_wires.get(key, [])
+        if candidates:
+            label["wire_idx"] = candidates.pop(0)
 
-    # --- Detect and resolve collisions ---
-    for i in range(len(parsed_labels)):
-        for j in range(i + 1, len(parsed_labels)):
-            la = parsed_labels[i]
-            lb = parsed_labels[j]
+    max_moves = len(parsed_labels) * _COLLISION_MAX_SHIFTS
+    for _ in range(max_moves):
+        moved = False
+        for i, left in enumerate(parsed_labels):
+            for right in parsed_labels[i + 1 :]:
+                if left["text"] == right["text"]:
+                    continue
+                if not _same_axis(left["angle"], right["angle"]):
+                    continue
+                if not _boxes_overlap(*left["bbox"], *right["bbox"]):
+                    continue
 
-            # Skip same-name labels — they represent the same net and
-            # should be deduped by position, not moved apart.
-            if la["text"] == lb["text"]:
-                continue
+                movable = []
+                for label in (left, right):
+                    if (
+                        label["wire_idx"] is None
+                        or label["shifts"] >= _COLLISION_MAX_SHIFTS
+                    ):
+                        continue
+                    dx, dy = _shift_direction(label["angle"])
+                    new_x = label["x"] + dx * _COLLISION_SHIFT_MM
+                    new_y = label["y"] + dy * _COLLISION_SHIFT_MM
+                    parsed_wire = wire_by_idx[label["wire_idx"]]
+                    if obstacle_boxes and any(
+                        _orthogonal_segment_hits_box(
+                            parsed_wire["x1"],
+                            parsed_wire["y1"],
+                            new_x,
+                            new_y,
+                            box,
+                        )
+                        for box in obstacle_boxes
+                    ):
+                        continue
+                    movable.append(label)
+                if not movable:
+                    continue
 
-            # Only check labels on the same orientation axis
-            if not _same_axis(la["angle"], lb["angle"]):
-                continue
+                # Keep moving the earlier-emitted endpoint until this overlap
+                # clears (or reaches its cap).  Alternating between the pair
+                # moves them in parallel and can preserve the overlap; choosing
+                # by projected distance can extend a later stub through nearby
+                # symbol bodies even when the earlier stub has a safe escape.
+                candidate = min(movable, key=lambda label: label["idx"])
+                dx, dy = _shift_direction(candidate["angle"])
+                new_x = candidate["x"] + dx * _COLLISION_SHIFT_MM
+                new_y = candidate["y"] + dy * _COLLISION_SHIFT_MM
 
-            # Check for overlap
-            if not _boxes_overlap(*la["bbox"], *lb["bbox"]):
-                continue
-
-            # Determine which label to shift (prefer the later-emitted one,
-            # or the one with fewer shifts already applied)
-            if la["shifts"] >= _COLLISION_MAX_SHIFTS and lb["shifts"] >= _COLLISION_MAX_SHIFTS:
-                continue
-
-            shift_candidate = lb if la["shifts"] < lb["shifts"] else la
-            if shift_candidate["shifts"] >= _COLLISION_MAX_SHIFTS:
-                shift_candidate = la if shift_candidate is lb else lb
-
-            # Shift the label further from its pin
-            dx, dy = _shift_direction(shift_candidate["angle"])
-            shift_mm = _COLLISION_SHIFT_MM
-
-            new_x = shift_candidate["x"] + dx * shift_mm
-            new_y = shift_candidate["y"] + dy * shift_mm
-
-            # Update the label S-expression string
-            old_lab = labels[shift_candidate["idx"]]
-            new_lab = re.sub(
-                r'\(at\s+[-\d.]+\s+[-\d.]+\s+\d+\)',
-                f'(at {new_x:.2f} {new_y:.2f} {shift_candidate["angle"]})',
-                old_lab,
-            )
-            labels[shift_candidate["idx"]] = new_lab
-
-            # Extend the connected wire — only the second (xy ...) endpoint.
-            # The format is: (wire (pts (xy X1 Y1) (xy X2 Y2)) ...)
-            wire_key = (round(shift_candidate["x"], 2), round(shift_candidate["y"], 2))
-            wire_idx = ep_to_wire.get(wire_key)
-            if wire_idx is not None:
-                old_wire = wires[wire_idx]
-                # Replace second xy AND the pts-closing paren right after it.
-                # Pattern: pts (xy X1 Y1) (xy X2 Y2))
-                new_wire = re.sub(
-                    r'(\(pts\s+\(xy\s+[-\d.]+\s+[-\d.]+\)\s+)\(xy\s+[-\d.]+\s+[-\d.]+\)\)',
-                    rf'\1(xy {new_x:.2f} {new_y:.2f}))',
-                    old_wire,
+                old_label = labels[candidate["idx"]]
+                new_label, label_replacements = re.subn(
+                    r"\(at\s+[-\d.]+\s+[-\d.]+\s+\d+\)",
+                    f'(at {new_x:.2f} {new_y:.2f} {candidate["angle"]})',
+                    old_label,
+                    count=1,
                 )
-                wires[wire_idx] = new_wire
+                if label_replacements != 1:
+                    raise ValueError(
+                        f'Could not move label {candidate["text"]!r}: '
+                        "its anchor is malformed"
+                    )
 
-            # Update parsed label state
-            shift_candidate["x"] = new_x
-            shift_candidate["y"] = new_y
-            shift_candidate["bbox"] = _label_bbox(new_x, new_y, shift_candidate["text"], shift_candidate["angle"])
-            shift_candidate["shifts"] += 1
+                wire_idx = candidate["wire_idx"]
+                parsed_wire = wire_by_idx[wire_idx]
+                if (
+                    abs(parsed_wire["x2"] - candidate["x"]) > 0.01
+                    or abs(parsed_wire["y2"] - candidate["y"]) > 0.01
+                ):
+                    raise ValueError(
+                        f'Cannot move label {candidate["text"]!r}: '
+                        "its wire endpoint is already detached"
+                    )
+
+                new_wire, wire_replacements = re.subn(
+                    r"(\(pts\s+\(xy\s+[-\d.]+\s+[-\d.]+\)\s+)"
+                    r"\(xy\s+[-\d.]+\s+[-\d.]+\)\)",
+                    rf"\g<1>(xy {new_x:.2f} {new_y:.2f}))",
+                    wires[wire_idx],
+                    count=1,
+                )
+                if wire_replacements != 1:
+                    raise ValueError(
+                        f'Could not extend wire for label {candidate["text"]!r}'
+                    )
+
+                labels[candidate["idx"]] = new_label
+                wires[wire_idx] = new_wire
+                candidate["x"] = new_x
+                candidate["y"] = new_y
+                candidate["bbox"] = _label_bbox(
+                    new_x,
+                    new_y,
+                    candidate["text"],
+                    candidate["angle"],
+                )
+                candidate["shifts"] += 1
+                parsed_wire["x2"] = new_x
+                parsed_wire["y2"] = new_y
+                moved = True
+                break
+            if moved:
+                break
+        if not moved:
+            break
+
+    # Structural postcondition: every endpoint-associated label must still land
+    # on the exact second endpoint of the wire it claimed before collision work.
+    for label in parsed_labels:
+        wire_idx = label["wire_idx"]
+        if wire_idx is None:
+            continue
+        parsed_wire = wire_by_idx[wire_idx]
+        if (
+            abs(parsed_wire["x2"] - label["x"]) > 0.01
+            or abs(parsed_wire["y2"] - label["y"]) > 0.01
+        ):
+            raise ValueError(
+                f'Label {label["text"]!r} is detached from its wire endpoint'
+            )
 
     return labels, wires
+
+
+def _validate_named_net_components(
+    wires: list[str],
+    labels: list[str],
+    junctions: list[str] | None = None,
+    no_connects: list[str] | None = None,
+) -> None:
+    """Reject conflicting labels or no-connects on a physical wire component.
+
+    KiCad joins coincident endpoints, collinear overlaps, and T-junctions where
+    a segment endpoint lands on another segment. A pure interior crossing is
+    intentionally not joined unless an explicit junction is present.
+    """
+    segments: list[tuple[float, float, float, float]] = []
+    for wire in wires:
+        match = _WIRE_RE.search(wire)
+        if match:
+            segments.append(tuple(float(match.group(index)) for index in range(1, 5)))
+
+    parent = list(range(len(segments)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(first: int, second: int) -> None:
+        first_root = find(first)
+        second_root = find(second)
+        if first_root != second_root:
+            parent[second_root] = first_root
+
+    def point_on_segment(
+        point: tuple[float, float],
+        segment: tuple[float, float, float, float],
+    ) -> bool:
+        x, y = point
+        x1, y1, x2, y2 = segment
+        epsilon = 0.01
+        if abs(x1 - x2) < epsilon:
+            return abs(x - x1) < epsilon and min(y1, y2) - epsilon <= y <= max(y1, y2) + epsilon
+        if abs(y1 - y2) < epsilon:
+            return abs(y - y1) < epsilon and min(x1, x2) - epsilon <= x <= max(x1, x2) + epsilon
+        return False
+
+    def electrically_joined(
+        first: tuple[float, float, float, float],
+        second: tuple[float, float, float, float],
+    ) -> bool:
+        first_endpoints = ((first[0], first[1]), (first[2], first[3]))
+        second_endpoints = ((second[0], second[1]), (second[2], second[3]))
+        return any(point_on_segment(point, second) for point in first_endpoints) or any(
+            point_on_segment(point, first) for point in second_endpoints
+        )
+
+    for first_index, first in enumerate(segments):
+        for second_index in range(first_index + 1, len(segments)):
+            if electrically_joined(first, segments[second_index]):
+                union(first_index, second_index)
+
+    for junction in junctions or []:
+        match = _JUNCTION_RE.search(junction)
+        if not match:
+            continue
+        point = (float(match.group(1)), float(match.group(2)))
+        touching = [
+            index for index, segment in enumerate(segments) if point_on_segment(point, segment)
+        ]
+        for index in touching[1:]:
+            union(touching[0], index)
+
+    parsed_labels: list[tuple[str, tuple[float, float], list[int]]] = []
+    for label in labels:
+        match = _LABEL_RE.search(label)
+        if not match:
+            continue
+        name = match.group(2)
+        point = (float(match.group(3)), float(match.group(4)))
+        touching = [
+            index for index, segment in enumerate(segments) if point_on_segment(point, segment)
+        ]
+        for index in touching[1:]:
+            union(touching[0], index)
+        parsed_labels.append((name, point, touching))
+
+    names_by_component: dict[tuple, set[str]] = {}
+    for name, point, touching in parsed_labels:
+        component = (
+            ("wire", find(touching[0]))
+            if touching
+            else ("anchor", round(point[0], 2), round(point[1], 2))
+        )
+        names_by_component.setdefault(component, set()).add(name)
+
+    collisions = [sorted(names) for names in names_by_component.values() if len(names) > 1]
+    if collisions:
+        rendered = "; ".join(", ".join(names) for names in sorted(collisions))
+        raise ValueError(
+            "Schematic generation would attach multiple named nets to one physical wire "
+            f"component: {rendered}"
+        )
+
+    no_connect_collisions: list[tuple[tuple[float, float], list[str]]] = []
+    for no_connect in no_connects or []:
+        match = _NO_CONNECT_RE.search(no_connect)
+        if not match:
+            continue
+        point = (float(match.group(1)), float(match.group(2)))
+        touching = [
+            index for index, segment in enumerate(segments) if point_on_segment(point, segment)
+        ]
+        components = {("wire", find(index)) for index in touching}
+        if not components:
+            components.add(("anchor", round(point[0], 2), round(point[1], 2)))
+        attached_names = sorted(
+            {
+                name
+                for component in components
+                for name in names_by_component.get(component, set())
+            }
+        )
+        if attached_names:
+            no_connect_collisions.append((point, attached_names))
+
+    if no_connect_collisions:
+        rendered = "; ".join(
+            f"({point[0]:.2f}, {point[1]:.2f}): {', '.join(names)}"
+            for point, names in no_connect_collisions
+        )
+        raise ValueError(
+            "Schematic generation would place a no-connect marker on a named net "
+            f"component: {rendered}"
+        )
 
 
 def _extract_wire_start(wire_str: str) -> str:
@@ -1366,6 +1590,10 @@ def assemble_sheet(
     root_uuid="",
     sheet_uuid="",
     page_num=1,
+    obstacle_boxes=None,
+    symbol_library_name=None,
+    symbol_scope=None,
+    symbol_library_sink=None,
 ):
     """Assemble a complete .kicad_sch file from parts."""
     import re
@@ -1374,7 +1602,11 @@ def assemble_sheet(
     # any exact-position duplicates created by shifting are cleaned up
     # by the dedup pass that follows.
     if wires and labels:
-        labels, wires = _resolve_label_collisions(list(labels), list(wires))
+        labels, wires = _resolve_label_collisions(
+            list(labels),
+            list(wires),
+            obstacle_boxes=obstacle_boxes,
+        )
 
     # Sprint 40 Task 170 — guarantee sheet elements are structurally unique
     # before emission. Catches any upstream double-emission in the placer /
@@ -1387,6 +1619,7 @@ def assemble_sheet(
         list(no_connects),
         list(junctions) if junctions else [],
     )
+    _validate_named_net_components(wires, labels, junctions, no_connects)
 
     parts = [header]
 
@@ -1457,6 +1690,64 @@ def assemble_sheet(
     (symbol "{sym_name}_0_1")
     (symbol "{sym_name}_1_1")
   )''')
+
+    if symbol_library_name:
+        safe_library = re.sub(r"[^A-Za-z0-9_]", "_", str(symbol_library_name))
+        safe_scope = re.sub(r"[^A-Za-z0-9_]", "_", str(symbol_scope or "sheet"))
+        if not safe_library or not safe_scope:
+            raise ValueError("Symbol library name and scope must contain a portable identifier")
+
+        qualified_by_original: dict[str, str] = {}
+        embedded_symbols: list[str] = []
+        for definition in lib_symbols:
+            top_match = re.search(r'\(symbol\s+"([^"]+)"', definition)
+            if not top_match:
+                raise ValueError("Generated library symbol has no top-level symbol name")
+            original_name = top_match.group(1)
+            scoped_name = f"{safe_scope}__{original_name}"
+            qualified_name = f"{safe_library}:{scoped_name}"
+
+            # Rename the library part and all nested unit/body symbols together.
+            # Only the embedded top-level name receives the library namespace;
+            # KiCad requires nested names to retain the unqualified part prefix.
+            renamed_definition = re.sub(
+                rf'(\(symbol\s+"){re.escape(original_name)}(?="|_)',
+                rf"\g<1>{scoped_name}",
+                definition,
+            )
+            embedded_definition, replacements = re.subn(
+                rf'(\(symbol\s+"){re.escape(scoped_name)}"',
+                rf'\g<1>{qualified_name}"',
+                renamed_definition,
+                count=1,
+            )
+            if replacements != 1:
+                raise ValueError(f"Could not namespace generated symbol {original_name!r}")
+
+            if symbol_library_sink is not None:
+                existing = symbol_library_sink.get(scoped_name)
+                if existing is not None and existing != renamed_definition:
+                    raise ValueError(
+                        f"Conflicting generated definitions for local symbol {scoped_name!r}"
+                    )
+                symbol_library_sink[scoped_name] = renamed_definition
+            qualified_by_original[original_name] = qualified_name
+            embedded_symbols.append(embedded_definition)
+
+        def qualify_instance(match):
+            original_name = match.group(1)
+            qualified = qualified_by_original.get(original_name)
+            if qualified is None:
+                raise ValueError(
+                    f"Instance references symbol {original_name!r} missing from local library"
+                )
+            return f'lib_id "{qualified}"'
+
+        instances = [
+            re.sub(r'lib_id "([^"]+)"', qualify_instance, instance)
+            for instance in instances
+        ]
+        lib_symbols = embedded_symbols
 
     parts.append("  (lib_symbols")
     for ls in lib_symbols:

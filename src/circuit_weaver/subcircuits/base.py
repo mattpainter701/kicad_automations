@@ -727,7 +727,23 @@ class DataDrivenTemplate(SubcircuitTemplate):
         params.setdefault("ic", ic_name)
 
         builder = get_builder(self._topology)
-        return builder(ic_data, params)
+        result = builder(ic_data, params)
+        # Keep manufacturer evidence attached across every topology-specific
+        # builder.  The placement pipeline consumes this metadata later and
+        # must not depend on whether an IC used the generic or a specialized
+        # electrical builder.
+        official_references = [
+            {str(key): str(value) for key, value in item.items()}
+            for item in (ic_data.get("official_references") or [])
+            if isinstance(item, dict)
+        ]
+        for component in result.components:
+            if component.mpn != ic_name:
+                continue
+            component.datasheet_url = str(ic_data.get("datasheet_url") or "")
+            component.reference_layout_url = str(ic_data.get("reference_layout_url") or "")
+            component.official_references = [dict(item) for item in official_references]
+        return result
 
     def validate_params(self, params: dict[str, Any]) -> list[str]:
         errors = self._validate_params_from_schema(params)

@@ -109,6 +109,14 @@ def _apply_block_attributes(ir: DesignIR, components: list[ComponentDef]) -> Non
         group = groups.get(_block_primary_key(block))
         if not group:
             continue
+        # Preserve canonical ownership on every resolved component produced by
+        # a block.  The sheet allocator, assembly manifest, and placement
+        # review pipeline all consume these fields; keeping them only in the
+        # DesignIR caused small designs to collapse back into one generic
+        # sheet and detached generated support parts from their owner section.
+        for comp in group:
+            comp.functional_section = block.section
+            comp.block_id = block.id
         primary = group[0]
         if block.interfaces:
             primary.template_boundary_ports = [

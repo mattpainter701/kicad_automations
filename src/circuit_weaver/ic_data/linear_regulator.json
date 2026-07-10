@@ -3,6 +3,7 @@
     "topology": "ldo",
     "description": "500mA LDO 1.8V Fixed Low-Noise",
     "footprint": "SOT-23-5",
+    "datasheet_url": "https://www.ti.com/lit/ds/symlink/tlv755p.pdf",
     "vout_fixed": 1.8,
     "adjustable": false,
     "iout_max": 0.5,

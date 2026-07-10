@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=69.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuit-weaver"
-version = "0.31.0"
+dynamic = ["version"]
 description = "Programmatic circuit design, validation, and KiCad artifact generation"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
   { name = "Matt Painter" },
 ]
@@ -17,21 +18,58 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
 ]
-dependencies = []
+dependencies = ["PyYAML>=6.0,<7"]
 
 [project.optional-dependencies]
-api = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.7", "httpx>=0.28"]
-yaml = ["PyYAML>=6.0"]
-lookup = ["requests>=2.31"]
-dev = ["pytest>=8.0", "ruff>=0.4", "pre-commit>=3.7"]
-all = ["circuit-weaver[api,yaml,lookup]"]
+api = ["fastapi>=0.111,<1", "uvicorn>=0.29,<1", "python-multipart>=0.0.7,<1"]
+mcp = ["mcp>=1.26,<2"]
+# Kept as a compatibility alias for existing `circuit-weaver[yaml]` installs.
+yaml = ["PyYAML>=6.0,<7"]
+lookup = ["requests>=2.31,<3"]
+pdf = ["pypdf>=5,<7"]
+test = [
+  "fastapi>=0.111,<1",
+  "uvicorn>=0.29,<1",
+  "python-multipart>=0.0.7,<1",
+  "mcp>=1.26,<2",
+  "requests>=2.31,<3",
+  "pypdf>=5,<7",
+  "pytest>=8,<10",
+  "ruff>=0.4,<1",
+  "httpx>=0.27,<0.29",
+  "build>=1.2,<2",
+  "twine>=5,<7",
+]
+dev = [
+  "fastapi>=0.111,<1",
+  "uvicorn>=0.29,<1",
+  "python-multipart>=0.0.7,<1",
+  "mcp>=1.26,<2",
+  "requests>=2.31,<3",
+  "pypdf>=5,<7",
+  "pytest>=8,<10",
+  "ruff>=0.4,<1",
+  "httpx>=0.27,<0.29",
+  "build>=1.2,<2",
+  "twine>=5,<7",
+  "pre-commit>=3.7,<5",
+]
+all = [
+  "fastapi>=0.111,<1",
+  "uvicorn>=0.29,<1",
+  "python-multipart>=0.0.7,<1",
+  "mcp>=1.26,<2",
+  "requests>=2.31,<3",
+  "pypdf>=5,<7",
+]
 
 [project.scripts]
 circuit-weaver = "circuit_weaver.__main__:main"
@@ -39,12 +77,21 @@ circuit-weaver-mcp = "circuit_weaver.mcp_server:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = {attr = "circuit_weaver.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-circuit_weaver = ["_bundled_skills/**", "ic_data/*.json"]
+circuit_weaver = [
+  "_bundled_skills/**/*.md",
+  "_bundled_skills/**/*.py",
+  "examples/*.yaml",
+  "ic_data/*.json",
+]
 
 [tool.ruff]
 target-version = "py310"

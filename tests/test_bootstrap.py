@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import circuit_weaver
 
 
 def test_package_import_exposes_version():
-    assert circuit_weaver.__version__ == "0.31.0"
+    assert circuit_weaver.__version__ == "0.32.0"
+    assert circuit_weaver.__version__ == version("circuit-weaver")
 
 
 def test_cli_reports_version():
@@ -87,10 +89,14 @@ def test_export_jlcpcb_command_writes_csv_files(tmp_path: Path):
         text=True,
     )
 
-    # Should create BOM, CPL, and README files
+    assert result.returncode == 0, result.stderr[:500]
+
+    # A CPL is never synthesized without a reconciled physical PCB.
     assert (output_dir / "bom_jlcpcb.csv").exists(), f"BOM file not created. stderr: {result.stderr[:500]}"
-    assert (output_dir / "cpl_jlcpcb.csv").exists(), f"CPL file not created. stderr: {result.stderr[:500]}"
-    assert (output_dir / "README.txt").exists(), f"README not created. stderr: {result.stderr[:500]}"
+    assert not (output_dir / "cpl_jlcpcb.csv").exists()
+    assert (output_dir / "assembly_manifest.json").exists()
+    assert (output_dir / "delivery_manifest.json").exists()
+    assert (output_dir / "README_jlcpcb.txt").exists(), f"README not created. stderr: {result.stderr[:500]}"
 
     # BOM should have correct column headers
     bom_content = (output_dir / "bom_jlcpcb.csv").read_text()
@@ -100,12 +106,10 @@ def test_export_jlcpcb_command_writes_csv_files(tmp_path: Path):
     bom_lines = bom_content.strip().split("\n")
     assert len(bom_lines) >= 2, f"BOM should have header + data rows. Got: {bom_lines}"
 
-    # CPL should have correct column headers
-    cpl_content = (output_dir / "cpl_jlcpcb.csv").read_text()
-    assert "Designator,Mid X,Mid Y,Rotation,Layer" in cpl_content
-
     # Verify command status
     payload = json.loads(result.stdout)
-    assert payload["status"] == "ok"
+    assert payload["status"] == "bom_only"
+    assert payload["cpl"] == ""
+    assert any("provide a real" in reason for reason in payload["blocked_reasons"])
     assert payload["component_count"] > 0
     assert payload["bom_rows"] > 0

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import math
 import platform
 import subprocess
 from pathlib import Path
@@ -173,23 +174,29 @@ def update_board_placements(
                 y_mm = float(placement_data.get("y", 0))
                 rotation_deg = float(placement_data.get("rotation", 0))
                 layer = placement_data.get("layer", "front").lower()
+                if layer not in {"front", "top", "back", "bottom"}:
+                    raise ValueError(f"invalid layer '{layer}'")
 
                 # Convert mm to KiCad internal units (nm)
                 x_nm = int(x_mm * 1_000_000)
                 y_nm = int(y_mm * 1_000_000)
+                if not all(math.isfinite(value) for value in (x_mm, y_mm, rotation_deg)):
+                    raise ValueError("placement contains non-finite values")
 
                 # Set position
-                footprint.SetPosition(pcbnew.VECTOR2I(x_nm, y_nm))
+                position = pcbnew.VECTOR2I(x_nm, y_nm)
+                footprint.SetPosition(position)
 
-                # Set rotation (in tenths of degrees in KiCad)
+                # Flip only when the requested side differs from the current
+                # side. Repeated imports are therefore idempotent.
+                current_is_back = footprint.GetLayer() == pcbnew.B_Cu
+                requested_is_back = layer in {"back", "bottom"}
+                if current_is_back != requested_is_back:
+                    footprint.Flip(position, False)
+
+                # Apply the requested absolute orientation after any flip.
                 rotation_tenths = int(rotation_deg * 10)
                 footprint.SetOrientation(pcbnew.EDA_ANGLE(rotation_tenths, pcbnew.TENTHS_OF_A_DEGREE))
-
-                # Set layer
-                if layer == "back" or layer == "bottom":
-                    footprint.Flip(pcbnew.VECTOR2I(x_nm, y_nm), False)
-                elif layer != "front" and layer != "top":
-                    errors.append(f"{ref}: invalid layer '{layer}', keeping current")
 
                 updated.append(ref)
                 log.info(f"Updated {ref}: ({x_mm}, {y_mm}) mm, {rotation_deg}°, {layer}")
@@ -211,11 +218,12 @@ def update_board_placements(
             summary += f", {len(errors)} errors"
 
         return {
-            "success": len(errors) == 0 and len(updated) > 0,
+            "success": len(errors) == 0 and not not_found and len(updated) > 0,
             "updated": updated,
             "not_found": not_found,
             "errors": errors,
             "message": summary,
+            "dry_run": dry_run,
         }
 
     except Exception as e:
