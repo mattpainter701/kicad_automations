@@ -148,8 +148,15 @@ def test_resolver_e2e_zigbee_yaml(zigbee_yaml, monkeypatch):
     assert by_ref["U1"].mpn == "DS3231"
     assert "DigiKey" not in by_ref["U1"].description
 
-    # The three sensors come from the mocked DigiKey tier.
-    for ref, mpn in (("U2", "nRF52840"), ("U3", "SHT41-AD1B-R2"), ("U4", "SGP40-D-R4")):
+    # nRF52840 may resolve from a local KiCad install before the mocked
+    # DigiKey tier. The two sensors are intentionally absent from KiCad and
+    # must therefore exercise the mocked DigiKey fallback.
+    assert by_ref["U2"].mpn == "nRF52840"
+    assert (
+        "DigiKey" in by_ref["U2"].description or by_ref["U2"].pinout_source == "explicit"
+    ), "nRF52840 should resolve through DigiKey or a verified KiCad symbol"
+
+    for ref, mpn in (("U3", "SHT41-AD1B-R2"), ("U4", "SGP40-D-R4")):
         assert by_ref[ref].mpn == mpn
         assert "DigiKey" in by_ref[ref].description
 

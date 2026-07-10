@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Restore automatic local KiCad symbol resolution: the resolver now passes its
+  component category by keyword instead of treating it as a KiCad library name.
+  This allows symbols such as `nRF52840` and `MAX-M10S` to resolve from the
+  installed KiCad libraries.
+
 ## [0.32.0] - 2026-07-09
 
 ### Packaging, MCP, and release reliability
