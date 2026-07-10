@@ -3250,6 +3250,17 @@ def main() -> None:
     register_ic_p.add_argument("--file", "-f", help="JSON file with IC data (or read from stdin)")
     register_ic_p.add_argument("--mpn", help="IC MPN (required when reading from --file with a single IC object)")
 
+    resolve_symbol_p = subparsers.add_parser(
+        "resolve-symbol",
+        help="Resolve an MPN and report symbol provenance before schematic generation",
+    )
+    resolve_symbol_p.add_argument("mpn", help="Manufacturer part number or KiCad symbol name")
+    resolve_symbol_p.add_argument(
+        "--kicad-library",
+        help="Official KiCad library to download/cache before lookup (for example MCU_Nordic or RF_GPS)",
+    )
+    resolve_symbol_p.add_argument("--json", dest="json_output", action="store_true", help="Machine-readable output")
+
     jlcpcb_p = subparsers.add_parser("export-jlcpcb", help="Export JLCPCB BOM and CPL files for assembly ordering")
     jlcpcb_p.add_argument("spec", help="Design spec YAML file")
     jlcpcb_p.add_argument("--output", "-o", required=True, help="Output directory for BOM/CPL files")
@@ -4206,6 +4217,35 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 count += 1
             print(f"Registered {count} IC(s)")
         raise SystemExit(0)
+
+    if args.command == "resolve-symbol":
+        from .kicad_lib import KiCadLibrary
+        from .symbol_resolver import SymbolResolver
+
+        kicad = KiCadLibrary()
+        downloaded = False
+        if args.kicad_library:
+            downloaded = kicad.download_kicad_lib(args.kicad_library, symbols=[args.mpn])
+        component, source = SymbolResolver(kicad_lib=kicad).resolve(args.mpn)
+        result = {
+            "mpn": args.mpn,
+            "source": source,
+            "resolved": component is not None,
+            "pin_count": len(component.pins) if component else 0,
+            "footprint": component.footprint if component else "",
+            "pinout_source": component.pinout_source if component else "",
+            "kicad_library_downloaded": downloaded,
+            "next_step": (
+                "Verify pins and footprint against the manufacturer datasheet before generation."
+                if component
+                else "Import or register a manufacturer-verified project-local component definition."
+            ),
+        }
+        if args.json_output:
+            _print_json(result)
+        else:
+            print(json.dumps(result, indent=2))
+        raise SystemExit(0 if component else 2)
 
     if args.command == "export-jlcpcb":
         from .jlcpcb_export import export_jlcpcb
