@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import json
+import threading
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+import circuit_weaver.placement_pipeline as placement_pipeline
 from circuit_weaver.component_db import BypassCap, ComponentDef, PinDef, StrapConfig
 from circuit_weaver.placement_optimizer import PlacementConfig
 from circuit_weaver.placement_pipeline import (
@@ -279,3 +284,250 @@ def test_reference_mismatch_blocks_visual_artifacts(tmp_path) -> None:
     assert result["reference_reconciliation"]["missing_from_placement"] == ["C1", "R1"]
     assert {path.name for path in tmp_path.iterdir()} == {PLACEMENT_RESULT_FILENAME}
     assert set(result["generated_artifact_paths"]) == {"placement_result"}
+
+
+def _fixed_part(reference: str) -> ComponentDef:
+    return ComponentDef(
+        mpn=f"PART-{reference}",
+        source_ref=reference,
+        ref_prefix="U",
+        value=f"Part {reference}",
+        footprint="Package_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.8x1.8mm",
+        category="mcu",
+        pins=[PinDef("1", "IO", "bidirectional", "R")],
+        pin_nets={"1": f"NET_{reference}"},
+    )
+
+
+def test_two_fixed_overlapping_components_block_review_artifact_readiness(tmp_path) -> None:
+    result = generate_placement_review(
+        [_fixed_part("U1"), _fixed_part("U2")],
+        tmp_path,
+        config=PlacementConfig(strategy="simple"),
+        include_auto_bypass=False,
+        constraints=[
+            {
+                "kind": "placement",
+                "target": "board",
+                "board_width_mm": 30,
+                "board_height_mm": 20,
+            },
+            {"kind": "placement", "target": "U1", "x_mm": 10, "y_mm": 10},
+            {"kind": "placement", "target": "U2", "x_mm": 10, "y_mm": 10},
+        ],
+    )
+
+    assert result["status"] == "blocked"
+    overlap = next(
+        blocker
+        for blocker in result["review_gate"]["blockers"]
+        if blocker["kind"] == "placement_overlap"
+    )
+    assert overlap["refs"] == ["U1", "U2"]
+    statuses = {row["kind"]: row["status"] for row in result["artifacts"]}
+    assert statuses == {
+        "placement_result": "ready",
+        "placement_context": "review_blocked",
+        "placement_svg": "review_blocked",
+        "placement_html": "review_blocked",
+    }
+    result_row = next(row for row in result["artifacts"] if row["kind"] == "placement_result")
+    assert "blocked-state commit manifest" in result_row["reason"]
+    assert all((tmp_path / filename).is_file() for filename in (
+        PLACEMENT_RESULT_FILENAME,
+        PLACEMENT_CONTEXT_FILENAME,
+        PLACEMENT_SVG_FILENAME,
+        PLACEMENT_HTML_FILENAME,
+    ))
+
+
+def test_all_optimizer_quality_defects_become_explicit_blockers(tmp_path) -> None:
+    owner = _fixed_part("U1")
+    support = _fixed_part("U2")
+    support.placement_parent_ref = "U404"
+    optimizer_result = {
+        "status": "ok",
+        "placements": {
+            "U1": {
+                "x": 5,
+                "y": 5,
+                "rotation": 0,
+                "layer": "front",
+                "width_mm": 3,
+                "height_mm": 3,
+            },
+            "U2": {
+                "x": 5,
+                "y": 5,
+                "rotation": 0,
+                "layer": "front",
+                "width_mm": 3,
+                "height_mm": 3,
+            },
+        },
+        "board_width_mm": 30,
+        "board_height_mm": 20,
+        "iterations": 0,
+        "quality": {
+            "overlaps": [["U1", "U2"]],
+            "outside_board": ["U1"],
+            "missing_parents": ["U2"],
+            "support_body_violations": [
+                {
+                    "support_ref": "U2",
+                    "parent_ref": "U1",
+                    "clearance_mm": 0.0,
+                    "required_mm": 1.5,
+                }
+            ],
+        },
+        "constraint_evaluation": {
+            "board_dimension_source": "constraints",
+            "unsupported": [],
+            "violations": [
+                {
+                    "kind": "keepout",
+                    "target": "U1",
+                    "reason": "Footprint intersects keepout antenna.",
+                }
+            ],
+        },
+    }
+    with patch("circuit_weaver.placement_pipeline.optimize_placement", return_value=optimizer_result):
+        result = generate_placement_review(
+            [owner, support],
+            tmp_path,
+            include_auto_bypass=False,
+        )
+
+    kinds = {blocker["kind"] for blocker in result["review_gate"]["blockers"]}
+    assert {
+        "placement_overlap",
+        "placement_outside_board",
+        "placement_support_parent_missing",
+        "placement_support_clearance",
+        "placement_constraint_violation",
+    } <= kinds
+    assert result["status"] == "blocked"
+    assert not all(row["status"] == "ready" for row in result["artifacts"])
+
+
+def test_mid_publish_failure_removes_stale_result_and_partial_new_set(tmp_path) -> None:
+    owned = {
+        PLACEMENT_RESULT_FILENAME,
+        PLACEMENT_CONTEXT_FILENAME,
+        PLACEMENT_SVG_FILENAME,
+        PLACEMENT_HTML_FILENAME,
+    }
+    for filename in owned:
+        (tmp_path / filename).write_text(f"stale:{filename}", encoding="utf-8")
+
+    real_replace = placement_pipeline._replace_staged_file
+    published: list[str] = []
+
+    def fail_during_publish(source: Path, destination: Path) -> None:
+        published.append(destination.name)
+        if len(published) == 2:
+            raise OSError("injected mid-publish failure")
+        real_replace(source, destination)
+
+    with patch(
+        "circuit_weaver.placement_pipeline._replace_staged_file",
+        side_effect=fail_during_publish,
+    ):
+        with pytest.raises(OSError, match="injected mid-publish"):
+            generate_placement_review(
+                [_fixed_part("U1")],
+                tmp_path,
+                include_auto_bypass=False,
+                config=PlacementConfig(strategy="simple"),
+            )
+
+    assert published == [PLACEMENT_SVG_FILENAME, PLACEMENT_HTML_FILENAME]
+    assert not any((tmp_path / filename).exists() for filename in owned)
+    assert not list(tmp_path.parent.glob(f".{tmp_path.name}.placement-stage-*"))
+
+
+def test_staging_write_failure_cannot_leave_prior_success_marker(tmp_path) -> None:
+    owned = {
+        PLACEMENT_RESULT_FILENAME,
+        PLACEMENT_CONTEXT_FILENAME,
+        PLACEMENT_SVG_FILENAME,
+        PLACEMENT_HTML_FILENAME,
+    }
+    for filename in owned:
+        (tmp_path / filename).write_text(f"stale:{filename}", encoding="utf-8")
+
+    def fail_svg_write(*_args, output_path, **_kwargs):
+        assert Path(output_path).parent != tmp_path
+        assert not any((tmp_path / filename).exists() for filename in owned)
+        raise OSError("injected staged write failure")
+
+    with patch("circuit_weaver.placement_pipeline.export_placement_svg", side_effect=fail_svg_write):
+        with pytest.raises(OSError, match="injected staged write"):
+            generate_placement_review(
+                [_fixed_part("U1")],
+                tmp_path,
+                include_auto_bypass=False,
+                config=PlacementConfig(strategy="simple"),
+            )
+
+    assert not any((tmp_path / filename).exists() for filename in owned)
+
+
+def test_output_lock_serializes_concurrent_generations_into_one_coherent_set(tmp_path) -> None:
+    original_optimize = placement_pipeline.optimize_placement
+    first_entered = threading.Event()
+    release_first = threading.Event()
+    second_entered = threading.Event()
+    call_guard = threading.Lock()
+    call_count = 0
+
+    def controlled_optimize(*args, **kwargs):
+        nonlocal call_count
+        with call_guard:
+            call_count += 1
+            index = call_count
+        if index == 1:
+            first_entered.set()
+            assert release_first.wait(5)
+        else:
+            second_entered.set()
+        return original_optimize(*args, **kwargs)
+
+    errors: list[BaseException] = []
+
+    def run(project: str) -> None:
+        try:
+            generate_placement_review(
+                [_fixed_part("U1")],
+                tmp_path,
+                project_name=project,
+                include_auto_bypass=False,
+                config=PlacementConfig(strategy="simple"),
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    with patch("circuit_weaver.placement_pipeline.optimize_placement", side_effect=controlled_optimize):
+        first = threading.Thread(target=run, args=("generation-a",))
+        second = threading.Thread(target=run, args=("generation-b",))
+        first.start()
+        assert first_entered.wait(5)
+        second.start()
+        assert not second_entered.wait(0.2)
+        release_first.set()
+        first.join(5)
+        second.join(5)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert errors == []
+    assert second_entered.is_set()
+    result = json.loads((tmp_path / PLACEMENT_RESULT_FILENAME).read_text(encoding="utf-8"))
+    assert result["project"] == "generation-b"
+    assert "generation-b PCB Placement Review" in (
+        tmp_path / PLACEMENT_SVG_FILENAME
+    ).read_text(encoding="utf-8")
+    assert "generation-b PCB Placement Review" in (
+        tmp_path / PLACEMENT_HTML_FILENAME
+    ).read_text(encoding="utf-8")

@@ -151,18 +151,26 @@ def _semantic_key(base: str, counters: dict[str, int]) -> str:
 
 
 def _primary_semantic_base(comp: ComponentDef) -> str:
-    identity = (
-        str(getattr(comp, "block_id", "") or "").strip()
-        or str(comp.source_ref or "").strip()
-        or "|".join(
+    source_ref = str(comp.source_ref or "").strip()
+    if source_ref:
+        # An explicit designator is the user's durable identity even when the
+        # value or footprint intentionally changes in a later revision.
+        identity = f"ref:{source_ref}"
+    else:
+        # A design block may legitimately own several same-prefix parts.  The
+        # block alone cannot distinguish (for example) its 1 k and 10 k
+        # resistors, so include physical identity before assigning occurrence
+        # counters.  Truly identical duplicates remain interchangeable.
+        identity = "|".join(
             (
-                str(comp.mpn or ""),
-                str(comp.value or ""),
-                str(comp.footprint or ""),
-                str(getattr(comp, "functional_section", "") or ""),
+                f"block:{str(getattr(comp, 'block_id', '') or '').strip()}",
+                f"mpn:{str(comp.source_mpn or comp.mpn or '').strip()}",
+                f"value:{str(comp.source_value or comp.value or '').strip()}",
+                f"footprint:{str(comp.footprint or '').strip()}",
+                f"manufacturer:{str(comp.source_manufacturer or '').strip()}",
+                f"section:{str(getattr(comp, 'functional_section', '') or '').strip()}",
             )
         )
-    )
     return f"component:{identity}"
 
 

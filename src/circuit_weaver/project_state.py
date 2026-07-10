@@ -401,9 +401,12 @@ def resolve_project_state_root(target: str | Path = ".") -> Path:
             return matches[0]
         if len(matches) > 1:
             raise _ambiguous_state_error(candidate, matches)
-        if len(descendants) == 1:
-            return descendants[0]
-        raise _ambiguous_state_error(candidate, descendants)
+        if len(descendants) > 1:
+            raise _ambiguous_state_error(candidate, descendants)
+        # A sole nearby manifest is not sufficient evidence that it owns this
+        # lookup target.  In particular, status on an arbitrary KiCad file must
+        # never jump into an unrelated generated sibling merely because it is
+        # the only saved project below the same parent.
 
     for directory in start.parents:
         if project_state_path(directory).is_file():
@@ -907,7 +910,11 @@ def get_project_state_summary(target: str | Path) -> dict[str, Any]:
     root = resolve_project_state_root(target)
     if not root.exists():
         raise FileNotFoundError(f"Project path does not exist: {root}")
-    state = load_project_state(root)
+    # ``root`` has already been resolved against the original lookup target.
+    # Loading it through ``load_project_state`` would perform a second child
+    # search with less-specific directory evidence and could jump from an
+    # unrelated file to a neighboring generated project.
+    state = _load_project_state_file(project_state_path(root))
     inventory = _merge_recorded_source_inventory(_inventory(root), state)
     validation = _read_validation_state(root)
     kind = state.kind if state is not None else (

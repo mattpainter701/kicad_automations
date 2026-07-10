@@ -401,13 +401,14 @@ def test_panelize():
     assert len(data["panel_options"]) >= 1
 
 
-def test_export_dual_cpl_example(tmp_path):
-    """export-dual-cpl should produce top + bottom CPL files."""
+def test_export_dual_cpl_requires_physical_pcb(tmp_path):
+    """Manufacturing CPL export must never default to heuristic placement."""
     out = tmp_path / "dual_cpl"
     result = _run(["export-dual-cpl", str(_EXAMPLE_SPEC), "--output", str(out)])
-    assert result.returncode == 0, f"export-dual-cpl failed: {result.stderr[:500]}"
-    assert (out / "cpl_top.csv").exists()
-    assert (out / "cpl_bottom.csv").exists()
+    assert result.returncode != 0
+    assert "--pcb" in result.stderr
+    assert not (out / "cpl_top.csv").exists()
+    assert not (out / "cpl_bottom.csv").exists()
 
 
 def test_placement_viewer_example(tmp_path):

@@ -94,7 +94,7 @@ def test_export_jlcpcb_command_writes_csv_files(tmp_path: Path):
     assert not (output_dir / "cpl_jlcpcb.csv").exists()
     assert (output_dir / "assembly_manifest.json").exists()
     assert (output_dir / "delivery_manifest.json").exists()
-    assert (output_dir / "README.txt").exists(), f"README not created. stderr: {result.stderr[:500]}"
+    assert (output_dir / "README_jlcpcb.txt").exists(), f"README not created. stderr: {result.stderr[:500]}"
 
     # BOM should have correct column headers
     bom_content = (output_dir / "bom_jlcpcb.csv").read_text()

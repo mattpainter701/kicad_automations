@@ -41,7 +41,7 @@ import math
 import re
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from xml.etree import ElementTree as ET
 
 from .placement_optimizer import estimate_footprint_size
@@ -389,16 +389,79 @@ def _parse_transform(transform_str: str) -> tuple[float, float, float]:
     return _placement_from_matrix(_parse_transform_matrix(transform_str))
 
 
-def import_placement_from_svg(svg_path: Path | str, known_refs: set[str] | None = None) -> dict[str, dict[str, Any]]:
+def _pcb_footprint_spans(text: str) -> Iterator[tuple[int, int, str]]:
+    """Yield balanced KiCad footprint blocks without trusting line layout."""
+    cursor = 0
+    while True:
+        start = text.find("(footprint", cursor)
+        if start < 0:
+            return
+        depth = 0
+        quoted = False
+        escaped = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if escaped:
+                escaped = False
+            elif quoted and char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = not quoted
+            elif not quoted and char == "(":
+                depth += 1
+            elif not quoted and char == ")":
+                depth -= 1
+                if depth == 0:
+                    yield start, index + 1, text[start : index + 1]
+                    cursor = index + 1
+                    break
+        else:
+            raise ValueError("KiCad PCB contains an unterminated footprint block")
+
+
+def read_kicad_pcb_references(kicad_pcb_path: Path | str) -> set[str]:
+    """Return the exact, duplicate-free footprint reference inventory of a board."""
+    path = Path(kicad_pcb_path)
+    content = path.read_text(encoding="utf-8")
+    references: set[str] = set()
+    for _start, _end, block in _pcb_footprint_spans(content):
+        match = re.search(r'\(property\s+"Reference"\s+"([^"]+)"', block)
+        if match is None:
+            match = re.search(r'\(fp_text\s+reference\s+"([^"]+)"', block)
+        if match is None:
+            continue
+        ref = match.group(1).strip()
+        if not ref:
+            continue
+        if ref in references:
+            raise ValueError(f"Duplicate PCB footprint reference: {ref}")
+        references.add(ref)
+    if not references:
+        raise ValueError(f"KiCad PCB has no referenced footprints: {path}")
+    return references
+
+
+def import_placement_from_svg(
+    svg_path: Path | str,
+    known_refs: set[str] | None = None,
+    *,
+    allow_partial: bool = False,
+) -> dict[str, dict[str, Any]]:
     """Import component placements from an edited SVG file.
 
     Args:
         svg_path: Path to SVG file.
-        known_refs: Optional set of valid component refs (for validation).
+        known_refs: Optional exact set of valid component refs. Unknown SVG
+            refs are always rejected and missing refs are rejected unless
+            ``allow_partial`` is explicitly enabled.
+        allow_partial: Permit an intentional subset of ``known_refs``. Strict
+            transform and unexpected-reference validation still applies.
 
     Returns:
         Dict mapping ref → {x, y, rotation, layer} in mm.
     """
+    if allow_partial and known_refs is None:
+        raise ValueError("allow_partial requires a known board/component reference inventory")
     svg_path = Path(svg_path)
     tree = ET.parse(svg_path)
     root = tree.getroot()
@@ -421,7 +484,7 @@ def import_placement_from_svg(svg_path: Path | str, known_refs: set[str] | None 
         if transform:
             local = _multiply_affine(parent_matrix, _parse_transform_matrix(transform))
         has_transform = inherited_transform or bool(transform)
-        if ref and (known_refs is None or ref in known_refs):
+        if ref:
             if not has_transform:
                 raise ValueError(f"Component {ref} has no placement transform")
             if ref in result:
@@ -440,6 +503,21 @@ def import_placement_from_svg(svg_path: Path | str, known_refs: set[str] | None 
             walk(child, local, has_transform)
 
     walk(root, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0))
+
+    if known_refs is not None:
+        expected = {str(ref) for ref in known_refs}
+        actual = set(result)
+        unexpected = sorted(actual - expected)
+        missing = sorted(expected - actual)
+        problems: list[str] = []
+        if unexpected:
+            problems.append(f"unexpected SVG references: {', '.join(unexpected)}")
+        if missing and not allow_partial:
+            problems.append(f"missing board references: {', '.join(missing)}")
+        if problems:
+            raise ValueError(
+                "Placement SVG reference reconciliation failed (" + "; ".join(problems) + ")"
+            )
 
     return result
 
@@ -498,36 +576,8 @@ def update_kicad_pcb_placements(
             "message": f"Error reading file: {e}",
         }
 
-    def footprint_spans(text: str):
-        cursor = 0
-        while True:
-            start = text.find("(footprint", cursor)
-            if start < 0:
-                return
-            depth = 0
-            quoted = False
-            escaped = False
-            for index in range(start, len(text)):
-                char = text[index]
-                if escaped:
-                    escaped = False
-                elif quoted and char == "\\":
-                    escaped = True
-                elif char == '"':
-                    quoted = not quoted
-                elif not quoted and char == "(":
-                    depth += 1
-                elif not quoted and char == ")":
-                    depth -= 1
-                    if depth == 0:
-                        yield start, index + 1, text[start : index + 1]
-                        cursor = index + 1
-                        break
-            else:
-                raise ValueError("KiCad PCB contains an unterminated footprint block")
-
     by_ref: dict[str, tuple[int, int, str]] = {}
-    for start, end, block in footprint_spans(content):
+    for start, end, block in _pcb_footprint_spans(content):
         match = re.search(r'\(property\s+"Reference"\s+"([^"]+)"', block)
         if match is None:
             match = re.search(r'\(fp_text\s+reference\s+"([^"]+)"', block)

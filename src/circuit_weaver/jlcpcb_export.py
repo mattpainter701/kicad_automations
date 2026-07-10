@@ -3,7 +3,7 @@
 Generates:
 - BOM CSV (Comment, Designator, Footprint, LCSC Part#)
 - CPL CSV (Designator, Mid X, Mid Y, Rotation, Layer)
-- README.txt with upload instructions
+- README_jlcpcb.txt with upload instructions
 
 Usage:
     from circuit_weaver.jlcpcb_export import export_jlcpcb
@@ -16,7 +16,9 @@ import csv
 import os
 import re
 import shutil
+import time
 import uuid
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -34,13 +36,65 @@ class CplSourceError(ValueError):
     """Raised when a PCB cannot truthfully serve as an assembly CPL source."""
 
 
+_DELIVERY_LOCK_FILE = ".circuit-weaver-jlcpcb.lock"
+
+
+@contextmanager
+def _delivery_output_lock(directory: Path, *, timeout: float = 30.0):
+    """Serialize one complete delivery transaction across processes.
+
+    The persistent lock file avoids an unlink/recreate inode race.  File-region
+    locking is available in the Python standard library on both Windows and
+    POSIX, so the manufacturing path does not gain a runtime dependency.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / _DELIVERY_LOCK_FILE
+    deadline = time.monotonic() + timeout
+    with lock_path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+
+        acquired = False
+        while not acquired:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Timed out waiting for JLCPCB delivery lock: {lock_path}") from exc
+                time.sleep(0.05)
+
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _owned_delivery_files(directory: Path) -> list[Path]:
     exact = {
         "assembly_manifest.json",
         "delivery_manifest.json",
         "bom_jlcpcb.csv",
         "cpl_jlcpcb.csv",
-        "README.txt",
+        "README_jlcpcb.txt",
     }
     return [
         path
@@ -60,7 +114,12 @@ def _remove_owned_delivery_files(directory: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _publish_delivery_staging(staging: Path, destination: Path) -> None:
+def _publish_delivery_staging(
+    staging: Path,
+    destination: Path,
+    *,
+    _lock_held: bool = False,
+) -> None:
     """Publish a complete delivery set, with the manifest as commit marker.
 
     Existing owned files are first hidden in a private backup directory.  The
@@ -69,6 +128,11 @@ def _publish_delivery_staging(staging: Path, destination: Path) -> None:
     If any move fails, both the previous delivery and every partial new file
     are removed: an error must never leave an older CPL looking current.
     """
+    if not _lock_held:
+        with _delivery_output_lock(destination):
+            _publish_delivery_staging(staging, destination, _lock_held=True)
+        return
+
     staged = [path for path in staging.iterdir() if path.is_file()]
     staged.sort(key=lambda path: (path.name == "delivery_manifest.json", path.name))
     backup = destination / f".cw-jlc-backup-{uuid.uuid4().hex}"
@@ -129,17 +193,32 @@ def _pcb_layer_to_cpl(layer: str) -> str:
     raise CplSourceError(f"Unsupported PCB footprint layer for CPL: {layer or '(missing)'}")
 
 
+def _footprint_identity(block: str) -> str:
+    match = re.match(r'^\(footprint\s+"((?:\\.|[^"\\])*)"', block)
+    if match is None:
+        return ""
+    return match.group(1).replace(r'\"', '"').replace(r"\\", "\\").strip()
+
+
+def _normalized_footprint_identity(value: str) -> str:
+    return (value or "").strip().replace("\\", "/").casefold()
+
+
 def parse_pcb_placements(
     pcb_path: str | Path,
     *,
     required_refs: set[str] | None = None,
+    expected_footprints: dict[str, str] | None = None,
 ) -> dict[str, tuple[float, float, float, str]]:
     """Parse placements from a real, pad-bearing KiCad PCB.
 
     Placement-preview boards are rejected explicitly.  A board with no pads is
     also rejected, preventing synthetic footprint shells from becoming an
     upload-ready CPL.  When ``required_refs`` is supplied, every requested
-    reference must resolve to a pad-bearing footprint.
+    reference must resolve to a pad-bearing footprint.  ``expected_footprints``
+    additionally binds each reference to the assembly manifest's physical
+    package, preventing a stale PCB with coincidentally matching references
+    from becoming an apparently ready CPL.
     """
     path = Path(pcb_path)
     if not path.is_file():
@@ -180,6 +259,17 @@ def parse_pcb_placements(
             raise CplSourceError(f"Pad-bearing footprint {reference} lacks placement or layer data")
         if reference in placements:
             raise CplSourceError(f"Duplicate PCB footprint reference: {reference}")
+
+        if expected_footprints is not None and reference in expected_footprints:
+            expected = expected_footprints[reference]
+            actual = _footprint_identity(block)
+            if not actual:
+                raise CplSourceError(f"Pad-bearing footprint {reference} lacks a footprint identity")
+            if _normalized_footprint_identity(actual) != _normalized_footprint_identity(expected):
+                raise CplSourceError(
+                    f"PCB footprint identity mismatch for {reference}: "
+                    f"assembly expects {expected!r}, board contains {actual!r}"
+                )
 
         x = float(at_match.group(1)) - origin_x
         y = float(at_match.group(2)) - origin_y
@@ -414,6 +504,12 @@ def generate_assembly_variants(
         dnp_refs = {str(ref) for ref in spec.get("dnp_refs", []) if str(ref)}
 
         if include_refs:
+            unknown_include_refs = sorted(include_refs - all_refs)
+            if unknown_include_refs:
+                raise ValueError(
+                    f"Assembly variant {name!r} includes unknown active reference(s): "
+                    + ", ".join(unknown_include_refs)
+                )
             candidate_refs = include_refs & all_refs
             candidate_refs |= {
                 item.reference for item in by_ref.values() if item.owner_ref in include_refs
@@ -427,6 +523,10 @@ def generate_assembly_variants(
             item.reference for item in by_ref.values() if item.owner_ref in removed_owner_refs
         }
         assembled_refs = sorted(candidate_refs - removed_refs)
+        if include_refs and not assembled_refs:
+            raise ValueError(
+                f"Assembly variant {name!r} include_refs resolve to no active assembly items"
+            )
         assembled_components = [by_ref[ref] for ref in assembled_refs]
         omitted_refs = sorted(all_refs - set(assembled_refs))
 
@@ -635,10 +735,17 @@ def export_jlcpcb(
     """
     publish_dir = Path(output_dir)
     staging_dir: Path | None = None
+    lock_stack = ExitStack()
+    lock_acquired = False
     try:
         from .dispatcher import compile_design_ir
 
         publish_dir.mkdir(parents=True, exist_ok=True)
+        # Hold the lock from the previous-manifest read through publication or
+        # cleanup.  Otherwise two individually atomic exports can still combine
+        # files from different design generations.
+        lock_stack.enter_context(_delivery_output_lock(publish_dir))
+        lock_acquired = True
         previous_manifest_path = publish_dir / "assembly_manifest.json"
 
         # Step 1: Compile the design
@@ -664,7 +771,7 @@ def export_jlcpcb(
         staging_dir.mkdir()
         staged_bom_path = staging_dir / "bom_jlcpcb.csv"
         staged_cpl_path = staging_dir / "cpl_jlcpcb.csv"
-        staged_readme_path = staging_dir / "README.txt"
+        staged_readme_path = staging_dir / "README_jlcpcb.txt"
         staged_assembly_manifest_path = staging_dir / "assembly_manifest.json"
         staged_delivery_manifest_path = staging_dir / "delivery_manifest.json"
 
@@ -719,8 +826,15 @@ def export_jlcpcb(
             )
         elif active_cpl_items and not missing_footprints:
             required_refs = {item.reference for item in active_cpl_items}
+            expected_footprints = {
+                item.reference: item.footprint for item in active_cpl_items
+            }
             try:
-                placements = parse_pcb_placements(pcb_path, required_refs=required_refs)
+                placements = parse_pcb_placements(
+                    pcb_path,
+                    required_refs=required_refs,
+                    expected_footprints=expected_footprints,
+                )
                 write_jlcpcb_cpl(active_cpl_items, placements, staged_cpl_path)
                 cpl_generated = True
             except CplSourceError as exc:
@@ -830,7 +944,7 @@ def export_jlcpcb(
 
         # Publish only after all paths, statuses, and artifact contents agree.
         # The helper moves delivery_manifest.json last as the commit marker.
-        _publish_delivery_staging(staging_dir, publish_dir)
+        _publish_delivery_staging(staging_dir, publish_dir, _lock_held=True)
         staging_dir = None
 
         return {
@@ -858,7 +972,8 @@ def export_jlcpcb(
         # Old output is not a valid fallback for a failed new export.  Removing
         # every exporter-owned file prevents stale CPL/BOM variants from being
         # mistaken for the requested delivery; unrelated user files remain.
-        _remove_owned_delivery_files(publish_dir)
+        if lock_acquired:
+            _remove_owned_delivery_files(publish_dir)
         return {
             "status": "error",
             "message": str(exc),
@@ -867,3 +982,5 @@ def export_jlcpcb(
             "bom_rows": 0,
             "missing_lcsc": 0,
         }
+    finally:
+        lock_stack.close()

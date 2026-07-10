@@ -37,6 +37,8 @@ _NET_DECL_RE = re.compile(r'\(net\s+(\d+)\s+"([^"]*)"\)')
 _SPECCTRA_TOKEN = r'"(?:\\.|[^"\\])*"|[^\s()]+'
 _FREEROUTING_VERSION_RE = re.compile(r"\bFreerouting\s+v?([0-9]+(?:\.[0-9]+){1,3}(?:[-+][\w.-]+)?)", re.IGNORECASE)
 _MIN_ARTIFACT_BYTES = 48
+
+
 def _result_error(message: str, **extra: Any) -> dict[str, Any]:
     return {"status": "error", "message": message, **extra}
 
@@ -302,6 +304,13 @@ def _validate_specctra_artifact(
             return {
                 "valid": False,
                 "reason": f"SES contains net(s) absent from source DSN: {', '.join(unexpected_nets)}",
+                "size_bytes": size,
+            }
+        missing_nets = sorted(dsn_nets - set(details["nets"]))
+        if missing_nets:
+            return {
+                "valid": False,
+                "reason": f"SES is missing net(s) from source DSN: {', '.join(missing_nets)}",
                 "size_bytes": size,
             }
 
@@ -576,10 +585,28 @@ def _remove_staging_file(path: Path) -> None:
 
 
 def _publish_staged_file(staging: Path, destination: Path, *, overwrite: bool) -> str | None:
-    if destination.exists() and not overwrite:
-        return f"Output appeared while routing; refusing to replace it without --overwrite: {destination}"
     try:
-        os.replace(staging, destination)
+        if overwrite:
+            os.replace(staging, destination)
+        else:
+            # ``exists()`` followed by ``replace()`` has a race in which a file
+            # created by another process can be overwritten despite the caller
+            # declining --overwrite.  A same-directory hard link is an atomic
+            # no-clobber publication: the OS fails it if *anything* already
+            # occupies the destination name.
+            try:
+                os.link(staging, destination)
+            except FileExistsError:
+                return (
+                    "Output appeared while routing; refusing to replace it without --overwrite: "
+                    f"{destination}"
+                )
+            try:
+                staging.unlink()
+            except OSError:
+                # The destination already names the complete validated bytes.
+                # The caller's finally block will make another cleanup attempt.
+                log.warning("Could not remove published routing staging link %s", staging, exc_info=True)
     except OSError as exc:
         return f"Could not atomically publish output {destination}: {exc}"
     return None

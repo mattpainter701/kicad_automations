@@ -1649,7 +1649,7 @@ def _persist_generation_failure(func):
             return func(spec, *args, **kwargs)
         except Exception as exc:
             output_dir = kwargs.get("output_dir")
-            if output_dir is not None:
+            if output_dir is not None and kwargs.get("_record_state", True):
                 try:
                     from .project_state import record_generation_state
 
@@ -1671,7 +1671,7 @@ def _persist_generation_failure(func):
 
 
 @_persist_generation_failure
-def generate_artifacts(
+def _generate_artifacts_in_place(
     spec: dict[str, Any],
     *,
     output_dir: str | Path,
@@ -1686,8 +1686,15 @@ def generate_artifacts(
     svg_placement: bool = True,
     export_pinout: bool = False,
     readiness_gate: bool = True,
+    _record_state: bool = True,
 ) -> dict[str, Any]:
-    """Generate derived artifacts from a validated design spec."""
+    """Generate artifacts in one directory.
+
+    Public callers use :func:`generate_artifacts`, which invokes this helper in
+    a private staging directory and publishes only a complete successful run.
+    ``_record_state`` exists solely so the staging invocation cannot point the
+    durable manifest at temporary paths.
+    """
     profile = _ensure_profile(profile)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -1714,18 +1721,19 @@ def generate_artifacts(
 
     state_project_name = str(spec.get("project") or spec.get("name") or output_path.name or "project")
     project_state_manifest = ""
-    try:
-        project_state_manifest = str(
-            record_generation_state(
-                output_path,
-                project_name=state_project_name,
-                spec_path=spec_path,
-                output_dir=output_path,
-                phase="running",
+    if _record_state:
+        try:
+            project_state_manifest = str(
+                record_generation_state(
+                    output_path,
+                    project_name=state_project_name,
+                    spec_path=spec_path,
+                    output_dir=output_path,
+                    phase="running",
+                )
             )
-        )
-    except Exception as exc:
-        raise RuntimeError(f"Could not initialize durable project state: {exc}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Could not initialize durable project state: {exc}") from exc
 
     # Set up logging: use unified bridge if not already initialized, else fallback
     from .logging_bridge import cleanup_logging, get_design_logger, init_logging
@@ -1803,19 +1811,20 @@ def generate_artifacts(
         )
     except Exception as exc:
         _logger.exception("Artifact generation failed for output directory %s", output_path)
-        try:
-            project_state_manifest = str(
-                record_generation_state(
-                    output_path,
-                    project_name=state_project_name,
-                    spec_path=spec_path,
-                    output_dir=output_path,
-                    phase="failed",
-                    error=str(exc),
+        if _record_state:
+            try:
+                project_state_manifest = str(
+                    record_generation_state(
+                        output_path,
+                        project_name=state_project_name,
+                        spec_path=spec_path,
+                        output_dir=output_path,
+                        phase="failed",
+                        error=str(exc),
+                    )
                 )
-            )
-        except Exception as state_exc:
-            _logger.warning("Could not persist failed generation state: %s", state_exc)
+            except Exception as state_exc:
+                _logger.warning("Could not persist failed generation state: %s", state_exc)
         raise
     finally:
         if _owned_logging:
@@ -1962,23 +1971,423 @@ def generate_artifacts(
     )
     result["files"] = [str(path) for path in generated_artifacts]
     placement_review_path = output_path / "placement_result.json"
-    try:
-        project_state_manifest = str(
-            record_generation_state(
-                output_path,
-                project_name=result["project"],
-                spec_path=spec_path,
-                output_dir=output_path,
-                phase="generated",
-                artifacts=generated_artifacts,
-                validation_report=report_path,
-                placement_review=placement_review_path if placement_review_path.is_file() else None,
+    if _record_state:
+        try:
+            project_state_manifest = str(
+                record_generation_state(
+                    output_path,
+                    project_name=result["project"],
+                    spec_path=spec_path,
+                    output_dir=output_path,
+                    phase="generated",
+                    artifacts=generated_artifacts,
+                    validation_report=report_path,
+                    placement_review=placement_review_path if placement_review_path.is_file() else None,
+                )
             )
+        except Exception as exc:
+            raise RuntimeError(f"Could not finalize durable project state: {exc}") from exc
+        result["project_state"] = project_state_manifest
+
+    return result
+
+
+def _recorded_generation_paths(output_dir: Path) -> dict[str, Path]:
+    """Return only previously recorded generator-owned files below output.
+
+    The durable project state is the ownership boundary.  Files merely found
+    beside generated output are never inferred to be ours and therefore can
+    never be removed by publication.
+    """
+    from .project_state import load_project_state, resolve_project_root
+
+    output = output_dir.resolve(strict=False)
+    root = resolve_project_root(output)
+    state = load_project_state(root)
+    if state is None:
+        return {}
+
+    workflow_output = str((state.workflow.get("generate") or {}).get("output_dir", "")).strip()
+    if workflow_output:
+        candidate = Path(workflow_output).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        if candidate.resolve(strict=False) != output:
+            return {}
+
+    owned: dict[str, Path] = {}
+    for record in state.artifacts:
+        if record.get("workflow") != "generate":
+            continue
+        value = Path(str(record.get("path", ""))).expanduser()
+        candidate = value if value.is_absolute() or record.get("external") else root / value
+        resolved = candidate.resolve(strict=False)
+        try:
+            relative = resolved.relative_to(output)
+        except ValueError:
+            continue
+        if not relative.parts or ".circuit-weaver" in relative.parts:
+            continue
+        owned[relative.as_posix().casefold()] = relative
+    return owned
+
+
+def _staged_generation_paths(staging_dir: Path) -> dict[str, Path]:
+    """Inventory the complete current generator output in deterministic order."""
+    paths: dict[str, Path] = {}
+    for path in staging_dir.rglob("*"):
+        if not path.is_file() and not path.is_symlink():
+            continue
+        relative = path.relative_to(staging_dir)
+        if ".circuit-weaver" in relative.parts:
+            continue
+        key = relative.as_posix().casefold()
+        if key in paths and paths[key] != relative:
+            raise RuntimeError(
+                "Generated artifact paths collide under case-insensitive filesystems: "
+                f"{paths[key]} and {relative}"
+            )
+        paths[key] = relative
+    return paths
+
+
+def _remove_publication_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def _remap_staged_result(value: Any, staging_dir: Path, output_dir: Path) -> Any:
+    """Rewrite only absolute staging paths in a nested public result."""
+    if isinstance(value, dict):
+        return {key: _remap_staged_result(item, staging_dir, output_dir) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_remap_staged_result(item, staging_dir, output_dir) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_remap_staged_result(item, staging_dir, output_dir) for item in value)
+    if not isinstance(value, str) or not value:
+        return value
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        return value
+    try:
+        relative = candidate.resolve(strict=False).relative_to(staging_dir.resolve(strict=False))
+    except (OSError, ValueError):
+        return value
+    return str(output_dir / relative)
+
+
+def _merge_append_only_log(staged: Path, live: Path) -> None:
+    """Append staging-only diagnostics without replacing an open live log."""
+    staged_bytes = staged.read_bytes()
+    if not staged_bytes:
+        return
+    live_size = live.stat().st_size
+    # A CLI logging bridge normally wrote the same records to both handlers.
+    # Search the relevant live tail so those records are not duplicated.
+    with live.open("rb") as handle:
+        handle.seek(max(0, live_size - len(staged_bytes) - 65536))
+        live_tail = handle.read()
+    if staged_bytes in live_tail:
+        return
+    with live.open("ab") as handle:
+        if live_size and not live_tail.endswith((b"\n", b"\r")) and not staged_bytes.startswith(
+            (b"\n", b"\r")
+        ):
+            handle.write(b"\n")
+        handle.write(staged_bytes)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _retain_failed_generation_logs(staging_dir: Path, output_dir: Path) -> None:
+    """Keep failure diagnostics while never publishing partial deliverables."""
+    for name in ("circuit-weaver.log", "design.log"):
+        staged = staging_dir / name
+        if not staged.is_file():
+            continue
+        live = output_dir / name
+        try:
+            # Do not follow or replace an unowned special path. Ordinary log
+            # files are append-only and may already be held open by the CLI.
+            if live.is_symlink() or (live.exists() and not live.is_file()):
+                _logger.warning("Could not retain failed-generation log at unsafe path %s", live)
+                continue
+            if not live.exists():
+                live.touch(exist_ok=False)
+            _merge_append_only_log(staged, live)
+        except OSError as exc:
+            # Preserve the original generation exception and durable failed
+            # state even if a hostile/read-only output prevents log append.
+            _logger.warning("Could not retain failed-generation diagnostics in %s: %s", live, exc)
+
+
+def _publish_staged_generation(
+    staging_dir: Path,
+    output_dir: Path,
+    previous_owned: dict[str, Path],
+    finalize,
+) -> tuple[list[Path], Any]:
+    """Commit one staged generation and rollback files if finalization fails."""
+    current = _staged_generation_paths(staging_dir)
+    output_root = output_dir.resolve(strict=False)
+    touched = {**previous_owned, **current}
+    # The CLI logging bridge opens these in the final output before dispatch
+    # and keeps them open through publication on Windows.  They are explicitly
+    # append-only/nonblocking state artifacts; when already live, retain that
+    # authoritative stream and discard the redundant staging handler copy.
+    live_log_keys = {
+        key
+        for key, relative in current.items()
+        if relative.name.casefold() in {"circuit-weaver.log", "design.log"}
+        and (output_dir / relative).is_file()
+    }
+    backup_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{output_dir.name}.circuit-weaver-backup-",
+            dir=output_dir.parent,
+        )
+    )
+    backed_up: list[tuple[Path, Path]] = []
+    installed: list[Path] = []
+    cleanup_backup = False
+    try:
+        unowned_collisions = [
+            current[key]
+            for key in sorted(current)
+            if key not in previous_owned
+            and key not in live_log_keys
+            and ((output_dir / current[key]).exists() or (output_dir / current[key]).is_symlink())
+        ]
+        if unowned_collisions:
+            preview = ", ".join(str(path) for path in unowned_collisions[:12])
+            suffix = f" and {len(unowned_collisions) - 12} more" if len(unowned_collisions) > 12 else ""
+            raise FileExistsError(
+                "Generation would overwrite files not recorded as Circuit Weaver-owned: "
+                f"{preview}{suffix}"
+            )
+        # Move only recorded-owned or newly generated destination paths aside.
+        # No arbitrary file from the live output tree is copied or relocated.
+        for key in sorted(touched):
+            if key in live_log_keys:
+                continue
+            relative = touched[key]
+            target = output_dir / relative
+            parent = target.parent.resolve(strict=False)
+            if not parent.is_relative_to(output_root):
+                raise RuntimeError(f"Generated artifact parent escapes output directory: {relative}")
+            if target.exists() or target.is_symlink():
+                backup = backup_dir / relative
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(target, backup)
+                backed_up.append((backup, target))
+
+        for key in sorted(current):
+            if key in live_log_keys:
+                continue
+            relative = current[key]
+            source = staging_dir / relative
+            target = output_dir / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+            installed.append(target)
+
+        for key in sorted(live_log_keys):
+            relative = current[key]
+            _merge_append_only_log(staging_dir / relative, output_dir / relative)
+
+        current_paths = [output_dir / current[key] for key in sorted(current)]
+        finalized = finalize(current_paths)
+        cleanup_backup = True
+        return current_paths, finalized
+    except BaseException:
+        rollback_errors: list[str] = []
+        for target in reversed(installed):
+            try:
+                _remove_publication_path(target)
+            except OSError as exc:
+                rollback_errors.append(f"remove {target}: {exc}")
+        for backup, target in reversed(backed_up):
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(backup, target)
+            except OSError as exc:
+                rollback_errors.append(f"restore {target}: {exc}")
+        if rollback_errors:
+            raise RuntimeError(
+                "Generation publication failed and rollback was incomplete; "
+                f"recovery files remain at {backup_dir}: {'; '.join(rollback_errors)}"
+            ) from None
+        cleanup_backup = True
+        raise
+    finally:
+        if cleanup_backup:
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+
+@_persist_generation_failure
+def generate_artifacts(
+    spec: dict[str, Any],
+    *,
+    output_dir: str | Path,
+    profile: str = _STANDARD_PROFILE,
+    require_valid: bool = True,
+    enrich_parts: bool = False,
+    export_svg: bool = True,
+    score: bool = False,
+    auto_source: bool = False,
+    update_spec: bool = False,
+    spec_path: Path | None = None,
+    svg_placement: bool = True,
+    export_pinout: bool = False,
+    readiness_gate: bool = True,
+) -> dict[str, Any]:
+    """Generate into staging, then atomically reconcile generator-owned output."""
+    from .project_state import record_generation_state
+
+    requested_output_path = Path(output_dir)
+    requested_output_path.mkdir(parents=True, exist_ok=True)
+    output_path = requested_output_path.resolve(strict=False)
+    previous_owned = _recorded_generation_paths(output_path)
+    project_name = str(spec.get("project") or spec.get("name") or output_path.name or "project")
+
+    try:
+        record_generation_state(
+            output_path,
+            project_name=project_name,
+            spec_path=spec_path,
+            output_dir=output_path,
+            phase="running",
         )
     except Exception as exc:
-        raise RuntimeError(f"Could not finalize durable project state: {exc}") from exc
-    result["project_state"] = project_state_manifest
+        raise RuntimeError(f"Could not initialize durable project state: {exc}") from exc
 
+    staging_path = Path(
+        tempfile.mkdtemp(
+            prefix=f".{output_path.name}.circuit-weaver-staging-",
+            dir=output_path.parent,
+        )
+    )
+    try:
+        # Stable semantic references are the one intentional input copied from
+        # prior owned output.  All other staging contents come from this run.
+        previous_manifest = output_path / "assembly_manifest.json"
+        if previous_manifest.is_file():
+            shutil.copy2(previous_manifest, staging_path / previous_manifest.name)
+
+        staged_result = _generate_artifacts_in_place(
+            spec,
+            output_dir=staging_path,
+            profile=profile,
+            require_valid=require_valid,
+            enrich_parts=enrich_parts,
+            export_svg=export_svg,
+            score=score,
+            auto_source=auto_source,
+            update_spec=update_spec,
+            spec_path=spec_path,
+            svg_placement=svg_placement,
+            export_pinout=export_pinout,
+            readiness_gate=readiness_gate,
+            _record_state=False,
+        )
+        # Preserve the caller's public path style (including a relative output
+        # directory) while all publication and state operations use the
+        # resolved physical target.
+        result = _remap_staged_result(staged_result, staging_path, requested_output_path)
+
+        def finalize(current_paths: list[Path]) -> str:
+            validation_candidate = output_path / "validation_report.json"
+            validation_path = validation_candidate if validation_candidate.is_file() else None
+            placement_candidate = output_path / "placement_result.json"
+            placement_path = placement_candidate if placement_candidate.is_file() else None
+            return str(
+                record_generation_state(
+                    output_path,
+                    project_name=str(result.get("project") or project_name),
+                    spec_path=spec_path,
+                    output_dir=output_path,
+                    phase="generated",
+                    artifacts=current_paths,
+                    validation_report=validation_path,
+                    placement_review=placement_path,
+                )
+            )
+
+        current_paths, project_state_manifest = _publish_staged_generation(
+            staging_path,
+            output_path,
+            previous_owned,
+            finalize,
+        )
+        result["files"] = [
+            str(requested_output_path / path.relative_to(output_path)) for path in current_paths
+        ]
+        result["project_state"] = project_state_manifest
+        return result
+    except BaseException:
+        _retain_failed_generation_logs(staging_path, output_path)
+        raise
+    finally:
+        shutil.rmtree(staging_path, ignore_errors=True)
+
+
+def _export_dual_cpl_artifacts(
+    compiled: CompiledDesign,
+    output_dir: Path,
+    *,
+    assembly_mode: str,
+    pcb_path: Path,
+) -> dict[str, Any]:
+    """Export CPLs only from a real board matching the full assembly."""
+    from .jlcpcb_export import parse_pcb_placements, write_dual_sided_cpl
+    from .placement_pipeline import build_placement_inventory
+
+    inventory = build_placement_inventory(compiled.components)
+    expected_refs = inventory.references
+    if len(expected_refs) != len(set(expected_refs)):
+        raise ValueError("Exhaustive assembly manifest contains duplicate references")
+    expected_set = set(expected_refs)
+    expected_footprints = {item.reference: item.footprint for item in inventory.manifest.items}
+    missing_footprints = sorted(ref for ref, footprint in expected_footprints.items() if not footprint)
+    if missing_footprints:
+        raise ValueError(
+            "Dual-CPL export requires a physical footprint for every assembly reference; missing: "
+            + ", ".join(missing_footprints)
+        )
+    parsed_placements = parse_pcb_placements(
+        pcb_path,
+        required_refs=expected_set,
+        expected_footprints=expected_footprints,
+    )
+    # The physical parser permits conventional non-assembly mechanics (FID,
+    # MH, H). They are validated as the only extras and intentionally excluded
+    # from the assembly CPL.
+    tuple_placements = {ref: parsed_placements[ref] for ref in expected_refs}
+    placement_refs = set(tuple_placements)
+
+    result = write_dual_sided_cpl(
+        inventory.components,
+        tuple_placements,
+        output_dir,
+        assembly_mode=assembly_mode,
+    )
+    exported_count = int(result.get("top_count", 0)) + int(result.get("bottom_count", 0))
+    if exported_count != len(expected_refs):
+        raise ValueError(
+            "Dual-CPL writer omitted assembly references despite exact placement reconciliation "
+            f"(expected={len(expected_refs)}, exported={exported_count})"
+        )
+    result["assembly_item_count"] = len(expected_refs)
+    result["reference_reconciliation"] = {
+        "exact_match": True,
+        "manifest_refs": sorted(expected_refs),
+        "placement_refs": sorted(placement_refs),
+        "missing_from_placement": [],
+        "unexpected_in_placement": [],
+    }
+    result["pcb_source"] = str(pcb_path)
     return result
 
 
@@ -2305,6 +2714,15 @@ def main() -> None:
     import_placement_p.add_argument("--output-cpl", help="Write updated CPL to this path")
     import_placement_p.add_argument(
         "--dry-run", action="store_true", default=False, help="Preview changes without writing"
+    )
+    import_placement_p.add_argument(
+        "--allow-partial",
+        action="store_true",
+        default=False,
+        help=(
+            "Explicitly update only SVG-listed board refs; default requires the SVG and PCB "
+            "reference inventories to match exactly"
+        ),
     )
 
     list_p = subparsers.add_parser("list-templates", help="List all available subcircuit templates")
@@ -2671,6 +3089,11 @@ def main() -> None:
     dual_cpl_p = subparsers.add_parser("export-dual-cpl", help="Export dual-sided CPL files (top + bottom)")
     dual_cpl_p.add_argument("spec", help="Design spec YAML file")
     dual_cpl_p.add_argument("--output", "-o", required=True, help="Output directory for CPL files")
+    dual_cpl_p.add_argument(
+        "--pcb",
+        required=True,
+        help="Real pad-bearing .kicad_pcb source; heuristic placement is never manufacturing CPL data",
+    )
     dual_cpl_p.add_argument(
         "--assembly-mode",
         choices=["single-sided", "dual-sided-simultaneous", "dual-sided-sequential"],
@@ -3060,6 +3483,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         from .kicad_placement_api import check_kicad_available
         from .svg_placement import (
             import_placement_from_svg,
+            read_kicad_pcb_references,
             update_cpl_placements,
             update_kicad_pcb_placements,
         )
@@ -3073,7 +3497,12 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             use_api = True
 
         try:
-            svg_placements = import_placement_from_svg(args.svg)
+            board_refs = read_kicad_pcb_references(args.kicad_pcb)
+            svg_placements = import_placement_from_svg(
+                args.svg,
+                known_refs=board_refs,
+                allow_partial=args.allow_partial,
+            )
         except (OSError, ValueError, ET.ParseError) as exc:
             _print_json(
                 {
@@ -3106,6 +3535,14 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             cpl_result = {"updated": 0, "blocked": True, "reason": "PCB placement update failed"}
 
         result = {
+            "reference_reconciliation": {
+                "mode": "partial_opt_in" if args.allow_partial else "exact_required",
+                "exact_match": set(svg_placements) == board_refs,
+                "board_refs": sorted(board_refs),
+                "svg_refs": sorted(svg_placements),
+                "missing_from_svg": sorted(board_refs - set(svg_placements)),
+                "unexpected_in_svg": sorted(set(svg_placements) - board_refs),
+            },
             "kicad_pcb": {
                 "file": str(output_pcb),
                 "updated": len(pcb_result.get("updated", [])),
@@ -3916,25 +4353,13 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         raise SystemExit(0)
 
     if args.command == "export-dual-cpl":
-        from .jlcpcb_export import write_dual_sided_cpl
-        from .placement_optimizer import PlacementConfig, optimize_placement
-
         spec = _load_spec_file(args.spec)
         compiled = compile_design_ir(spec)
-
-        cfg = PlacementConfig()
-        opt = optimize_placement(compiled.components, config=cfg)
-        # Convert placement dict format to tuple format for CPL writer
-        tuple_placements = {}
-        for ref, p in opt["placements"].items():
-            layer = "top" if p.get("layer", "front") in ("front", "top") else "bottom"
-            tuple_placements[ref] = (p["x"], p["y"], p.get("rotation", 0), layer)
-
-        result = write_dual_sided_cpl(
-            compiled.components,
-            tuple_placements,
+        result = _export_dual_cpl_artifacts(
+            compiled,
             Path(args.output),
             assembly_mode=args.assembly_mode,
+            pcb_path=Path(args.pcb),
         )
 
         print(f"Top CPL:    {result['top_file']} ({result['top_count']} components)")

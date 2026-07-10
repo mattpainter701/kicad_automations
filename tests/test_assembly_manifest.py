@@ -49,6 +49,37 @@ def test_manifest_assigns_reference_to_primary_without_source_ref() -> None:
     assert [item.reference for item in manifest.items] == ["U1"]
 
 
+def test_reordered_same_block_parts_keep_reference_bound_to_physical_identity() -> None:
+    def resistor(value: str) -> ComponentDef:
+        return ComponentDef(
+            mpn=value,
+            value=value,
+            ref_prefix="R",
+            footprint="Resistor_SMD:R_0402_1005Metric",
+            block_id="feedback-divider",
+            functional_section="power",
+        )
+
+    first = build_assembly_manifest(
+        [resistor("1k"), resistor("10k")],
+        include_auto_bypass=False,
+    )
+    reordered = build_assembly_manifest(
+        [resistor("10k"), resistor("1k")],
+        include_auto_bypass=False,
+        previous_manifest=first,
+    )
+
+    assert {item.value: item.reference for item in first.items} == {
+        "1k": "R1",
+        "10k": "R2",
+    }
+    assert {item.value: item.reference for item in reordered.items} == {
+        "10k": "R2",
+        "1k": "R1",
+    }
+
+
 def test_manifest_rejects_duplicate_explicit_references() -> None:
     components = [
         ComponentDef(mpn="A", source_ref="U1"),

@@ -213,6 +213,95 @@ def _sourcing_record(comp: ComponentDef) -> dict[str, Any]:
     }
 
 
+def _placement_quality_blockers(
+    components: list[ComponentDef],
+    quality: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Translate optimizer defects into explicit, actionable review blockers."""
+    blockers: list[dict[str, Any]] = []
+    parent_by_ref = {
+        _component_ref(comp): str(getattr(comp, "placement_parent_ref", "") or "")
+        for comp in components
+        if _component_ref(comp)
+    }
+
+    for pair in quality.get("overlaps", []) or []:
+        refs = [str(ref) for ref in pair if str(ref)] if isinstance(pair, (list, tuple)) else []
+        if len(refs) < 2:
+            continue
+        blockers.append(
+            {
+                "kind": "placement_overlap",
+                "target": ",".join(refs),
+                "reason": (
+                    f"Footprints {refs[0]} and {refs[1]} overlap or violate the minimum "
+                    "component gap; move one before placement approval."
+                ),
+                "refs": refs,
+            }
+        )
+
+    for ref in quality.get("outside_board", []) or []:
+        target = str(ref)
+        if not target:
+            continue
+        blockers.append(
+            {
+                "kind": "placement_outside_board",
+                "target": target,
+                "reason": (
+                    f"Footprint {target} is outside the usable board boundary or edge clearance."
+                ),
+            }
+        )
+
+    for ref in quality.get("missing_parents", []) or []:
+        target = str(ref)
+        if not target:
+            continue
+        parent = parent_by_ref.get(target, "")
+        blockers.append(
+            {
+                "kind": "placement_support_parent_missing",
+                "target": target,
+                "reason": (
+                    f"Support footprint {target} names missing parent {parent}; repair the "
+                    "assembly relationship before placement approval."
+                    if parent
+                    else (
+                        f"Support footprint {target} has no resolvable parent in the placement "
+                        "inventory; repair the assembly relationship before placement approval."
+                    )
+                ),
+                "parent_ref": parent,
+            }
+        )
+
+    for violation in quality.get("support_body_violations", []) or []:
+        if not isinstance(violation, dict):
+            continue
+        support_ref = str(violation.get("support_ref", "") or "")
+        parent_ref = str(violation.get("parent_ref", "") or "")
+        if not support_ref:
+            continue
+        clearance = violation.get("clearance_mm")
+        required = violation.get("required_mm")
+        blockers.append(
+            {
+                "kind": "placement_support_clearance",
+                "target": support_ref,
+                "reason": (
+                    f"Support footprint {support_ref} has {clearance} mm body clearance from "
+                    f"{parent_ref or 'its parent'}, below the required {required} mm."
+                ),
+                "parent_ref": parent_ref,
+                "clearance_mm": clearance,
+                "required_mm": required,
+            }
+        )
+    return blockers
+
+
 def build_placement_context(
     components: list[ComponentDef],
     placements: dict[str, dict[str, Any]],
@@ -221,6 +310,7 @@ def build_placement_context(
     board_height_mm: float,
     constraints: list[dict[str, Any]] | None = None,
     constraint_evaluation: dict[str, Any] | None = None,
+    placement_quality: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a deterministic context bundle for placement review agents."""
     component_rows: list[dict[str, Any]] = []
@@ -334,6 +424,8 @@ def build_placement_context(
         }
         for item in evaluation.get("violations", [])
     )
+    quality = placement_quality or {}
+    review_blockers.extend(_placement_quality_blockers(components, quality))
 
     return {
         "schema_version": 2,
@@ -347,6 +439,7 @@ def build_placement_context(
         "critical_nets": critical_nets,
         "constraints": constraints or [],
         "constraint_evaluation": evaluation,
+        "placement_quality": quality,
         "rules": _placement_rules(components),
         "research_queries": research_queries,
         "references": [

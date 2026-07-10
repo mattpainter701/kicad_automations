@@ -753,6 +753,34 @@ def test_parent_state_lookup_rejects_ambiguous_generated_children(tmp_path: Path
         get_project_state_summary(project)
 
 
+def test_status_does_not_select_unrelated_sole_child_manifest(tmp_path: Path) -> None:
+    project = tmp_path / "neighbors"
+    project.mkdir()
+    source = project / "alpha.yaml"
+    source.write_text("project: alpha\nblocks: []\n", encoding="utf-8")
+    output = project / "unrelated-output"
+    output.mkdir()
+    schematic = output / "alpha.kicad_sch"
+    schematic.write_text("(kicad_sch)", encoding="utf-8")
+    record_generation_state(
+        output,
+        project_name="alpha",
+        spec_path=source,
+        output_dir=output,
+        phase="generated",
+        artifacts=[schematic],
+    )
+    unrelated_state = load_project_state(output)
+    assert unrelated_state is not None
+    unrelated = project / "victim.kicad_pcb"
+    unrelated.write_text("(kicad_pcb)", encoding="utf-8")
+
+    summary = get_project_state_summary(unrelated)
+
+    assert summary["project_root"] == str(project.resolve())
+    assert summary["project_id"] != unrelated_state.project_id
+
+
 def test_generation_state_records_source_artifacts_and_placement_phase(tmp_path: Path) -> None:
     project = tmp_path / "generated"
     output = project / "output"

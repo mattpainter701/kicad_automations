@@ -254,6 +254,36 @@ def _project_kind(records: list[dict[str, Any]]) -> str:
     return "imported_files"
 
 
+def _analysis_capability(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Describe bundled analyzer coverage without overstating netlist support."""
+    kinds = {str(record.get("kind", "")) for record in records}
+    supported_kinds = sorted(kinds & {"schematic", "pcb", "gerber", "drill", "gerber_job"})
+    netlist_only = bool(kinds & {"netlist"}) and not supported_kinds
+    if supported_kinds:
+        return {
+            "supported": True,
+            "status": "available",
+            "supported_kinds": supported_kinds,
+            "reason": "",
+        }
+    if netlist_only:
+        return {
+            "supported": False,
+            "status": "unsupported_netlist_only",
+            "supported_kinds": [],
+            "reason": (
+                "Netlist files are inventoried as supplementary import evidence, but this "
+                "release has no bundled netlist analyzer. Provide a schematic, PCB, or Gerber set."
+            ),
+        }
+    return {
+        "supported": False,
+        "status": "no_analyzable_inputs",
+        "supported_kinds": [],
+        "reason": "No schematic, PCB, or Gerber inputs are available to bundled analyzers.",
+    }
+
+
 def _asset_path(record: dict[str, Any], root: Path) -> Path:
     value = Path(str(record["path"]))
     return value if record.get("external") or value.is_absolute() else root / value
@@ -340,6 +370,26 @@ def _rollback_staged_tree(destination: Path, backup: Path | None) -> None:
         os.replace(backup, destination)
 
 
+def _quarantine_stale_analysis(root: Path) -> tuple[Path, Path] | None:
+    """Move prior analyzer outputs aside until replacement state commits."""
+    analysis_dir = root / STATE_DIR_NAME / "analysis"
+    if not _path_exists(analysis_dir):
+        return None
+    backup = analysis_dir.with_name(f".analysis.{uuid.uuid4().hex}.backup")
+    os.replace(analysis_dir, backup)
+    return analysis_dir, backup
+
+
+def _restore_quarantined_analysis(quarantine: tuple[Path, Path] | None) -> None:
+    if quarantine is None:
+        return
+    analysis_dir, backup = quarantine
+    if _path_exists(analysis_dir):
+        _remove_path(analysis_dir)
+    if _path_exists(backup):
+        os.replace(backup, analysis_dir)
+
+
 def import_design(
     source: str | Path,
     *,
@@ -363,6 +413,7 @@ def import_design(
     backup_root: Path | None = None
     archive_swap_installed = False
     archive_record: dict[str, Any] | None = None
+    analysis_quarantine: tuple[Path, Path] | None = None
     try:
         if source_path.is_file() and source_path.suffix.lower() == ".zip":
             extract_root = root / STATE_DIR_NAME / "imports" / source_path.stem
@@ -397,6 +448,7 @@ def import_design(
             raise ValueError(
                 f"No supported KiCad, PCB, Gerber, drill, or netlist files found in {source_path}"
             )
+        analysis_capability = _analysis_capability(analyzable)
 
         project_name = next(
             (Path(record["path"]).stem for record in records if record["kind"] == "kicad_project"),
@@ -458,21 +510,50 @@ def import_design(
             "scan_root": str(scan_root),
             "completed_at": _now_iso(),
             "source_count": len(records),
+            "analysis_supported": analysis_capability["supported"],
+            "analysis_status": analysis_capability["status"],
+            "analysis_reason": analysis_capability["reason"],
         }
-        state.next_actions = [f'circuit-weaver analyze-design "{root}"', f'circuit-weaver status "{root}"']
+        state.next_actions = [f'circuit-weaver status "{root}"']
+        if analysis_capability["supported"]:
+            state.next_actions.insert(0, f'circuit-weaver analyze-design "{root}"')
+        if sources_differ:
+            # Analyzer JSON belongs to the prior source identity. Move it out
+            # of the authoritative location before committing the replacement
+            # manifest, and restore it if that commit or archive swap fails.
+            analysis_quarantine = _quarantine_stale_analysis(root)
         manifest_path = save_project_state(root, state)
-    except BaseException:
+    except BaseException as original_exc:
+        rollback_errors: list[str] = []
+        try:
+            _restore_quarantined_analysis(analysis_quarantine)
+        except Exception as exc:
+            rollback_errors.append(f"analysis restore: {exc}")
         if archive_swap_installed and extract_root is not None:
             try:
                 _rollback_staged_tree(extract_root, backup_root)
             except Exception as rollback_exc:
-                raise RuntimeError(
-                    f"Import failed and ZIP staging rollback also failed; prior staging is at {backup_root}"
-                ) from rollback_exc
+                rollback_errors.append(f"ZIP staging restore: {rollback_exc}")
         if staging_root is not None and _path_exists(staging_root):
-            _remove_path(staging_root)
+            try:
+                _remove_path(staging_root)
+            except OSError as exc:
+                rollback_errors.append(f"staging cleanup: {exc}")
+        if rollback_errors:
+            raise RuntimeError(
+                "Import failed and rollback was incomplete: " + "; ".join(rollback_errors)
+            ) from original_exc
         raise
     else:
+        if analysis_quarantine is not None:
+            _analysis_dir, analysis_backup = analysis_quarantine
+            if _path_exists(analysis_backup):
+                try:
+                    _remove_path(analysis_backup)
+                except OSError:
+                    # It is hidden and no longer authoritative. Retaining a
+                    # recovery copy is safer than failing after state commit.
+                    pass
         if backup_root is not None and _path_exists(backup_root):
             try:
                 _remove_path(backup_root)
@@ -489,6 +570,9 @@ def import_design(
         "kind": state.kind,
         "source_count": len(records),
         "sources": records,
+        "analysis_supported": analysis_capability["supported"],
+        "analysis_status": analysis_capability["status"],
+        "analysis_reason": analysis_capability["reason"],
         "next_actions": state.next_actions,
     }
     if analyze:
@@ -801,10 +885,11 @@ def analyze_design(
         save_project_state(root, state)
 
     if not jobs:
-        state.status = "analysis_failed"
-        state.current_phase = "analysis_failed"
-        state.last_error = "No analyzable schematic, PCB, or Gerber inputs were found"
-        state.next_actions = [f'circuit-weaver import-design "{root}" --force']
+        capability = _analysis_capability(state.sources)
+        state.status = "analysis_unsupported"
+        state.current_phase = "analysis_unsupported"
+        state.last_error = capability["reason"]
+        state.next_actions = [f'circuit-weaver status "{root}"']
     elif all(entry.get("status") == "ok" for entry in results.values()):
         state.status = "analyzed"
         state.current_phase = "analysis_complete"

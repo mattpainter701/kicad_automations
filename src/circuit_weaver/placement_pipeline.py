@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
+import shutil
+import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -34,6 +39,18 @@ _ARTIFACT_FILENAMES = {
     "placement_svg": PLACEMENT_SVG_FILENAME,
     "placement_html": PLACEMENT_HTML_FILENAME,
 }
+_PUBLISH_ORDER = (
+    "placement_svg",
+    "placement_html",
+    "placement_context",
+    "placement_result",
+)
+_QUALITY_DEFECT_KEYS = (
+    "overlaps",
+    "outside_board",
+    "missing_parents",
+    "support_body_violations",
+)
 _REFERENCE_PREFIX_RE = re.compile(r"^([A-Za-z]+)")
 _HEURISTIC_AUTHORITY = (
     "Heuristic placement proposal for human and AI review only. It is not a routed PCB, "
@@ -44,6 +61,53 @@ _HEURISTIC_AUTHORITY = (
 
 class PlacementPipelineError(ValueError):
     """Raised when the assembly inventory cannot be represented faithfully."""
+
+
+@contextmanager
+def _placement_output_lock(output_dir: Path, *, timeout: float = 30.0):
+    """Serialize placement publication across processes for one output directory."""
+    resolved = output_dir.resolve(strict=False)
+    lock_path = resolved.parent / f".{resolved.name or 'placement'}.placement-review.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    with lock_path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+
+        acquired = False
+        while not acquired:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"Timed out waiting for placement output lock: {lock_path}"
+                    ) from exc
+                time.sleep(0.05)
+
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 @dataclass
@@ -215,10 +279,47 @@ def _write_result(payload: dict, output_dir: Path) -> Path:
     return path
 
 
-def _remove_stale_visual_artifacts(output_dir: Path) -> None:
-    """Remove only pipeline-owned visuals when a fresh run is blocked."""
-    for kind in ("placement_context", "placement_svg", "placement_html"):
+def _invalidate_owned_artifacts(output_dir: Path) -> None:
+    """Remove the prior commit marker first, then every pipeline-owned file."""
+    for kind in _ARTIFACT_FILENAMES:
         (output_dir / _ARTIFACT_FILENAMES[kind]).unlink(missing_ok=True)
+
+
+def _replace_staged_file(source: Path, destination: Path) -> None:
+    """Publish one staged artifact with a same-filesystem atomic replacement."""
+    source.replace(destination)
+
+
+def _publish_staged_artifacts(
+    staging_dir: Path,
+    output_dir: Path,
+    kinds: Iterable[str],
+) -> None:
+    """Publish a coherent set, keeping the result/commit manifest last."""
+    requested = set(kinds)
+    ordered = [kind for kind in _PUBLISH_ORDER if kind in requested]
+    if requested != set(ordered):
+        unknown = sorted(requested - set(ordered))
+        raise PlacementPipelineError(f"Unknown placement artifact kinds: {unknown}")
+    for kind in ordered:
+        staged = staging_dir / _ARTIFACT_FILENAMES[kind]
+        if not staged.is_file():
+            raise PlacementPipelineError(
+                f"Staged placement artifact is missing before publication: {staged.name}"
+            )
+    for kind in ordered:
+        filename = _ARTIFACT_FILENAMES[kind]
+        _replace_staged_file(staging_dir / filename, output_dir / filename)
+
+
+def _quality_defects_present(optimizer_result: dict) -> bool:
+    quality = optimizer_result.get("quality") or {}
+    evaluation = optimizer_result.get("constraint_evaluation") or {}
+    return bool(
+        any(quality.get(key) for key in _QUALITY_DEFECT_KEYS)
+        or evaluation.get("unsupported")
+        or evaluation.get("violations")
+    )
 
 
 def _return_payload(payload: dict, output_dir: Path) -> dict:
@@ -229,7 +330,7 @@ def _return_payload(payload: dict, output_dir: Path) -> dict:
     result["generated_artifact_paths"] = {
         row["kind"]: str(output_dir / row["path"])
         for row in payload["artifacts"]
-        if row["status"] == "ready"
+        if row["status"] in {"ready", "review_blocked"}
     }
     return result
 
@@ -270,9 +371,10 @@ def _blocked_payload(
     }
 
 
-def generate_placement_review(
+def _generate_placement_review_staged(
     components: Iterable[ComponentDef],
-    output_dir: str | Path,
+    target: Path,
+    staging_dir: Path,
     *,
     project_name: str = "design",
     config: PlacementConfig | None = None,
@@ -281,7 +383,7 @@ def generate_placement_review(
     include_auto_bypass: bool = True,
     assembly_manifest: AssemblyManifest | None = None,
 ) -> dict:
-    """Generate exhaustive, explicitly review-only placement artifacts.
+    """Build a placement review in staging and publish its commit manifest last.
 
     Returns a JSON-compatible status dictionary.  Four deterministic files are
     produced for a valid inventory: ``placement_result.json``,
@@ -289,8 +391,6 @@ def generate_placement_review(
     ``placement_editor.html``.  Empty or irreconcilable inventories produce a
     blocked ``placement_result.json`` and no misleading visual artifacts.
     """
-    target = Path(output_dir)
-    target.mkdir(parents=True, exist_ok=True)
     inventory = build_placement_inventory(
         components,
         include_auto_bypass=include_auto_bypass,
@@ -303,8 +403,8 @@ def generate_placement_review(
             assembly_item_count=0,
             reason="Placement review requires at least one physical assembly item.",
         )
-        _remove_stale_visual_artifacts(target)
-        _write_result(payload, target)
+        _write_result(payload, staging_dir)
+        _publish_staged_artifacts(staging_dir, target, {"placement_result"})
         return _return_payload(payload, target)
 
     optimizer_result = copy.deepcopy(
@@ -343,8 +443,8 @@ def generate_placement_review(
             optimizer_result=optimizer_result,
             reconciliation=reconciliation,
         )
-        _remove_stale_visual_artifacts(target)
-        _write_result(payload, target)
+        _write_result(payload, staging_dir)
+        _publish_staged_artifacts(staging_dir, target, {"placement_result"})
         return _return_payload(payload, target)
 
     quality = dict(optimizer_result.get("quality") or {})
@@ -360,8 +460,9 @@ def generate_placement_review(
         board_height_mm=board_height,
         constraints=constraints,
         constraint_evaluation=optimizer_result.get("constraint_evaluation"),
+        placement_quality=quality,
     )
-    write_placement_context(context, target / PLACEMENT_CONTEXT_FILENAME)
+    write_placement_context(context, staging_dir / PLACEMENT_CONTEXT_FILENAME)
 
     svg_components = [
         {
@@ -385,7 +486,7 @@ def generate_placement_review(
         placements,
         board_width,
         board_height,
-        output_path=target / PLACEMENT_SVG_FILENAME,
+        output_path=staging_dir / PLACEMENT_SVG_FILENAME,
         title=title,
     )
     generate_viewer(
@@ -395,13 +496,31 @@ def generate_placement_review(
         board_height,
         placement_context=context,
         title=title,
-        output_path=target / PLACEMENT_HTML_FILENAME,
+        output_path=staging_dir / PLACEMENT_HTML_FILENAME,
     )
 
-    statuses = {
-        kind: ("ready", "Review-only heuristic artifact; never fabrication data.")
-        for kind in _ARTIFACT_FILENAMES
-    }
+    quality_defects = _quality_defects_present(optimizer_result)
+    if quality_defects:
+        statuses = {
+            "placement_result": ("ready", "Truthful blocked-state commit manifest."),
+            "placement_context": (
+                "review_blocked",
+                "Generated for diagnosis, but placement quality defects block approval.",
+            ),
+            "placement_svg": (
+                "review_blocked",
+                "Generated for correction, but placement quality defects block approval.",
+            ),
+            "placement_html": (
+                "review_blocked",
+                "Generated for correction, but placement quality defects block approval.",
+            ),
+        }
+    else:
+        statuses = {
+            kind: ("ready", "Review-only heuristic artifact; never fabrication data.")
+            for kind in _ARTIFACT_FILENAMES
+        }
     review_gate = dict(context.get("review_gate") or {})
     review_blockers = list(review_gate.get("blockers") or [])
     quality["sourcing_review_blockers"] = [
@@ -410,6 +529,19 @@ def generate_placement_review(
     quality["geometry_review_blockers"] = [
         blocker for blocker in review_blockers if blocker.get("kind") == "footprint_geometry"
     ]
+    quality["placement_review_blockers"] = [
+        blocker
+        for blocker in review_blockers
+        if blocker.get("kind")
+        in {
+            "placement_overlap",
+            "placement_outside_board",
+            "placement_support_parent_missing",
+            "placement_support_clearance",
+            "placement_constraint",
+            "placement_constraint_violation",
+        }
+    ]
     quality["review_required"] = True
     optimizer_result["quality"] = quality
     payload = {
@@ -417,7 +549,7 @@ def generate_placement_review(
         "artifact_kind": "placement_review",
         "placement_kind": "heuristic_proposal",
         "project": project_name,
-        "status": "review_required",
+        "status": "blocked" if quality_defects else "review_required",
         "fabrication_ready": False,
         "review_required": True,
         "authority": _HEURISTIC_AUTHORITY,
@@ -434,5 +566,59 @@ def generate_placement_review(
         "placements": placements,
         "artifacts": _artifact_rows(statuses),
     }
-    _write_result(payload, target)
+    _write_result(payload, staging_dir)
+    _publish_staged_artifacts(staging_dir, target, _ARTIFACT_FILENAMES)
     return _return_payload(payload, target)
+
+
+def generate_placement_review(
+    components: Iterable[ComponentDef],
+    output_dir: str | Path,
+    *,
+    project_name: str = "design",
+    config: PlacementConfig | None = None,
+    specs_dir: str | Path | None = None,
+    constraints: list[dict] | None = None,
+    include_auto_bypass: bool = True,
+    assembly_manifest: AssemblyManifest | None = None,
+) -> dict:
+    """Generate and coherently publish exhaustive, review-only placement artifacts.
+
+    The prior placement result is invalidated before optimization starts. Every
+    successful visual set is built in a sibling staging directory and the JSON
+    result is published last as its commit manifest. Any exception removes all
+    pipeline-owned destination files, so callers can never observe a stale
+    success result or a mixed-generation placement set.
+    """
+    target = Path(output_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    with _placement_output_lock(target):
+        _invalidate_owned_artifacts(target)
+        staging_dir = Path(
+            tempfile.mkdtemp(
+                prefix=f".{target.name or 'placement'}.placement-stage-",
+                dir=target.parent,
+            )
+        )
+        try:
+            return _generate_placement_review_staged(
+                components,
+                target,
+                staging_dir,
+                project_name=project_name,
+                config=config,
+                specs_dir=specs_dir,
+                constraints=constraints,
+                include_auto_bypass=include_auto_bypass,
+                assembly_manifest=assembly_manifest,
+            )
+        except BaseException as exc:
+            try:
+                _invalidate_owned_artifacts(target)
+            except OSError as cleanup_exc:
+                add_note = getattr(exc, "add_note", None)
+                if add_note is not None:
+                    add_note(f"Placement artifact cleanup also failed: {cleanup_exc}")
+            raise
+        finally:
+            shutil.rmtree(staging_dir, ignore_errors=True)

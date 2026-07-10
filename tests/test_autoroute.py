@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -578,6 +579,13 @@ class TestAutoroute:
         cases = (
             ("not a session artifact", "invalid SES"),
             (VALID_SES.replace("(net GND", "(net SECRET", 1), "absent from source DSN"),
+            (
+                VALID_SES.replace(
+                    '      (net VDD_3P3 (wire (path F.Cu 250 10500 10000 20000 10000)))\n',
+                    "",
+                ),
+                "missing net(s) from source DSN",
+            ),
         )
         for index, (ses_text, expected) in enumerate(cases):
             destination = tmp_path / f"bad-{index}.ses"
@@ -587,6 +595,27 @@ class TestAutoroute:
             assert result["status"] == "error"
             assert expected in result["message"]
             assert not destination.exists()
+
+    def test_no_overwrite_publication_cannot_clobber_file_created_during_route(self, tmp_path):
+        dsn = _write_dsn(tmp_path)
+        destination = tmp_path / "raced.ses"
+        real_link = os.link
+
+        def concurrent_writer_then_link(source, target):
+            destination.write_text("concurrent writer\n", encoding="utf-8")
+            return real_link(source, target)
+
+        with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]):
+            with mock.patch("subprocess.run", side_effect=_fake_freerouting_success()):
+                with mock.patch(
+                    "circuit_weaver.autoroute.os.link",
+                    side_effect=concurrent_writer_then_link,
+                ):
+                    result = autoroute_pcb(dsn, output_path=str(destination))
+
+        assert result["status"] == "error"
+        assert "refusing to replace" in result["message"]
+        assert destination.read_text(encoding="utf-8") == "concurrent writer\n"
 
     def test_router_failure_and_timeout_are_errors(self, tmp_path):
         dsn = _write_dsn(tmp_path)
