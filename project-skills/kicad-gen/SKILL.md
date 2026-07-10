@@ -1,10 +1,10 @@
 ---
-name: kicad_gen
+name: kicad-gen
 description: >
-  Programmatic KiCad schematic generation -- generate .kicad_sch files from
-  Python scripts. Use when the design is too large or repetitive for manual
-  entry, or when schematic content must stay in sync with a machine-readable
-  source of truth (pin maps, CSV, datasheet tables).
+  Generate KiCad schematics from a Circuit Weaver design.yaml or a project's own
+  checked-in generator. Use for large, repetitive, or machine-synchronized designs.
+  Prefer the Circuit Weaver CLI unless the project actually contains and documents
+  its own generation scripts.
 ---
 
 ## When to Use
@@ -17,17 +17,25 @@ description: >
 ## Workflow
 
 ```
-1. Define pin maps   -> scripts/pin_maps.py (or equivalent)
-2. Generate sheets   -> scripts/generate_schematics.py
-3. Run ERC           -> kicad-cli sch erc
+1. Define components and pin maps in design.yaml
+2. Generate sheets   -> circuit-weaver generate
+3. Require real ERC  -> circuit-weaver generate --require-kicad
 4. Review in KiCad   -> open .kicad_sch files, run Update PCB from Schematic
 ```
 
+Give each block a stable unique `id` and functional `section`. Circuit Weaver
+preserves explicit sections as separate sheets, keeps generated support parts
+with their owning block, and disambiguates sanitized sheet filenames. Read the
+root and child paths from `artifact_manifest.json`; never guess `main.kicad_sch`.
+
 ## Project-Specific Setup
 
-**Script location:** `scripts/generate_schematics.py`
-**Pin maps:** `scripts/pin_maps.py`
-**Output directory:** `hardware/<project>/kicad/`
+**Spec:** `${SPEC_PATH}`
+**Output directory:** `${OUTPUT_DIR}`
+
+If a project supplies custom scripts, record their checked-in paths here. Do not
+invoke `scripts/generate_schematics.py` or `scripts/pin_maps.py` unless those
+files exist in the current project.
 
 Edit this file to record:
 - Which ICs are generated vs hand-drawn
@@ -43,23 +51,20 @@ Edit this file to record:
 - Wire stubs REQUIRED between pins and labels -- labels at pin endpoints without wires do not reliably connect
 - Version `20231120` (KiCad 8+) for per-symbol `instances` blocks
 
-## ERC Exit Codes
-
-KiCad 10 returns exit code 5 for ERC violations (changed from 0 in KiCad 9).
-`lib_symbol_issues` type = missing library config -- warning only, not a design error.
-
 ## Regeneration Protocol
 
 ```bash
-# Regenerate from scratch (idempotent)
-python3 scripts/generate_schematics.py
-
-# Validate with ERC
-kicad-cli sch erc hardware/<project>/kicad/<project>.kicad_sch \
-  --output hardware/<project>/kicad/erc.txt
+# Transactionally regenerate and require the exact final hierarchy to pass a
+# real installed kicad-cli ERC run.
+circuit-weaver generate "${SPEC_PATH}" --output "${OUTPUT_DIR}" --require-kicad
 
 # Then in KiCad GUI: Tools -> Update PCB from Schematic
 ```
+
+Read `valid`, `kicad_verified`, `verification_status`, and `erc` from
+`artifact_manifest.json`. Internal validation alone is not real KiCad
+verification. If `--require-kicad` cannot run or ERC fails, generation fails;
+do not claim release-quality artifacts.
 
 Never hand-edit generated `.kicad_sch` files -- changes will be overwritten on next generation.
 

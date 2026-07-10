@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import circuit_weaver
 
 
 def test_package_import_exposes_version():
-    assert circuit_weaver.__version__ == "0.31.0"
+    assert circuit_weaver.__version__ == "0.32.0"
+    assert circuit_weaver.__version__ == version("circuit-weaver")
 
 
 def test_cli_reports_version():

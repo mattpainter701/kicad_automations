@@ -1,10 +1,11 @@
 ---
 name: circuit-weaver
 description: >
-  Circuit Weaver main entry point. Routes to new design (wizard + research-driven IC selection + 
-  passive generation + schematic generation) or opens existing design for review/modification.
-  Trigger on: "design a circuit", "new design", "design wizard", "circuit-weaver", or 
-  when user provides a design directory path.
+  Create, import, analyze, resume, or revise an end-to-end Circuit Weaver electronic design from
+  requirements through validated functional KiCad schematics, placement review, and a truthful
+  manufacturing handoff. Use for new designs and for existing KiCad/PCB/Gerber projects that need
+  durable state. Use kicad for one-off file inspection, bom for standalone sourcing, and
+  design-wizard only when the user explicitly requests the slower questionnaire.
 ---
 
 # Circuit Weaver — Main Entry Skill
@@ -36,7 +37,8 @@ Use these routing rules:
 In the research-first custom architecture path:
 
 - Use `ee` for first-principles analysis and domain-specific calculations.
-- Use `sim` for RF chain / S-parameter / power / stability analysis where applicable.
+- Use `python -m circuit_weaver simulate` for supported power, signal, and thermal
+  analysis after the spec exists; document external RF/S-parameter analysis separately.
 - Use `kicad` for review and downstream schematic/PCB analysis.
 - Capture the system as **custom blocks + interfaces + explicit constraints**
   even when no turnkey builder/topology coverage exists.
@@ -82,16 +84,17 @@ research passes, or repeated validation/generation retries — follow these rule
 5. **Never allow a run to sit silent for ~30 minutes.** Long-running work must include
    periodic follow-up plus an explicit progress/issue check.
 
-When reopening an interrupted or stale project, check status/logs before re-running
-expensive commands. Minimum restart triage:
+When reopening an interrupted or stale project, reconcile durable state before
+re-running expensive commands. Minimum restart triage:
 
 ```bash
-python -m circuit_weaver log-status <project_dir>
-python -m circuit_weaver log-view <project_dir>
+python -m circuit_weaver status <project_dir>
+python -m circuit_weaver resume <project_dir>
 ```
 
-If those suggest a prior failure or stalled run, inspect `design.log` and
-`circuit-weaver.log` before deciding whether to retry, validate, or edit the spec.
+`resume` prints a plan; it does not execute it. If state reports a prior failure
+or modified/missing files, inspect `log-status`, `log-view`, `design.log`, and
+`circuit-weaver.log` before deciding whether to retry, validate, or edit.
 
 ---
 
@@ -124,13 +127,13 @@ Rules:
 Paste back a short banner before the menu, for example:
 
 ```text
-Circuit Weaver installed: v0.31.0
+Circuit Weaver installed: vX.Y.Z
 ```
 
 If only the fallback worked:
 
 ```text
-Circuit Weaver local/imported version: v0.31.0
+Circuit Weaver local/imported version: vX.Y.Z
 ```
 
 ### Step -1 — Auto-Detection
@@ -141,7 +144,8 @@ Before presenting any choices, **automatically scan for existing projects and av
 python -m circuit_weaver discover --json
 ```
 
-Then manually scan the `samples/` directory (relative to the repo root) for available sample designs:
+Then detect the sample sources that actually exist in the current installation.
+Source checkouts may provide the full `samples/` gallery:
 
 ```bash
 ls -d samples/*/  # POSIX
@@ -149,10 +153,22 @@ ls -d samples/*/  # POSIX
 dir /b /ad samples\  # Windows
 ```
 
-**Separate user projects from bundled samples:**
+Do not assume that directory exists in a PyPI installation. The wheel carries a
+single portable starter spec instead; verify it with:
+
+```bash
+python -c "from importlib.resources import files; p=files('circuit_weaver').joinpath('examples','iot_sensor.yaml'); print(p if p.is_file() else '')"
+```
+
+**Separate user projects from available examples:**
 
 - **User projects**: from the `discover --json` output, **exclude** any project whose path contains `/samples/` or `\samples\`. These are your actual user projects. Only show these in the "Open existing" option.
-- **Sample designs**: the subdirectories of `samples/` are bundled reference designs (e.g. `iot_sensor_node`, `motor_controller`, `usb_uart_bridge`, `led_power_indicator`, `fpga_power_carrier`, etc.). These are NOT user projects — they are starting-point reference designs. Show these only under option [3].
+- **Source-checkout samples**: when a real repo-local `samples/` directory exists,
+  its subdirectories are reference designs, not user projects. Show only the
+  directories actually found under option [3].
+- **Packaged example**: PyPI installs expose `iot_sensor.yaml` through
+  `importlib.resources`. Show it as `iot_sensor` under option [3]. Do not claim
+  that the full source-checkout gallery is bundled in the wheel.
 
 If user projects are found, present them:
 
@@ -165,7 +181,9 @@ Found 2 existing circuit project(s):
   2  Motor_Controller         kicad_native    generated    sch, pcb, pro
 ```
 
-If no user projects are found (only samples or nothing), skip the project list.
+If no user projects are found (only examples or nothing), skip the project list.
+If neither a repo-local sample nor the packaged example is available, omit
+option [3] instead of presenting a broken route.
 
 **Log:** `python -m circuit_weaver log-event <project_dir> --type wizard_step --message "Auto-detection: N projects found, M samples available"`
 
@@ -194,39 +212,38 @@ Based on choice:
 
 ### Step 0.3 — Start from a Sample Design
 
-List the available sample designs from the `samples/` directory:
+List only sample designs detected in Step -1. In a source checkout, enumerate
+the real subdirectories under `samples/`. In a normal PyPI install, present the
+packaged starter:
 
 ```
 Available sample designs:
 
   #  Sample                   Description
   -  ------                   -----------
-  1  iot_sensor_node          ESP32-based IoT environmental sensor
-  2  motor_controller         H-bridge motor driver with DRV8833
-  3  usb_uart_bridge          USB-to-UART bridge with CH340G + ESD
-  4  led_power_indicator      Discrete LED + current-limit resistor
-  5  fpga_power_carrier       Multi-rail FPGA power tree
-  6  battery_iot_sensor       Battery-powered BLE sensor
-  7  oled_display_module      I2C OLED display
-  8  wearable_bms             Coin-cell BMS + E-ink
-  9  rf_frontend              LNA + mixer RF chain
-  10 inverter_gate_driver     Gate driver + isolation
-  11 high_voltage_isolation   Mains + safety isolation
-  12 usb_regulated_supply     USB 5V regulated supply
-  13 zigbee_humidistat        Zigbee humidistat
+  1  iot_sensor               ESP32-based IoT environmental sensor
 
   [0] Back to main menu
 ```
 
-Ask: "Which sample would you like to start from? [1-13]"
+When the repo gallery exists, replace that one-item example with the actual
+directory names and descriptions found there. Ask for a number in the displayed
+range; never hard-code a 13-item range when those files are absent.
 
 On selection:
-1. Copy the sample directory to a new working project directory: `cp -r samples/<sample>/ ~/<user-chosen-name>/`
-2. Ask the user for a project name (default: same as sample)
-3. Rename the YAML + set project name in the spec
-4. Print: `✓ Sample copied to <project_name>/`
-5. Log: `[Step 0.3] Started from sample: <sample_name>`
-6. Jump to "Workflow: Existing Design" section (treat the copied sample as an existing design to review/modify)
+1. Ask for the destination before copying.
+2. For a repo-local sample, copy the existing directory:
+   `cp -r samples/<sample>/ <user-chosen-destination>/`.
+3. For the packaged `iot_sensor` example, create the destination and copy the
+   resource bytes from
+   `importlib.resources.files("circuit_weaver").joinpath("examples", "iot_sensor.yaml")`
+   into `<destination>/design.yaml`. Use Python's `Path.mkdir()` and
+   `Path.write_bytes()` so this works on Windows, macOS, and Linux.
+4. Ask the user for a project name (default: same as sample).
+5. Rename the YAML if desired and set the project name in the spec.
+6. Print: `✓ Sample copied to <project_name>/`.
+7. Log: `[Step 0.3] Started from sample: <sample_name>`.
+8. Jump to "Workflow: Existing Design" section (treat the copied sample as an existing design to review/modify).
 
 ### Step 1 — Project Setup & Folder Creation
 
@@ -519,26 +536,41 @@ Charging Circuit (LiPo, USB 5V input):
 
 ### Step 3 — Generate Design Spec
 
-Call Python to scaffold the design YAML with the selected ICs:
+Choose the closest supported topology from `list-templates`, scaffold one valid
+starting block, and then edit the YAML to incorporate the confirmed architecture,
+ICs, interfaces, and constraints. `scaffold` accepts a template and reference; it
+does not accept project-name or MPN flags.
 
 ```bash
 python -m circuit_weaver scaffold \
-  --name "${PROJECT_NAME}" \
-  --mcu "${SELECTED_MCU_MPN}" \
-  --power-converter "${SELECTED_POWER_TOPOLOGY}" \
+  --template "${SELECTED_TEMPLATE}" \
+  --ref "U1" \
   --output "${PROJECT_NAME}/design.yaml"
 ```
 
 Example:
 ```bash
 python -m circuit_weaver scaffold \
-  --name "WiFi_Sensor_v1" \
-  --mcu "ESP32-S3-WROOM-1-N16R8" \
-  --power-converter "buck:TPS62300" \
+  --template "buck" \
+  --ref "U1" \
   --output "WiFi_Sensor_v1/design.yaml"
 ```
 
-**Output:** `design.yaml` with ICs, passives, and block structure.
+Set the top-level `project` value to `${PROJECT_NAME}`. Replace scaffold
+placeholders and add the selected blocks before validation. For a custom
+architecture with no matching template, author `design.yaml` directly from a
+validated sample/schema rather than inventing unsupported scaffold flags.
+
+Give every architectural block a stable unique `id` and an explicit functional
+`section`, for example `power_input`, `core_processing`, `sensors`,
+`communications`, `user_interface`, or `debug`. Generation preserves those
+sections as separate schematic sheets even for a small design; support
+passives stay with their owning block. Do not collapse unrelated functions into
+one section merely to reduce file count. The allocator sanitizes and
+disambiguates filenames, but unique, descriptive section names make the
+hierarchy legible to humans.
+
+**Output:** a complete `${PROJECT_NAME}/design.yaml` ready for validation.
 
 **Log:** `[Step 3] Design spec generated: design.yaml`
 
@@ -571,10 +603,40 @@ python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
   --output "${PROJECT_NAME}/output"
 ```
 
-**Output files:**
-- `${PROJECT_NAME}/output/main.kicad_sch` — Schematic, ready to open in KiCad
-- `${PROJECT_NAME}/output/main_placement.kicad_pcb` — PCB placement hints
-- `${PROJECT_NAME}/output/main_report.md` — Design analysis and power budget
+Before any release-quality, handoff, or fabrication-readiness claim, regenerate
+with the real KiCad gate:
+
+```bash
+python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
+  --output "${PROJECT_NAME}/output" --require-kicad
+```
+
+Internal validation is not a substitute for this final KiCad load/ERC check.
+
+Read the JSON result from stdout, open the path in its `artifact_manifest`
+field, and use `artifact_manifest.json` as the source of truth. Read
+`root_schematic` and select paths from its `artifacts` array. Manifest paths
+are portable and relative to the directory containing the manifest, so resolve
+them against `artifact_manifest.json`'s parent directory. Use the result's
+`files` only as a compatibility fallback.
+
+Inspect `valid`, `kicad_verified`, `verification_status`, and `erc` in the
+manifest before reporting success. `verification_status: unverified` means
+KiCad was unavailable or skipped; say so explicitly and never describe that
+artifact as KiCad-verified. The generated bundle includes:
+
+- the manifest-selected root schematic plus one sub-sheet per functional section;
+- `assembly_manifest.json`, the exhaustive physical-part/reference inventory;
+- `placement_result.json`, `placement_review_context.json`, `placement.svg`, and
+  `placement_editor.html`, the review-only placement bundle; and
+- `${PROJECT_NAME}_report.md`, the design analysis and power budget.
+
+Never guess `main.kicad_sch` or any section filename. Resolve every artifact
+through `artifact_manifest.json`. Inspect `placement_result.json` before showing
+the visual artifacts: it must reconcile exactly to `assembly_manifest.json` and
+must always say `fabrication_ready: false`. Surface every placement blocker.
+Treat manufacturer datasheets and reference layouts linked from
+`placement_review_context.json` as authoritative over the heuristic proposal.
 
 **Log:** `[Step 5] Artifacts generated in output/`
 
@@ -633,16 +695,24 @@ before proceeding. Offer to loop back to the relevant step.
 
 ### Step 7 — PCB Layout Preparation
 
-**Goal:** Prepare the PCB for routing. This step optimizes component placement,
-generates visual layout guides, and optionally auto-routes non-critical nets.
+**Goal:** Review the exhaustive heuristic proposal, then apply approved
+coordinates to a separate, real electrical PCB created in KiCad. The generated
+placement JSON/SVG/HTML files are not a PCB, CPL, or fabrication evidence.
 
 #### 7a. Placement Optimization
 
-Run the simulated annealing placement optimizer on the generated PCB:
+Start with the placement bundle produced by `generate`. Open
+`placement_result.json` and `placement_review_context.json`; do not hide
+overlap, boundary, missing-geometry, missing-sourcing, support-part, or
+constraint blockers. Use the official component/reference-layout URLs in the
+context to review power loops, decoupling, RF/antenna keepouts, crystals,
+connectors, and high-speed interfaces.
+
+Optionally rerun the standalone optimizer with a deliberate configuration:
 
 ```bash
 python -m circuit_weaver optimize-placement "${PROJECT_NAME}/design.yaml" \
-  -o "${PROJECT_NAME}/output" --json
+  -o "${PROJECT_NAME}/output/placement.json"
 ```
 
 This optimizes component positions for:
@@ -652,65 +722,73 @@ This optimizes component positions for:
 
 #### 7b. Interactive Placement Viewer
 
-Generate an interactive HTML placement diagram:
+Open `${PROJECT_NAME}/output/placement_editor.html` to drag the exact assembly
+inventory and export an edited `placement.svg`. The standalone viewer remains
+available for alternate optimizer settings:
 
 ```bash
 python -m circuit_weaver placement-viewer "${PROJECT_NAME}/design.yaml" \
   -o "${PROJECT_NAME}/output/placement.html"
 ```
 
-Present to user: "Open `placement.html` in a browser to see component positions,
-net connections, and thermal heatmap. You can review before committing to routing."
+Present both the visual proposal and its blockers/context. Never equate an
+attractive diagram with electrical or manufacturing readiness.
 
-#### 7c. SVG Placement Export (Optional)
+#### 7c. Create the Electrical PCB in KiCad
 
-For users who want to fine-tune placement visually in an editor:
+Open the generated schematic in KiCad, assign and verify footprints, and run
+**Update PCB from Schematic**. Save the resulting electrically annotated board
+under a user-confirmed path. Only that board has the pads and nets required by
+routing, DFM, and fabrication commands.
 
-```bash
-python -m circuit_weaver generate "${PROJECT_NAME}/design.yaml" \
-  -o "${PROJECT_NAME}/output" --svg-placement
-```
-
-This exports an editable SVG that can be modified in Inkscape/CorelDRAW and
-imported back:
-
-```bash
-python -m circuit_weaver import-placement "${PROJECT_NAME}/output/main_placement.kicad_pcb" \
-  --svg "${PROJECT_NAME}/output/placement.svg"
-```
-
-#### 7d. Autorouting (Optional)
-
-If the user has Freerouting installed, offer to auto-route the PCB:
+Dry-run the edited SVG against that board. Exact SVG↔PCB reference matching is
+the default; use `--allow-partial` only when the user explicitly intends a
+subset update. Unknown SVG refs always fail.
 
 ```bash
-python -m circuit_weaver autoroute "${PROJECT_NAME}/output/main_placement.kicad_pcb" \
-  -o "${PROJECT_NAME}/output/main_routed.kicad_pcb"
+python -m circuit_weaver import-placement \
+  "${PROJECT_NAME}/output/placement.svg" "${ELECTRICAL_PCB}" \
+  -o "${PLACED_PCB}" --dry-run
+python -m circuit_weaver import-placement \
+  "${PROJECT_NAME}/output/placement.svg" "${ELECTRICAL_PCB}" \
+  -o "${PLACED_PCB}"
 ```
 
-**Note:** Freerouting must be installed separately. If not available, the user
-routes manually in KiCad. Autorouting works best for non-critical signal nets;
-power and high-speed traces should be routed manually.
+#### 7d. Autorouting an Electrical PCB (Optional)
+
+Offer autorouting only for a real pad-bearing, named-net board or a user-exported
+Specctra `.dsn`. Output is always a validated `.ses` session, never a routed
+`.kicad_pcb`:
+
+```bash
+python -m circuit_weaver autoroute "${ELECTRICAL_PCB}" \
+  -o "${PROJECT_NAME}/output/${PROJECT_NAME}.ses"
+```
+
+If `kicad-cli` does not advertise Specctra export, export a `.dsn` in KiCad PCB
+Editor and pass that file to `autoroute`. Freerouting must be installed
+separately. Treat exit code 2 / `status: partial` as incomplete routing. Import
+the SES in KiCad and run DRC. Route power, switching loops, differential pairs,
+clocks, crystals, RF, and other critical nets manually.
 
 **Claude Code / Codex / OpenCode:** Present choices:
 - **[1] Optimize placement** (recommended)
 - **[2] View placement** (generate interactive HTML)
-- **[3] Export SVG for manual editing**
-- **[4] Autoroute** (requires Freerouting)
-- **[5] Skip to review** (route manually in KiCad)
+- **[3] Open the schematic and create/update the electrical PCB in KiCad**
+- **[4] Autoroute a user-supplied electrical PCB** (requires Freerouting)
+- **[5] Skip to review**
 
 Run whichever the user selects. After each action, offer to run another or proceed.
 
 **Log:** `[Step 7] PCB layout: {actions_taken}`
 
-#### Related Project-Skills
+#### Optional Repository Templates
 
-For advanced PCB workflows, these project-skills provide deeper functionality:
-- `/kicad_pcb_place` — constraint-based placement with pcbnew API
-- `/autoroute` — detailed Freerouting workflow with DSN/SES conversion
-- `/kicad_pinmap` — pin-to-net audit and verification
-- `/kicad_hierarchy` — hierarchical schematic sheet management
-- `/kicad_gen` — programmatic schematic generation for large ICs (BGAs)
+A source checkout may contain deeper templates under `project-skills/` for
+placement, autorouting, pin maps, hierarchy, and custom generation. They are not
+included by PyPI `install-skills`. Read one only after verifying its `SKILL.md`
+exists in the current repository; never invoke a missing template by skill name.
+When absent, continue with the built-in CLI commands and KiCad workflow above.
 
 ### Step 8 — Design Review & Next Steps
 
@@ -721,18 +799,20 @@ Display:
 
 Project:      ${PROJECT_NAME}
 Logfile:      ${PROJECT_NAME}/design.log
-Schematic:    ${PROJECT_NAME}/output/main.kicad_sch
-Placement:    ${PROJECT_NAME}/output/main_placement.kicad_pcb
-Placement:    ${PROJECT_NAME}/output/placement.html (interactive)
-Report:       ${PROJECT_NAME}/output/main_report.md
+Manifest:     ${ARTIFACT_MANIFEST_FROM_GENERATE_JSON}
+Schematic:    ${ROOT_SCHEMATIC_FROM_ARTIFACT_MANIFEST}
+Placement:    ${PROJECT_NAME}/output/placement_result.json (review status)
+Context:      ${PROJECT_NAME}/output/placement_review_context.json
+Editor:       ${PROJECT_NAME}/output/placement_editor.html
+Report:       ${DESIGN_REPORT_FROM_ARTIFACT_MANIFEST}
 Confidence:   ${PROJECT_NAME}/output/confidence_report.html
 
 Next steps:
-  1. Open main.kicad_sch in KiCad to review the schematic
-  2. Open main_placement.kicad_pcb in KiCad for PCB layout
-  3. Route remaining traces (power first, then signals)
-  4. Run KiCad DRC/ERC checks
-  5. Export gerbers and order from JLCPCB or similar
+  1. Open the root schematic reported by generate and review it in KiCad
+  2. Assign footprints and update an electrical PCB from the schematic
+  3. Place and route the electrical PCB (power and critical nets first)
+  4. Run KiCad ERC/DRC, then Circuit Weaver DFM on the electrical PCB
+  5. Export Gerbers from the electrical PCB and order after review
 ```
 
 Question: "What would you like to do next?"
@@ -756,32 +836,60 @@ Question: "What would you like to do next?"
 If Step -1 already discovered user projects (excluding samples), present the list with numbered choices and let the user select one. Also offer a "Browse for path" option.
 
 If no user projects were found, or the user chooses to browse:
-- Ask: "Path to your design directory?" (text input)
-- Expected: a directory containing a `design.yaml` or `*.kicad_pro` file
+- Ask for a design path.
+- Accept `design.yaml`, a KiCad project/file, a PCB, a Gerber/drill directory,
+  or a ZIP archive.
 
-**Claude Code / Codex / OpenCode:** Ask for text input as fallback (path to folder with `design.yaml`)
+**Claude Code / Codex / OpenCode:** Ask for a path as free text.
 
-Validate the path and load `design.yaml`.
+If the selected project already has `.circuit-weaver/project.json`, reconcile it:
+
+```bash
+python -m circuit_weaver status "${DESIGN_PATH}"
+python -m circuit_weaver resume "${DESIGN_PATH}"
+```
+
+If it has no durable manifest, import it non-destructively. `--analyze` runs all
+applicable bundled schematic/PCB/Gerber analyzers and caches their evidence:
+
+```bash
+python -m circuit_weaver import-design "${SOURCE_PATH}" --analyze
+```
+
+Read `project_root`, `manifest`, `analysis_status`, and `next_actions` from the
+JSON. Do not assume an imported native design has `design.yaml`. A netlist-only
+source is inventoried but its analysis is truthfully unsupported. Use `--force`
+only when the user intentionally replaces a changed import source set/staging
+tree or asks to invalidate the analysis cache.
 
 ### Display Current State
 
 ```bash
-python -m circuit_weaver log-status "${DESIGN_PATH}"
+python -m circuit_weaver status "${PROJECT_ROOT}"
+python -m circuit_weaver resume "${PROJECT_ROOT}"
 ```
 
-Shows:
+These commands reconcile the manifest with current files and show:
 ```
 === Design Status ===
 
 Project:      WiFi_Sensor_v1
-ICs:          4 (ESP32-S3, TPS62300, BME280, TP5000)
-Status:       Schematic generated, ready for PCB layout
-
-Last operation:   Generate artifacts (2026-04-07, 18:30)
-Next action:      Design PCB layout in KiCad
+Type:         circuit_weaver or kicad_native
+Status:       generated, imported, analyzed, failed, or modified
+Current phase: placement_review
+Next actions: deterministic commands/inspections for this state
 ```
 
+`resume` reports a restart plan and never executes it. Use `log-status` and
+`log-view` only as supporting diagnostics after durable state is reconciled.
+
 ### Offer Actions
+
+Build the menu from the reconciled inventory. If no `design.yaml` exists, omit
+validate, regenerate, optimize, confidence, simulation, and spec-based BOM
+actions. For a native import, offer source analysis, state/reconciliation,
+review of `.circuit-weaver/analysis/index.json`, and normal KiCad editing. Do
+not fabricate a spec merely to make a menu command runnable.
 
 **Claude Code / Codex / OpenCode:** Use AskUserQuestion / numbered options:
 
@@ -789,15 +897,15 @@ Next action:      Design PCB layout in KiCad
 What would you like to do?
 
   --- Verify ---
-  [1] Validate design (electrical rules + cross-reference audit)
-  [2] Run confidence report (full design readiness check)
-  [3] Run simulations (SPICE power/signal analysis)
+  [1] Analyze/reanalyze imported KiCad, PCB, and Gerber sources
+  [2] Validate design spec (when design.yaml exists)
+  [3] Run confidence/simulation checks (when design.yaml exists)
 
   --- Generate & Layout ---
   [4] Regenerate schematic (after making edits)
   [5] Optimize PCB placement (simulated annealing)
-  [6] View interactive placement (HTML thermal/net viewer)
-  [7] Autoroute PCB (requires Freerouting)
+  [6] Review placement result, context, SVG, and interactive editor
+  [7] Autoroute an electrical PCB (requires Freerouting)
 
   --- Export ---
   [8] Export BOM & CPL for ordering
@@ -811,17 +919,17 @@ What would you like to do?
 ```
 
 Route based on selection:
-- **[1] Validate** → `python -m circuit_weaver validate ${DESIGN_PATH}/design.yaml --enhanced --verbose`
-- **[2] Confidence** → `python -m circuit_weaver confidence ${DESIGN_PATH}/design.yaml --run-sims -o ${DESIGN_PATH}/output/confidence_report.html`
-- **[3] Simulate** → `python -m circuit_weaver simulate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/sims`
+- **[1] Analyze** → `python -m circuit_weaver analyze-design "${PROJECT_ROOT}"`; add `--force` only for an intentional rerun
+- **[2] Validate** → If a design spec exists, `python -m circuit_weaver validate ${DESIGN_PATH}/design.yaml --enhanced --verbose`
+- **[3] Confidence/simulate** → If a design spec exists, run `confidence --run-sims`; never invent a spec for a native import
 - **[4] Regenerate** → `python -m circuit_weaver generate ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
-- **[5] Optimize placement** → `python -m circuit_weaver optimize-placement ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output`
-- **[6] Placement viewer** → `python -m circuit_weaver placement-viewer ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output/placement.html`
-- **[7] Autoroute** → `python -m circuit_weaver autoroute ${DESIGN_PATH}/output/main_placement.kicad_pcb -o ${DESIGN_PATH}/output/main_routed.kicad_pcb`
-- **[8] Export BOM** → `python -m circuit_weaver export-jlcpcb ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/export`
-- **[9] Export Gerbers** → `python -m circuit_weaver export-gerbers ${DESIGN_PATH}/output/main_placement.kicad_pcb -o ${DESIGN_PATH}/gerbers`
-- **[10] DFM check** → `python -m circuit_weaver check-dfm ${DESIGN_PATH}/output/main_placement.kicad_pcb`
-- **[11] Report** → Show `main_report.md`
+- **[5] Optimize placement** → `python -m circuit_weaver optimize-placement ${DESIGN_PATH}/design.yaml -o ${DESIGN_PATH}/output/placement.json`
+- **[6] Placement review** → Read `placement_result.json` and `placement_review_context.json`, then open `placement_editor.html`; do not skip blockers
+- **[7] Autoroute** → Ask for a real PCB or DSN, then run `python -m circuit_weaver autoroute "${ROUTING_SOURCE}" -o ${DESIGN_PATH}/output/routed.ses`; import the SES in KiCad and run DRC
+- **[8] Export BOM & CPL** → Require both a design spec and `${ELECTRICAL_PCB}`, then run `python -m circuit_weaver export-jlcpcb ${DESIGN_PATH}/design.yaml --pcb "${ELECTRICAL_PCB}" -o ${DESIGN_PATH}/export`; without `--pcb`, label the result BOM-only
+- **[9] Export Gerbers** → Ask for `${ELECTRICAL_PCB}`, then run `python -m circuit_weaver export-gerbers "${ELECTRICAL_PCB}" -o ${DESIGN_PATH}/gerbers`
+- **[10] DFM check** → Ask for `${ELECTRICAL_PCB}`, then run `python -m circuit_weaver check-dfm "${ELECTRICAL_PCB}"`
+- **[11] Report** → Read `artifact_manifest.json` and show its `*_report.md` artifact
 - **[12] Changes** → Return to Step 1 (requirements capture for edits)
 - **[13] Exit** → End the skill
 
@@ -833,12 +941,9 @@ Route based on selection:
 
 **Critical:** Project folder + design.log must be created **immediately** after user enters project name (Step 1a), BEFORE any other questions.
 
-```bash
-# Step 1a action:
-mkdir -p "${PROJECT_NAME}"
-touch "${PROJECT_NAME}/design.log"
-# Log: [Step 1a] Project created: ${PROJECT_NAME}
-```
+Use the platform's filesystem tools to create `${PROJECT_NAME}/` and an empty
+`${PROJECT_NAME}/design.log`. Do not emit POSIX-only `touch` or `mkdir -p`
+commands on Windows. Log: `[Step 1a] Project created: ${PROJECT_NAME}`.
 
 Subsequent steps must write logs like:
 ```
@@ -856,7 +961,7 @@ Subsequent steps must write logs like:
 
 ### For Claude Code
 
-The skill emits AskUserQuestion tool calls. Claude Code's TUI renders buttons/checkboxes, responses come back as tool results. **Claude orchestrates project folder creation via instructions in Step 1a**, but the actual folder/log creation happens in Python (mvp.py `_run_design_wizard()` or skill must tell user to run the CLI to create it).
+The skill emits AskUserQuestion tool calls. Claude Code's TUI renders buttons/checkboxes and responses return as tool results. Claude creates the project folder and log with its filesystem tools in Step 1a; terminal users can instead run the built-in `design-wizard` command.
 
 ### For Codex/OpenCode
 
@@ -874,10 +979,17 @@ This directly invokes `_run_design_wizard()` in Python with `input()` prompts. *
 ### Python Subcommands
 
 All Python operations accept **command-line arguments only**, no interactive prompts:
-- `scaffold --name X --mcu Y --power-converter Z --output design.yaml`
+- `scaffold --template buck --ref U1 --output design.yaml`
 - `validate design.yaml [--enhanced] [--verbose] [--detailed-score]`
 - `generate design.yaml --output ./out`
-- `export-jlcpcb design.yaml --output ./export`
+- `import-design <source> [--project-dir <dir>] [--analyze] [--force]`
+- `analyze-design <project> [--force]`
+- `status <project> [--json]`
+- `resume <project> [--json]`
+- `export-jlcpcb design.yaml --output ./export [--pcb board.kicad_pcb]`
+- `export-dual-cpl design.yaml --pcb board.kicad_pcb --output ./export`
+- `import-placement placement.svg board.kicad_pcb [-o placed.kicad_pcb] [--allow-partial]`
+- `autoroute board.kicad_pcb -o routed.ses`
 - `confidence design.yaml [--run-sims] [--pcb file.kicad_pcb] [-o report.html] [--json]`
 - `simulate design.yaml [-o ./sims] [--type power|signal|thermal|all] [--json]`
 - `discover [--root .] [--depth 2] [--json]`
@@ -913,12 +1025,7 @@ Safe pattern:
 
 ```bash
 circuit-weaver validate design.yaml > val.json 2> val.err
-python - <<'PY'
-import json
-data = json.load(open('val.json', encoding='utf-8'))
-print('Valid:', data['valid'])
-print('Summary:', data['summary'])
-PY
+python -c "import json; data=json.load(open('val.json', encoding='utf-8')); print('Valid:', data['valid']); print('Summary:', data['summary'])"
 ```
 
 If you need to summarize failures, read from `categories` rather than inventing a
@@ -928,7 +1035,7 @@ wrapper that reparses mixed stdout/stderr streams.
 
 ## Related Skills
 
-- **design_wizard** — Offline wizard variant (no research, no IC selection)
+- **design-wizard** — Explicit interactive/offline wizard variant
 - **ee** — Electrical engineering formulas and analysis
 - **bom** — BOM management and sourcing
 - **kicad** — Schematic and PCB analysis

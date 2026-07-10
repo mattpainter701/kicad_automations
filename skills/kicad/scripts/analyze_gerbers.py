@@ -9,7 +9,7 @@ Parses Gerber RS-274X files and Excellon drill files to extract:
 - Board dimensions (from Edge.Cuts extents or .gbrjob)
 - Drill hole sizes, counts, and classification (via / component / mounting)
 - Layer completeness verification (against .gbrjob expected list or defaults)
-- Layer alignment (coordinate range consistency)
+- Layer alignment declarations (X2 .SameCoordinates) with artwork-bound diagnostics
 - Inner copper layer detection (4+ layer boards)
 - .gbrjob metadata (stackup, design rules, board specs)
 - SMD vs THT pad analysis, minimum feature size
@@ -19,11 +19,9 @@ Usage:
 """
 
 import json
-import math
 import re
 import sys
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # Gerber parser
@@ -77,15 +75,15 @@ def parse_gerber(path: str) -> dict:
     elif "%MOMM*%" in content:
         result["units"] = "mm"
 
-    # X2 file attributes — modern format: %TF.Key,Value*%
-    for match in re.finditer(r"%TF\.(\w+),([^*]*)\*%", content):
-        result["x2_attributes"][match.group(1)] = match.group(2)
+    # X2 file attributes — modern format: %TF.Key[,Value]*%
+    for match in re.finditer(r"%TF\.(\w+)(?:,([^*]*))?\*%", content):
+        result["x2_attributes"][match.group(1)] = match.group(2) or ""
 
-    # X2 file attributes — KiCad 5 comment format: G04 #@! TF.Key,Value*
-    for match in re.finditer(r"G04 #@! TF\.(\w+),([^*]*)\*", content):
+    # X2 file attributes — KiCad 5 comment format: G04 #@! TF.Key[,Value]*
+    for match in re.finditer(r"G04 #@! TF\.(\w+)(?:,([^*]*))?\*", content):
         key = match.group(1)
         if key not in result["x2_attributes"]:
-            result["x2_attributes"][key] = match.group(2)
+            result["x2_attributes"][key] = match.group(2) or ""
 
     # --- Phase 2: stateful line-by-line pass ---
 
@@ -193,10 +191,14 @@ def parse_gerber(path: str) -> dict:
             x = int(cm.group(1)) / x_div
             y = int(cm.group(2)) / y_div
             cr = result["coordinate_range"]
-            if x < cr["x_min"]: cr["x_min"] = x
-            if x > cr["x_max"]: cr["x_max"] = x
-            if y < cr["y_min"]: cr["y_min"] = y
-            if y > cr["y_max"]: cr["y_max"] = y
+            if x < cr["x_min"]:
+                cr["x_min"] = x
+            if x > cr["x_max"]:
+                cr["x_max"] = x
+            if y < cr["y_min"]:
+                cr["y_min"] = y
+            if y > cr["y_max"]:
+                cr["y_max"] = y
 
     # Fix infinite values if no coordinates found
     for key in result["coordinate_range"]:
@@ -318,10 +320,10 @@ def parse_drill(path: str) -> dict:
         elif "INCH" in line:
             result["units"] = "inch"
 
-        # X2 attributes from comments: ; #@! TF.Key,Value
-        tf_match = re.match(r";\s*#@!\s*TF\.(\w+),(.*)", line)
+        # X2 attributes from comments: ; #@! TF.Key[,Value]
+        tf_match = re.match(r";\s*#@!\s*TF\.(\w+)(?:,(.*))?$", line)
         if tf_match:
-            result["x2_attributes"][tf_match.group(1)] = tf_match.group(2).strip()
+            result["x2_attributes"][tf_match.group(1)] = (tf_match.group(2) or "").strip()
 
         # Per-tool aperture function: ; #@! TA.AperFunction,Plated,PTH,ViaDrill
         ta_match = re.match(r";\s*#@!\s*TA\.AperFunction,(.*)", line)
@@ -367,10 +369,14 @@ def parse_drill(path: str) -> dict:
                 result["tools"][current_tool]["hole_count"] += 1
 
             cr = result["coordinate_range"]
-            if x < cr["x_min"]: cr["x_min"] = x
-            if x > cr["x_max"]: cr["x_max"] = x
-            if y < cr["y_min"]: cr["y_min"] = y
-            if y > cr["y_max"]: cr["y_max"] = y
+            if x < cr["x_min"]:
+                cr["x_min"] = x
+            if x > cr["x_max"]:
+                cr["x_max"] = x
+            if y < cr["y_min"]:
+                cr["y_min"] = y
+            if y > cr["y_max"]:
+                cr["y_max"] = y
 
     # Fix infinite values
     for key in result["coordinate_range"]:
@@ -643,39 +649,145 @@ def check_completeness(gerbers: list[dict], drills: list[dict],
 
 
 def check_alignment(gerbers: list[dict], drills: list[dict]) -> dict:
-    """Check that all layers have consistent coordinate ranges."""
-    ranges = {}
-    for g in gerbers:
-        lt = g.get("layer_type", "unknown")
-        if lt != "unknown":
-            cr = g["coordinate_range"]
-            ranges[lt] = {
-                "width": round(cr["x_max"] - cr["x_min"], 3),
-                "height": round(cr["y_max"] - cr["y_min"], 3),
-            }
-    for d in drills:
-        cr = d["coordinate_range"]
-        ranges[f"drill_{d.get('type', 'unknown')}"] = {
-            "width": round(cr["x_max"] - cr["x_min"], 3),
-            "height": round(cr["y_max"] - cr["y_min"], 3),
+    """Report alignment evidence without treating artwork bounds as origins.
+
+    A coordinate range is the bounding box of a layer's artwork. Sparse copper
+    therefore normally has smaller extents than the board profile. The Gerber X2
+    ``.SameCoordinates`` file attribute is the declaration that files share an
+    origin and axis orientation.
+
+    ``aligned`` is deliberately tri-state: ``True`` means two or more Gerber
+    files declare one shared coordinate system; ``None`` means the supplied
+    metadata cannot establish alignment. Artwork extents remain diagnostic only.
+    """
+
+    def data_bounds(record: dict, *, drill: bool = False) -> dict:
+        cr = record.get("coordinate_range", {})
+        x_min = float(cr.get("x_min", 0))
+        x_max = float(cr.get("x_max", 0))
+        y_min = float(cr.get("y_min", 0))
+        y_max = float(cr.get("y_max", 0))
+        # Gerber coordinates remain in file units after parsing. Drill coordinates
+        # are normalized to millimetres by parse_drill().
+        scale = 1.0 if drill or record.get("units") != "inch" else 25.4
+        x_min *= scale
+        x_max *= scale
+        y_min *= scale
+        y_max *= scale
+        return {
+            "x_min": round(x_min, 3),
+            "x_max": round(x_max, 3),
+            "y_min": round(y_min, 3),
+            "y_max": round(y_max, 3),
+            "width": round(x_max - x_min, 3),
+            "height": round(y_max - y_min, 3),
+            "units": "mm",
         }
 
-    alignment_layers = {k: v for k, v in ranges.items()
-                        if k in ("F.Cu", "B.Cu", "Edge.Cuts") or
-                        (k.startswith("In") and k.endswith(".Cu"))}
-    widths = [r["width"] for r in alignment_layers.values() if r["width"] > 0]
-    heights = [r["height"] for r in alignment_layers.values() if r["height"] > 0]
+    ranges = {}
+    gerber_files = []
+    for index, gerber in enumerate(gerbers):
+        if "error" in gerber:
+            continue
+        filename = gerber.get("filename") or f"gerber_{index + 1}"
+        layer_type = gerber.get("layer_type", "unknown")
+        range_key = layer_type if layer_type not in ranges else f"{layer_type}:{filename}"
+        ranges[range_key] = data_bounds(gerber)
+        gerber_files.append(
+            {
+                "filename": filename,
+                "layer_type": layer_type,
+                "same_coordinates": gerber.get("x2_attributes", {}).get("SameCoordinates"),
+            }
+        )
 
-    aligned = True
+    drill_files = []
+    for index, drill in enumerate(drills):
+        if "error" in drill:
+            continue
+        filename = drill.get("filename") or f"drill_{index + 1}"
+        range_key = f"drill_{drill.get('type', 'unknown')}"
+        if range_key in ranges:
+            range_key = f"{range_key}:{filename}"
+        ranges[range_key] = data_bounds(drill, drill=True)
+        drill_files.append(
+            {
+                "filename": filename,
+                "same_coordinates": drill.get("x2_attributes", {}).get("SameCoordinates"),
+            }
+        )
+
+    declared_gerbers = [item for item in gerber_files if item["same_coordinates"] is not None]
+    undeclared_gerbers = [item["filename"] for item in gerber_files if item["same_coordinates"] is None]
+    coordinate_ids = sorted({item["same_coordinates"] for item in declared_gerbers})
     issues = []
-    if widths and max(widths) - min(widths) > 2.0:
-        aligned = False
-        issues.append(f"Width varies by {max(widths) - min(widths):.1f}mm across copper/edge layers")
-    if heights and max(heights) - min(heights) > 2.0:
-        aligned = False
-        issues.append(f"Height varies by {max(heights) - min(heights):.1f}mm across copper/edge layers")
 
-    return {"aligned": aligned, "issues": issues, "layer_extents": ranges}
+    if len(gerber_files) < 2:
+        aligned = None
+        status = "unknown"
+        method = "insufficient_files"
+        issues.append("At least two Gerber files are required to establish cross-file alignment")
+    elif undeclared_gerbers:
+        aligned = None
+        status = "unknown"
+        method = "incomplete_x2_metadata"
+        issues.append(".SameCoordinates is missing from: " + ", ".join(sorted(undeclared_gerbers)))
+    elif len(coordinate_ids) != 1:
+        aligned = None
+        status = "unknown"
+        method = "conflicting_x2_metadata"
+        rendered_ids = [value if value else "<no identifier>" for value in coordinate_ids]
+        issues.append(
+            "Gerber files declare different .SameCoordinates identifiers: " + ", ".join(rendered_ids)
+        )
+    else:
+        aligned = True
+        status = "declared_aligned"
+        method = "x2_same_coordinates"
+
+    shared_id = coordinate_ids[0] if aligned is True else None
+    if not drill_files:
+        drill_alignment = {
+            "status": "not_applicable",
+            "method": "no_drill_files",
+            "files": [],
+        }
+    else:
+        undeclared_drills = [item["filename"] for item in drill_files if item["same_coordinates"] is None]
+        drill_ids = {item["same_coordinates"] for item in drill_files if item["same_coordinates"] is not None}
+        if aligned is True and not undeclared_drills and drill_ids == {shared_id}:
+            drill_alignment = {
+                "status": "declared_aligned",
+                "method": "x2_same_coordinates",
+                "coordinate_system": shared_id,
+                "files": sorted(item["filename"] for item in drill_files),
+            }
+        else:
+            reason = "Drill files do not all declare the Gerber .SameCoordinates identifier"
+            if aligned is not True:
+                reason = "Gerber alignment is not established, so drill-to-Gerber alignment is unknown"
+            drill_alignment = {
+                "status": "unknown",
+                "method": "insufficient_x2_metadata",
+                "files": sorted(item["filename"] for item in drill_files),
+                "reason": reason,
+            }
+
+    return {
+        "aligned": aligned,
+        "status": status,
+        "method": method,
+        "scope": "gerber_files",
+        "coordinate_system": shared_id,
+        "issues": issues,
+        "files": gerber_files,
+        "drill_alignment": drill_alignment,
+        "layer_extents": ranges,
+        "extent_note": (
+            "Layer extents are artwork bounds in millimetres; sparse layers may be smaller than Edge.Cuts, "
+            "so extents are not used as alignment evidence."
+        ),
+    }
 
 
 def compute_board_dimensions(gerbers: list[dict], job_info: dict | None) -> dict:

@@ -89,7 +89,7 @@ JSON output (~50-300KB depending on board complexity)
 - **Free vias identified**: Vias with `(free yes)` are flagged — typically stitching or thermal vias not anchored to tracks.
 - **Pin function/type carried from schematic**: Pad-level `pinfunction` and `pintype` enable power-pin vs signal-pin differentiation without needing the schematic.
 - **KiCad 5 compatibility**: Handles `(module ...)`, `(fp_text reference ...)`, `(net_class ...)`, and `(dimension ...)` in addition to KiCad 6+ equivalents.
-- **Unrouted detection**: Zone-aware — nets routed only through copper pours are not flagged as unrouted.
+- **Unrouted detection**: Zone-aware — nets routed only through copper pours are not flagged as unrouted. Routing completeness is fail-closed: a board needs at least one net joining two pads and at least one copper item. Padless Circuit Weaver placement previews are explicitly classified as non-routable, review-only, incomplete, and unverified. Static parsing never implies that `kicad-cli` can load the board or that DRC passes.
 - **Facts over judgement**: Analysis functions provide raw facts (track widths, via counts, distances) rather than pass/fail verdicts, enabling flexible higher-level analysis.
 
 ### Usage

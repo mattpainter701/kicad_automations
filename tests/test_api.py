@@ -4,24 +4,21 @@ Covers all endpoint groups: health, templates, generate, validate,
 generate/from-bom, and the /mvp/ suite (validate, apply-patch, diff,
 pcb-feedback, generate).
 
-Uses local source (``sys.path.insert(0, "src")``) so the installed
-package is NOT used — the local ``src/circuit_weaver/`` tree is tested.
+CI installs the package before running these tests, so wheel-release jobs
+exercise the installed artifact rather than silently importing ``src/``.
 """
 
 from __future__ import annotations
 
-import sys
+import io
+import json
+import zipfile
 from pathlib import Path
 
-# Ensure local source takes precedence over any installed circuit-weaver package
-_src = str(Path(__file__).resolve().parent.parent / "src")
-if _src not in sys.path:
-    sys.path.insert(0, _src)
+import pytest
+from fastapi.testclient import TestClient
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-
-from circuit_weaver.api import create_app  # noqa: E402
+from circuit_weaver.api import create_app
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 
@@ -66,11 +63,13 @@ def client():
 
 class TestHealth:
     def test_health_returns_ok(self, client):
+        from circuit_weaver import __version__
+
         resp = client.get("/health")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-        assert "version" in data
+        assert data["version"] == __version__
         assert "templates" in data
 
 
@@ -264,3 +263,49 @@ class TestMvpGenerate:
         else:
             data = resp.json()
             assert "detail" in data
+
+    def test_mvp_generate_zip_manifest_reports_unverified_without_kicad(
+        self,
+        client,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """The downloadable manifest must preserve skipped-KiCad state portably."""
+        from circuit_weaver import erc_runner
+
+        monkeypatch.setattr(erc_runner, "_kicad_cli_path", lambda: None)
+        resp = client.post(
+            "/mvp/generate?require_valid=false&export_svg=false",
+            json=iot_spec(),
+        )
+
+        assert resp.status_code == 200, resp.text
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+            archive_names = set(archive.namelist())
+            manifest = json.loads(archive.read("artifact_manifest.json"))
+
+        assert ".circuit-weaver.lock" not in archive_names
+        assert manifest["schema_version"] == 2
+        assert manifest["valid"] is True
+        assert manifest["kicad_verified"] is False
+        assert manifest["verification_status"] == "unverified"
+        assert manifest["erc"]["status"] == "skipped"
+        assert manifest["erc"]["schematic"] == manifest["root_schematic"]
+        assert manifest["root_schematic"]
+        assert not Path(manifest["root_schematic"]).is_absolute()
+        assert all(entry["path"] == entry["relative_path"] for entry in manifest["artifacts"])
+        assert ".circuit-weaver.lock" not in {entry["path"] for entry in manifest["artifacts"]}
+
+    def test_mvp_generate_rejects_project_name_path_escape(self, client, tmp_path: Path):
+        """Untrusted API metadata must never turn into an output path."""
+        escaped_stem = tmp_path / "outside-api-output"
+        spec = iot_spec()
+        spec["project"] = str(escaped_stem)
+
+        resp = client.post(
+            "/mvp/generate?require_valid=false&export_svg=false",
+            json=spec,
+        )
+
+        assert resp.status_code == 422
+        assert "Project name" in resp.json()["detail"]
+        assert not escaped_stem.with_suffix(".kicad_sch").exists()

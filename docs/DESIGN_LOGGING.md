@@ -161,23 +161,32 @@ Tracks query phases, status, and number of results returned.
 
 ## Resuming a Design
 
-If you stopped in the middle of designing a circuit, you can check where you left off:
+If you stopped in the middle of designing a circuit, reconcile durable project
+state before using the logs as diagnostics:
 
 ```bash
-# See the current state
-circuit-weaver log-status my_project/
+# Reconcile .circuit-weaver/project.json with current files
+circuit-weaver status my_project/
+
+# Print a deterministic restart plan (does not execute it)
+circuit-weaver resume my_project/
 
 # This tells you:
-# - Which wizard step you completed last
-# - Whether design.yaml was generated
-# - Whether validation passed
-# - Which errors need fixing
-# - Which CLI commands failed (if any)
+# - Current phase and validation state
+# - Recorded sources/artifacts that changed or disappeared
+# - Analysis/import state and next safe actions
 
-# Then resume by editing the spec and running the next step:
-circuit-weaver validate my_project/design.yaml
-circuit-weaver generate my_project/design.yaml -o my_project/output/
+# Use append-only logs for the supporting timeline
+circuit-weaver log-status my_project/
+circuit-weaver log-view my_project/
+
+# Follow only the applicable next action. For release-quality regeneration:
+circuit-weaver generate my_project/design.yaml -o my_project/output/ --require-kicad
 ```
+
+For an existing KiCad project, PCB, Gerber/drill directory, or ZIP without a
+manifest, initialize the same non-destructive flow with
+`circuit-weaver import-design <source> --analyze`.
 
 ## Troubleshooting with Logs
 

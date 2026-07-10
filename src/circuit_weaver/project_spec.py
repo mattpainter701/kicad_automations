@@ -75,22 +75,30 @@ def _make_stub_component(name: str, category: str, ref: str = "", reason: str = 
 
 
 def _parse_yaml(path: str | Path) -> dict:
-    """Load YAML file. Supports PyYAML or falls back to simple parser."""
+    """Load a YAML mapping with the required full YAML parser."""
     path = Path(path)
     text = path.read_text(encoding="utf-8")
     try:
         import yaml
+    except ImportError as exc:  # pragma: no cover - guarded by package metadata
+        raise RuntimeError("PyYAML is required to parse circuit-weaver design specifications") from exc
 
-        return yaml.safe_load(text)
-    except ImportError:
-        return _simple_yaml_parse(text)
+    parsed = yaml.safe_load(text)
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError(f"Design specification must contain a top-level mapping: {path}")
+    return parsed
 
 
 def _simple_yaml_parse(text: str) -> dict:
-    """Minimal YAML-subset parser for when PyYAML is not installed.
+    """Parse a minimal YAML subset for legacy discovery-only callers.
 
     Handles: top-level keys, string/number values, lists of dicts (one indent level).
     Does NOT handle: nested dicts, multi-line strings, anchors, tags.
+
+    Design loading must use :func:`_parse_yaml`; this helper is not safe for
+    generation or validation.
     """
     result: dict[str, Any] = {}
     current_key = None

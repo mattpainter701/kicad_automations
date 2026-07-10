@@ -2,6 +2,7 @@
 
 import json
 import logging
+import sys
 from pathlib import Path
 
 import pytest
@@ -349,7 +350,7 @@ class TestLogEventCLI:
         import subprocess
         result = subprocess.run(
             [
-                "python", "-m", "circuit_weaver", "log-event", str(tmp_project),
+                sys.executable, "-m", "circuit_weaver", "log-event", str(tmp_project),
                 "--type", "wizard_step",
                 "--message", "Step 1: Project setup",
                 "--data", '{"step": 1, "user_input": {"name": "TestProj"}}',
@@ -364,7 +365,7 @@ class TestLogEventCLI:
         import subprocess
         result = subprocess.run(
             [
-                "python", "-m", "circuit_weaver", "log-event", str(tmp_project),
+                sys.executable, "-m", "circuit_weaver", "log-event", str(tmp_project),
                 "--type", "error",
                 "--message", "Something went wrong",
                 "--data", '{"operation": "generate"}',
@@ -379,7 +380,7 @@ class TestLogEventCLI:
         import subprocess
         result = subprocess.run(
             [
-                "python", "-m", "circuit_weaver", "log-event", str(tmp_project),
+                sys.executable, "-m", "circuit_weaver", "log-event", str(tmp_project),
                 "--type", "scoring",
                 "--message", "test",
                 "--data", "not-json",

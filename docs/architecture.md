@@ -10,7 +10,7 @@ Circuit Weaver is a transactional circuit design engine that transforms YAML spe
 ┌─────────────────────────────────────────────────────────────────┐
 │ USER INTERFACE LAYER                                           │
 │ ├─ CLI Commands (dispatcher.py: validate, generate, scaffold, etc.)   │
-│ ├─ Interactive Wizard (design_wizard skill)                    │
+│ ├─ Interactive Wizard (design-wizard skill)                    │
 │ └─ Skills (bom, digikey, lcsc, jlcpcb, kicad, etc.)            │
 └──────────────────────┬──────────────────────────────────────────┘
                        │
@@ -43,17 +43,17 @@ Circuit Weaver is a transactional circuit design engine that transforms YAML spe
 │ ├─ KiCad Symbol Placement (allocator.py: hierarchical layout) │
 │ ├─ SVG Placement Export (svg_placement.py)                   │
 │ ├─ Schematic Generation (.kicad_sch files)                  │
-│ ├─ PCB Hint Generation (.kicad_pcb + placement coords)      │
+│ ├─ Exhaustive placement review (JSON + SVG + HTML)          │
 │ └─ Design Report (Markdown analysis)                         │
 └──────────────────────┬──────────────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────────────┐
 │ ARTIFACT OUTPUT LAYER                                          │
 │ ├─ KiCad schematic (.kicad_sch)                              │
-│ ├─ KiCad PCB template (.kicad_pcb)                           │
-│ ├─ SVG placement export (design_placement.svg)               │
+│ ├─ Placement result/context (review-only JSON)               │
+│ ├─ Editable placement.svg + placement_editor.html            │
 │ ├─ BOM (CSV for JLCPCB, Mouser, DigiKey)                    │
-│ ├─ CPL (component placement list)                           │
+│ ├─ CPL only from a reconciled physical .kicad_pcb           │
 │ └─ Design Report (Markdown)                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -130,7 +130,7 @@ Available templates: `ldo`, `buck`, `boost`, `audio_amplifier`, `usb_controller`
 ```
 design.yaml (YAML input)
     ↓
-_simple_yaml_parse()  # YAML → dict
+PyYAML safe_load()  # nested YAML → dict
     ↓
 normalize_design_spec()  # dict → DesignIR
     ↓
@@ -229,12 +229,20 @@ Main CLI dispatcher and validation pipeline orchestrator.
 
 **Exports:**
 - `generate_from_components()` — IR → KiCad schematic structure
-- `generate_pcb_placement()` — Placement coordinates + CPL
+- `generate_artifacts()` — transactional hierarchy/review bundle publication
 
 **Submodules:**
-- `allocator.py` — Hierarchical sheet allocation (grouping components)
-- `svg_placement.py` — SVG export/import for placement editing
-- `jlcpcb_export.py` — BOM + CPL CSV for JLCPCB
+- `allocator.py` — explicit functional-section ownership and hierarchy allocation
+- `placement_pipeline.py` — exhaustive placement inventory, review blockers,
+  official-reference context, SVG, and HTML
+- `svg_placement.py` — strict SVG↔PCB reference reconciliation and placement import
+- `jlcpcb_export.py` — staged BOM-only or physical-PCB-reconciled BOM/CPL delivery
+- `project_state.py` — durable resume/status state and artifact reconciliation
+- `design_import.py` — non-destructive KiCad/PCB/Gerber/ZIP inventory and analysis
+
+The legacy `generate_pcb_placement()` helper creates only a padless review
+preview and is not used by the production `generate` workflow. It is never a
+routing, CPL, or fabrication source.
 
 ### `subcircuits/` — Template Library
 
@@ -264,8 +272,8 @@ Main CLI dispatcher and validation pipeline orchestrator.
 
 **Platforms:**
 - Claude Code (`~/.claude/skills/`)
-- Codex (`~/.codex/skills/`)
-- OpenCode (`~/.config/opencode/skills/`)
+- Codex (`~/.agents/skills/`)
+- OpenCode (`$OPENCODE_CONFIG_DIR/skills/` or `~/.agents/skills/`)
 - Kilo (`~/.kilo/skills/`)
 
 ### `schema.py` — JSON Schema Generation (Task 79)

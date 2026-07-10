@@ -214,6 +214,35 @@ class TestArtifactValidation:
         assert ses_result["valid"] is True
         assert ses_result["base_design"] == "sensor-board.dsn"
 
+    def test_canonical_literal_string_quote_directive_passes(self, tmp_path):
+        canonical = VALID_DSN.replace('(string_quote ")")', '(string_quote ")')
+        assert canonical != VALID_DSN
+        dsn = _write_dsn(tmp_path, text=canonical)
+
+        result = _validate_specctra_artifact(dsn, "dsn")
+
+        assert result["valid"] is True
+        assert result["net_count"] == 2
+
+    def test_ses_may_omit_source_net_with_only_one_pin(self, tmp_path):
+        dsn = _write_dsn(
+            tmp_path,
+            text=VALID_DSN.replace(
+                "    (net VDD_3P3 (pins R1-2 J1-1))",
+                "    (net VDD_3P3 (pins R1-2 J1-1))\n"
+                "    (net TEST_POINT_ONLY (pins TP1-1))",
+            ),
+        )
+        ses = tmp_path / "sensor-board.ses"
+        ses.write_text(VALID_SES, encoding="utf-8")
+
+        dsn_result = _validate_specctra_artifact(dsn, "dsn")
+        ses_result = _validate_specctra_artifact(ses, "ses", source_dsn=dsn)
+
+        assert dsn_result["pin_counts"]["TEST_POINT_ONLY"] == 1
+        assert "TEST_POINT_ONLY" not in dsn_result["routable_nets"]
+        assert ses_result["valid"] is True
+
     def test_missing_empty_and_malformed_artifacts_fail(self, tmp_path):
         missing = tmp_path / "missing.dsn"
         empty = tmp_path / "empty.dsn"
@@ -528,19 +557,34 @@ class TestAutoroute:
         assert result["stats"]["incomplete"] == 2
         assert (tmp_path / "sensor-board.ses").exists()
 
-    def test_unknown_completeness_or_clearance_fails_without_publishing(self, tmp_path):
+    def test_unknown_completeness_fails_without_publishing(self, tmp_path):
         dsn = _write_dsn(tmp_path)
-        for output, expected in (
-            ("Routed: 4 traces, 1 via", "connection completeness"),
-            ("Routed: 4 traces, 1 via, 0 incomplete", "clearance-violation statistics"),
-        ):
-            destination = tmp_path / f"{expected.split()[0]}.ses"
-            with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]):
-                with mock.patch("subprocess.run", side_effect=_fake_freerouting_success(output)):
-                    result = autoroute_pcb(dsn, output_path=str(destination))
-            assert result["status"] == "error"
-            assert expected in result["message"]
-            assert not destination.exists()
+        destination = tmp_path / "unknown-completeness.ses"
+        with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]):
+            with mock.patch(
+                "subprocess.run",
+                side_effect=_fake_freerouting_success("Routed: 4 traces, 1 via"),
+            ):
+                result = autoroute_pcb(dsn, output_path=str(destination))
+        assert result["status"] == "error"
+        assert "connection completeness" in result["message"]
+        assert not destination.exists()
+
+    def test_unreported_clearance_publishes_only_for_kicad_drc_review(self, tmp_path):
+        dsn = _write_dsn(tmp_path)
+        destination = tmp_path / "clearance-unreported.ses"
+        output = "Freerouting v2.2.4\nRouted: 4 traces, 1 via, 0 incomplete"
+        with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]):
+            with mock.patch("subprocess.run", side_effect=_fake_freerouting_success(output)):
+                result = autoroute_pcb(dsn, output_path=str(destination))
+
+        assert result["status"] == "review_required"
+        assert result["routing_complete"] is True
+        assert result["fabrication_ready"] is False
+        assert result["requires_kicad_drc"] is True
+        assert result["verification"]["clearance"] == "unreported_by_router_cli"
+        assert "run KiCad DRC" in result["message"]
+        assert destination.exists()
 
     def test_clearance_violations_block_publication(self, tmp_path):
         destination = tmp_path / "violating.ses"
@@ -723,3 +767,18 @@ def test_stat_parser_does_not_default_unknown_counts_to_zero():
     assert _parse_routing_stats(
         "pass 1: 9 unrouted\nRouting finished: 0 incomplete; clearance violations: 0"
     )["incomplete"] == 0
+
+
+def test_stat_parser_understands_current_freerouting_cli_summary():
+    output = (
+        "Freerouting v2.2.4 (build-date: 2026-05-13)\n"
+        "Auto-router pass #2 was completed with the score of 934.53 (1 unrouted).\n"
+        "Stopping the auto-router after 18 passes (1 item still unconnected).\n"
+        "Auto-router session completed: final score: 934.53 (1 unrouted)."
+    )
+
+    stats = _parse_routing_stats(output)
+
+    assert stats["incomplete"] == 1
+    assert stats["clearance_violations"] is None
+    assert stats["statistics_source"] == "text_summary"

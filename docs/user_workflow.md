@@ -2,8 +2,9 @@
 
 This guide walks you through what to expect when using the Circuit Weaver
 design wizard. The wizard is an interactive, conversational workflow that
-takes you from "I have an idea for a circuit" to a quote-ready KiCad project
-with BOM, schematics, and PCB layout guidance.
+takes you from "I have an idea for a circuit" to validated functional KiCad
+schematics, a review-only placement proposal, and a truthful electrical-PCB
+and manufacturing handoff.
 
 ---
 
@@ -13,17 +14,47 @@ Circuit Weaver offers **three ways** to design a circuit:
 
 | Path | Command/Trigger | Best For | Speed | Requirements |
 |------|-----------------|----------|-------|--------------|
-| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code (registered globally) | Automatic, same-agent IC research (`sonar-pro` or native web) | 5–10 min | `pip install circuit-weaver[skills]` + LLM access |
-| **`design_wizard` skill** | Say "design wizard" in Claude Code (registered globally) | Manual step-by-step control with AI guidance | 10–20 min | `pip install circuit-weaver[skills]` + LLM access |
+| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code (registered globally) | Automatic, same-agent IC research (`sonar-pro` or native web) | 5–10 min | `pip install circuit-weaver` + LLM access |
+| **`design-wizard` skill** | Invoke `/design-wizard` in Claude Code | Manual step-by-step control with AI guidance | 10–20 min | `pip install circuit-weaver` + LLM access |
 | **`circuit-weaver design-wizard` CLI** | Run `circuit-weaver design-wizard` in terminal | Offline, standalone, good for learning | 5–10 min | `pip install circuit-weaver` (no APIs, no agents) |
 
 **Getting Started:**
 
-1. Install circuit-weaver: `pip install circuit-weaver[skills]`
+1. Install circuit-weaver: `pip install circuit-weaver`
 2. Register skills: `circuit-weaver install-skills`
 3. Choose your path (see table above)
 
 **Recommendation:** Start with `/circuit-weaver` (fastest) if you want automatic same-agent orchestration. If `PERPLEXITY_API_KEY` is configured it can use `sonar-pro`; otherwise it will use native web tooling. Use the CLI wizard if you want a fully offline flow.
+
+---
+
+## Open, Resume, or Analyze an Existing Design
+
+Use the same durable project flow for existing KiCad projects, schematics,
+PCBs, Gerber/drill directories, and ZIP archives:
+
+```bash
+# Non-destructive inventory plus every applicable bundled analyzer
+circuit-weaver import-design ./existing_design --analyze
+
+# Reconcile recorded state with current files and print the restart plan
+circuit-weaver status ./existing_design
+circuit-weaver resume ./existing_design
+
+# Reuse cached analysis, or intentionally rerun it with --force
+circuit-weaver analyze-design ./existing_design
+```
+
+State lives in `.circuit-weaver/project.json`; analyzer evidence lives in
+`.circuit-weaver/analysis/index.json`. Import hashes and inventories sources
+without editing them. For a Gerber delivery, pass the Gerber directory or ZIP;
+the analyzer records copper/mask/silkscreen/outline/drill coverage when those
+files are present. Netlist-only sources remain inventoried but analysis is
+reported as unsupported because they lack schematic and physical evidence.
+
+`resume` prints deterministic next actions and never runs them automatically.
+Use `--force` only to intentionally replace a changed source set/ZIP staging
+tree or invalidate a cached analysis.
 
 ---
 
@@ -38,7 +69,7 @@ to confirm before moving on.
 - "I want to design a new board"
 - "Start a new project"
 - "/circuit-weaver" (fastest, agent-driven)
-- "/design_wizard" (manual step-by-step)
+- "/design-wizard" (manual step-by-step)
 - "Help me design a circuit"
 - "Walk me through a new design"
 
@@ -244,6 +275,12 @@ decide your optimal production volume.
 **What happens:** The wizard generates your KiCad schematic from the YAML spec
 using the Circuit Weaver engine.
 
+Give every architectural block a stable `id` and explicit functional
+`section` before generation. Distinct sections such as `power_input`,
+`power_regulation`, `core_processing`, `sensors`, `communications`,
+`external_io`, and `debug` remain distinct sheets even on small designs.
+Generated support passives stay with their owning block.
+
 **Before generating**, it confirms what's about to be built:
 
 ```
@@ -269,19 +306,37 @@ Buses:      I2C (BME280), UART (debug), SPI (none)
 > signals, crystal load-cap tolerance, etc.); the bypass is logged so it's
 > visible in `circuit-weaver.log`.
 
+Those checks are internal validation, not proof that KiCad loaded the final
+hierarchy. For release-quality generation, require real KiCad ERC on the exact
+published files:
+
+```bash
+circuit-weaver generate design.yaml -o output --require-kicad
+```
+
+Only report KiCad verification when `artifact_manifest.json` says
+`kicad_verified: true` and `verification_status: verified`.
+
 **What you get:**
 
 - `.kicad_sch` schematic files (top-level + sub-sheets)
 - A design report (markdown)
-- Placer hints for PCB layout (JSON)
+- `assembly_manifest.json` with the exhaustive physical-part inventory
+- `placement_result.json` and `placement_review_context.json`
+- Editable `placement.svg` and interactive `placement_editor.html`
+
+The placement files are review-only and always
+`fabrication_ready: false`. Unresolved footprint geometry/dimensions,
+sourcing, overlaps, boundary violations, missing support parents, or explicit
+constraint failures remain visible blockers.
 
 ### What's automated vs. what you finish
 
 This is important to understand:
 
-| Done automatically (~80-90%) | You finish in KiCad (~10-20%) |
+| Generated automatically | You verify and finish in KiCad |
 |---|---|
-| All symbol placements with correct pin mappings | Review net label names for clarity |
+| Symbol placement and declared pin mappings | Verify every symbol/pin against the selected MPN datasheet |
 | Power connections and decoupling capacitors | Adjust component positions for readability |
 | Net labels for all buses | Add project-specific notes |
 | Hierarchical sheet structure | Verify pin assignments match layout intent |
@@ -351,38 +406,36 @@ If the score is below 80, the wizard offers to loop back to fix action items.
 
 ```bash
 # Optimize component placement (simulated annealing)
-circuit-weaver optimize-placement design.yaml -o output/
+circuit-weaver optimize-placement design.yaml -o output/placement.json
 
-# Generate interactive HTML placement viewer
+# Generate an alternate standalone HTML viewer
 circuit-weaver placement-viewer design.yaml -o output/placement.html
 
-# Optional: export editable SVG for visual placement in Inkscape
-circuit-weaver generate design.yaml -o output/ --svg-placement
+# The normal generate command already emits the exhaustive review bundle
+circuit-weaver generate design.yaml -o output/
+# Review output/placement_result.json and placement_review_context.json,
+# then open placement_editor.html or edit placement.svg.
 
-# Optional: autoroute non-critical nets (requires Freerouting).
-# Note: run this on the real forward-annotated PCB, not the
-# *_placement.kicad_pcb preview — the preview has no pads and the
-# autoroute preflight rejects it.
+# Optional: autoroute non-critical nets on a real forward-annotated PCB
 circuit-weaver autoroute output/MyBoard.kicad_pcb -o output/MyBoard.ses
 
 # DFM check against manufacturer rules
-circuit-weaver check-dfm output/main_placement.kicad_pcb
+circuit-weaver check-dfm output/MyBoard.kicad_pcb
 ```
 
-> **Note on `{project}_placement.kicad_pcb`:** as of v0.27.0 this file is a
-> placement *preview* (its `(generator ...)` field reads
-> `schematic_engine placement_preview`). It carries reference locations and
-> board outline for layout review, but **real footprint pads come from KiCad's
-> schematic → PCB forward annotation**, not from this file. If a component's
-> footprint binding was missing at generation time the preview shows a
-> `Placement_Preview:Missing_<ref>` placeholder — resolve those in the source
-> YAML before fab.
+> **Placement authority:** `placement_result.json`,
+> `placement_review_context.json`, `placement.svg`, and
+> `placement_editor.html` are heuristic review aids, not a PCB or CPL. The
+> result reconciles the full assembly inventory and remains
+> `fabrication_ready: false`. Resolve every geometry/dimension, footprint,
+> sourcing, overlap, boundary, support-part, and constraint blocker. Use the
+> manufacturer/reference-layout links in the context as authority.
 
 **What you get:**
 - Optimized component positions (thermal spacing, SI, DFM)
-- Interactive HTML viewer with thermal heatmap and net highlighting
-- Optional: SVG file editable in Inkscape, importable back to KiCad
-- Optional: autorouted PCB (best for non-critical signal nets)
+- Interactive HTML editor with thermal/net context and SVG export
+- SVG proposal importable only into a separate real electrical PCB
+- Optional: validated Specctra SES for non-critical signal nets
 - DFM violation report against JLCPCB/PCBWay rules
 
 ---
@@ -425,19 +478,37 @@ circuit-weaver autoroute output/MyBoard.kicad_pcb --effort high
 ```
 
 The board must be a real forward-annotated PCB (Tools → Update PCB from
-Schematic in KiCad) — the generated `*_placement.kicad_pcb` preview has no
-pads and fails the routing preflight with a pointer to this step. With
-`kicad-cli` installed the router uses the supported Specctra pipeline and
-writes a `.ses` session you import via *File → Import → Specctra Session*.
+Schematic in KiCad), or a user-exported Specctra DSN. The router rejects
+padless/review artifacts, missing named nets, and inconsistent pad-net data.
+Automatic PCB input works only when the installed `kicad-cli` advertises
+Specctra export; otherwise export a DSN in KiCad PCB Editor and pass that file
+to `autoroute`.
 
-Freerouting routes simple circuits 100% automatically and complex circuits
-~90%. If you don't have Freerouting or prefer manual control, use KiCad's
-interactive routing or the placer hints for guidance.
+The output is always a validated `.ses` session, never a routed
+`.kicad_pcb`. `status: partial` / exit code 2 means connections remain
+incomplete. Import the SES via *File → Import → Specctra Session*, finish
+critical/incomplete routes manually, and run KiCad DRC. Power, switching
+loops, differential pairs, RF, clocks, crystals, and other critical nets
+remain manual engineering work.
 
 #### Manufacturing checklist
 
 Before ordering, the wizard presents a pre-flight checklist tailored to your
 chosen manufacturer:
+
+```bash
+# BOM + CPL only after exact reference/footprint reconciliation to the real PCB
+circuit-weaver export-jlcpcb design.yaml --pcb output/MyBoard.kicad_pcb \
+  -o output/jlcpcb
+
+# Optional split top/bottom CPL from the same real PCB
+circuit-weaver export-dual-cpl design.yaml --pcb output/MyBoard.kicad_pcb \
+  -o output/dual-cpl
+```
+
+Without `--pcb`, `export-jlcpcb` truthfully emits BOM-only. Review
+`delivery_manifest.json`; never substitute the SVG/optimizer proposal for a
+manufacturing CPL.
 
 ```
 === Pre-Order Checklist ===
@@ -482,7 +553,10 @@ circuit-weaver design-enclosure \
   --render-stl --stl-output enclosure.stl
 ```
 
-The OpenSCAD code is **fully parametric** — all dimensions are variables at the top of the file. Change `wall = 2.5` to `wall = 4.0`, re-render, and test fit in your slicer. See the [OpenSCAD skill](../skills/openscad/SKILL.md) for advanced customization (BOSL2 library, MOLLE mounting, heat-set inserts, etc.).
+The OpenSCAD code is **fully parametric** — all dimensions are variables at
+the top of the file. Change `wall = 2.5` to `wall = 4.0`, re-render, and test
+fit in your slicer. Advanced enclosure customization is outside the shipped
+Circuit Weaver skills and requires normal OpenSCAD/BOSL2 engineering.
 
 #### Revision planning
 
@@ -518,7 +592,16 @@ If your session ends, you don't lose progress. Come back and say:
 - "Where were we?"
 - "Resume the wizard"
 
-The wizard finds your saved YAML spec and figures out which step you were on:
+Reconcile durable state first:
+
+```bash
+circuit-weaver status <project>
+circuit-weaver resume <project>
+```
+
+`resume` reports `current_phase`, changed/missing recorded artifacts, and the
+next safe actions; it does not execute them. Only when no durable manifest
+exists should the wizard infer a fallback step from YAML/file completeness:
 
 | Spec state | Resumes at |
 |---|---|
@@ -563,12 +646,18 @@ Being clear about boundaries prevents frustration:
 
 | File | Created at | Purpose | Keep in git? |
 |---|---|---|---|
-| `design_spec.yaml` | Step 3 | Canonical design specification | Yes |
+| `design.yaml` | Step 3 | Canonical design specification | Yes |
 | `*.kicad_sch` | Step 4 | Generated schematic files | Yes |
 | `*_report.md` | Step 4 | Design report | Yes |
-| `placer_hints.json` | Step 4 | PCB placement guidance | Yes |
-| `jlcpcb/bom_jlcpcb.csv` | Step 6 | BOM for JLCPCB assembly | Yes |
-| `jlcpcb/cpl_jlcpcb.csv` | Step 6 | Component placement for JLCPCB | Yes |
+| `artifact_manifest.json` | Step 4 | Portable generated-artifact inventory and KiCad verification state | Yes |
+| `assembly_manifest.json` | Step 4 | Exhaustive physical-part/reference inventory | Yes |
+| `placement_result.json` | Step 4 | Review-only placement status, reconciliation, blockers, and proposal | Yes |
+| `placement_review_context.json` | Step 4 | Constraints, review rules, and official/reference-layout context | Yes |
+| `placement.svg`, `placement_editor.html` | Step 4 | Editable/interactively reviewable placement proposal | Yes |
+| `.circuit-weaver/project.json` | Import/generate | Durable resume/status state | Yes |
+| `.circuit-weaver/analysis/index.json` | Import analysis | Cached schematic/PCB/Gerber analysis evidence | Yes |
+| `jlcpcb/bom_jlcpcb.csv` | Manufacturing | BOM for JLCPCB assembly | Yes |
+| `jlcpcb/cpl_jlcpcb.csv` | Manufacturing | CPL only when reconciled to a real PCB | Yes |
 | `research/*.json` | Step 2 | Canonical saved research runs and citations | Yes |
 | `research/summary.md` | Step 2 | Rolling index of all saved research runs | Yes |
 | `datasheets/` | Step 2 | Downloaded IC datasheets | No (large, re-downloadable) |
@@ -591,7 +680,6 @@ on any topic.
 | `kicad` | Schematic and PCB analysis | Validation, design review |
 | `jlcpcb` | JLCPCB DFM rules | Manufacturing prep |
 | `pcbway` | PCBWay DFM rules | Manufacturing prep |
-| `openscad` | Parametric 3D modeling | Enclosure design, mechanical parts, mounts |
 | `autoroute` | Freerouting PCB router | Automatic signal routing (optional; user installs JAR separately) |
 
 ---
@@ -602,9 +690,9 @@ on any topic.
    better than spending an hour calculating exact current draw. The wizard
    will flag if something is obviously wrong.
 
-2. **Trust the defaults.** For prototypes especially, the wizard's suggestions
-   (0603 passives, HASL finish, 2-layer board) are battle-tested starting
-   points. Override them when you have a reason to.
+2. **Treat defaults as starting points.** Verify packages, finish, layer count,
+   ratings, footprints, and layout against your actual electrical, mechanical,
+   sourcing, and fabrication requirements.
 
 3. **Say "I don't know."** The wizard can suggest reasonable answers for most
    questions. Saying "not sure, what do you recommend?" is always valid.
@@ -648,20 +736,32 @@ circuit-weaver generate design.yaml -o /tmp/out --auto-source --update-spec
 
 ### Edit Placement Visually (Task 93)
 
-Instead of hand-moving every component in KiCad, export an SVG diagram that you can edit
-in Inkscape or any vector tool, then import the edits back:
+Review the generated exhaustive SVG proposal, edit it, and import approved
+coordinates into a separately created electrical PCB:
 
 ```bash
-# Export placement diagram
-circuit-weaver generate design.yaml -o /tmp/out --svg-placement
-# → Creates /tmp/out/placement.svg
+# Generate placement_result.json, context, SVG, and interactive editor
+circuit-weaver generate design.yaml -o /tmp/out
 
-# User opens placement.svg in Inkscape and moves components around...
+# Resolve blockers, then edit/export /tmp/out/placement.svg.
+# Create board.kicad_pcb with KiCad Update PCB from Schematic.
 
-# Import edits back into KiCad
-circuit-weaver import-placement /tmp/out/placement.svg /tmp/out/design.kicad_pcb
-# → Updates design.kicad_pcb and *_cpl.csv automatically
+# Strict dry-run: SVG and PCB refs must match exactly
+circuit-weaver import-placement /tmp/out/placement.svg board.kicad_pcb \
+  -o board_placed.kicad_pcb --dry-run
+
+# Apply after a clean dry-run
+circuit-weaver import-placement /tmp/out/placement.svg board.kicad_pcb \
+  -o board_placed.kicad_pcb
+
+# Explicit subset update only; unknown SVG refs still fail
+circuit-weaver import-placement subset.svg board.kicad_pcb \
+  -o board_placed.kicad_pcb --allow-partial
 ```
+
+An existing sibling `<board-stem>_cpl.csv` can be updated alongside a successful
+board update. The command does not create trustworthy manufacturing placement
+from heuristic coordinates; export final CPL from the reconciled real PCB.
 
 **What you can do in the SVG:**
 - Move components (drag rectangles)
@@ -678,38 +778,43 @@ circuit-weaver import-placement /tmp/out/placement.svg /tmp/out/design.kicad_pcb
 
 **⚠️ SVG editing constraints for GIMP/Inkscape:**
 
-The SVG round-trip (export → edit → import) is most reliable when using **standard SVG transforms**:
+The SVG round-trip accepts strict, finite SVG affine transforms including:
 - **translate(x, y)** — move a component
-- **rotate(angle)** — rotate a component  
+- **rotate(angle)** or **rotate(angle, cx, cy)** — rotate a component
+- **matrix(a, b, c, d, e, f)** — affine transform without skew/mirroring
 
 Avoid:
-- Matrix transforms like `matrix(a b c d e f)` — the importer may misinterpret rotation
 - Complex shape edits (don't reshape the component rectangles)
-- 3-argument rotate like `rotate(angle cx cy)` — we extract the angle only (center point ignored)
+- Mirrored, singular, skewed, malformed, or non-finite transforms
+- Deleting/duplicating `data-ref` groups unless using a deliberate
+  `--allow-partial` subset
 
 **In GIMP:** Use Move/Rotate tools (they output standard transforms). Avoid Effects → Distorts.
 
 **In Inkscape:** Use Transform → Position/Size for moving and rotating. Be careful with Bézier edits—if you reshape component geometry, the importer may not recognize it.
 
-**When to use:** After schematic generation, before sending to fab. Fast for adjusting
-component spacing, swapping placement between board sides, or sharing layout feedback.
+**When to use:** After schematic generation and blocker review, before routing.
+It supports layout feedback; it is never a fabrication-readiness verdict.
 
 ---
 
 ## FAQ — Auto-Source & Placement
 
 **Q: Do I need API keys for auto-sourcing?**
-A: No. If DigiKey/Mouser credentials are missing, the tool silently falls back to your local
-LCSC database or leaves components unresolved. No errors.
+A: No, but missing credentials reduce coverage. The tool falls back to other
+configured/local sources and reports unresolved components. Unresolved
+sourcing remains a placement/manufacturing review blocker; never treat it as a
+silent success.
 
 **Q: How fresh are the cached parts?**
 A: 30 days. After that, Circuit Weaver re-queries the APIs. You can clear the cache
 manually with `circuit-weaver cache clear`.
 
 **Q: Can I edit placement without exiting KiCad?**
-A: Yes. Export SVG *before* opening the .kicad_pcb in KiCad, edit, import back, then
-open in KiCad. This avoids conflicts with KiCad's in-memory copy.
+A: Yes, but close or reload the board before accepting an external write so
+KiCad's in-memory copy cannot overwrite it. Always dry-run first and import into
+a new output PCB.
 
 **Q: What if I move a component off the board in the SVG?**
-A: The coordinates are preserved as-is. Just don't go too negative or the component
-will be off-canvas. Inkscape's bounds guides help prevent this.
+A: Treat it as a placement blocker. Correct the SVG and verify the final board
+in KiCad; do not proceed to routing or fabrication with an out-of-board part.

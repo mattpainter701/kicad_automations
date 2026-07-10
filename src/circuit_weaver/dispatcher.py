@@ -16,14 +16,17 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import warnings
 from dataclasses import asdict, dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Iterator, Mapping
 from xml.etree import ElementTree as ET
 
 from .component_db import ComponentDef, PresentationWiringPolicy
@@ -40,12 +43,25 @@ from .design_loader import (
     compile_design_ir,
 )
 from .design_logger import DesignLogger
-from .generator import generate_from_components
-from .project_spec import _parse_yaml, _simple_yaml_parse
+from .generator import _contained_output_path, _validate_project_name, generate_from_components
+from .project_spec import _parse_yaml
 from .subcircuits.base import BoundaryPort, DataDrivenTemplate, get_default_registry
 from .validator import run_validation_checks
 
 _STANDARD_PROFILE = "standard"
+_PROFILE_ALIASES = {"mvp_strict": _STANDARD_PROFILE}
+_DESIGN_PATCH_KEYS = frozenset(
+    {
+        "set_metadata",
+        "remove_blocks",
+        "upsert_blocks",
+        "upsert_interfaces",
+        "remove_interfaces",
+        "approved_overrides",
+        "pcb_constraints",
+    }
+)
+_DESIGN_PATCH_ALIASES = {"add": "upsert_blocks", "remove": "remove_blocks"}
 _POWER_NET_PREFIXES = (
     "GND",
     "AGND",
@@ -62,6 +78,8 @@ _POWER_NET_PREFIXES = (
     "VCCO",
 )
 _PRESENTATION_SVG_MARGIN = 0.5
+_GENERATION_LOCK_FILENAME = ".circuit-weaver.lock"
+_GENERATION_PROCESS_LOCK = threading.RLock()
 
 _ANSI = {
     "red": "\x1b[31m",
@@ -311,8 +329,41 @@ class ConstraintFeedbackReport:
 
 def _ensure_profile(profile: str) -> str:
     normalized = (profile or _STANDARD_PROFILE).strip().lower()
+    if normalized in _PROFILE_ALIASES:
+        replacement = _PROFILE_ALIASES[normalized]
+        warnings.warn(
+            f"Validation profile '{normalized}' is deprecated; use '{replacement}'",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        normalized = replacement
     if normalized != _STANDARD_PROFILE:
         raise ValueError(f"Unsupported MVP validation profile '{profile}'")
+    return normalized
+
+
+def _normalize_design_patch(patch: dict[str, Any]) -> dict[str, Any]:
+    """Return a validated patch with deprecated operation aliases expanded."""
+    if not isinstance(patch, dict):
+        raise TypeError("Design patch must be a mapping")
+
+    normalized = copy.deepcopy(patch)
+    for alias, canonical in _DESIGN_PATCH_ALIASES.items():
+        if alias not in normalized:
+            continue
+        if canonical in normalized:
+            raise ValueError(f"Patch cannot contain both '{alias}' and '{canonical}'")
+        warnings.warn(
+            f"Patch operation '{alias}' is deprecated; use '{canonical}'",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        normalized[canonical] = normalized.pop(alias)
+
+    unknown = sorted(set(normalized) - _DESIGN_PATCH_KEYS)
+    if unknown:
+        supported = ", ".join(sorted(_DESIGN_PATCH_KEYS))
+        raise ValueError(f"Unsupported design patch operation(s): {', '.join(unknown)}. Supported: {supported}")
     return normalized
 
 
@@ -1053,7 +1104,7 @@ def _generate_compiled_artifacts(
     if export_svg and root is not None:
         cli = _kicad_cli_path()
         if cli is not None:
-            svg_dir = output_dir / "svg"
+            svg_dir = _contained_output_path(output_dir, "svg")
             svg_dir.mkdir(parents=True, exist_ok=True)
             subprocess.run(
                 [str(cli), "sch", "export", "svg", "-o", str(svg_dir), str(root)],
@@ -1424,6 +1475,7 @@ def apply_design_patch(
 ) -> dict[str, Any]:
     """Apply a design patch transactionally and validate before acceptance."""
     profile = _ensure_profile(profile)
+    patch = _normalize_design_patch(patch)
     original_ir = normalize_design_spec(spec)
     working_ir = normalize_design_spec(spec)
 
@@ -1670,6 +1722,284 @@ def _persist_generation_failure(func):
     return wrapper
 
 
+def _artifact_kind(path: Path) -> str:
+    """Return a stable coarse type for an artifact-manifest entry."""
+    if path.suffix == ".kicad_sch":
+        return "schematic"
+    if path.suffix == ".kicad_pcb":
+        return "pcb"
+    if path.suffix == ".svg":
+        return "preview"
+    if path.suffix in {".json", ".yaml", ".yml", ".csv", ".md", ".html"}:
+        return "report"
+    if path.suffix in {".log", ".jsonl"}:
+        return "log"
+    return "artifact"
+
+
+def _acquire_generation_fd(fd: int) -> None:
+    """Acquire one byte of *fd* exclusively without waiting."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    if os.name == "nt":
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        return
+
+    import fcntl
+
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _release_generation_fd(fd: int) -> None:
+    """Release the advisory lock held on *fd*."""
+    os.lseek(fd, 0, os.SEEK_SET)
+    if os.name == "nt":
+        import msvcrt
+
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        return
+
+    import fcntl
+
+    fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def _generation_output_lock(output_path: Path) -> Iterator[Path]:
+    """Exclusively lease an artifact directory for one generation run.
+
+    The lock file intentionally remains in place after release.  Advisory
+    locks are released by the operating system if a process crashes, while a
+    persistent inode prevents a later process from bypassing an active lock by
+    racing an unlink/recreate cleanup scheme.
+    """
+    lock_path = _contained_output_path(output_path, _GENERATION_LOCK_FILENAME)
+    if lock_path.is_symlink():
+        raise ValueError(f"Generation lock path must not be a symlink: {lock_path}")
+    if lock_path.exists() and not lock_path.is_file():
+        raise ValueError(f"Generation lock path must be a regular file: {lock_path}")
+
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(lock_path, flags, 0o600)
+    except OSError as exc:
+        raise ValueError(f"Could not open generation lock file '{lock_path}': {exc}") from exc
+
+    acquired = False
+    try:
+        os.set_inheritable(fd, False)
+        opened_stat = os.fstat(fd)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise ValueError(f"Generation lock path must be a regular file: {lock_path}")
+        try:
+            path_stat = lock_path.stat()
+        except OSError as exc:
+            raise ValueError(f"Generation lock path changed while it was opened: {lock_path}") from exc
+        if lock_path.is_symlink() or not os.path.samestat(opened_stat, path_stat):
+            raise ValueError(f"Generation lock path changed while it was opened: {lock_path}")
+
+        # Windows byte-range locks require a lockable byte.  Initializing the
+        # persistent file before acquisition is benign even when two first-time
+        # callers race: both write the same byte, then exactly one gets the lock.
+        if opened_stat.st_size == 0:
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, b"\0")
+            os.fsync(fd)
+
+        try:
+            _acquire_generation_fd(fd)
+        except OSError as exc:
+            raise ValueError(
+                f"Artifact generation is already in progress for output directory '{output_path}'"
+            ) from exc
+        acquired = True
+
+        # Re-check the directory entry after acquiring so a pre-open swap never
+        # turns the lease into a lock on an unrelated inode.
+        try:
+            path_stat = lock_path.stat()
+        except OSError as exc:
+            raise ValueError(f"Generation lock path changed during acquisition: {lock_path}") from exc
+        if lock_path.is_symlink() or not os.path.samestat(os.fstat(fd), path_stat):
+            raise ValueError(f"Generation lock path changed during acquisition: {lock_path}")
+
+        yield lock_path
+    finally:
+        if acquired:
+            with contextlib.suppress(OSError):
+                _release_generation_fd(fd)
+        os.close(fd)
+
+
+def _output_file_snapshot(output_path: Path) -> dict[str, tuple[int, int]]:
+    """Return a lightweight snapshot used to isolate one generation run.
+
+    Output directories are intentionally reusable and may contain user-owned
+    notes or artifacts from an older design.  Recording their size and
+    nanosecond timestamp lets the current run include newly written files
+    without claiming unchanged pre-existing files as its own.
+    """
+    snapshot: dict[str, tuple[int, int]] = {}
+    for path in output_path.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.relative_to(output_path).as_posix() == _GENERATION_LOCK_FILENAME:
+            continue
+        stat = path.stat()
+        snapshot[path.relative_to(output_path).as_posix()] = (stat.st_size, stat.st_mtime_ns)
+    return snapshot
+
+
+def _path_in_output(output_path: Path, path: str | Path) -> Path | None:
+    """Return *path* in the output directory, rejecting paths outside it."""
+    output_resolved = output_path.resolve()
+    candidate = Path(path).resolve()
+    try:
+        relative = candidate.relative_to(output_resolved)
+    except ValueError:
+        return None
+    return output_path / relative
+
+
+def _current_run_artifacts(
+    output_path: Path,
+    baseline: Mapping[str, tuple[int, int]],
+    explicit_paths: Iterable[str | Path] = (),
+) -> list[Path]:
+    """Collect only files produced or explicitly claimed by this invocation."""
+    explicit_relative: set[str] = set()
+    for value in explicit_paths:
+        path = _path_in_output(output_path, value)
+        if path is not None:
+            explicit_relative.add(path.relative_to(output_path).as_posix())
+
+    current: list[Path] = []
+    for path in output_path.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(output_path).as_posix()
+        if relative == _GENERATION_LOCK_FILENAME:
+            continue
+        stat = path.stat()
+        signature = (stat.st_size, stat.st_mtime_ns)
+        if relative in explicit_relative or baseline.get(relative) != signature:
+            current.append(path)
+    return sorted(current, key=lambda item: item.relative_to(output_path).as_posix())
+
+
+def _manifest_relative_path(output_path: Path, path: str | Path | None) -> str:
+    """Return a portable output-root-relative identity for a manifest path."""
+    if path is None or str(path) == "":
+        return ""
+    candidate = _path_in_output(output_path, path)
+    if candidate is None:
+        return ""
+    return candidate.relative_to(output_path).as_posix()
+
+
+def _invalidate_artifact_manifest(output_path: Path) -> Path:
+    """Remove any prior success manifest before this run mutates its output."""
+    manifest_path = _contained_output_path(output_path, "artifact_manifest.json")
+    if not (manifest_path.exists() or manifest_path.is_symlink()):
+        return manifest_path
+    if manifest_path.is_dir() and not manifest_path.is_symlink():
+        raise ValueError(
+            f"Reserved artifact manifest path is a directory and cannot be replaced: {manifest_path}"
+        )
+    try:
+        manifest_path.unlink()
+    except OSError as exc:
+        raise ValueError(f"Could not invalidate prior artifact manifest: {manifest_path}") from exc
+    if manifest_path.exists() or manifest_path.is_symlink():
+        raise ValueError(f"Prior artifact manifest still exists after removal: {manifest_path}")
+    return manifest_path
+
+
+def _write_artifact_manifest(
+    output_path: Path,
+    project_name: str,
+    root: Path | None,
+    *,
+    artifact_paths: Iterable[Path] | None = None,
+    valid: bool | None = None,
+    kicad_verified: bool | None = None,
+    verification_status: str | None = None,
+    erc: Mapping[str, Any] | None = None,
+) -> Path:
+    """Write a portable machine-readable inventory for this generation run."""
+    manifest_path = _contained_output_path(output_path, "artifact_manifest.json")
+    artifacts = []
+    candidates = artifact_paths
+    if candidates is None:
+        candidates = (item for item in output_path.rglob("*") if item.is_file())
+    unique_candidates: dict[str, Path] = {}
+    for value in candidates:
+        path = _path_in_output(output_path, value)
+        if path is None or not path.is_file() or path == manifest_path:
+            continue
+        relative = path.relative_to(output_path).as_posix()
+        if relative == _GENERATION_LOCK_FILENAME:
+            continue
+        unique_candidates[relative] = path
+    for relative, path in sorted(unique_candidates.items()):
+        artifacts.append(
+            {
+                "path": relative,
+                "relative_path": relative,
+                "kind": _artifact_kind(path),
+                "size_bytes": path.stat().st_size,
+            }
+        )
+
+    root_identity = _manifest_relative_path(output_path, root)
+    erc_payload = copy.deepcopy(dict(erc or {}))
+    erc_payload.setdefault("status", "not-applicable" if root is None else "not-run")
+    erc_payload.setdefault("schematic", root_identity)
+    erc_payload.setdefault("errors", 0)
+    erc_payload.setdefault("warnings", 0)
+    erc_payload.setdefault("skip_reason", "")
+    erc_payload.setdefault("violations", [])
+    # ERC runners naturally report the host path they inspected.  That path is
+    # dead as soon as an API temporary directory is zipped, so the manifest
+    # carries the same root-relative identity as the rest of the archive.
+    erc_payload["schematic"] = root_identity if root is not None else ""
+    payload = {
+        "schema_version": 2,
+        "project": project_name,
+        "root_schematic": root_identity,
+        "valid": valid,
+        "kicad_verified": kicad_verified,
+        "verification_status": verification_status,
+        "erc": erc_payload,
+        "artifacts": artifacts,
+    }
+    serialized = json.dumps(payload, indent=2)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=output_path,
+            prefix=".artifact_manifest.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_path.replace(manifest_path)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+    return manifest_path
+
+
 @_persist_generation_failure
 def _generate_artifacts_in_place(
     spec: dict[str, Any],
@@ -1687,6 +2017,7 @@ def _generate_artifacts_in_place(
     export_pinout: bool = False,
     readiness_gate: bool = True,
     _record_state: bool = True,
+    require_kicad: bool = False,
 ) -> dict[str, Any]:
     """Generate artifacts in one directory.
 
@@ -1695,14 +2026,24 @@ def _generate_artifacts_in_place(
     ``_record_state`` exists solely so the staging invocation cannot point the
     durable manifest at temporary paths.
     """
+    if not isinstance(spec, dict):
+        raise TypeError("Design spec must be a mapping")
+    raw_project: Any = spec.get("project")
+    if raw_project is None and isinstance(spec.get("engine"), dict):
+        raw_project = spec["engine"].get("project")
+    if raw_project is None and isinstance(spec.get("metadata"), dict):
+        raw_project = spec["metadata"].get("project_name")
+    _validate_project_name(raw_project if raw_project is not None else "project")
+
     profile = _ensure_profile(profile)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    preexisting_output = {
-        path.relative_to(output_path).as_posix(): (path.stat().st_size, path.stat().st_mtime_ns)
-        for path in output_path.rglob("*")
-        if path.is_file() and ".circuit-weaver" not in path.relative_to(output_path).parts
-    }
+    # Resolve every fixed write target before opening a logger. The public
+    # transaction also performs this check against the final destination; this
+    # repeat protects direct/private callers and the staging directory.
+    _contained_output_path(output_path, "artifact_manifest.json")
+    circuit_log_path = _contained_output_path(output_path, "circuit-weaver.log")
+    _contained_output_path(output_path, "design.log")
     previous_assembly_manifest = output_path / "assembly_manifest.json"
     if not previous_assembly_manifest.is_file():
         previous_assembly_manifest = None
@@ -1744,7 +2085,7 @@ def _generate_artifacts_in_place(
         _owned_logging = True
     else:
         # Bridge already active -- still write circuit-weaver.log to output dir
-        _local_fh = logging.FileHandler(output_path / "circuit-weaver.log", mode="a", encoding="utf-8")
+        _local_fh = logging.FileHandler(circuit_log_path, mode="a", encoding="utf-8")
         _local_fh.setLevel(logging.DEBUG)
         _local_fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         logging.getLogger("circuit_weaver").addHandler(_local_fh)
@@ -1833,11 +2174,14 @@ def _generate_artifacts_in_place(
             logging.getLogger("circuit_weaver").removeHandler(_local_fh)  # type: ignore[possibly-undefined]
             _local_fh.close()  # type: ignore[possibly-undefined]
 
-    canonical_spec_path = output_path / "canonical_spec.yaml"
+    # Resolve all fixed report targets before opening the first one so a
+    # pre-existing symlink cannot redirect any post-generation write.
+    canonical_spec_path = _contained_output_path(output_path, "canonical_spec.yaml")
+    ir_path = _contained_output_path(output_path, "design_ir.json")
+    report_path = _contained_output_path(output_path, "validation_report.json")
+    placement_ready_path = _contained_output_path(output_path, "placement_readiness.json")
     canonical_spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")
-    ir_path = output_path / "design_ir.json"
     ir_path.write_text(json.dumps(compiled.ir.to_dict(), indent=2), encoding="utf-8", newline="")
-    report_path = output_path / "validation_report.json"
     report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="")
 
     # Ship one canonical physical-part inventory with every generated design.
@@ -1869,14 +2213,14 @@ def _generate_artifacts_in_place(
         "auto_repaired": repair_actions,
         "summary": pr_summary,
     }
-    placement_ready_path = output_path / "placement_readiness.json"
     placement_ready_path.write_text(
         json.dumps(placement_ready_payload, indent=2), encoding="utf-8", newline=""
     )
 
+    project_name = _validate_project_name(compiled.metadata.get("project", "project"))
     result = {
         "output_dir": str(output_path),
-        "project": compiled.metadata.get("project", "project"),
+        "project": project_name,
         "root_schematic": str(root) if root else "",
         "files": [str(path) for path in files],
         "validation_report": str(report_path),
@@ -1906,31 +2250,26 @@ def _generate_artifacts_in_place(
         result["placement_svg"] = artifact_paths.get("placement_svg", "")
         result["placement_editor"] = artifact_paths.get("placement_html", "")
 
-    # Task 118: Auto-run ERC if KiCad CLI is present and a root schematic was generated
-    if root is not None:
-        from .erc_runner import run_erc
-
-        erc_result = run_erc(root)
-        result["erc"] = erc_result.to_dict()
-
-    # Task 124: Auto-generate test point CSV and annotate schematic
+    # Test-point annotations are a report artifact, not electrical connectivity.
+    # Keep the final KiCad schematic immutable after generation so validation and
+    # downstream users always inspect the same bytes.
     from .test_point_gen import generate_test_point_artifacts
 
+    _contained_output_path(output_path, f"{project_name}_test_points.csv")
     tp_result = generate_test_point_artifacts(
         compiled.ir,
         output_path,
-        project_name=compiled.metadata.get("project", "project"),
-        schematic_path=root,
+        project_name=project_name,
+        schematic_path=None,
     )
     result["test_points"] = tp_result
 
     # Task 120: Emit pinout CSV for MCU components (auto when MCUs present, or forced via flag)
     from .firmware_export import export_esp32_sdkconfig, export_pinout_csv, export_stm32_ioc, is_mcu
 
-    project_name = compiled.metadata.get("project", "project")
     has_mcu = any(is_mcu(c) for c in compiled.components)
     if export_pinout or has_mcu:
-        pinout_path = output_path / f"{project_name}_pinout.csv"
+        pinout_path = _contained_output_path(output_path, f"{project_name}_pinout.csv")
         written = export_pinout_csv(compiled.components, pinout_path, mcu_only=not export_pinout)
         if written:
             result["pinout_csv"] = str(written)
@@ -1938,12 +2277,12 @@ def _generate_artifacts_in_place(
     # Tasks 121 + 122: MCU-specific config stubs
     for comp in compiled.components:
         if comp.mpn.upper().startswith("STM32"):
-            ioc_path = output_path / f"{project_name}.ioc"
+            ioc_path = _contained_output_path(output_path, f"{project_name}.ioc")
             written_ioc = export_stm32_ioc(comp, project_name, ioc_path)
             if written_ioc:
                 result["stm32_ioc"] = str(written_ioc)
         if comp.mpn.upper().startswith("ESP32"):
-            sdk_path = output_path / "sdkconfig.defaults"
+            sdk_path = _contained_output_path(output_path, "sdkconfig.defaults")
             written_sdk = export_esp32_sdkconfig(comp, project_name, sdk_path)
             if written_sdk:
                 result["esp32_sdkconfig"] = str(written_sdk)
@@ -1958,17 +2297,79 @@ def _generate_artifacts_in_place(
         )
         result["auto_source_summary"] = auto_source_result
 
+    # Validate the exact final schematic bytes after every report/firmware
+    # artifact has been produced. The staged tree is the exact byte set that
+    # will be committed to the user's output directory.
+    from .sexpr_builder import validate_sexpr_balance
+
     generated_artifacts = sorted(
         (
             path
             for path in output_path.rglob("*")
             if path.is_file()
             and ".circuit-weaver" not in path.relative_to(output_path).parts
-            and preexisting_output.get(path.relative_to(output_path).as_posix())
-            != (path.stat().st_size, path.stat().st_mtime_ns)
+            and path.name != "artifact_manifest.json"
         ),
         key=lambda path: path.as_posix().casefold(),
     )
+    invalid_schematics = [
+        path
+        for path in generated_artifacts
+        if path.suffix == ".kicad_sch"
+        if not validate_sexpr_balance(path.read_text(encoding="utf-8"), str(path))
+    ]
+    if invalid_schematics:
+        names = ", ".join(path.name for path in invalid_schematics)
+        raise ValueError(f"Generated schematic S-expression validation failed: {names}")
+
+    result["kicad_verified"] = False
+    result["verification_status"] = "not-applicable" if root is None else "unverified"
+    result["erc"] = {
+        "status": "not-applicable",
+        "schematic": "",
+        "errors": 0,
+        "warnings": 0,
+        "skip_reason": "",
+        "violations": [],
+    }
+    if root is None:
+        if require_kicad:
+            raise ValueError("KiCad verification was required, but no root schematic was generated")
+    else:
+        from .erc_runner import run_erc
+
+        erc_result = run_erc(root)
+        result["erc"] = erc_result.to_dict()
+        if erc_result.status == "ok" and erc_result.errors == 0:
+            result["kicad_verified"] = True
+            result["verification_status"] = "verified"
+        elif erc_result.status == "skipped":
+            if require_kicad:
+                raise ValueError(
+                    f"KiCad verification was required but skipped: {erc_result.skip_reason}"
+                )
+        elif erc_result.status == "failed":
+            result["valid"] = False
+            result["verification_status"] = "failed"
+            raise ValueError(f"Final KiCad verification failed: {erc_result.skip_reason}")
+        else:
+            result["valid"] = False
+            result["verification_status"] = "failed"
+            raise ValueError(f"Final KiCad ERC found {erc_result.errors} error(s)")
+
+    manifest_path = _write_artifact_manifest(
+        output_path,
+        project_name,
+        root,
+        artifact_paths=generated_artifacts,
+        valid=result["valid"],
+        kicad_verified=result["kicad_verified"],
+        verification_status=result["verification_status"],
+        erc=result["erc"],
+    )
+    generated_artifacts.append(manifest_path)
+    generated_artifacts.sort(key=lambda path: path.as_posix().casefold())
+    result["artifact_manifest"] = str(manifest_path)
     result["files"] = [str(path) for path in generated_artifacts]
     placement_review_path = output_path / "placement_result.json"
     if _record_state:
@@ -2226,7 +2627,6 @@ def _publish_staged_generation(
             shutil.rmtree(backup_dir, ignore_errors=True)
 
 
-@_persist_generation_failure
 def generate_artifacts(
     spec: dict[str, Any],
     *,
@@ -2242,6 +2642,64 @@ def generate_artifacts(
     svg_placement: bool = True,
     export_pinout: bool = False,
     readiness_gate: bool = True,
+    require_kicad: bool = False,
+) -> dict[str, Any]:
+    """Generate transactionally while exclusively leasing the output directory."""
+    if not isinstance(spec, dict):
+        raise TypeError("Design spec must be a mapping")
+    raw_project: Any = spec.get("project")
+    if raw_project is None and isinstance(spec.get("engine"), dict):
+        raw_project = spec["engine"].get("project")
+    if raw_project is None and isinstance(spec.get("metadata"), dict):
+        raw_project = spec["metadata"].get("project_name")
+    _validate_project_name(raw_project if raw_project is not None else "project")
+
+    requested_output_path = Path(output_dir)
+    requested_output_path.mkdir(parents=True, exist_ok=True)
+    manifest_path = _contained_output_path(requested_output_path, "artifact_manifest.json")
+    _contained_output_path(requested_output_path, "circuit-weaver.log")
+    _contained_output_path(requested_output_path, "design.log")
+    if manifest_path.is_dir() and not manifest_path.is_symlink():
+        raise ValueError(
+            f"Reserved artifact manifest path is a directory and cannot be replaced: {manifest_path}"
+        )
+
+    with _GENERATION_PROCESS_LOCK, _generation_output_lock(requested_output_path):
+        return _generate_artifacts_transaction_locked(
+            spec,
+            output_dir=requested_output_path,
+            profile=profile,
+            require_valid=require_valid,
+            enrich_parts=enrich_parts,
+            export_svg=export_svg,
+            score=score,
+            auto_source=auto_source,
+            update_spec=update_spec,
+            spec_path=spec_path,
+            svg_placement=svg_placement,
+            export_pinout=export_pinout,
+            readiness_gate=readiness_gate,
+            require_kicad=require_kicad,
+        )
+
+
+@_persist_generation_failure
+def _generate_artifacts_transaction_locked(
+    spec: dict[str, Any],
+    *,
+    output_dir: str | Path,
+    profile: str = _STANDARD_PROFILE,
+    require_valid: bool = True,
+    enrich_parts: bool = False,
+    export_svg: bool = True,
+    score: bool = False,
+    auto_source: bool = False,
+    update_spec: bool = False,
+    spec_path: Path | None = None,
+    svg_placement: bool = True,
+    export_pinout: bool = False,
+    readiness_gate: bool = True,
+    require_kicad: bool = False,
 ) -> dict[str, Any]:
     """Generate into staging, then atomically reconcile generator-owned output."""
     from .project_state import record_generation_state
@@ -2250,6 +2708,9 @@ def generate_artifacts(
     requested_output_path.mkdir(parents=True, exist_ok=True)
     output_path = requested_output_path.resolve(strict=False)
     previous_owned = _recorded_generation_paths(output_path)
+    prior_artifact_manifest = output_path / "artifact_manifest.json"
+    if prior_artifact_manifest.is_file() and not prior_artifact_manifest.is_symlink():
+        previous_owned.setdefault("artifact_manifest.json", Path("artifact_manifest.json"))
     project_name = str(spec.get("project") or spec.get("name") or output_path.name or "project")
 
     try:
@@ -2291,6 +2752,7 @@ def generate_artifacts(
             export_pinout=export_pinout,
             readiness_gate=readiness_gate,
             _record_state=False,
+            require_kicad=require_kicad,
         )
         # Preserve the caller's public path style (including a relative output
         # directory) while all publication and state operations use the
@@ -2511,12 +2973,9 @@ def _simple_yaml_dump(value: Any, indent: int = 0) -> str:
 
 
 def spec_to_yaml_text(spec: dict[str, Any]) -> str:
-    try:
-        import yaml
+    import yaml
 
-        return yaml.safe_dump(spec, sort_keys=False, allow_unicode=False)
-    except ImportError:
-        return _simple_yaml_dump(spec) + "\n"
+    return yaml.safe_dump(spec, sort_keys=False, allow_unicode=False)
 
 
 def _load_spec_file(path: str | Path) -> dict[str, Any]:
@@ -2530,12 +2989,12 @@ def _load_patch_file(path: str | Path) -> dict[str, Any]:
     path = Path(path)
     text = path.read_text(encoding="utf-8")
     if path.suffix.lower() in {".yaml", ".yml"}:
-        try:
-            import yaml
+        import yaml
 
-            return yaml.safe_load(text) or {}
-        except ImportError:
-            return _simple_yaml_parse(text)
+        parsed = yaml.safe_load(text) or {}
+        if not isinstance(parsed, dict):
+            raise ValueError("Patch file must contain a top-level mapping")
+        return parsed
     return json.loads(text)
 
 
@@ -2677,6 +3136,12 @@ def main() -> None:
         dest="svg_placement",
         action="store_false",
         help="Skip review-only placement JSON/SVG/HTML generation",
+    )
+    gen_p.add_argument(
+        "--require-kicad",
+        action="store_true",
+        default=False,
+        help="Fail unless final schematics pass a real kicad-cli ERC run",
     )
     gen_p.set_defaults(require_valid=True, readiness_gate=True, export_svg=True)
 
@@ -2965,7 +3430,7 @@ def main() -> None:
         nargs="+",
         choices=["claude", "codex", "opencode", "kilo", "all"],
         default=None,
-        help="Platforms to install to (default: auto-detect available)",
+        help="Platforms to install to (default: all supported platforms)",
     )
     install_p.add_argument(
         "--skills",
@@ -2981,12 +3446,12 @@ def main() -> None:
     install_p.add_argument(
         "--force",
         action="store_true",
-        help="Overwrite existing SKILL.md files that differ from the source (default: skip and warn)",
+        help="Resolve managed-file provenance conflicts by replacing local files",
     )
     install_p.add_argument(
         "--backup",
         action="store_true",
-        help="With --force, preserve the prior SKILL.md as a timestamped .bak file before overwriting",
+        help="With --force, preserve every replaced file as a timestamped .bak copy",
     )
     install_p.add_argument(
         "--dry-run",
@@ -3411,12 +3876,11 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                     spec_path=spec_path,
                     svg_placement=svg_placement,
                     export_pinout=getattr(args, "export_pinout", False),
+                    require_kicad=getattr(args, "require_kicad", False),
                 )
             )
         except ValueError as exc:
             message = str(exc)
-            if not message.startswith("Design has "):
-                raise
             _print_json({"status": "error", "valid": False, "message": message})
             raise SystemExit(2) from None
         if auto_source and "auto_source_summary" in result:
@@ -3821,23 +4285,24 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         )
         _print_json(result)
 
-        skipped = result.get("skills_skipped") or []
-        if skipped:
+        conflicts = result.get("skills_conflicted") or result.get("skills_skipped") or []
+        if conflicts:
             print(
-                f"[!] Skipped {len(skipped)} existing skill(s) to avoid overwriting customizations.",
+                f"[!] Found {len(conflicts)} managed skill conflict(s); local files were preserved.",
                 file=sys.stderr,
             )
-            for entry in skipped:
+            for entry in conflicts:
                 print(
                     f"    {entry['platform']}/{entry['skill']} → {entry['dest']}",
                     file=sys.stderr,
                 )
             print(
-                "    Re-run with --force to overwrite (add --backup to keep the prior version).",
+                "    Resolve the conflicts or re-run with --force "
+                "(add --backup to preserve replaced files).",
                 file=sys.stderr,
             )
 
-        raise SystemExit(0 if result["status"] in ("ok", "partial") else 1)
+        raise SystemExit(0 if result["status"] == "ok" else 1)
 
     if args.command == "schema":
         from .schema import get_design_ir_schema

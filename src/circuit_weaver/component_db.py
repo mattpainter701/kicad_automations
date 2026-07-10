@@ -1312,7 +1312,7 @@ def _builtin_components():
             mpn="BME280",
             ref_prefix="U",
             value="BME280",
-            footprint="Package_LGA:Bosch_LGA-8_2.5x2.5mm",
+            footprint="Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
             description="Temperature/Humidity/Pressure Sensor I2C/SPI",
             category="sensor",
             pins=[
@@ -1320,7 +1320,11 @@ def _builtin_components():
                 PinDef("2", "CSB", "input", "L"),
                 PinDef("3", "SDI", "bidirectional", "L"),
                 PinDef("4", "SCK", "input", "L"),
-                PinDef("5", "SDO", "output", "R"),
+                # SDO is an SPI output but becomes the sampled I2C address
+                # strap in I2C mode.  ``passive`` models the mode-dependent
+                # electrical role without a false output-vs-power conflict
+                # when a design intentionally straps it to GND or VDDIO.
+                PinDef("5", "SDO", "passive", "R"),
                 PinDef("6", "VDDIO", "power_in", "T"),
                 PinDef("7", "GND2", "power_in", "B"),
                 PinDef("8", "VDD", "power_in", "T"),
@@ -1465,6 +1469,7 @@ def _builtin_components():
                 PinDef("18", "SWDCLK", "input", "R"),
                 PinDef("19", "SWDIO", "bidirectional", "R"),
                 PinDef("20", "nRESET", "input", "R"),
+                PinDef("32", "ANT", "output", "R"),
                 PinDef("34", "VDD", "power_in", "T"),
                 PinDef("35", "GND", "power_in", "B"),
             ],

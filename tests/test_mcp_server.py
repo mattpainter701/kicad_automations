@@ -1,0 +1,194 @@
+"""Regression coverage for the public MCP server boundary."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+from circuit_weaver.mcp_server import (
+    _call_without_stdout,
+    _discover_projects_tool,
+    _generate_artifacts_tool,
+    _parse_port,
+    _validate_design_tool,
+    main,
+)
+
+
+def test_engine_stdout_is_suppressed(capsys: pytest.CaptureFixture[str]) -> None:
+    def noisy_engine() -> str:
+        print("engine progress that would corrupt JSON-RPC")
+        return "ok"
+
+    assert _call_without_stdout(noisy_engine) == "ok"
+    assert capsys.readouterr().out == ""
+
+
+def test_invalid_json_has_a_stable_error_envelope() -> None:
+    result = json.loads(_validate_design_tool("{not-json"))
+
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "invalid_json"
+    assert "line 1" in result["error"]["message"]
+
+
+def test_generate_reports_skipped_kicad_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from circuit_weaver import dispatcher
+
+    manifest = tmp_path / "artifact_manifest.json"
+    manifest.write_text("{}\n", encoding="utf-8")
+    current_schematic = tmp_path / "unverified-project.kicad_sch"
+    current_schematic.write_text("(kicad_sch)\n", encoding="utf-8")
+    stale_schematic = tmp_path / "stale.kicad_sch"
+    stale_schematic.write_text("(kicad_sch)\n", encoding="utf-8")
+    monkeypatch.setattr(
+        dispatcher,
+        "generate_artifacts",
+        lambda *_args, **_kwargs: {
+            "project": "unverified-project",
+            "root_schematic": str(current_schematic),
+            "files": [str(current_schematic), str(manifest)],
+            "valid": True,
+            "kicad_verified": False,
+            "verification_status": "unverified",
+            "erc": {
+                "status": "skipped",
+                "errors": 0,
+                "warnings": 0,
+                "skip_reason": "KiCad CLI not available",
+            },
+            "artifact_manifest": str(manifest),
+        },
+    )
+
+    result = json.loads(_generate_artifacts_tool("{}", str(tmp_path)))
+
+    assert result["status"] == "ok"
+    assert result["valid"] is True
+    assert result["kicad_verified"] is False
+    assert result["verification_status"] == "unverified"
+    assert result["erc"]["status"] == "skipped"
+    assert result["artifact_manifest"] == str(manifest)
+    assert result["files"] == [str(current_schematic), str(manifest)]
+    assert str(stale_schematic) not in result["files"]
+
+
+def test_discover_projects_uses_max_depth_and_serializes_dataclass(tmp_path: Path) -> None:
+    project_dir = tmp_path / "board"
+    project_dir.mkdir()
+    (project_dir / "design.yaml").write_text(
+        "metadata:\n  project: board\nblocks:\n  - id: U1\n    type: mcu\n",
+        encoding="utf-8",
+    )
+
+    result = json.loads(_discover_projects_tool(str(tmp_path), depth=1))
+
+    assert result["status"] == "ok"
+    assert result["count"] == 1
+    assert result["projects"][0]["name"] == "board"
+    assert result["projects"][0]["type"] == "circuit_weaver"
+    assert result["projects"][0]["project_type"] == "circuit_weaver"
+
+
+@pytest.mark.parametrize("raw_port, expected", [("0", 0), ("5000", 5000), ("65535", 65535)])
+def test_parse_port_accepts_valid_values(raw_port: str, expected: int) -> None:
+    assert _parse_port(raw_port) == expected
+
+
+@pytest.mark.parametrize("raw_port", ["abc", "-1", "65536"])
+def test_parse_port_rejects_invalid_values(raw_port: str) -> None:
+    with pytest.raises(ValueError):
+        _parse_port(raw_port)
+
+
+def test_main_reports_bad_port_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("CIRCUIT_WEAVER_MCP_PORT", "not-a-port")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main([])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert captured.out == ""
+    assert "must be an integer" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_main_help_does_not_require_optional_mcp_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from circuit_weaver import mcp_server
+
+    monkeypatch.setattr(
+        mcp_server,
+        "_create_app",
+        lambda: pytest.fail("--help must exit before importing the optional MCP runtime"),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 0
+    assert "Circuit Weaver MCP server" in captured.out
+    assert captured.err == ""
+
+
+def test_stdio_server_handshake_and_tool_call(tmp_path: Path) -> None:
+    project_dir = tmp_path / "mcp-project"
+    project_dir.mkdir()
+    (project_dir / "design.yaml").write_text("metadata:\n  project: mcp-project\nblocks: []\n", encoding="utf-8")
+
+    async def exercise_server() -> None:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        environment = dict(os.environ)
+        environment["CIRCUIT_WEAVER_MCP_PORT"] = "0"
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "circuit_weaver.mcp_server"],
+            env=environment,
+        )
+
+        async with stdio_client(parameters) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                assert {tool.name for tool in tools.tools} == {
+                    "validate_design",
+                    "generate_artifacts",
+                    "discover_projects",
+                    "research_component",
+                }
+
+                response = await session.call_tool(
+                    "discover_projects",
+                    {"root_dir": str(tmp_path), "depth": 1},
+                )
+                text_blocks = [block.text for block in response.content if hasattr(block, "text")]
+                assert len(text_blocks) == 1
+                payload = json.loads(text_blocks[0])
+                assert payload["status"] == "ok"
+                assert payload["count"] == 1
+
+                invalid_response = await session.call_tool("validate_design", {"spec_json": "{not-json"})
+                invalid_text = "\n".join(
+                    block.text for block in invalid_response.content if hasattr(block, "text")
+                )
+                assert invalid_response.isError is True
+                assert "invalid_json" in invalid_text
+
+    asyncio.run(asyncio.wait_for(exercise_server(), timeout=30))

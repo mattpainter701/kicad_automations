@@ -172,7 +172,15 @@ def test_route_local_connection_detours_around_sibling_bodies():
 
     wires: list[str] = []
     sibling = (98.0, 104.0, 102.0, 108.0)  # straddles the straight path
-    _route_local_connection(100.0, 100.0, 100.0, 112.0, wires, obstacles=[sibling])
+    _route_local_connection(
+        100.0,
+        100.0,
+        100.0,
+        112.0,
+        wires,
+        "TEST_NET",
+        obstacles=[sibling],
+    )
     assert wires, "route emitted no wires"
     for w in wires:
         m = _WIRE_PTS_RE.search(w)
@@ -183,6 +191,101 @@ def test_route_local_connection_detours_around_sibling_bodies():
             assert not (max(min(y1, y2), sibling[1]) < min(max(y1, y2), sibling[3]))
         if abs(y1 - y2) < 0.01 and sibling[1] < y1 < sibling[3]:
             assert not (max(min(x1, x2), sibling[0]) < min(max(x1, x2), sibling[2]))
+
+
+def test_distinct_nets_never_share_or_cross_local_route_segments():
+    """Two support nets crossing opposite IC faces need separate channels."""
+    from circuit_weaver.generator import (
+        _WIRE_PTS_RE,
+        _route_local_connection,
+        _segments_touch_or_cross,
+    )
+
+    parent_body = (140.97, 86.36, 168.91, 101.60)
+    route_state: dict = {"reserved_segments": []}
+    cc1_wires: list[str] = []
+    cc2_wires: list[str] = []
+
+    _route_local_connection(
+        173.99,
+        93.98,
+        135.89,
+        88.90,
+        cc1_wires,
+        "USB_CC1",
+        obstacle=parent_body,
+        route_state=route_state,
+    )
+    _route_local_connection(
+        173.99,
+        99.06,
+        135.89,
+        91.44,
+        cc2_wires,
+        "USB_CC2",
+        obstacle=parent_body,
+        route_state=route_state,
+    )
+
+    def segments(wires):
+        parsed = []
+        for wire in wires:
+            match = _WIRE_PTS_RE.search(wire)
+            assert match, wire
+            parsed.append(tuple(float(match.group(index)) for index in range(1, 5)))
+        return parsed
+
+    cc1_segments = segments(cc1_wires)
+    cc2_segments = segments(cc2_wires)
+    assert cc1_segments and cc2_segments
+    assert all(
+        not _segments_touch_or_cross(first, second)
+        for first in cc1_segments
+        for second in cc2_segments
+    )
+    assert {owner for owner, _segment in route_state["reserved_segments"]} == {
+        "USB_CC1",
+        "USB_CC2",
+    }
+
+
+def test_same_net_local_routes_may_share_reserved_segments():
+    from circuit_weaver.generator import _WIRE_PTS_RE, _route_local_connection
+
+    route_state: dict = {"reserved_segments": []}
+    first_wires: list[str] = []
+    second_wires: list[str] = []
+
+    _route_local_connection(
+        10.16,
+        10.16,
+        20.32,
+        15.24,
+        first_wires,
+        "SHARED_NET",
+        route_state=route_state,
+    )
+    _route_local_connection(
+        10.16,
+        10.16,
+        20.32,
+        15.24,
+        second_wires,
+        "SHARED_NET",
+        route_state=route_state,
+    )
+
+    def geometry(wires: list[str]) -> list[tuple[str, ...]]:
+        return [
+            match.groups()
+            for wire in wires
+            if (match := _WIRE_PTS_RE.search(wire)) is not None
+        ]
+
+    assert geometry(first_wires) == geometry(second_wires)
+    assert {owner for owner, _segment in route_state["reserved_segments"]} == {
+        "SHARED_NET"
+    }
 
 
 def test_decoupling_bank_walks_away_from_occupied_anchor():

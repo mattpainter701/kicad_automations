@@ -15,7 +15,7 @@ circuit-weaver validate <spec.yaml> [--strict] [--enrich-parts]
 | `--strict` | Treat warnings as errors (production gate) |
 | `--enrich-parts` | Query LCSC/DigiKey to fill missing part data before validation |
 
-**Exit codes:** 0 = valid, 1 = validation errors found.
+**Exit codes:** 0 = valid, 2 = validation errors found.
 
 ---
 
@@ -30,24 +30,46 @@ circuit-weaver generate <spec.yaml> --output <dir> [flags]
 | Flag | Description |
 |-|-|
 | `--output`, `-o` | Output directory (required) |
-| `--no-require-valid` | Generate even if validation fails |
+| `--no-require-valid` | Bypass soft electrical findings only; structural and implementation errors still fail |
+| `--no-readiness-gate` | Debug-only bypass for placement-readiness errors |
 | `--no-svg` | Skip SVG export |
 | `--presentation-profile` | `default` or `review` (changes schematic layout) |
 | `--enrich-parts` | Query distributors for missing part data |
 | `--score` | Include electrical quality score in report |
 | `--auto-source` | Auto-discover blank MPNs via DigiKey/Mouser APIs; caches results for 30 days |
 | `--update-spec` | Write discovered MPNs/LCSC back to the original YAML spec (requires `--auto-source`) |
-| `--svg-placement` | Export interactive SVG placement diagram to `placement.svg` for editing |
+| `--placement-review` | Generate the exhaustive placement review bundle (enabled by default) |
+| `--no-placement-review` | Skip placement review generation |
+| `--pinout` | Emit pinout CSV/config stubs even for non-MCU designs |
+| `--require-kicad` | Fail unless the exact final schematic passes real `kicad-cli` ERC |
 
-**Outputs:** `.kicad_sch` files, `_report.md`, placement hints, SVGs, (optional) `placement.svg`.
+**Outputs:** a root `.kicad_sch`, functional sub-sheets when the spec has
+multiple block `section` values, `_report.md`, `assembly_manifest.json`,
+`placement_result.json`, `placement_review_context.json`, `placement.svg`,
+`placement_editor.html`, `artifact_manifest.json`, and optional firmware
+artifacts for a valid reconciled placement inventory. A blocked/empty inventory
+publishes only truthful status rather than misleading visuals. Explicit
+functional sections remain separate even on small designs,
+and generated support passives stay with their owning block. Read paths from
+the manifest instead of assuming filenames. Manifest paths are relative to its
+directory; verification fields distinguish generated-but-unverified output
+from a schematic checked by KiCad.
+
+The placement bundle is an exhaustive heuristic review aid, never a PCB or
+fabrication artifact. `placement_result.json` is published only after its
+reference inventory reconciles exactly with `assembly_manifest.json`.
+`placement_review_context.json` contains constraints, review blockers,
+targeted research prompts, and available official/reference-layout links.
+Unresolved footprint geometry/dimensions, sourcing, overlaps, board bounds,
+support ownership, or constraints keep the review blocked.
 
 **Example:**
 ```bash
 # Auto-discover components and update spec
 circuit-weaver generate design.yaml -o /tmp/out --auto-source --update-spec
 
-# Export placement for visual editing
-circuit-weaver generate design.yaml -o /tmp/out --svg-placement
+# Generate and require real KiCad verification of the final hierarchy
+circuit-weaver generate design.yaml -o /tmp/out --require-kicad
 ```
 
 ---
@@ -62,10 +84,10 @@ circuit-weaver apply-patch <spec.yaml> <patch.yaml> [--output <file>] [--enrich-
 
 | Flag | Description |
 |-|-|
-| `--output`, `-o` | Write updated spec to file (default: stdout) |
+| `--output` | Write updated spec to file (default: stdout) |
 | `--enrich-parts` | Enrich parts before validation |
 
-**Exit codes:** 0 = patch accepted, 1 = patch rejected (validation failed).
+**Exit codes:** 0 = patch accepted, 2 = patch rejected (validation failed).
 
 ---
 
@@ -96,6 +118,64 @@ circuit-weaver ingest-pcb-feedback <spec.yaml> <feedback.yaml> [--output <file>]
 ```
 
 Accepts constraint additions (placement, routing) and approved component substitutions.
+
+---
+
+## import-design
+
+Inventory an existing design without modifying its source files.
+
+```bash
+circuit-weaver import-design <source> [--project-dir <dir>] [--analyze] [--force] [--timeout <seconds>]
+```
+
+`source` may be a KiCad file, KiCad project directory, Gerber/drill directory,
+or ZIP archive. The command writes durable state to
+`<project>/.circuit-weaver/project.json`; ZIP contents are safely staged under
+that internal directory. A single KiCad file also inventories related sibling
+files.
+
+| Flag | Description |
+|-|-|
+| `--project-dir`, `-o` | State directory (default: source directory; ZIPs use a sibling folder) |
+| `--analyze` | Run every applicable bundled analyzer after inventory |
+| `--force` | Explicitly replace changed import staging/source identity and rerun analysis |
+| `--timeout` | Per-analyzer timeout in seconds (default: 300) |
+
+Netlist-only sources are inventoried but report analysis as unsupported; a
+netlist has no schematic presentation or physical-layout evidence.
+
+---
+
+## analyze-design
+
+Analyze all registered schematic, PCB, and Gerber sources for a project.
+
+```bash
+circuit-weaver analyze-design <project> [--force] [--timeout <seconds>]
+```
+
+Results and fingerprints are stored under `.circuit-weaver/analysis/`; valid
+unchanged results are reused unless `--force` is passed. The command exits 0
+only for `status: analyzed` and exits 2 for failed or unsupported analysis.
+
+---
+
+## status and resume
+
+Read reconciled durable project state or produce a deterministic restart plan.
+
+```bash
+circuit-weaver status <project> [--json]
+circuit-weaver resume <project> [--json]
+```
+
+Both commands accept a project directory or a file inside it. `status` reports
+source/artifact inventory, validation, modified or missing recorded files, and
+safe next actions. `resume` does not mutate or automatically execute those
+actions; it verifies that the project is resumable and prints the phase and
+restart plan. Use these commands for workflow recovery; `log-status` and
+`log-view` remain diagnostic views of append-only logs.
 
 ---
 
@@ -133,13 +213,20 @@ circuit-weaver import-placement <placement.svg> <board.kicad_pcb> [flags]
 | Flag | Description |
 |-|-|
 | `--output-pcb`, `-o` | Write updated .kicad_pcb to this path (default: overwrite input) |
-| `--output-cpl` | Write updated CPL CSV to this path (default: auto-find `*_cpl.csv`) |
+| `--output-cpl` | Destination when an existing sibling `<board-stem>_cpl.csv` is updated |
 | `--dry-run` | Preview changes without writing files |
+| `--allow-partial` | Intentionally update only SVG-listed PCB refs; unknown SVG refs still fail |
 
 **Workflow:**
-1. `circuit-weaver generate design.yaml -o /tmp --svg-placement` → `placement.svg`
-2. Edit `placement.svg` in Inkscape/CorelDRAW
-3. `circuit-weaver import-placement /tmp/placement.svg /tmp/*.kicad_pcb` → updates PCB + CPL
+1. `circuit-weaver generate design.yaml -o /tmp/out` creates the review bundle.
+2. Inspect `placement_result.json` and `placement_review_context.json`; resolve blockers.
+3. Edit/export `/tmp/out/placement.svg` in the generated HTML editor or a vector editor.
+4. Create a real pad-bearing PCB with KiCad **Update PCB from Schematic**.
+5. Dry-run and then import the SVG into that real PCB.
+
+By default, the SVG and PCB reference inventories must match exactly. Duplicate,
+unknown, missing, malformed, or non-finite placements block the write. Use
+`--allow-partial` only for an intentional subset update.
 
 **Example:**
 ```bash
@@ -148,6 +235,10 @@ circuit-weaver import-placement placement.svg design.kicad_pcb --dry-run
 
 # Apply changes
 circuit-weaver import-placement placement.svg design.kicad_pcb -o design_updated.kicad_pcb
+
+# Explicit subset update
+circuit-weaver import-placement subset.svg design.kicad_pcb \
+  -o design_updated.kicad_pcb --allow-partial
 ```
 
 ---
@@ -226,13 +317,33 @@ Queries the LCSC/jlcsearch API for real-time pricing. Flags out-of-stock and unr
 
 ## export-jlcpcb
 
-Export JLCPCB-formatted BOM and CPL files for assembly ordering.
+Export JLCPCB-formatted delivery files for assembly ordering.
 
 ```bash
-circuit-weaver export-jlcpcb <spec.yaml> --output <dir>
+circuit-weaver export-jlcpcb <spec.yaml> --output <dir> [--pcb <board.kicad_pcb>]
 ```
 
-**Outputs:** `bom.csv` (Comment, Designator, Footprint, LCSC Part#), `cpl.csv` (placement), `README.txt` (upload instructions).
+Without `--pcb`, the command intentionally emits a BOM-only delivery and does
+not invent placement coordinates. With `--pcb`, the real board must reconcile
+the full assembly reference and footprint inventory before CPL publication.
+
+**Outputs:** `bom_jlcpcb.csv`, optional `cpl_jlcpcb.csv`,
+`README_jlcpcb.txt`, and `delivery_manifest.json`. The delivery manifest is the
+commit marker and records `ok`, `bom_only`, or a blocking failure.
+
+---
+
+## export-dual-cpl
+
+Export top and bottom CPL files from a real, reference-reconciled PCB.
+
+```bash
+circuit-weaver export-dual-cpl <spec.yaml> --pcb <board.kicad_pcb> \
+  --output <dir> [--assembly-mode single-sided|dual-sided-simultaneous|dual-sided-sequential]
+```
+
+`--pcb` is required. Heuristic placement JSON/SVG is never accepted as
+manufacturing CPL evidence. Outputs are `cpl_top.csv` and `cpl_bottom.csv`.
 
 ---
 
@@ -241,13 +352,12 @@ circuit-weaver export-jlcpcb <spec.yaml> --output <dir>
 Export Gerber and drill files from a KiCad PCB.
 
 ```bash
-circuit-weaver export-gerbers <board.kicad_pcb> --output <dir> [--layers <list>]
+circuit-weaver export-gerbers <board.kicad_pcb> --output <dir>
 ```
 
 | Flag | Description |
 |-|-|
 | `--output`, `-o` | Output directory (required) |
-| `--layers` | Custom layer selection (default: all copper + mask + silk + edge) |
 
 Requires KiCad CLI (`kicad-cli`) to be installed and on PATH.
 
@@ -258,7 +368,8 @@ Requires KiCad CLI (`kicad-cli`) to be installed and on PATH.
 Interactive offline design wizard. No agents or APIs required.
 
 ```bash
-circuit-weaver design-wizard [--dry-run] [--resume <path>]
+circuit-weaver design-wizard [--output <file>] [--dry-run] [--resume <path>] \
+  [--research-backend auto|sonar-pro|standard] [--research-depth fast|normal]
 ```
 
 **Features:**
@@ -280,32 +391,53 @@ circuit-weaver design-wizard [--dry-run] [--resume <path>]
 |-|-|
 | `--dry-run` | Run wizard with default answers (testing) |
 | `--resume` | Resume from existing design.yaml |
+| `--output`, `-o` | Save to this exact file |
+| `--research-backend` | Select research backend (default: auto) |
+| `--research-depth` | Select latency-first `fast` or fuller `normal` research |
 
 ---
 
 ## autoroute
 
-Route a KiCad PCB using Freerouting.
+Route a real KiCad PCB or user-exported Specctra DSN using Freerouting.
 
 ```bash
-circuit-weaver autoroute <board.kicad_pcb> [--output <file>] [--effort fast|medium|high] [--timeout <seconds>]
+circuit-weaver autoroute <board.kicad_pcb|design.dsn> [--output <file.ses>] \
+  [--effort fast|medium|high] [--timeout <seconds>] [--overwrite]
 ```
 
 | Flag | Description |
 |-|-|
-| `--output`, `-o` | Output session/PCB path (default: `<name>.ses` via kicad-cli, else `<name>_routed.kicad_pcb`) |
-| `--effort` | Freerouting optimization-pass budget: `fast`, `medium` (default), `high` |
+| `--output`, `-o` | Validated Specctra `.ses` output (default: input stem with `.ses`) |
+| `--effort` | Pass preset: `fast=100`, `medium=500` (default), `high=1000` |
+| `--max-passes` | Exact pass limit overriding `--effort`; 0 means unlimited |
 | `--timeout` | Routing timeout in seconds (default: 300) |
+| `--overwrite` | Atomically replace existing DSN/SES outputs |
+| `--headless`, `--no-headless` | Enable/disable Freerouting GUI (headless by default) |
+| `--optimization-threads` | Optimizer thread count; 0 disables optimization |
+| `--optimizer-strategy` | `greedy`, `global`, or `hybrid` |
+| `--optimizer-hybrid-ratio` | Required positive `m:n` ratio with hybrid strategy |
+| `--optimizer-item-selection` | `sequential`, `random`, or `prioritized` |
+| `--optimizer-improvement-threshold` | Optimizer stopping percentage |
+| `--seed` | Seed only when the installed router advertises `-random_seed` |
+| `--freerouting-path` | Freerouting launcher/JAR path |
+| `--kicad-cli-path` | `kicad-cli` used only after a Specctra capability probe |
 
 Requires Freerouting to be installed separately.
 
-The board is preflighted before routing: placement previews
-(`*_placement.kicad_pcb`, which carry no pads by design) and boards with no
-pads or named nets fail closed with a message pointing at KiCad
-forward-annotation. When `kicad-cli` is available the router uses the
-supported Specctra pipeline (`.dsn` export → Freerouting → `.ses` session,
-imported in KiCad via *File → Import → Specctra Session*); otherwise it
-falls back to routing the `.kicad_pcb` directly.
+The board preflight rejects review/preview files, missing pads, missing named
+nets, and mismatched pad-net declarations. Direct `.kicad_pcb` routing is
+never attempted: automatic board input works only when the installed
+`kicad-cli` advertises Specctra export. Otherwise export `.dsn` in KiCad PCB
+Editor and pass that DSN to this command.
+
+The command stages output, validates the DSN and SES structure and net
+correlation, requires known connection-completeness and clearance statistics,
+and publishes only after those checks. `status: partial` exits 2 when the
+router truthfully reports incomplete connections. A successful output is still
+a Specctra session; import it in KiCad and run DRC. Power, switching loops,
+differential pairs, RF, clocks, crystals, and other critical nets require
+manual engineering rather than blanket autorouting.
 
 ---
 

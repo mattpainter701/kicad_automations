@@ -29,13 +29,14 @@ This document describes how Circuit Weaver will coordinate datasheet, symbol, an
           │         index.json + metadata.json
           ↓
   
-  Step 3: SVG Placement Export (Task 93)
+  Step 3: Exhaustive Placement Review
   ┌────────────────────────────────────────────┐
-  │ placement dict → SVG                        │
-  │ User edits in Inkscape/CorelDRAW           │
-  │ SVG → placement dict (parse & import)      │
+  │ assembly manifest → result/context/SVG/HTML │
+  │ User resolves blockers and edits SVG        │
+  │ SVG + real PCB → strict placement import    │
   └───────┬────────────────────────────────────┘
-          │ Output: design_placement.svg, updated .kicad_pcb
+          │ Output: placement_result.json, placement_review_context.json,
+          │         placement.svg, placement_editor.html, updated real PCB
           ↓
   
   Step 4: Placement Optimization (Sprint 15, Task 87–89)
@@ -56,7 +57,7 @@ This document describes how Circuit Weaver will coordinate datasheet, symbol, an
   │ Input: placement + SI constraints           │
   │ Freerouting or manual KiCad routing        │
   └───────┬────────────────────────────────────┘
-          │ Output: routed .kicad_pcb
+          │ Output: validated .ses for import into KiCad; final PCB is saved in KiCad
           ↓
   
   Step 6: Manufacturing Export
@@ -112,7 +113,10 @@ project/
 ├─ s_params/
 │  ├─ USB3.S4P
 │  └─ ...
-└─ design_placement.svg (user-editable)
+├─ placement_result.json (review status and blockers)
+├─ placement_review_context.json (constraints and official references)
+├─ placement.svg (user-editable)
+└─ placement_editor.html (interactive editor)
 ```
 
 ### Sprint 15b: Placement Optimization (Tasks 87–92)
@@ -188,7 +192,7 @@ datasheets/
 └─ ...
 ```
 - **TTL:** 7 days (check for updated versions)
-- **Re-sync:** `circuit-weaver spec-harvest --force` to refresh
+- **Re-sync:** rerun `circuit-weaver harvest-specs design.yaml --output <project>`
 
 ### Metadata Cache (`project/specs/`)
 ```
@@ -199,7 +203,7 @@ specs/
 └─ si_params.json {MPN → {impedance_target_ohm, length_match_tol_mil}}
 ```
 - **TTL:** None (metadata is static, extracted once)
-- **Regenerate:** Only if PDF updated or user requests `--extract-specs --force`
+- **Regenerate:** rerun `circuit-weaver extract-specs <datasheets_dir> --output <specs_dir>` after PDF changes
 
 ## CLI Usage Examples
 
@@ -207,28 +211,29 @@ specs/
 
 ```bash
 # Step 1: Scaffold design (user provides template + ref)
-circuit-weaver scaffold --template buck --ref U1 --auto-source
-# Discovers: TPS61023 MPN, symbol, footprint
+circuit-weaver scaffold --template buck --ref U1 --output design.yaml
 
 # Step 2: Build BOM via patches (manual or agent-assisted)
-circuit-weaver apply-patch design.yaml patch_ldo.json --auto-source
+circuit-weaver apply-patch design.yaml patch_ldo.json --output design.yaml --enrich-parts
 # Discovers: LDO IC + bypass cap
 
-# Step 3: Generate schematic + harvest specs
-circuit-weaver generate design.yaml --output out/ --with-specs --with-spice
-# Downloads: datasheets, SPICE models
-# Extracts: metadata.json, thermal specs, SI params
+# Step 3: Generate schematic, then harvest optional engineering data
+circuit-weaver generate design.yaml --output out/ --auto-source --update-spec
+circuit-weaver harvest-specs design.yaml --output out/
+circuit-weaver fetch-spice design.yaml --output out/
 
-# Step 4: Export placement to SVG
-circuit-weaver generate out/*.kicad_sch --svg-placement
-# User edits design_placement.svg in Inkscape
+# Step 4: Review blockers/context, then edit the generated placement SVG
+# User opens out/placement_editor.html or edits out/placement.svg
 
-# Step 5: Import placement back
-circuit-weaver import-placement design_placement.svg -o out/
-# Updates .kicad_pcb + CPL files
+# Step 5: Strictly reconcile and import into a real forward-annotated PCB
+circuit-weaver import-placement out/placement.svg out/MyBoard.kicad_pcb \
+  --output-pcb out/MyBoard_placed.kicad_pcb --dry-run
+circuit-weaver import-placement out/placement.svg out/MyBoard.kicad_pcb \
+  --output-pcb out/MyBoard_placed.kicad_pcb
 
 # Step 6: Run placement optimizer (reads specs/)
-circuit-weaver optimize-placement out/ --strategy thermal
+circuit-weaver optimize-placement design.yaml --strategy thermal \
+  --specs-dir out/specs/ --output out/placement.json
 # Reads: specs/ic_thermal.json
 # Output: optimized coordinates
 ```
@@ -236,33 +241,37 @@ circuit-weaver optimize-placement out/ --strategy thermal
 ### Example 2: Specs-Only (No Placement Yet)
 
 ```bash
-# Generate schematic, download datasheets, extract specs
-circuit-weaver generate design.yaml --output out/ --with-specs
+# Generate schematic, then download datasheets and extract specs
+circuit-weaver generate design.yaml --output out/
+circuit-weaver harvest-specs design.yaml --output out/
 
 # Review what was extracted
 cat out/specs/metadata.json | jq '.[] | {mpn: .id, theta_ja, status}'
 
 # Regenerate specs if PDFs updated
-circuit-weaver extract-specs out/datasheets/ --output out/specs/ --force
+circuit-weaver extract-specs out/datasheets/ --output out/specs/
 ```
 
 ### Example 3: Manual Placement with Constraints
 
 ```bash
-# Export placement hints (current heuristic layout)
-circuit-weaver generate design.yaml --output out/ --svg-placement
+# Export exhaustive review-only placement artifacts
+circuit-weaver generate design.yaml --output out/
 
 # Edit in Inkscape, save as design_placement_custom.svg
 
-# Import and lock placement
-circuit-weaver import-placement design_placement_custom.svg \
-  --output out/placement_locked.kicad_pcb \
-  --no-optimize
+# Import and lock placement on the real forward-annotated PCB
+circuit-weaver import-placement design_placement_custom.svg out/MyBoard.kicad_pcb \
+  --dry-run \
+  --output-pcb out/placement_locked.kicad_pcb
+
+# Apply only after exact reference reconciliation succeeds.
+circuit-weaver import-placement design_placement_custom.svg out/MyBoard.kicad_pcb \
+  --output-pcb out/placement_locked.kicad_pcb
 
 # Now optimize routing (placement is fixed)
 circuit-weaver autoroute out/placement_locked.kicad_pcb \
-  --constraints out/specs/si_params.json \
-  --output out/routed.kicad_pcb
+  --output out/routed.ses
 ```
 
 ## Benefits of This Approach
@@ -271,8 +280,8 @@ circuit-weaver autoroute out/placement_locked.kicad_pcb \
 |-|-|
 | **No manual MPN entry** | Sprint 14 auto-discovery via DigiKey/LCSC |
 | **Thermal-aware placement** | Specs harvester extracts θJA → optimizer uses it |
-| **SI constraints included** | Specs harvester extracts impedance targets → routing respects them |
-| **Dual-sided support** | Placement + CPL generation for both sides (Task 91) |
+| **SI context included** | Specs harvester exposes impedance/length targets for manual net-class and routing review |
+| **Dual-sided support** | CPL is split by side only after exact reconciliation to a real PCB |
 | **Offline-capable** | Cache datasheets locally, git-track specs/ |
 | **Version control friendly** | SVG + JSON are text; diffs are meaningful |
 | **No proprietary tools** | Inkscape (free) for placement editing, SVG standard |

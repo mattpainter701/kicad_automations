@@ -1,5 +1,6 @@
 """Tests for design confidence dashboard."""
 
+import sys
 from dataclasses import dataclass, field
 
 from circuit_weaver.confidence_dashboard import (
@@ -235,7 +236,7 @@ class TestConfidenceCLI:
         spec.write_text("project: CLITest\nblocks: []")
 
         result = subprocess.run(
-            ["python", "-m", "circuit_weaver", "confidence", str(spec), "--json"],
+            [sys.executable, "-m", "circuit_weaver", "confidence", str(spec), "--json"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0

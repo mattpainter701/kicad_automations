@@ -1,109 +1,118 @@
 # Publishing circuit-weaver to PyPI
 
-Uses **OpenID Connect (OIDC)** — no credentials stored in GitHub Secrets.
+Releases use PyPI trusted publishing (OIDC). No PyPI token is stored in
+GitHub. The tag-triggered workflow builds the distributions once, tests that
+exact wheel on every supported Python/OS gate, validates generated schematics
+with an official KiCad installation, and publishes the same artifact only
+after every gate passes.
 
-## One-Time Setup
+## One-time PyPI and GitHub setup
 
-### 1. Create PyPI Account
-- Go to https://pypi.org/account/register/ (if not done)
-- Sign in with your account
+Create a pending trusted publisher at
+<https://pypi.org/manage/account/publishing/> with:
 
-### 2. Register Trusted Publisher on PyPI
-1. Go to https://pypi.org/manage/account/publishing/
-2. Under **"Add a new pending publisher"**, fill in:
-   - **PyPI Project Name:** `circuit-weaver`
-   - **Owner:** `mattpainter701` (your GitHub username)
-   - **Repository name:** `kicad_automations`
-   - **Workflow name:** `release.yml`
-   - **Environment name:** `pypi` (optional but recommended)
-3. Click "Add pending publisher"
-4. ✅ Done — no tokens needed!
+- PyPI project: `circuit-weaver`
+- GitHub owner: `mattpainter701`
+- Repository: `kicad_automations`
+- Workflow: `release.yml`
+- Environment: `pypi`
 
-### 3. (Optional) Create GitHub Environment
-For extra security, create a dedicated publishing environment:
-1. Go to your repo → Settings → Environments
-2. Click "New environment"
-3. Name: `pypi`
-4. Click "Configure environment"
-5. (Optional) Restrict who can deploy from this environment
-6. Save
+Create a GitHub environment named `pypi` and add any desired deployment
+reviewers. The publish job is the only job granted `id-token: write` and
+`contents: write`.
 
-## Publishing Process
+## Version source
 
-### Automatic (Recommended)
-1. Update `version` in `pyproject.toml`:
-   ```toml
-   [project]
-   version = "0.11.0"
-   ```
-2. Commit and push: `git add . && git commit -m "chore: Bump version to 0.11.0" && git push`
-3. Create and push the version tag:
-   ```bash
-   git tag v0.11.0
-   git push origin main
-   git push origin v0.11.0
-   ```
-4. ✅ GitHub Actions automatically builds and publishes to PyPI (via OIDC)
-   - Check "Actions" tab to see workflow progress
-   - Should complete in ~2 minutes
+`src/circuit_weaver/__init__.py` is the single authoritative version source.
+Setuptools reads `circuit_weaver.__version__` dynamically; do not add a second
+version value to `pyproject.toml`.
 
-### Manual (If needed)
-```bash
-# Install build tools
-pip install build twine
+For this release:
 
-# Build distribution
-python -m build
-
-# Authenticate via browser (no credentials needed)
-twine upload dist/
+```python
+__version__ = "0.32.0"
 ```
 
-## Verification
+The release workflow rejects a tag whose value does not exactly match the
+package version, so a stale tag cannot accidentally republish an older wheel.
 
-After publishing, verify on PyPI:
-- https://pypi.org/project/circuit-weaver/
-- Check version and download link exist
-- Install to test: `pip install --upgrade circuit-weaver`
+## Release process
+
+1. Update `src/circuit_weaver/__init__.py` and `CHANGELOG.md` in the release PR.
+2. Confirm CI is green, including Linux Python 3.10-3.14, Windows Python
+   3.12/3.13, the wheel contract, bundled-skill synchronization, and real
+   KiCad 8/9/10 final-artifact validation.
+3. Merge the release commit to `main`.
+4. Create an annotated tag that exactly matches the package version:
+
+   ```bash
+   git switch main
+   git pull --ff-only
+   git tag -a v0.32.0 -m "circuit-weaver 0.32.0"
+   git push origin v0.32.0
+   ```
+
+5. Watch the `Release to PyPI` workflow. It will:
+
+   - reject a tag/version mismatch;
+   - build one wheel and one source archive;
+   - run `twine check` and inspect wheel metadata;
+   - install and test that exact wheel on all supported Python/OS gates;
+   - start the MCP server over stdio in a real client handshake test;
+   - generate representative simple and complex designs and parse them with
+     KiCad 8, KiCad 9, and KiCad 10 from KiCad's official stable Ubuntu PPAs;
+   - publish the tested files through OIDC and attach them to a GitHub release.
+
+Never delete and recreate a failed tag after artifacts were published. Bump to
+a new patch version instead because PyPI filenames are immutable.
+
+## Local preflight
+
+Run these commands from a clean checkout before tagging:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -e ".[test]"
+python -m ruff check src tests
+python -c "import os, pytest; os.environ.pop('CI', None); raise SystemExit(pytest.main(['tests', '-q']))"
+python -m build
+python -m twine check dist/*
+```
+
+Then verify the built wheel in an isolated environment rather than relying on
+the editable checkout:
+
+```bash
+python -m venv .wheel-test
+.wheel-test/bin/python -m pip install "dist/circuit_weaver-0.32.0-py3-none-any.whl[test]"
+.wheel-test/bin/python -m pytest tests/test_release_contract.py tests/test_mcp_server.py -q
+```
+
+On Windows, replace `.wheel-test/bin/python` with
+`.wheel-test/Scripts/python.exe`.
+
+## Post-publish verification
+
+Use a new virtual environment so a local editable checkout cannot mask the
+PyPI package:
+
+```bash
+python -m venv .pypi-smoke
+.pypi-smoke/bin/python -m pip install --no-cache-dir "circuit-weaver[mcp]==0.32.0"
+.pypi-smoke/bin/circuit-weaver --version
+.pypi-smoke/bin/python -c "from importlib.metadata import version; print(version('circuit-weaver'))"
+```
+
+Verify the release at <https://pypi.org/project/circuit-weaver/> and confirm
+that the GitHub release contains the same wheel and source archive.
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-|-|
-| `Error 403: OIDC token error` | Ensure trusted publisher is registered at https://pypi.org/manage/account/publishing/ |
-| `Error 400: Invalid distribution` | Run `python -m build` locally, then `twine check dist/*` to validate |
-| Workflow never runs | Ensure the tag was pushed to GitHub and matches the workflow trigger pattern `v*.*.*`. |
-| Version mismatch | Verify `version` in `pyproject.toml` matches the git tag (e.g., both `0.11.0`) |
-
-## How OIDC Works
-
-1. GitHub Actions creates a temporary OpenID Connect token
-2. Workflow presents token to PyPI
-3. PyPI verifies:
-   - GitHub org/repo matches trusted publisher
-   - Workflow file name matches
-   - (Optional) GitHub environment matches
-4. If valid, allows publish — no API tokens needed ✅
-
-## Files Modified for Publishing
-
-- `.github/workflows/release.yml` — GitHub Actions workflow (uses OIDC via pypa/gh-action-pypi-publish)
-- `pyproject.toml` — Python package config (already set up)
-- `PUBLISHING.md` — This guide
-
-## Security Benefits
-
-| Feature | API Token | OIDC |
-|-|-|-|
-| Credentials stored | GitHub Secrets ⚠️ | None ✅ |
-| Token expiry | Manual | Automatic (5 min) ✅ |
-| Leaked token risk | High | None ✅ |
-| Revocation | Manual | Automatic ✅ |
-
-## Next Steps
-
-1. ✅ Register trusted publisher at PyPI
-2. ✅ (Optional) Create GitHub `pypi` environment
-3. Push the first version tag to GitHub
-4. Watch Actions tab for build status
-5. Verify package published on PyPI
+| Failure | Resolution |
+|---|---|
+| `Tag/version mismatch` | Update the tag or `circuit_weaver.__version__`; they must be identical. |
+| PyPI OIDC 403 | Verify owner, repository, workflow filename, and `pypi` environment in the trusted-publisher record. |
+| `twine check` failure | Fix package metadata/readme rendering and create a new build before tagging. |
+| Wheel test imports the checkout | Run outside the repository or confirm the import path contains `site-packages`. |
+| PyPI says the file already exists | Bump the patch version; PyPI distributions cannot be overwritten. |
+| KiCad gate fails to install | Check the official `kicad-8.0-releases` and `kicad-10.0-releases` PPA status before retrying the workflow. |

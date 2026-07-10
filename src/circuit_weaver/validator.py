@@ -873,7 +873,143 @@ def _validate_signal_integrity(components: list[ComponentDef]) -> list[Validatio
     return issues
 
 
+def _validate_pin_mapping_integrity(components: list[ComponentDef]) -> list[ValidationIssue]:
+    """Reject mappings that cannot describe one unambiguous rendered pin."""
+    issues: list[ValidationIssue] = []
+    for comp in components:
+        pin_numbers = [pin.number for pin in comp.pins]
+        valid_pin_numbers = {
+            number for number in pin_numbers if isinstance(number, str) and number.strip()
+        }
+
+        malformed_defs = sorted(
+            repr(number)
+            for number in pin_numbers
+            if not isinstance(number, str) or not number.strip()
+        )
+        if malformed_defs:
+            issues.append(
+                _issue(
+                    comp,
+                    "pin-mapping-integrity",
+                    "Pin definitions contain empty or non-string identifiers: "
+                    + ", ".join(malformed_defs),
+                    level="error",
+                )
+            )
+
+        duplicate_defs = sorted(
+            {number for number in valid_pin_numbers if pin_numbers.count(number) > 1}
+        )
+        if duplicate_defs:
+            issues.append(
+                _issue(
+                    comp,
+                    "pin-mapping-integrity",
+                    "Pin definitions contain duplicate identifiers: "
+                    + ", ".join(duplicate_defs),
+                    level="error",
+                )
+            )
+
+        signal_keys = set(comp.pin_nets)
+        power_keys = set(comp.power_pins)
+        nc_keys = set(comp.explicit_no_connects)
+        all_mapping_keys = signal_keys | power_keys | nc_keys
+
+        malformed_keys = sorted(
+            repr(pin)
+            for pin in all_mapping_keys
+            if not isinstance(pin, str) or not pin.strip()
+        )
+        if malformed_keys:
+            issues.append(
+                _issue(
+                    comp,
+                    "pin-mapping-integrity",
+                    "Mappings contain empty or non-string pin identifiers: "
+                    + ", ".join(malformed_keys),
+                    level="error",
+                )
+            )
+
+        empty_signal_nets = sorted(
+            str(pin)
+            for pin, net in comp.pin_nets.items()
+            if not isinstance(net, str) or not net.strip()
+        )
+        empty_power_nets = sorted(
+            str(pin)
+            for pin, net in comp.power_pins.items()
+            if not isinstance(net, str) or not net.strip()
+        )
+        if empty_signal_nets:
+            issues.append(
+                _issue(
+                    comp,
+                    "pin-mapping-integrity",
+                    "Signal mappings have empty net names on pins: "
+                    + ", ".join(empty_signal_nets),
+                    level="error",
+                )
+            )
+        if empty_power_nets:
+            issues.append(
+                _issue(
+                    comp,
+                    "pin-mapping-integrity",
+                    "Power mappings have empty net names on pins: "
+                    + ", ".join(empty_power_nets),
+                    level="error",
+                )
+            )
+
+        signal_and_power = sorted(str(pin) for pin in signal_keys & power_keys)
+        if signal_and_power:
+            issues.append(
+                _issue(
+                    comp,
+                    "pin-mapping-integrity",
+                    "Pins are mapped as both signal and power: "
+                    + ", ".join(signal_and_power),
+                    level="error",
+                )
+            )
+
+        mapped_and_nc = sorted(str(pin) for pin in (signal_keys | power_keys) & nc_keys)
+        if mapped_and_nc:
+            issues.append(
+                _issue(
+                    comp,
+                    "pin-mapping-integrity",
+                    "Pins are both mapped and explicitly no-connect: "
+                    + ", ".join(mapped_and_nc),
+                    level="error",
+                )
+            )
+
+        string_mapping_keys = {pin for pin in all_mapping_keys if isinstance(pin, str)}
+        # Custom embedded symbols are checked again against the exact emitted
+        # geometry during rendering.  The source PinDef list remains the
+        # authoritative contract whenever it is present.
+        if valid_pin_numbers or not comp.lib_symbol_sexpr:
+            missing = sorted(string_mapping_keys - valid_pin_numbers)
+            if missing:
+                issues.append(
+                    _issue(
+                        comp,
+                        "pin-mapping-integrity",
+                        "Mapped pins are absent from the component pin definitions: "
+                        + ", ".join(missing),
+                        level="error",
+                    )
+                )
+
+    return issues
+
+
 _VALIDATION_CHECKS = (
+    ("pin-mapping-integrity", "Pin mapping integrity", _validate_pin_mapping_integrity),
     ("pinout-source", "Pinout verification", _validate_pinout_sources),
     ("feedback-divider", "Feedback dividers", _validate_feedback_dividers),
     ("rc-lc-filter", "RC/LC filters", _validate_filter_cutoffs),

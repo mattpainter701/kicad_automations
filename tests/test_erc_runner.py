@@ -78,6 +78,51 @@ def test_parse_erc_json_with_violations():
     assert result.violations[0].severity == "error"
 
 
+def test_parse_erc_json_kicad_sheet_schema_flattens_all_sheets():
+    """KiCad 8+ emits violations inside each entry in the ``sheets`` list."""
+    raw = {
+        "$schema": "https://schemas.kicad.org/erc.v1.json",
+        "kicad_version": "10.0.4",
+        "sheets": [
+            {
+                "path": "/",
+                "uuid_path": "/root",
+                "violations": [
+                    {
+                        "type": "pin_not_connected",
+                        "description": "Pin unconnected",
+                        "severity": "error",
+                        "items": [{"description": "Symbol U1 pin 3"}],
+                    }
+                ],
+            },
+            {
+                "path": "/Power/",
+                "uuid_path": "/root/power",
+                "violations": [
+                    {
+                        "type": "footprint_link_issues",
+                        "description": "Footprint library is unavailable",
+                        "severity": "warning",
+                        "items": [],
+                    }
+                ],
+            },
+            {"path": "/Logic/", "uuid_path": "/root/logic", "violations": []},
+        ],
+    }
+
+    result = _parse_erc_json(raw, "hierarchical.kicad_sch")
+
+    assert result.status == "ok"
+    assert result.errors == 1
+    assert result.warnings == 1
+    assert [violation.type for violation in result.violations] == [
+        "pin_not_connected",
+        "footprint_link_issues",
+    ]
+
+
 def test_parse_erc_json_empty_violations_key():
     raw = {}  # missing 'violations' key entirely
     result = _parse_erc_json(raw, "sch.kicad_sch")
@@ -141,6 +186,25 @@ def test_run_erc_success(tmp_path):
     assert result.status == "ok"
     assert result.errors == 1
     assert result.warnings == 0
+
+
+def test_run_erc_nonzero_exit_fails_even_with_json_output(tmp_path):
+    sch = tmp_path / "design.kicad_sch"
+    sch.write_text("(kicad_sch)")
+
+    def fake_run(cmd, **kwargs):
+        out_idx = cmd.index("--output") + 1
+        Path(cmd[out_idx]).write_text('{"sheets": []}', encoding="utf-8")
+        return MagicMock(returncode=2, stdout="", stderr="Failed to load schematic")
+
+    fake_cli = tmp_path / "kicad-cli"
+    with patch("circuit_weaver.erc_runner._kicad_cli_path", return_value=fake_cli):
+        with patch("circuit_weaver.erc_runner.subprocess.run", side_effect=fake_run):
+            result = run_erc(sch)
+
+    assert result.status == "failed"
+    assert "exited 2" in result.skip_reason
+    assert "Failed to load schematic" in result.skip_reason
 
 
 # ---------------------------------------------------------------------------

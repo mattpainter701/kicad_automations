@@ -42,26 +42,32 @@ pip install circuit-weaver
 **Step 2 — Register the skill** *(one-time, for Claude Code / Codex / OpenCode)*
 
 ```bash
-circuit-weaver install-skills            # safe: skips existing skills, reports what would overwrite
+circuit-weaver install-skills            # install for all supported agent platforms
 circuit-weaver install-skills --dry-run  # preview without touching disk
-circuit-weaver install-skills --force --backup   # overwrite existing skills, keep timestamped .bak files
+circuit-weaver install-skills --force --backup   # resolve conflicts, back up every replaced file
 ```
 
-> **Note:** `install-skills` will **not** overwrite an existing `SKILL.md` that differs from the
-> bundled version — it prints a warning and leaves your customizations intact. Pass `--force` (and
-> optionally `--backup`) only after reviewing the reported collisions.
+> **Upgrade safety:** each installed skill has a provenance manifest containing hashes for every
+> managed file. A pristine older release upgrades automatically. A file changed or deleted by the
+> user is preserved and reported as a conflict, and the command exits non-zero. Pass `--force`
+> only after reviewing conflicts; add `--backup` to preserve every replaced file.
 
 **Step 3 — Launch**
 
-```bash
-# In Claude Code or Codex — type the skill name:
+```text
+# Claude Code:
 /circuit-weaver
+
+# Codex:
+$circuit-weaver
+
+# OpenCode: ask it to use circuit-weaver (loaded through its skill tool).
 
 # Or run offline without any agent:
 circuit-weaver design-wizard
 ```
 
-That's it. The skill walks you through IC selection, passive generation, and manufacturing export. No YAML hand-editing required.
+The skill walks through IC selection, spec validation, schematic generation, and the electrical-PCB handoff.
 
 ---
 
@@ -113,43 +119,86 @@ python scripts/cleanup_branches.py --force-unmerged # include unmerged branches 
 
 ## What You Get
 
-Every `generate` run produces a complete artifact bundle:
+A successful default `generate` run produces a complete artifact bundle
+(`--no-placement-review` deliberately omits the four placement-review files):
 
 | Artifact | File | Description |
 |-|-|-|
-| KiCad schematic | `{project}.kicad_sch` | Real, loadable `.kicad_sch` — not a placeholder |
-| HTML review report | `{project}_review.html` | Validation results, component rationale, DFM score, BOM |
+| KiCad schematic hierarchy | `{project}.kicad_sch` plus functional sub-sheets | Real, loadable hierarchy; explicit block `section` values remain separate professional sheets and support passives follow their owner |
+| Markdown design report | `{project}_report.md` | Validation results, component summary, and design notes |
+| Placement review | `placement_result.json`, `placement_review_context.json`, `placement.svg`, `placement_editor.html` | Exhaustive, reference-reconciled heuristic proposal with review blockers and official-reference context; never fabrication data |
+| Assembly inventory | `assembly_manifest.json` | Stable physical-part references, including generated support passives |
+| Canonical spec and IR | `canonical_spec.yaml`, `design_ir.json` | Normalized source of truth and generated design IR |
+| Validation evidence | `validation_report.json`, `placement_readiness.json` | Machine-readable release/readiness checks |
+| Artifact inventory | `artifact_manifest.json` | Portable relative paths, verification state, kinds, and sizes for every generated artifact |
 | Test point map | `{project}_test_points.csv` | Auto-detected power, clock, bus, and differential-pair nets |
-| JLCPCB BOM + CPL | `bom.csv`, `cpl.csv` | Upload-ready assembly files |
-| Firmware stubs | `{project}_pinout.csv`, `.ioc`, `sdkconfig` | MCU pin map + STM32/ESP32 co-design files |
-| Enclosure model | `enclosure.scad` | Parametric OpenSCAD model sized to the PCB |
-| Placement SVG | `placement.svg` | Editable SVG of component placements — import back after editing in Inkscape |
-| PCB file | `design.kicad_pcb` | Initial PCB with zone-based component placement |
+| Firmware stubs (when applicable) | `{project}_pinout.csv`, `.ioc`, `sdkconfig.defaults` | MCU pin map and STM32/ESP32 co-design files |
+
+---
+
+## Resume or Analyze an Existing Design
+
+Circuit Weaver keeps restartable state in `<project>/.circuit-weaver/project.json`.
+Import is non-destructive: source KiCad, PCB, Gerber, drill, and ZIP files are
+inventoried and hashed rather than regenerated.
+
+```bash
+# Import a KiCad project, a single KiCad file, a Gerber directory, or a ZIP
+circuit-weaver import-design ./existing_board --analyze
+
+# Inspect durable state or get a deterministic restart plan
+circuit-weaver status ./existing_board
+circuit-weaver resume ./existing_board
+
+# Re-run every applicable bundled analyzer; unchanged results are cached
+circuit-weaver analyze-design ./existing_board
+```
+
+Use `--project-dir <dir>` when state should live somewhere other than the
+source directory. Use `--force` only to intentionally replace a changed import
+source set, ZIP staging tree, or cached analysis. Netlist-only imports are
+inventoried, but analysis is reported as unsupported because a netlist alone
+does not contain schematic or physical-layout evidence.
 
 ---
 
 ## PCB Placement Workflow
 
-Circuit Weaver has a complete placement pipeline — from automatic initial placement through optimization, interactive review, and write-back to KiCad.
+Circuit Weaver generates a review-only placement proposal, then KiCad creates
+the electrical PCB. The SVG/HTML/JSON proposal is never a PCB, CPL, or other
+fabrication artifact.
 
 ### 1 — Generate initial placement
 
-`generate` produces an initial `.kicad_pcb` with topology-aware placement (power zone, digital zone, RF zone, connector zone, passive banks) and exports a `placement.svg` for editing:
+`generate` returns the path to `artifact_manifest.json`. Resolve that manifest's portable `root_schematic` and artifact paths relative to the manifest directory instead of guessing filenames. Check `verification_status` before claiming KiCad verification. Placement review is enabled by default:
 
 ```bash
 circuit-weaver generate design.yaml -o ./output
-# → output/design.kicad_pcb   (zone-based initial placement)
-# → output/placement.svg       (editable placement diagram)
+# → output/{project}.kicad_sch
+# → output/placement_result.json
+# → output/placement_review_context.json
+# → output/placement.svg
+# → output/placement_editor.html
+# → output/{project}_report.md
 ```
+
+`placement_result.json` must contain the exact `assembly_manifest.json`
+reference inventory. It remains `fabrication_ready: false` by design. Review
+its overlap, boundary, support-part, geometry, sourcing, and constraint
+blockers. `placement_review_context.json` records constraints, targeted
+research prompts, and official component/reference-layout links available to
+the agent; manufacturer documentation remains authoritative.
 
 ### 2 — Optimize with simulated annealing
 
 ```bash
 # Basic optimization (5 000 iterations, reproducible with seed)
-circuit-weaver optimize-placement design.yaml --iterations 5000 --seed 42
+circuit-weaver optimize-placement design.yaml --iterations 5000 --seed 42 \
+    -o output/placement.json
 
 # Thermal-aware strategy (minimizes hotspot proximity)
-circuit-weaver optimize-placement design.yaml --strategy thermal --iterations 10000
+circuit-weaver optimize-placement design.yaml --strategy thermal --iterations 10000 \
+    -o output/placement.json
 
 # Read component thermal/SI specs from YAML files
 circuit-weaver optimize-placement design.yaml --specs-dir ./specs/
@@ -158,6 +207,9 @@ circuit-weaver optimize-placement design.yaml --specs-dir ./specs/
 The optimizer minimizes: overlap, boundary violations, thermal clustering, and DFM zone penalties via simulated annealing. Returns a placement JSON with x/y/rotation/layer per component.
 
 ### 3 — Review in the interactive viewer
+
+Open the generated `output/placement_editor.html`, or generate a standalone
+viewer for a different optimizer configuration:
 
 ```bash
 circuit-weaver placement-viewer design.yaml -o output/viewer.html
@@ -169,45 +221,59 @@ Opens a self-contained HTML file with:
 - Thermal heatmap overlay (blue → red gradient by power dissipation)
 - CSV export button for placement data
 
-### 4 — Edit in Inkscape → import back
+### 4 — Create the electrical PCB in KiCad
+
+Open `artifact_manifest.json`, then open its `root_schematic`, assign and verify footprints, and run **Update PCB from Schematic**. Save that electrically annotated board under a separate name. Only this board has the pads and nets required by routing, DFM, and Gerber export.
+
+Apply reviewed SVG coordinates only to that real electrical PCB. The default
+import is strict: every PCB reference must appear exactly once in the SVG, and
+unexpected or missing references block the write.
 
 ```bash
-# Export editable SVG
-circuit-weaver generate design.yaml --svg-placement -o ./output
-# → output/placement.svg
+circuit-weaver import-placement output/placement.svg board.kicad_pcb \
+    -o board_placed.kicad_pcb --dry-run
+circuit-weaver import-placement output/placement.svg board.kicad_pcb \
+    -o board_placed.kicad_pcb
 
-# Edit in Inkscape (drag components, adjust positions)…
-
-# Import edits back to .kicad_pcb and CPL
-circuit-weaver import-placement output/placement.svg \
-    output/design.kicad_pcb \
-    output/design_updated.kicad_pcb \
-    --output-cpl output/cpl_updated.csv
+# Intentional subset update only; unknown SVG references still fail.
+circuit-weaver import-placement subset.svg board.kicad_pcb \
+    -o board_placed.kicad_pcb --allow-partial
 ```
 
-### 5 — Write directly via KiCad API
+### 5 — Optional KiCad API placement
 
-If KiCad 6+ is installed, write placements directly without SVG round-trip:
+If a compatible KiCad Python API is installed, first check availability and unpack its `(available, message)` result:
 
 ```python
 from circuit_weaver import check_kicad_available, update_board_placements
 
-if check_kicad_available():
+available, message = check_kicad_available()
+if available:
     update_board_placements("design.kicad_pcb", placements)
+else:
+    print(message)
 ```
 
 ### 6 — DFM check and panelization
 
 ```bash
 # Check clearances, pad sizes, and DFM rules
-circuit-weaver check-dfm design.yaml
+circuit-weaver check-dfm electrical_board.kicad_pcb --profile jlcpcb
 
 # Get panel layout suggestions for small boards
-circuit-weaver panelize design.yaml
+circuit-weaver panelize --board-width 50 --board-height 40 --qty 100
 
 # Export dual-sided CPL (top + bottom)
-circuit-weaver export-dual-cpl design.yaml -o ./jlcpcb
+circuit-weaver export-dual-cpl design.yaml --pcb electrical_board.kicad_pcb -o ./jlcpcb
+
+# Export a reconciled JLCPCB delivery and inspect its commit manifest
+circuit-weaver export-jlcpcb design.yaml --pcb electrical_board.kicad_pcb -o ./jlcpcb
+# → bom_jlcpcb.csv, cpl_jlcpcb.csv, README_jlcpcb.txt, delivery_manifest.json
 ```
+
+Without `--pcb`, `export-jlcpcb` is intentionally BOM-only. A supplied board
+must match every assembly reference and footprint before CPL publication.
+Treat `delivery_manifest.json` as the delivery status/commit marker.
 
 ---
 
@@ -217,16 +283,21 @@ circuit-weaver export-dual-cpl design.yaml -o ./jlcpcb
 # ── Design lifecycle ──────────────────────────────────────────────────────────
 circuit-weaver validate design.yaml               # Validate spec (no files written)
 circuit-weaver generate design.yaml -o ./output  # Full artifact bundle
-circuit-weaver erc output/design.kicad_sch        # KiCad built-in ERC
+circuit-weaver erc output/{project}.kicad_sch      # Use root_schematic from artifact_manifest.json
 circuit-weaver diff old.yaml new.yaml             # Semantic diff + optional SVG
+circuit-weaver import-design ./legacy_board --analyze
+circuit-weaver status ./legacy_board
+circuit-weaver resume ./legacy_board
+circuit-weaver analyze-design ./legacy_board
 
 # ── Placement ─────────────────────────────────────────────────────────────────
-circuit-weaver optimize-placement design.yaml --iterations 5000 --seed 42
+circuit-weaver optimize-placement design.yaml --iterations 5000 --seed 42 -o output/placement.json
 circuit-weaver placement-viewer design.yaml -o output/viewer.html
-circuit-weaver import-placement placement.svg board.kicad_pcb out.kicad_pcb
-circuit-weaver check-dfm design.yaml
-circuit-weaver panelize design.yaml
-circuit-weaver export-dual-cpl design.yaml -o ./jlcpcb
+circuit-weaver import-placement placement.svg board.kicad_pcb -o out.kicad_pcb
+circuit-weaver import-placement subset.svg board.kicad_pcb -o out.kicad_pcb --allow-partial
+circuit-weaver check-dfm electrical_board.kicad_pcb --profile jlcpcb
+circuit-weaver panelize --board-width 50 --board-height 40 --qty 100
+circuit-weaver export-dual-cpl design.yaml --pcb electrical_board.kicad_pcb -o ./jlcpcb
 
 # ── Simulation & confidence ──────────────────────────────────────────────────
 circuit-weaver simulate design.yaml -o ./sims      # Run SPICE simulations (ngspice)
@@ -235,8 +306,8 @@ circuit-weaver confidence design.yaml -o report.html --pcb board.kicad_pcb
 
 # ── BOM and manufacturing ─────────────────────────────────────────────────────
 circuit-weaver cost-bom design.yaml --qty 1,10,100
-circuit-weaver export-jlcpcb design.yaml -o ./jlcpcb
-circuit-weaver export-gerbers design.yaml -o ./gerbers
+circuit-weaver export-jlcpcb design.yaml --pcb electrical_board.kicad_pcb -o ./jlcpcb
+circuit-weaver export-gerbers electrical_board.kicad_pcb -o ./gerbers
 
 # ── Project management ───────────────────────────────────────────────────────
 circuit-weaver discover                             # Auto-detect projects in CWD
@@ -267,6 +338,8 @@ from circuit_weaver.dispatcher import (
     diff_designs,
     ingest_pcb_feedback,
 )
+from circuit_weaver.design_import import analyze_design, import_design
+from circuit_weaver.project_state import get_project_state_summary, resume_project
 
 # Validate a canonical design spec
 report = validate_design(spec)
@@ -274,8 +347,14 @@ report = validate_design(spec)
 # Apply a transactional patch and re-validate
 result = apply_design_patch(spec, patch)
 
-# Generate the full KiCad artifact bundle
-bundle = generate_artifacts(spec, output_dir="out/design")
+# Generate the full bundle; require real KiCad for a release-quality claim
+bundle = generate_artifacts(spec, output_dir="out/design", require_kicad=True)
+
+# Non-destructively open and analyze KiCad/PCB/Gerber/ZIP sources
+opened = import_design("legacy-board.zip", project_dir="work/legacy", analyze=True)
+state = get_project_state_summary(opened["project_root"])
+restart_plan = resume_project(opened["project_root"])
+analysis = analyze_design(opened["project_root"])
 
 # Semantic diff between two specs
 changes = diff_designs(old_spec, new_spec)
@@ -311,12 +390,29 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 | `/mvp/apply-patch` | POST | Transactional patch + re-validation |
 | `/mvp/diff` | POST | Semantic diff between two specs |
 | `/mvp/pcb-feedback` | POST | Merge PCB layout feedback into spec |
+| `/mvp/generate` | POST | JSON/YAML spec to a ZIP with a portable artifact manifest |
 
 ---
 
-## What's New in v0.31.0
+## What's New in v0.32.0
 
-Circuit Weaver `v0.31.0` collects the Sprint 53-54 schematic layout quality work and graduates the prior `0.30.x` sprint-release series into a minor release.
+Circuit Weaver `v0.32.0` is an integrity and compatibility release for agent workflows and programmatic users.
+
+| Area | Improvement |
+|-|-|
+| Schematic integrity | Deterministic sheet/reference allocation, collision-safe symbol naming, strict rendered pin maps, final S-expression checks, and safer label/wire movement for dense designs. |
+| Truthful verification | ERC runs against the exact final schematic; results expose `kicad_verified` and `verification_status`, while `--require-kicad` fails closed when verification cannot run. |
+| Durable workflows | Atomic status/resume state plus non-destructive KiCad, PCB, Gerber/drill, and ZIP import with fingerprinted cached analysis. |
+| Professional hierarchy | Explicit block sections remain separate functional sheets, support parts retain ownership, and filenames are collision-safe. |
+| Placement review | Exhaustive assembly reconciliation, blocker-aware JSON/context, official-reference links, and editable SVG/HTML; review artifacts are never fabrication data. |
+| Manufacturing and routing | JLC/CPL export reconciles real PCB references and footprints; Freerouting publishes validated SES sessions and reports incomplete routing as partial. |
+| Agent workflows | Portable kebab-case skills, narrower triggers, provenance-aware upgrades, and aligned Codex, Claude, and OpenCode installation paths. |
+| Programmatic compatibility | Restored legacy imports and deprecated aliases, strict YAML parsing, exhaustive artifact inventory, and real placement SVG data. |
+| Release reliability | Python 3.10-3.14, blocking Windows coverage, exact-wheel tests, live MCP tests, and KiCad 8/9/10 generation and ERC gates before PyPI publication. |
+
+<details><summary>v0.31.0</summary>
+
+Circuit Weaver `v0.31.0` collected the Sprint 53-54 schematic layout quality work and graduated the prior `0.30.x` sprint-release series into a minor release.
 
 | Sprint | Feature |
 |-|-|
@@ -344,6 +440,8 @@ Circuit Weaver `v0.31.0` collects the Sprint 53-54 schematic layout quality work
 | 43 | **Density-scaled grid spacing** — inter-component gaps scale to spread content across available page area, preventing corner-clustering on large sheets. |
 | 43 | **Annotation overlap prevention** — per-IC annotations shift down when they would collide, with overflow line drops. |
 | 43 | **Lane routing counter recycling** — capped at 6 with modulo wrap, preventing lanes from drifting 194mm from the IC. |
+
+</details>
 
 <details><summary>v0.27.0</summary>
 
@@ -374,8 +472,8 @@ Circuit Weaver `v0.31.0` collects the Sprint 53-54 schematic layout quality work
 
 | Sprint | Feature |
 |-|-|
-| 35 | **`install-skills` collision protection** — will no longer silently overwrite a curated `SKILL.md` whose content differs from the bundled source. New `--force`, `--backup`, `--dry-run` flags; skipped entries are reported via `skills_skipped` so you can review before acting |
-| 35 | **All 11 skills now bundled in the wheel** — previously only a stale `circuit-weaver/SKILL.md` (410 of 651 lines) shipped to PyPI; `install-skills` from a fresh `pip install` was missing `bom`, `kicad`, `digikey`, `lcsc`, `mouser`, `jlcpcb`, `pcbway`, `ee`, `design_wizard`, `vivado`. Kept in sync by `scripts/sync_bundled_skills.py` with CI + pre-commit drift guards |
+| 35 | **`install-skills` collision protection** — stopped silently overwriting a curated `SKILL.md`; added `--force`, `--backup`, and `--dry-run` with collision reporting for review |
+| 35 | **All 11 skills bundled in the wheel** — the full set, including `design-wizard`, is kept in sync by `scripts/sync_bundled_skills.py` with CI and pre-commit drift guards |
 | 35 | **Windows CI leg** — `windows-latest` / Python 3.12 smoke run (non-blocking first sprint) covering CLI commands, doctor, skill installer, and `python -m circuit_weaver --version` |
 
 </details>
@@ -411,7 +509,7 @@ Circuit Weaver `v0.31.0` collects the Sprint 53-54 schematic layout quality work
 | Sprint | Feature |
 |-|-|
 | 25 | **Component Selection Rationale** — HTML review report now includes a per-IC table showing why each part was chosen, key electrical specs, and any reference design cited |
-| 25 | **Auto Test Point Generation** — `generate_artifacts()` emits `{project}_test_points.csv` and annotates the schematic with TP labels; detects power, ground, clock, bus, and differential-pair nets |
+| 25 | **Auto Test Point Generation** — `generate_artifacts()` emits `{project}_test_points.csv` and test-point report data while leaving the validated schematic bytes unchanged (`annotated_schematic: false`); detects power, ground, clock, bus, and differential-pair nets |
 | 24 | **Firmware Co-Design Export** — Auto-generates `{project}_pinout.csv`, STM32 `.ioc` skeleton, and ESP32 `sdkconfig.defaults` when MCU blocks are present |
 | 23 | **KiCad CLI ERC Integration** — `circuit-weaver erc` runs KiCad's built-in ERC and surfaces results in the HTML report with a pass/fail badge |
 | 22 | **Pinout Verification Gate** — ICs using unverified stub pinouts now fail validation before any schematic is emitted |
@@ -457,9 +555,9 @@ kicad_automations/
 │   ├── api.py                  # FastAPI HTTP server
 │   ├── helpers/placement.py    # KiCad API abstraction, footprint matching utilities
 │   └── subcircuits/            # Reusable circuit template library (37 templates)
-├── tests/                   # Regression test suite (998 tests)
+├── tests/                   # Regression test suite (1,200+ tests)
 ├── skills/                  # Global workflow skills: kicad, bom, digikey, lcsc, ee…
-├── project-skills/          # Per-project templates: kicad_gen, autoroute, sim…
+├── project-skills/          # Per-project templates: kicad-gen, autoroute, sim…
 ├── agents/                  # Hardware reviewer AI agent definitions
 ├── rules/                   # KiCad workflow policy files
 ├── samples/                 # Sample designs (iot_sensor_node, zigbee_humidistat…)
@@ -473,8 +571,9 @@ kicad_automations/
 | Platform | What's included |
 |-|-|
 | **Claude Code** | `/circuit-weaver` global skill via `install-skills` |
-| **Codex** | `AGENTS.md` guidance + global `~/.codex/skills` install |
-| **OpenCode / Kilo** | `opencode.json`, `.opencode/agents/`, `.agents/skills/` shims |
+| **Codex** | `$circuit-weaver` from the current global `~/.agents/skills` location |
+| **OpenCode** | Agent Skills from `~/.agents/skills`, or `$OPENCODE_CONFIG_DIR/skills` when configured |
+| **Kilo** | Global skills under `$KILO_CONFIG_DIR/skills` or `~/.kilo/skills` |
 
 Install for all platforms at once:
 
@@ -486,22 +585,33 @@ Install for all platforms at once:
 ./install.ps1 -Platform all
 ```
 
+The wrappers install the checkout and delegate skill copying, upgrades, dry runs, and conflict handling to the same Python installer. They honor `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR`, and `KILO_CONFIG_DIR`; Codex uses `~/.agents/skills`. Use `--skills-only` / `-SkillsOnly` to avoid reinstalling the package.
+
 ---
 
 ## Sample Design
 
-Try the full workflow on a built-in sample:
+PyPI installs include a portable IoT starter. Copy it into a writable project
+directory, then run the full workflow:
 
 ```bash
+python -c "from importlib.resources import files; from pathlib import Path; d=Path('iot_sensor_example'); d.mkdir(exist_ok=True); d.joinpath('design.yaml').write_bytes(files('circuit_weaver').joinpath('examples','iot_sensor.yaml').read_bytes())"
+
 # Validate
-circuit-weaver validate samples/iot_sensor_node/iot_sensor_node.yaml
+circuit-weaver validate iot_sensor_example/design.yaml
 
 # Generate schematic + report + test points + firmware stubs
-circuit-weaver generate samples/iot_sensor_node/iot_sensor_node.yaml -o ./output
+circuit-weaver generate iot_sensor_example/design.yaml -o ./output
 
-# Export JLCPCB BOM + CPL
-circuit-weaver export-jlcpcb samples/iot_sensor_node/iot_sensor_node.yaml -o ./output/jlcpcb
+# Export a BOM-only delivery (no heuristic CPL is invented)
+circuit-weaver export-jlcpcb iot_sensor_example/design.yaml -o ./output/jlcpcb
+
+# After creating a real electrical PCB, export a reconciled BOM + CPL
+circuit-weaver export-jlcpcb iot_sensor_example/design.yaml \
+    --pcb ./output/iot_sensor.kicad_pcb -o ./output/jlcpcb
 ```
+
+A source checkout also includes the larger reference gallery under `samples/`.
 
 ---
 

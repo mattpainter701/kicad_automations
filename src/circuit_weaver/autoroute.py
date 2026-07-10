@@ -37,6 +37,23 @@ _NET_DECL_RE = re.compile(r'\(net\s+(\d+)\s+"([^"]*)"\)')
 _SPECCTRA_TOKEN = r'"(?:\\.|[^"\\])*"|[^\s()]+'
 _FREEROUTING_VERSION_RE = re.compile(r"\bFreerouting\s+v?([0-9]+(?:\.[0-9]+){1,3}(?:[-+][\w.-]+)?)", re.IGNORECASE)
 _MIN_ARTIFACT_BYTES = 48
+_SPECCTRA_LITERAL_STRING_QUOTE_RE = re.compile(
+    r'(\(string_quote\s+)"(?=\s*\))(?!\s*\)\s*"\s*\))',
+    re.IGNORECASE,
+)
+
+
+def _specctra_scan_text(text: str) -> str:
+    """Neutralize Specctra's canonical literal quote declaration for scanning.
+
+    Real DSN producers, including Freerouting's own fixture corpus, commonly
+    emit ``(string_quote ")``: the quote character is the declared delimiter,
+    not the start of a quoted string.  Replace only that literal character
+    with a same-width sentinel so balance/block scanners retain exact indices.
+    The older explicitly quoted spelling used by some fixtures remains
+    untouched.
+    """
+    return _SPECCTRA_LITERAL_STRING_QUOTE_RE.sub(r"\1q", text)
 
 
 def _result_error(message: str, **extra: Any) -> dict[str, Any]:
@@ -51,11 +68,12 @@ def _iter_sexpr_blocks(text: str, keyword: str):
     without accepting arbitrary text that happens to contain ``(pad``.
     """
     target = keyword.casefold()
+    scan_text = _specctra_scan_text(text)
     index = 0
     quoted = False
     escaped = False
-    while index < len(text):
-        char = text[index]
+    while index < len(scan_text):
+        char = scan_text[index]
         if escaped:
             escaped = False
             index += 1
@@ -74,9 +92,9 @@ def _iter_sexpr_blocks(text: str, keyword: str):
 
         name_start = index + 1
         name_end = name_start + len(keyword)
-        delimiter = text[name_end : name_end + 1]
+        delimiter = scan_text[name_end : name_end + 1]
         invalid_delimiter = delimiter and not delimiter.isspace() and delimiter != ")"
-        if text[name_start:name_end].casefold() != target or invalid_delimiter:
+        if scan_text[name_start:name_end].casefold() != target or invalid_delimiter:
             index += 1
             continue
 
@@ -84,8 +102,8 @@ def _iter_sexpr_blocks(text: str, keyword: str):
         depth = 0
         block_quoted = False
         block_escaped = False
-        for block_end in range(block_start, len(text)):
-            block_char = text[block_end]
+        for block_end in range(block_start, len(scan_text)):
+            block_char = scan_text[block_end]
             if block_escaped:
                 block_escaped = False
                 continue
@@ -135,6 +153,41 @@ def _first_payload_token(block: str, keyword: str) -> str | None:
     return _decode_specctra_token(match.group(0)) if match else None
 
 
+def _payload_tokens(payload: str) -> list[str]:
+    """Split a Specctra payload on unquoted whitespace.
+
+    Pin references may contain quoted component/pin fragments such as
+    ``"J3"-"D+"`` and quoted identifiers may contain spaces.  Counting raw
+    quote-regex matches would therefore count fragments rather than pins.
+    """
+    tokens: list[str] = []
+    current: list[str] = []
+    quoted = False
+    escaped = False
+    for char in payload:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if quoted and char == "\\":
+            current.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            quoted = not quoted
+            current.append(char)
+            continue
+        if char.isspace() and not quoted:
+            if current:
+                tokens.append("".join(current))
+                current = []
+            continue
+        current.append(char)
+    if current:
+        tokens.append("".join(current))
+    return tokens
+
+
 def _validate_dsn_semantics(root: str) -> tuple[dict[str, Any] | None, str | None]:
     structure_blocks = list(_iter_sexpr_blocks(root, "structure"))
     placement_blocks = list(_iter_sexpr_blocks(root, "placement"))
@@ -159,6 +212,7 @@ def _validate_dsn_semantics(root: str) -> tuple[dict[str, Any] | None, str | Non
     if not net_blocks:
         return None, "DSN network section contains no nets"
     net_names: set[str] = set()
+    pin_counts: dict[str, int] = {}
     for net_block in net_blocks:
         name = _first_payload_token(net_block, "net")
         if not name:
@@ -166,14 +220,21 @@ def _validate_dsn_semantics(root: str) -> tuple[dict[str, Any] | None, str | Non
         if name in net_names:
             return None, f"DSN network declares duplicate net {name!r}"
         pins = _first_sexpr_block(net_block, "pins")
-        if pins is None or not _block_payload(pins, "pins"):
+        pin_tokens = _payload_tokens(_block_payload(pins, "pins")) if pins else []
+        if not pin_tokens:
             return None, f"DSN net {name!r} contains no pins"
         net_names.add(name)
+        pin_counts[name] = len(pin_tokens)
 
     design_name = _first_payload_token(root, "pcb")
     if not design_name:
         return None, "DSN pcb root is missing its design name"
-    return {"design_name": design_name, "nets": net_names}, None
+    return {
+        "design_name": design_name,
+        "nets": net_names,
+        "pin_counts": pin_counts,
+        "routable_nets": {name for name, count in pin_counts.items() if count >= 2},
+    }, None
 
 
 def _validate_ses_semantics(root: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -212,6 +273,7 @@ def _validate_ses_semantics(root: str) -> tuple[dict[str, Any] | None, str | Non
 
 
 def _sexpr_is_balanced(text: str) -> bool:
+    text = _specctra_scan_text(text)
     depth = 0
     quoted = False
     escaped = False
@@ -306,7 +368,11 @@ def _validate_specctra_artifact(
                 "reason": f"SES contains net(s) absent from source DSN: {', '.join(unexpected_nets)}",
                 "size_bytes": size,
             }
-        missing_nets = sorted(dsn_nets - set(details["nets"]))
+        # A one-pin net is electrically real but has no connection for an
+        # autorouter to create.  Freerouting correctly omits such nets from
+        # ``network_out``; require only source nets with at least two pins.
+        routable_dsn_nets = set(dsn_validation.get("routable_nets", dsn_nets))
+        missing_nets = sorted(routable_dsn_nets - set(details["nets"]))
         if missing_nets:
             return {
                 "valid": False,
@@ -347,6 +413,10 @@ def _validate_specctra_artifact(
         "nets": sorted(details["nets"]),
         "net_count": len(details["nets"]),
     }
+    if kind == "dsn":
+        result["pin_counts"] = dict(sorted(details["pin_counts"].items()))
+        result["routable_nets"] = sorted(details["routable_nets"])
+        result["routable_net_count"] = len(details["routable_nets"])
     if kind == "ses":
         result["base_design"] = details["base_design"]
     return result
@@ -885,15 +955,10 @@ def _route_specctra(
                 stats=stats,
                 router=router,
             )
-        if stats["clearance_violations"] is None:
-            return _result_error(
-                "Freerouting did not report final clearance-violation statistics; "
-                "refusing to publish an unverified SES",
-                artifact=validation,
-                stats=stats,
-                router=router,
-            )
-        if stats["clearance_violations"] > 0:
+        if (
+            stats["clearance_violations"] is not None
+            and stats["clearance_violations"] > 0
+        ):
             return _result_error(
                 f"Freerouting reported {stats['clearance_violations']} clearance violation(s); SES was not published",
                 artifact=validation,
@@ -904,7 +969,23 @@ def _route_specctra(
         if publish_error:
             return _result_error(publish_error, stats=stats, router=router)
         validation["path"] = str(ses_path)
-        return {"status": "ok", "artifact": validation, "stats": stats, "router": router}
+        clearance_status = (
+            "verified_clear"
+            if stats["clearance_violations"] == 0
+            else "unreported_by_router_cli"
+        )
+        return {
+            "status": "ok",
+            "artifact": validation,
+            "stats": stats,
+            "router": router,
+            "verification": {
+                "ses_semantics": "verified",
+                "connection_completeness": "verified",
+                "clearance": clearance_status,
+                "requires_kicad_drc": True,
+            },
+        }
     finally:
         _remove_staging_file(staging)
 
@@ -1095,13 +1176,19 @@ def autoroute_pcb(
 
     stats = {**route_result["stats"], "routing_time_seconds": elapsed}
     incomplete = stats["incomplete"]
-    status = "partial" if incomplete else "ok"
+    clearance_verified = stats["clearance_violations"] == 0
+    status = "partial" if incomplete else "ok" if clearance_verified else "review_required"
     message = (
         f"Freerouting produced a validated Specctra session at {ses_path}. "
         "Import it in KiCad PCB Editor with File -> Import -> Specctra Session."
     )
     if incomplete:
         message += f" {incomplete} connection(s) remain incomplete; routing is partial."
+    if not clearance_verified:
+        message += (
+            " Freerouting's CLI did not report a final clearance-violation count; "
+            "import the SES and run KiCad DRC before accepting the routing."
+        )
 
     return {
         "status": status,
@@ -1113,4 +1200,8 @@ def autoroute_pcb(
         "artifact": route_result["artifact"],
         "stats": stats,
         "router": route_result["router"],
+        "verification": route_result["verification"],
+        "routing_complete": incomplete == 0,
+        "fabrication_ready": False,
+        "requires_kicad_drc": True,
     }

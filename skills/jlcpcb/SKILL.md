@@ -272,4 +272,4 @@ To fix rotation issues:
 
 - **Claude Code**: Present DFM results and pricing inline. Use AskUserQuestion for assembly options.
 - **Codex/OpenCode**: Present options as numbered lists. Ask user to confirm choices.
-- **CLI**: Export operations available via `circuit-weaver export-jlcpcb` and `circuit-weaver check-dfm`.
+- **CLI**: `circuit-weaver export-jlcpcb design.yaml -o delivery` is deliberately BOM-only. Add `--pcb board.kicad_pcb` only for a real, reference/footprint-reconciled CPL. Read `delivery_manifest.json`; upload `bom_jlcpcb.csv` and, when status is `ok`, `cpl_jlcpcb.csv`. Use `circuit-weaver check-dfm board.kicad_pcb` separately.

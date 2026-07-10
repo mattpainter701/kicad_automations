@@ -41,33 +41,31 @@ except ImportError:
 try:
     from . import __version__ as _VERSION
 except ImportError:
-    _VERSION = "0.22.0"
+    _VERSION = "0+unknown"
 
 
 def _get_version() -> str:
-    """Try to read version from pyproject.toml; fall back to hardcoded."""
-    try:
-        toml_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
-        if toml_path.exists():
-            for line in toml_path.read_text(encoding="utf-8").splitlines():
-                if line.strip().startswith("version"):
-                    _, _, val = line.partition("=")
-                    return val.strip().strip('"').strip("'")
-    except Exception:
-        pass
+    """Return the package's single authoritative runtime version."""
     return _VERSION
 
 
 def _parse_yaml_text(text: str) -> dict:
-    """Parse YAML from a string, preferring PyYAML with simple fallback."""
+    """Parse YAML from a string with the required full YAML parser."""
+    import yaml
+
     try:
-        import yaml
-
-        return yaml.safe_load(text) or {}
-    except ImportError:
-        from .project_spec import _simple_yaml_parse
-
-        return _simple_yaml_parse(text)
+        parsed = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        detail = f"Invalid YAML: {exc}"
+        if _FASTAPI_AVAILABLE:
+            raise HTTPException(status_code=400, detail=detail) from exc
+        raise ValueError(detail) from exc
+    if not isinstance(parsed, dict):
+        detail = "Design specification must contain a top-level mapping"
+        if _FASTAPI_AVAILABLE:
+            raise HTTPException(status_code=400, detail=detail)
+        raise ValueError(detail)
+    return parsed
 
 
 def _decode_utf8(body: bytes, *, detail: str) -> str:
@@ -539,6 +537,7 @@ def create_app() -> Any:
         require_valid: bool = Query(True),
         enrich_parts: bool = Query(False),
         export_svg: bool = Query(True),
+        require_kicad: bool = Query(False),
     ):
         from .dispatcher import generate_artifacts
 
@@ -557,15 +556,28 @@ def create_app() -> Any:
                     require_valid=require_valid,
                     enrich_parts=enrich_parts,
                     export_svg=export_svg,
+                    require_kicad=require_kicad,
                 )
             except Exception as exc:
                 raise HTTPException(status_code=422, detail=f"MVP artifact generation failed: {exc}")
 
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for path in sorted(tmpdir.rglob("*")):
-                    if path.is_file():
-                        zf.write(path, path.relative_to(tmpdir).as_posix())
+                archive_files: list[tuple[str, Path]] = []
+                for value in result.get("files", []):
+                    path = Path(value)
+                    try:
+                        relative = path.resolve().relative_to(tmpdir.resolve()).as_posix()
+                    except ValueError as exc:
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Generated artifact escaped the output directory: {path}",
+                        ) from exc
+                    if not path.is_file():
+                        raise HTTPException(status_code=500, detail=f"Generated artifact is missing: {path}")
+                    archive_files.append((relative, path))
+                for relative, path in sorted(archive_files):
+                    zf.write(path, relative)
             buf.seek(0)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
