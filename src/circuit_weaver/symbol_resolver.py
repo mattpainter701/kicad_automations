@@ -135,7 +135,10 @@ class SymbolResolver:
 
         # Tier 3: KiCad library
         if self._kicad:
-            comp = self._kicad.get_component(mpn, category)
+            # ``get_component`` takes ``lib_name`` as its second positional
+            # argument.  Pass the category by keyword so an automatic symbol
+            # search is used instead of trying to load e.g. ``digital.kicad_sym``.
+            comp = self._kicad.get_component(mpn, category=category)
             if comp:
                 log.info("Resolved %s via kicad lib", mpn)
                 return comp, "kicad"

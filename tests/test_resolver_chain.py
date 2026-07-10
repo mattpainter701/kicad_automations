@@ -49,6 +49,46 @@ def test_registry_tier_wins_first():
     assert src == "registry"
 
 
+def test_kicad_tier_passes_category_by_keyword():
+    """The KiCad API's second positional argument is ``lib_name``.
+
+    Passing the resolver category positionally used to make a digital part
+    search for a library named ``digital`` instead of searching the installed
+    KiCad libraries.
+    """
+
+    expected = ComponentDef(
+        mpn="TEST-KICAD-PART",
+        ref_prefix="U",
+        value="TEST-KICAD-PART",
+        footprint="Package:Test",
+        description="Resolved from KiCad",
+        pins=_stub_pindefs(),
+    )
+
+    class FakeKiCadLibrary:
+        def __init__(self):
+            self.args = None
+
+        def get_component(self, symbol_name, lib_name=None, category="digital"):
+            self.args = (symbol_name, lib_name, category)
+            return expected
+
+    kicad = FakeKiCadLibrary()
+    resolver = SymbolResolver(
+        kicad_lib=kicad,
+        use_easyeda=False,
+        use_digikey=False,
+        use_mouser=False,
+        use_ic_data=False,
+    )
+    comp, source = resolver.resolve("TEST-KICAD-PART", category="sensor")
+
+    assert comp is expected
+    assert source == "kicad"
+    assert kicad.args == ("TEST-KICAD-PART", None, "sensor")
+
+
 def test_ic_data_tier_resolves_template_extracted_part():
     """Tier 2: bundled ic_data JSON serves template-extracted parts without API calls."""
     r = SymbolResolver(use_easyeda=False, use_digikey=False, use_mouser=False)
