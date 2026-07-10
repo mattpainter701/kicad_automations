@@ -139,6 +139,19 @@ def run_erc(schematic: str | Path, *, timeout: int = 60) -> ErcResult:
                 skip_reason=f"kicad-cli exited {proc.returncode} with no output",
             )
 
+        # Without --exit-code-violations, a non-zero status is an operational
+        # failure (parse/load/CLI error), not an ERC verdict.  Do not bless a
+        # partial or stale JSON file that the failed process happened to leave.
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            suffix = f": {detail[:500]}" if detail else ""
+            _logger.warning("kicad-cli ERC failed with exit %d%s", proc.returncode, suffix)
+            return ErcResult(
+                status="failed",
+                schematic=str(schematic),
+                skip_reason=f"kicad-cli exited {proc.returncode}{suffix}",
+            )
+
         raw = json.loads(tmp_path.read_text(encoding="utf-8"))
         result = _parse_erc_json(raw, str(schematic))
         _logger.info(
@@ -183,7 +196,21 @@ def _parse_erc_json(raw: dict, schematic: str) -> ErcResult:
     """Parse kicad-cli ERC JSON into :class:`ErcResult`."""
     violations: list[ErcViolation] = []
 
-    for v in raw.get("violations", []) or []:
+    # KiCad 8+ groups violations by schematic sheet.  Older fixtures and
+    # callers used a flat top-level ``violations`` list, so retain that shape
+    # as a compatibility fallback when no sheet collection is present.
+    sheets = raw.get("sheets")
+    if isinstance(sheets, list):
+        raw_violations = [
+            violation
+            for sheet in sheets
+            if isinstance(sheet, dict)
+            for violation in (sheet.get("violations", []) or [])
+        ]
+    else:
+        raw_violations = raw.get("violations", []) or []
+
+    for v in raw_violations:
         vtype = v.get("type", "unknown")
         severity = _classify_severity(vtype, v.get("severity", "warning"))
         violations.append(

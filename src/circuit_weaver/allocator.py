@@ -329,7 +329,30 @@ def partition_review_sheets(sheets: list[SheetAllocation]) -> list[SheetAllocati
     result: list[SheetAllocation] = []
     for sheet in sheets:
         result.extend(_partition_sheet_for_review(sheet))
-    return result
+    return ensure_unique_sheet_names(result)
+
+
+def ensure_unique_sheet_names(sheets: list[SheetAllocation]) -> list[SheetAllocation]:
+    """Make allocation names deterministic and unique for output filenames.
+
+    Review-group names such as ``"A-B"`` and ``"A B"`` intentionally
+    normalize to the same slug.  A schematic filename is derived directly
+    from ``SheetAllocation.name``, so leaving that collision unresolved would
+    make the later sheet overwrite the earlier one.  Treat names as
+    case-insensitive because the same output directory may be consumed on
+    Windows even when generation happened on a case-sensitive platform.
+    """
+    used: set[str] = set()
+    for sheet in sheets:
+        base = (sheet.name or "sheet").strip() or "sheet"
+        candidate = base
+        suffix = 2
+        while candidate.casefold() in used:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        sheet.name = candidate
+        used.add(candidate.casefold())
+    return sheets
 
 
 def allocate_sheets(components: list[ComponentDef], single_sheet_threshold: int = 8) -> list[SheetAllocation]:

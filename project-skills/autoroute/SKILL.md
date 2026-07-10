@@ -417,7 +417,7 @@ Freerouting does not always respect net class clearance rules for all net combin
 | Workflow step | Skill |
 |-|-|
 | Assign MPNs to components before placement | `bom` |
-| Verify net class assignments match design intent | `kicad_validate` |
+| Verify net class assignments match design intent | `kicad-validate` |
 | Run DRC after SES import | `kicad` (analyze_pcb.py) |
 | Calculate trace widths for power nets | `ee` (IPC-2221 current capacity tables) |
 | Verify controlled impedance trace width from stackup | `ee` (microstrip formula) |

@@ -10,7 +10,7 @@ Circuit Weaver is a transactional circuit design engine that transforms YAML spe
 ┌─────────────────────────────────────────────────────────────────┐
 │ USER INTERFACE LAYER                                           │
 │ ├─ CLI Commands (dispatcher.py: validate, generate, scaffold, etc.)   │
-│ ├─ Interactive Wizard (design_wizard skill)                    │
+│ ├─ Interactive Wizard (design-wizard skill)                    │
 │ └─ Skills (bom, digikey, lcsc, jlcpcb, kicad, etc.)            │
 └──────────────────────┬──────────────────────────────────────────┘
                        │
@@ -264,8 +264,8 @@ Main CLI dispatcher and validation pipeline orchestrator.
 
 **Platforms:**
 - Claude Code (`~/.claude/skills/`)
-- Codex (`~/.codex/skills/`)
-- OpenCode (`~/.config/opencode/skills/`)
+- Codex (`~/.agents/skills/`)
+- OpenCode (`$OPENCODE_CONFIG_DIR/skills/` or `~/.agents/skills/`)
 - Kilo (`~/.kilo/skills/`)
 
 ### `schema.py` — JSON Schema Generation (Task 79)

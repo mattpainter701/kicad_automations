@@ -1,5 +1,5 @@
 ---
-name: kicad_hierarchy
+name: kicad-hierarchy
 description: >
   Hierarchical root schematic management -- maintains the top-level .kicad_sch
   that references all sub-sheets. Use to add/remove sheets, validate hierarchy
@@ -14,7 +14,7 @@ KiCad hierarchical designs use a root sheet containing only sheet references
 ## Workflow
 
 ```
-1. Generate sub-sheets        -> kicad_gen skill
+1. Generate sub-sheets        -> kicad-gen skill
 2. Update root sheet          -> scripts/build_root_schematic.py
 3. Validate sheet filenames   -> all referenced paths must exist on disk
 4. Open in KiCad              -> verify hierarchy navigator shows all sheets
@@ -53,7 +53,7 @@ root.kicad_sch
 
 ## Adding a New Sheet
 
-1. Generate the new `.kicad_sch` file (via kicad_gen or manually)
+1. Generate the new `.kicad_sch` file (via kicad-gen or manually)
 2. Run `build_root_schematic.py` (or manually add the sheet entry to root)
 3. Verify with ERC
 4. Run "Update PCB from Schematic" in KiCad GUI to sync new nets

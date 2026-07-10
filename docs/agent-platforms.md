@@ -1,92 +1,79 @@
 # Agent Platform Support
 
-Circuit Weaver supports four agent surfaces directly from this repo: Claude Code, Codex, OpenCode, and Kilo.
+Circuit Weaver ships Agent Skills for Claude Code, Codex, OpenCode, and Kilo.
+The Python installer owns platform paths, provenance tracking, and conflict
+handling; the shell scripts are thin wrappers around that installer.
 
 ## Support Matrix
 
-| Platform | Rules / instructions | Global skill directory | Repo-local assets |
-|---|---|---|---|
-| Claude Code | `CLAUDE.md` or explicit skill references | `~/.claude/skills` | Existing `.claude` compatibility path |
-| Codex | `AGENTS.md` | `~/.codex/skills` | Root `AGENTS.md` plus canonical `skills/` and `project-skills/` sources |
-| OpenCode | `AGENTS.md` + `opencode.json` | `~/.config/opencode/skills` | `.opencode/agents` and `.agents/skills` |
-| Kilo | `AGENTS.md` + `kilo.json` | `~/.kilo/skills` | `.kilo/commands/`, `.opencode/agents/`, and `.agents/skills/` |
+| Platform | Global skill directory | Invocation / discovery |
+|-|-|-|
+| Claude Code | `$CLAUDE_CONFIG_DIR/skills` or `~/.claude/skills` | `/circuit-weaver` |
+| Codex | `~/.agents/skills` | `$circuit-weaver` or `/skills` |
+| OpenCode | `$OPENCODE_CONFIG_DIR/skills`, otherwise `~/.agents/skills` | Loaded through OpenCode's skill tool |
+| Kilo | `$KILO_CONFIG_DIR/skills` or `~/.kilo/skills` | Loaded from its skills directory |
 
-## Repo Files That Matter
+The old Codex `~/.codex` directory is detected only for migration. New skills
+are installed into the current `~/.agents/skills` location.
 
-- `AGENTS.md` is the shared repo-level instruction file for Codex, OpenCode, and Kilo.
-- `kilo.json` adds Kilo instructions (`AGENTS.md`, `rules/kicad.md`), agent definitions, and skill path configuration.
-- `.opencode/agents/` contains OpenCode/Kilo subagent definitions derived from the reviewer prompts in `agents/`.
-- `.kilo/commands/` contains Kilo slash commands (/validate, /generate, /review, /audit-bom, /simulate, /discover, /confidence).
-- `.agents/skills/` contains repo-local compatibility entrypoints for the canonical global skills under `skills/`.
-- `skills/` remains the source of truth for global workflow skills.
-- `project-skills/` remains the source of truth for downstream project templates.
+## Canonical Sources
+
+- `skills/` is the source of truth for the 11 global skills included in the wheel.
+- `src/circuit_weaver/_bundled_skills/` is the packaged mirror and must remain byte-for-byte synchronized.
+- `.agents/skills/` contains repo-local skill entrypoints used while developing this checkout.
+- `project-skills/` contains optional downstream project templates. These are not silently copied by a global install.
+
+Every canonical skill directory and frontmatter `name` is already kebab-case.
+Examples include `design-wizard`, `kicad-gen`, `kicad-hierarchy`,
+`kicad-pcb-place`, `kicad-pinmap`, and `kicad-validate`. Installers do not
+rewrite skill metadata.
 
 ## Installer Commands
 
-Installers require an explicit platform or explicit destination path. They do not assume a default platform.
-
-### Collision policy
-
-`circuit-weaver install-skills` hashes every destination `SKILL.md` before copying:
-
-| Destination state                          | Default behavior               | With `--force`          |
-|--------------------------------------------|--------------------------------|-------------------------|
-| Absent                                     | Install                        | Install                 |
-| Present, same content                      | No-op (reported as unchanged)  | No-op                   |
-| Present, different content                 | **Skip + warn** (exit non-zero) | Overwrite               |
-
-Flags:
-
-- `--dry-run` walks the full plan without touching the filesystem.
-- `--force` overwrites an existing `SKILL.md` whose content differs from the source.
-- `--backup` (requires `--force`) writes `SKILL.md.bak.YYYYMMDD_HHMMSS` next to the target before overwriting.
-
-This protects users who curate their own global skill library (e.g. a hand-edited `~/.claude/skills/kicad/SKILL.md`) from silent data loss on re-install.
-
-### Install global skills everywhere
+No platform argument installs all supported global skills:
 
 ```bash
-./install.sh --platform all
-./install.ps1 -Platform all
+./install.sh
+./install.ps1
 ```
 
-### Install only Codex, OpenCode, and Kilo globals
+Select platforms or individual skills explicitly when needed:
 
 ```bash
-./install.sh --platform codex,opencode,kilo
-./install.ps1 -Platform codex,opencode,kilo
+./install.sh --platform codex,opencode --skill circuit-weaver
+./install.ps1 -Platform codex,opencode -Skill circuit-weaver
+
+# Equivalent direct CLI
+circuit-weaver install-skills --platform codex opencode --skills circuit-weaver
 ```
 
-### Install downstream project templates into one shared open-agent directory
+Useful flags:
 
-```bash
-./install.sh --project-platform agents
-./install.ps1 -ProjectPlatform agents
-```
+- `--dry-run` / `-DryRun` plans the full operation without writing.
+- `--skills-only` / `-SkillsOnly` skips package installation in the repository wrappers.
+- `--python-only` / `-PythonOnly` installs only the package.
+- `--force` / `-Force` resolves managed-file conflicts in favor of the release.
+- `--backup` / `-Backup` requires force and preserves each replaced file.
 
-### Install downstream project templates into native Claude/OpenCode/Kilo directories
+## Upgrade and Conflict Policy
 
-```bash
-./install.sh --project-platform claude,opencode,kilo
-./install.ps1 -ProjectPlatform claude,opencode,kilo
-```
+Each installed skill contains `.circuit-weaver-install.json`, recording the
+package version and a SHA-256 hash for every managed file.
 
-## Naming Rule for Project Templates
+| Destination state | Default behavior | With force |
+|-|-|-|
+| Absent | Install and write provenance | Install |
+| Matches recorded hashes | Upgrade changed release files automatically | Upgrade |
+| User modified/deleted a managed file | Preserve it, report conflict, exit non-zero | Replace it |
+| Extra user-created file | Leave untouched | Leave untouched |
 
-The source project templates use underscore directory names such as `kicad_gen` and `kicad_pcb_place`.
+The installer recognizes pristine skills from the final manifest-less release
+so existing users can migrate. Unknown untracked installations are treated as
+conflicts instead of being overwritten.
 
-OpenCode, Kilo, and the shared `.agents/skills` convention expect kebab-case skill IDs. The installers handle this automatically:
+## Downstream Project Templates
 
-- `kicad_gen` -> `kicad-gen`
-- `kicad_hierarchy` -> `kicad-hierarchy`
-- `kicad_validate` -> `kicad-validate`
-- `kicad_pinmap` -> `kicad-pinmap`
-- `kicad_pcb_place` -> `kicad-pcb-place`
-
-The copied `SKILL.md` frontmatter is rewritten to match the installed kebab-case ID so these platforms can load the templates cleanly.
-
-## Downstream Guidance
-
-- Keep this repo upstream and generic.
-- Install `project-skills/` into downstream hardware repos instead of editing the upstream templates in place.
-- Keep project-specific symbol libraries, footprint libraries, BOMs, pin maps, generated KiCad artifacts, and local wrappers in the downstream repo.
+Copy only the required kebab-case directories from `project-skills/` into the
+downstream repository's local skills directory and commit them there. Keep
+project-specific symbol libraries, footprint libraries, BOMs, pin maps,
+generated KiCad artifacts, and wrappers in that downstream repository.

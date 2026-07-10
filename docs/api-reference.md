@@ -21,9 +21,10 @@ from circuit_weaver.dispatcher import (
 def validate_design(
     spec: dict[str, Any],
     *,
-    profile: str = "mvp_strict",
+    profile: str = "standard",
     enrich_parts: bool = False,
     strict: bool = False,
+    check_determinism: bool = True,
 ) -> ValidationReport
 ```
 
@@ -34,9 +35,10 @@ Validate a design spec against the strict MVP profile.
 | Name | Type | Default | Description |
 |-|-|-|-|
 | `spec` | dict | required | YAML-loaded design spec |
-| `profile` | str | `"mvp_strict"` | Validation profile name |
+| `profile` | str | `"standard"` | Validation profile name (`"mvp_strict"` is a deprecated alias) |
 | `enrich_parts` | bool | `False` | Query LCSC/DigiKey for missing part data before validation |
 | `strict` | bool | `False` | Promote warnings to errors |
+| `check_determinism` | bool | `True` | Generate twice and compare KiCad output bytes |
 
 **Returns:** `ValidationReport` containing grouped check results (structural, electrical, implementation, presentation), pass/fail status, and a human-readable summary.
 
@@ -51,8 +53,9 @@ with open("design.yaml") as f:
 
 report = validate_design(spec, strict=True)
 print(report.summary)
-for check in report.checks:
-    print(f"  {check.code}: {check.status}")
+for category, messages in report.categories.items():
+    for message in messages:
+        print(f"  {category}/{message.code}: {message.level}: {message.message}")
 ```
 
 ---
@@ -64,7 +67,7 @@ def apply_design_patch(
     spec: dict[str, Any],
     patch: dict[str, Any],
     *,
-    profile: str = "mvp_strict",
+    profile: str = "standard",
     enrich_parts: bool = False,
 ) -> dict[str, Any]
 ```
@@ -76,28 +79,33 @@ Apply a transactional patch to a design spec. Validates the result before accept
 | Name | Type | Default | Description |
 |-|-|-|-|
 | `spec` | dict | required | Original design spec |
-| `patch` | dict | required | Patch to apply (add/remove/modify blocks) |
-| `profile` | str | `"mvp_strict"` | Validation profile |
+| `patch` | dict | required | Patch operations listed below |
+| `profile` | str | `"standard"` | Validation profile (`"mvp_strict"` is a deprecated alias) |
 | `enrich_parts` | bool | `False` | Enrich parts before validation |
 
 **Returns:** dict with keys:
 - `accepted` (bool) — whether the patch was accepted
 - `updated_spec` (dict) — the patched spec (if accepted)
-- `report` (ValidationReport) — validation results
+- `report` (dict) — JSON-serializable `ValidationReport.to_dict()` output
 - `diff` (dict) — semantic diff showing what changed
 
 **Example:**
 
 ```python
 patch = {
-    "add": [
-        {"section": "power", "template": "ldo", "ref": "U3", "ic": "ADP1706"}
+    "upsert_blocks": [
+        {"section": "power", "kind": "template", "type": "ldo", "ref": "U3", "ic": "ADP1706"}
     ]
 }
 result = apply_design_patch(spec, patch)
 if result["accepted"]:
     spec = result["updated_spec"]
 ```
+
+Supported operations are `set_metadata`, `remove_blocks`, `upsert_blocks`,
+`upsert_interfaces`, `remove_interfaces`, `approved_overrides`, and
+`pcb_constraints`. The old `add` and `remove` names remain as deprecated aliases.
+Unknown operation names raise `ValueError`; they are never silently ignored.
 
 ---
 
@@ -108,7 +116,7 @@ def generate_artifacts(
     spec: dict[str, Any],
     *,
     output_dir: str | Path,
-    profile: str = "mvp_strict",
+    profile: str = "standard",
     require_valid: bool = True,
     enrich_parts: bool = False,
     export_svg: bool = True,
@@ -117,6 +125,9 @@ def generate_artifacts(
     update_spec: bool = False,
     spec_path: Path | None = None,
     svg_placement: bool = False,
+    export_pinout: bool = False,
+    readiness_gate: bool = True,
+    require_kicad: bool = False,
 ) -> dict[str, Any]
 ```
 
@@ -128,7 +139,7 @@ Generate KiCad schematic files and reports from a validated design spec.
 |-|-|-|-|
 | `spec` | dict | required | Design spec |
 | `output_dir` | str or Path | required | Directory for generated files |
-| `profile` | str | `"mvp_strict"` | Validation profile |
+| `profile` | str | `"standard"` | Validation profile (`"mvp_strict"` is a deprecated alias) |
 | `require_valid` | bool | `True` | Abort if validation fails |
 | `enrich_parts` | bool | `False` | Enrich parts before generation |
 | `export_svg` | bool | `True` | Export SVG previews of schematics |
@@ -137,18 +148,33 @@ Generate KiCad schematic files and reports from a validated design spec.
 | `update_spec` | bool | `False` | Write discovered MPNs back to YAML spec |
 | `spec_path` | Path | `None` | Original spec file path (required if `update_spec=True`) |
 | `svg_placement` | bool | `False` | Export interactive SVG placement diagram |
+| `export_pinout` | bool | `False` | Emit a pinout CSV even for non-MCU designs |
+| `readiness_gate` | bool | `True` | Enforce placement-readiness during generation |
+| `require_kicad` | bool | `False` | Fail unless final artifacts pass real `kicad-cli` ERC |
 
 **Returns:** dict with keys:
 - `output_dir` (str) — path to output directory
 - `project` (str) — project name
 - `root_schematic` (str) — path to root `.kicad_sch` file
-- `files` (list[str]) — all generated file paths
-- `validation_report` (ValidationReport) — pre-generation validation
-- `design_ir` (DesignIR) — compiled design IR
-- `canonical_spec` (dict) — normalized spec
-- `valid` (bool) — whether validation passed
+- `files` (list[str]) — exhaustive final file inventory
+- `validation_report` (str) — path to `validation_report.json`
+- `design_ir` (str) — path to `design_ir.json`
+- `canonical_spec` (str) — path to `canonical_spec.yaml`
+- `placement_readiness` (str) — path to `placement_readiness.json`
+- `artifact_manifest` (str) — path to the machine-readable artifact inventory
+- `valid` (bool) — whether internal validation and any attempted final verification passed
+- `kicad_verified` (bool) — whether `kicad-cli` verified the exact final root schematic
+- `verification_status` (str) — `verified`, `unverified`, or `not-applicable`
+- `erc` (dict) — final ERC result when a root schematic exists
 - `auto_source_summary` (dict) — auto-source results (if `auto_source=True`)
 - `placement_svg` (str) — path to placement.svg (if `svg_placement=True`)
+
+`artifact_manifest.json` uses schema version 2. Its `root_schematic`,
+`erc.schematic`, and every artifact `path`/`relative_path` are portable paths
+relative to the manifest's parent directory. The manifest also persists
+`valid`, `kicad_verified`, `verification_status`, and the complete `erc` result,
+so ZIP/API consumers can distinguish successful emission from real KiCad
+verification after a server-side temporary directory has been removed.
 
 ---
 
@@ -194,8 +220,8 @@ Merge PCB-derived constraints and approved substitutions into the design spec.
 | `feedback` | dict | PCB feedback with `constraints` and `overrides` keys |
 
 **Returns:** `ConstraintFeedbackReport` with:
-- `accepted_constraints` (list) — constraints merged into spec
-- `accepted_overrides` (list) — substitutions merged into spec
+- `accepted_constraints` (int) — number of constraints merged into the spec
+- `accepted_overrides` (int) — number of substitutions merged into the spec
 - `rejected` (list) — items that failed validation
 - `updated_spec` (dict) — the updated spec
 
@@ -221,10 +247,29 @@ Generate a human-readable Markdown checklist for pre-fabrication review.
 ### ValidationReport
 
 Returned by `validate_design()`. Contains:
-- `checks` (list[ValidationCheckResult]) — individual check results
+- `profile` (str) — normalized validation profile
 - `valid` (bool) — overall pass/fail
-- `summary` (str) — human-readable summary
-- `error_count` / `warning_count` (int)
+- `categories` (dict[str, list[ValidationMessage]]) — grouped findings
+- `summary` (dict[str, int]) — message count per category
+- `metadata` (dict) — project and compiled-design counts
+
+Call `report.to_dict()` when a JSON-serializable payload is required.
+
+### ValidationMessage
+
+```python
+@dataclass(frozen=True)
+class ValidationMessage:
+    category: str
+    code: str
+    level: str
+    subject: str
+    message: str
+    suggestion: str = ""
+```
+
+`ValidationCheckResult` below belongs to the lower-level component validator
+(`run_validation_checks`); it is not the object returned by `validate_design()`.
 
 ### ValidationCheckResult
 

@@ -1,11 +1,16 @@
 ---
 name: kicad
-description: Analyze KiCad EDA projects and PDF schematics — schematics, PCB layouts, Gerbers, footprints, symbols, design rules, netlists. Review designs for bugs, suggest improvements, extract BOMs, trace nets, cross-reference schematic to PCB, verify DRC/ERC, check DFM, analyze power trees and regulator circuits. Also analyze PDF schematics from dev boards, reference designs, eval kits, and datasheets — extract subcircuits, component values, and connectivity for incorporation into KiCad projects. Supports KiCad 5–9. Use whenever the user mentions KiCad files (.kicad_sch, .kicad_pcb, .kicad_pro), PCB design review, schematic analysis, PDF schematics, reference designs, Gerber files, DRC/ERC, netlist issues, BOM extraction, signal tracing, power budget, design for manufacturing, or wants to understand, debug, compare, or review any hardware design. Also use when the user says things like "check my board", "review before fab", "what's wrong with my schematic", "is this design ready to order", "check my power supply", "verify this motor driver circuit", or asks about any electronics/PCB design topic.
+description: >
+  Analyze existing KiCad projects, schematics, PCB layouts, Gerbers, netlists, and PDF
+  reference schematics. Use when files such as .kicad_sch, .kicad_pcb, .kicad_pro, or
+  Gerbers are supplied and the user wants review, debugging, net tracing, ERC/DRC/DFM,
+  schematic-to-PCB comparison, or pre-fabrication checks. Do not use to create a new
+  design from requirements or for standalone sourcing and ordering.
 ---
 
 # KiCad Project Analysis Skill
 
-> **Disambiguation:** This skill analyzes **existing** KiCad files (.kicad_sch, .kicad_pcb). For *creating new designs from scratch*, use `/circuit-weaver` or `/design_wizard`. For *BOM sourcing and ordering*, use `/bom`. For *circuit simulation*, use `/sim`.
+> **Disambiguation:** This skill analyzes **existing** KiCad files (.kicad_sch, .kicad_pcb). For a new design use `circuit-weaver`; use `design-wizard` only when explicitly requested. For sourcing use `bom`; run the Circuit Weaver `simulate` command for supported simulation.
 
 ## Related Skills
 
@@ -163,9 +168,10 @@ Key nested structures:
 
 **PCB analyzer top-level keys:**
 ```
-file, kicad_version, file_version, statistics, layers, setup, nets,
+file, kicad_version, file_version, status, kicad_verified,
+verification_status, verification_reason, statistics, layers, setup, nets,
 board_outline, component_groups, footprints, tracks, vias, zones,
-connectivity, net_lengths
+connectivity, net_lengths, source_generator, routing_assessment
 ```
 Optional: `power_net_routing`, `decoupling_placement`, `ground_domains`, `current_capacity`, `thermal_analysis`, `layer_transitions`, `placement_analysis`, `silkscreen`, `dfm`, `board_metadata`, `dimensions`, `groups`, `net_classes`, `tombstoning_risk`, `thermal_pad_vias`, `copper_presence`, `trace_proximity`
 
@@ -174,6 +180,7 @@ Key nested structures:
 - `power_net_routing` is a **list**: `[{net, track_count, total_length_mm, min_width_mm, max_width_mm, widths_used[]}, ...]`
 - `footprints[]`: `{reference, value, footprint, layer, pads[], sch_path, sch_sheetname, sch_sheetfile, connected_nets[], ...}`
 - `statistics`: `{footprint_count, copper_layers_used, smd_count, tht_count, zone_count, via_count, routing_complete, ...}`
+- `routing_assessment`: `{status, classification, routable, review_only, workflow, placement_preview, routing_complete, routing_status, pad_count, routable_net_count, has_copper, copper_item_count, source_generator, kicad_verified, verification_status, verification_reason, reason}`. Treat `review_only: true`, `routing_status: incomplete`, or `verification_status: unverified` as a hard stop for verified-routing claims; Circuit Weaver placement previews intentionally have no authoritative pads. This analyzer performs static parsing, not a `kicad-cli` load or DRC check.
 
 **Gerber analyzer top-level keys:**
 ```

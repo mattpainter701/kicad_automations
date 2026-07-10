@@ -1,160 +1,138 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Circuit Weaver Installation Script (Mac/Linux)
-# Installs Python package + Claude Code + Kilo skills
-#
-# Usage:
-#   ./install.sh                  # all platforms
-#   ./install.sh claude           # Claude Code only
-#   ./install.sh kilo             # Kilo CLI only
-#   ./install.sh claude,kilo      # Claude Code + Kilo
-#   ./install.sh python           # CLI only
-#
-# Project templates:
-#   ./install.sh --project-platform kilo
-#   ./install.sh --project-platform agents
-#   ./install.sh --project-platform claude,kilo
+# Thin repository installer for macOS, Linux, and WSL.  Platform paths and
+# collision handling live in circuit_weaver.skill_installer.
 
-PLATFORM="${1:-all}"
-PROJECT_PLATFORM=""
+usage() {
+    cat <<'EOF'
+Usage: ./install.sh [options] [platforms]
 
-if [[ "$1" == "--project-platform" ]]; then
-    PROJECT_PLATFORM="$2"
-    PLATFORM="python"
-fi
+Platforms may be comma-separated: all, claude, codex, opencode, kilo, python.
+No platform argument means all supported agent platforms.
 
-echo ""
-echo "Circuit Weaver Installation"
-echo "==========================="
-echo ""
+Options:
+  --platform VALUE   Select one or more comma-separated platforms.
+  --skill NAME       Install one skill; repeat for multiple skills.
+  --force            Replace conflicting managed files.
+  --backup           With --force, back up every replaced file.
+  --dry-run          Preview skill changes.
+  --skills-only      Do not install/update the Python package.
+  --python-only      Install the Python package but no agent skills.
+  -h, --help         Show this help.
 
-# Determine which platforms to install
-if [[ "$PLATFORM" == "all" ]]; then
-    INSTALL_PYTHON=true
-    INSTALL_CLAUDE=true
-    INSTALL_KILO=true
-elif [[ "$PLATFORM" == "python" ]]; then
-    INSTALL_PYTHON=true
-    INSTALL_CLAUDE=false
-    INSTALL_KILO=false
-else
-    INSTALL_PYTHON=true
-    INSTALL_CLAUDE=false
-    INSTALL_KILO=false
-    IFS=',' read -ra PFS <<< "$PLATFORM"
-    for pf in "${PFS[@]}"; do
-        case "$pf" in
-            claude) INSTALL_CLAUDE=true ;;
-            kilo)   INSTALL_KILO=true ;;
-            python) INSTALL_PYTHON=true ;;
-        esac
-    done
-fi
+Environment:
+  CLAUDE_CONFIG_DIR and OPENCODE_CONFIG_DIR override those platforms' config
+  roots. Codex uses the current Agent Skills location: ~/.agents/skills.
+EOF
+}
 
-# Step 1: Install Python package
-echo "[1/3] Installing Python package..."
-python3 -m pip install -e ".[all]" --quiet
-echo "[OK] circuit-weaver package installed"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-# Step 2: Verify command works
-echo "[2/3] Verifying installation..."
-if command -v circuit-weaver &> /dev/null; then
-    echo "[OK] circuit-weaver command found"
-else
-    echo "[WARNING] circuit-weaver not in PATH. You may need to restart your shell."
-fi
+platform_spec="all"
+platform_was_set=false
+skills=()
+force=false
+backup=false
+dry_run=false
+skills_only=false
+python_only=false
+python_only_option=false
 
-# Step 3: Install platform skills
-echo "[3/3] Installing platform skills..."
-
-# --- Claude Code ---
-if [[ "$INSTALL_CLAUDE" == "true" ]]; then
-    SKILLS_DIR="$HOME/.claude/skills/circuit-weaver"
-    SKILL_FILE="skills/circuit-weaver/SKILL.md"
-
-    if [[ ! -f "$SKILL_FILE" ]]; then
-        echo "[FAIL] SKILL.md not found at $SKILL_FILE"
-        echo "Make sure you're running this from the kicad_automations repo root"
-        exit 1
-    fi
-
-    mkdir -p "$SKILLS_DIR"
-    cp "$SKILL_FILE" "$SKILLS_DIR/"
-    echo "[OK] /circuit-weaver skill installed to Claude Code ($SKILLS_DIR)"
-fi
-
-# --- Kilo CLI ---
-if [[ "$INSTALL_KILO" == "true" ]]; then
-    KILO_SKILLS_DIR="$HOME/.kilo/skills/circuit-weaver"
-    KILO_CONFIG_DIR="$HOME/.config/kilo"
-    SKILL_FILE="skills/circuit-weaver/SKILL.md"
-
-    if [[ ! -f "$SKILL_FILE" ]]; then
-        echo "[FAIL] SKILL.md not found at $SKILL_FILE"
-        exit 1
-    fi
-
-    mkdir -p "$KILO_SKILLS_DIR"
-    cp "$SKILL_FILE" "$KILO_SKILLS_DIR/"
-
-    # Install kilo.json to Kilo config directory
-    if [[ -f "kilo.json" ]]; then
-        mkdir -p "$KILO_CONFIG_DIR"
-        cp "kilo.json" "$KILO_CONFIG_DIR/kilo.json"
-        echo "[OK] kilo.json installed to $KILO_CONFIG_DIR"
-    fi
-
-    # Install .kilo/commands to Kilo commands directory
-    if [[ -d ".kilo/commands" ]]; then
-        KILO_COMMANDS_DIR="$KILO_CONFIG_DIR/commands"
-        mkdir -p "$KILO_COMMANDS_DIR"
-        cp .kilo/commands/* "$KILO_COMMANDS_DIR/"
-        echo "[OK] Kilo commands installed to $KILO_COMMANDS_DIR"
-    fi
-
-    echo "[OK] /circuit-weaver skill installed to Kilo ($KILO_SKILLS_DIR)"
-fi
-
-# --- Project-level templates ---
-if [[ -n "$PROJECT_PLATFORM" ]]; then
-    IFS=',' read -ra PPS <<< "$PROJECT_PLATFORM"
-    for pp in "${PPS[@]}"; do
-        case "$pp" in
-            kilo)   BASE_DIR=".kilo/skills" ;;
-            agents) BASE_DIR=".agents/skills" ;;
-            claude) BASE_DIR=".claude/skills" ;;
-            *)      echo "[WARN] Unknown project platform: $pp"; continue ;;
-        esac
-
-        for skill_dir in project-skills/*/; do
-            skill_name=$(basename "$skill_dir")
-            kebab_name=$(echo "$skill_name" | tr '_' '-')
-            src_file="${skill_dir}SKILL.md"
-            if [[ -f "$src_file" ]]; then
-                mkdir -p "$BASE_DIR/$kebab_name"
-                cp "$src_file" "$BASE_DIR/$kebab_name/SKILL.md"
+while (($#)); do
+    case "$1" in
+        --platform)
+            (($# >= 2)) || { echo "[FAIL] --platform requires a value" >&2; exit 2; }
+            platform_spec="$2"
+            platform_was_set=true
+            shift 2
+            ;;
+        --skill)
+            (($# >= 2)) || { echo "[FAIL] --skill requires a value" >&2; exit 2; }
+            skills+=("$2")
+            shift 2
+            ;;
+        --force) force=true; shift ;;
+        --backup) backup=true; shift ;;
+        --dry-run) dry_run=true; shift ;;
+        --skills-only) skills_only=true; shift ;;
+        --python-only) python_only=true; python_only_option=true; shift ;;
+        -h|--help) usage; exit 0 ;;
+        --*) echo "[FAIL] Unknown option: $1" >&2; usage >&2; exit 2 ;;
+        *)
+            if [[ "$platform_was_set" == true ]]; then
+                echo "[FAIL] Platforms were supplied both positionally and with --platform" >&2
+                exit 2
             fi
-        done
-        echo "[OK] Project templates installed to $BASE_DIR"
-    done
+            platform_spec="$1"
+            platform_was_set=true
+            shift
+            ;;
+    esac
+done
+
+if [[ "$skills_only" == true && "$python_only" == true ]]; then
+    echo "[FAIL] --skills-only and --python-only are mutually exclusive" >&2
+    exit 2
+fi
+if [[ "$python_only_option" == true && "$platform_was_set" == true ]]; then
+    echo "[FAIL] --python-only cannot be combined with a platform selection" >&2
+    exit 2
+fi
+if [[ "$backup" == true && "$force" != true ]]; then
+    echo "[FAIL] --backup requires --force" >&2
+    exit 2
 fi
 
-# Done
-echo ""
-echo "Installation Complete!"
-echo "======================"
-echo ""
-echo "Next steps:"
-echo "  1. Verify: circuit-weaver --version"
-if [[ "$INSTALL_KILO" == "true" ]]; then
-    echo "  2. (Kilo) Restart Kilo CLI for skills and commands to be discovered"
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+else
+    echo "[FAIL] Python 3 was not found on PATH" >&2
+    exit 1
 fi
-if [[ "$INSTALL_CLAUDE" == "true" ]]; then
-    echo "  2. (Claude Code) Restart Claude Code completely"
+
+requested_platforms=()
+if [[ "$python_only_option" != true ]]; then
+    IFS=',' read -r -a requested_platforms <<< "$platform_spec"
 fi
-echo "  3. Try: /validate, /generate, /review in any circuit-weaver project"
-echo ""
-echo "Optional: Set Perplexity API key for IC research"
-echo "  export PERPLEXITY_API_KEY='pplx-xxx...'"
-echo ""
+platforms=()
+for platform in "${requested_platforms[@]}"; do
+    case "$platform" in
+        all)
+            platforms=(all)
+            break
+            ;;
+        claude|codex|opencode|kilo) platforms+=("$platform") ;;
+        python) python_only=true ;;
+        "") ;;
+        *) echo "[FAIL] Unknown platform: $platform" >&2; exit 2 ;;
+    esac
+done
+
+if [[ "$skills_only" != true ]]; then
+    echo "[1/2] Installing Circuit Weaver from this checkout..."
+    "$PYTHON_BIN" -m pip install -e ".[all]"
+fi
+
+if [[ "$python_only" == true && ${#platforms[@]} -eq 0 ]]; then
+    echo "[OK] Python package installed"
+    exit 0
+fi
+if [[ ${#platforms[@]} -eq 0 ]]; then
+    platforms=(all)
+fi
+
+command_args=("$PYTHON_BIN" -m circuit_weaver install-skills --platform "${platforms[@]}")
+if ((${#skills[@]})); then
+    command_args+=(--skills "${skills[@]}")
+fi
+[[ "$force" == true ]] && command_args+=(--force)
+[[ "$backup" == true ]] && command_args+=(--backup)
+[[ "$dry_run" == true ]] && command_args+=(--dry-run)
+
+echo "[2/2] Installing agent skills..."
+"${command_args[@]}"
+echo "[OK] Circuit Weaver installation complete"

@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-07-09
+
+### Packaging, MCP, and release reliability
+
+- Make PyYAML a bounded core dependency so a default PyPI install always parses nested design specs correctly; retain the `yaml` compatibility extra and add coherent `api`, `mcp`, `lookup`, `pdf`, `test`, `dev`, and `all` extras.
+- Make `circuit_weaver.__version__` the single package version source and bump the release to 0.32.0. The tag workflow now rejects a mismatched version before publication.
+- Make the advertised `circuit-weaver-mcp` command installable via the `mcp` extra, repair project discovery's `max_depth` call and dataclass serialization, isolate engine stdout from JSON-RPC stdio, preserve stable structured error details while setting MCP `isError`, validate port configuration, and exercise real success and failure calls in CI.
+- Keep `circuit-weaver-mcp --help` usable without the optional MCP runtime, ship the packaged `examples/iot_sensor.yaml` starter in both wheel and sdist, and make the release gates reject missing examples or any bundled `__pycache__`, `.pyc`, or `.pyo` payload.
+- Replace the non-blocking Windows smoke leg with full blocking tests on Windows Python 3.12/3.13, expand Linux coverage to Python 3.10-3.14, install complete test dependencies, and run the integration corpus instead of suppressing it through `CI=true`.
+- Build release distributions exactly once, run `twine check`, inspect wheel metadata, install and test the exact wheel across the support matrix, and publish that same artifact only after all gates pass.
+- Add blocking KiCad 8, KiCad 9, and KiCad 10 gates from KiCad's official stable Ubuntu PPAs that generate both an IoT design and a complex FPGA power carrier, then parse and run ERC on their root schematics with `kicad-cli`.
+- Validate every provenance-manifest path lexically and by resolved containment before skill upgrades, so crafted traversal, Windows device/ADS names, or symlink escapes cannot read, overwrite, or delete files outside the installed skill.
+- Make installed sample guidance truthful: source checkouts enumerate only real `samples/` directories, while PyPI-installed skills discover and copy the packaged IoT example through `importlib.resources` instead of advertising an absent 13-design gallery.
+- Close the local Windows release-candidate gate at 1,250 passed and 15 platform-dependent skips, with the same result required from the source tree and a clean install of the built wheel; hosted Linux CI exercises the symlink cases skipped on this Windows host.
+
+### Programmatic compatibility and artifact validity
+
+- Restore compatibility import shims for the legacy `mvp` module and seven subcircuit-template modules removed after 0.30.3, keeping older programmatic consumers importable while routing them to the current implementation.
+- Preserve the deprecated `mvp_strict` validation-profile alias and documented `add` / `remove` patch aliases with explicit warnings, while failing closed on unknown patch operations, mixed aliases, and unsupported profiles instead of silently accepting a no-op.
+- Make generated results complete and machine-readable: `artifact_manifest.json` inventories every output with stable relative paths, sizes, and kinds; the returned `files` list is exhaustive; and placement SVGs render real compiled components and footprints.
+- Keep schematic bytes immutable after generation, validate every final S-expression, and run ERC against those exact bytes. Programmatic callers can set `require_kicad=True`, and the CLI exposes `--require-kicad`, to fail when KiCad is absent, ERC fails, or ERC reports errors.
+- Parse KiCad 8/9/10 ERC violations from their per-sheet JSON structure (while retaining legacy top-level compatibility), and make release gates request a non-zero KiCad CLI exit when violations exist.
+- Keep reruns into an existing output directory isolated from stale artifacts, and carry portable artifact identity plus final validation/ERC state through the manifest, HTTP ZIP, and MCP response.
+- Lease each output directory across processes and serialize in-process generation around the process-global logging bridge, preventing concurrent runs from invalidating manifests, mixing project logs, or leaking lock files into API/MCP/archive results.
+- Reject non-portable or path-like project names before creating output, and containment-check every generator/dispatcher-managed target so pre-existing symlinks cannot redirect writes outside the requested output directory.
+- Invalidate any prior success manifest before a rerun mutates output and atomically replace it only after final verification, preventing failed or partial reruns from retaining a stale `verified` claim.
+- Require full PyYAML parsing throughout file-based and programmatic workflows, removing the lossy fallback parser from release-critical paths.
+- Treat PCB placement previews, padless boards, and zero-copper boards as review-only or incomplete; static analysis is explicitly `unverified` and can never report vacuous routing success.
+- Emit deterministic project-local `CircuitWeaver.kicad_sym`, `sym-lib-table`, and matching `.kicad_pro` artifacts; namespace same-named symbols by sheet, plan one PWR_FLAG only for genuinely undriven rails, avoid foreign-net topology anchors, and cancel duplicate route hairpins before emission. Fresh IoT and FPGA outputs both pass official KiCad 9 ERC with zero violations.
+
 ### Release prep — professional templates and deliverables
 
 - Give data-driven templates real documentation contracts: topologies served by `DataDrivenTemplate` (`buck`, `boost`, `buck_boost`, `ldo`, `can_transceiver`, `eeprom`, `protection`, `diode`, `led`, `component`, `logic`, `sensor`) now carry curated descriptions and parameter schemas (`TOPOLOGY_TEMPLATE_INFO` in `topology_builders.py`) instead of the placeholder "Data-driven X template" with no parameters. Required params (`vin`/`vout`/`iout`, `protect_net`) now fail validation with a clear message instead of a KeyError inside the builder.

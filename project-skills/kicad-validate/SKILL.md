@@ -1,5 +1,5 @@
 ---
-name: kicad_validate
+name: kicad-validate
 description: >
   Cross-reference design audit -- validates consistency across spec, schematics,
   BOM, pin maps, and PCB layout. Catches disagreements before fabrication.
@@ -37,9 +37,12 @@ Verify every requirement in the design spec has a corresponding net or component
 For each programmatically mapped IC, verify the schematic matches the pin map.
 
 ```bash
-python3 skills/kicad/scripts/analyze_schematic.py design.kicad_sch > analysis.json
-python3 scripts/validate_pinmaps.py analysis.json scripts/pin_maps.py
+circuit-weaver validate "${SPEC_PATH}" --enhanced --verbose
 ```
+
+If the project has a separate pin-map source of truth, compare it with the
+schematic analysis explicitly. Do not invoke `scripts/validate_pinmaps.py`
+unless that project-specific script actually exists.
 
 Critical checks:
 - Power pins (VDD, GND, VDDIO) connected to correct rails

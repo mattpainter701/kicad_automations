@@ -11,15 +11,17 @@ Or from CLI:
 """
 
 import copy
+import hashlib
+import json
 import logging
 import math
 import os
 import re
 import sys
 import zlib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
-from .allocator import allocate_sheets
+from .allocator import allocate_sheets, ensure_unique_sheet_names
 from .component_db import (
     BUILTIN_REGISTRY,
     ComponentDef,
@@ -36,11 +38,13 @@ from .placer import (
     component_annotation_start_y,
     component_body_bounds,
     layout_sheet,
+    reserve_explicit_refs,
     reset_ref_counters,
 )
 from .primitives import (
     PAPER_SIZES,
     TITLE_BLOCK_H,
+    _resolve_label_collisions,
     assemble_sheet,
     center_content,
     configure_deterministic_uids,
@@ -91,6 +95,17 @@ _PAPER_ORDER = ("A4", "A3", "A2", "A1", "A0")
 _RENDER_FIT_MARGIN = 10.0
 _TITLE_BLOCK_COMMENT2_LIMIT = 84
 _TITLE_BLOCK_COMMENT3_LIMIT = 56
+_LOCAL_SYMBOL_LIBRARY_NAME = "CircuitWeaver"
+_LOCAL_SYMBOL_LIBRARY_FILENAME = f"{_LOCAL_SYMBOL_LIBRARY_NAME}.kicad_sym"
+_WINDOWS_RESERVED_FILENAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
+_WINDOWS_INVALID_FILENAME_CHARS = frozenset('<>:"|?*')
 
 # Power net prefixes — KiCad convention keeps power as global_label even in
 # hierarchical designs, so they are excluded from hierarchical promotion.
@@ -121,6 +136,57 @@ _SAFE_NC_PIN_TYPES = frozenset(
 
 # Pin types that MUST be connected — floating these is an error.
 _CRITICAL_PIN_TYPES = frozenset({"power_in"})
+
+
+def _validate_project_name(project_name: str) -> str:
+    """Validate a cross-platform project filename stem.
+
+    Project names arrive from API/CLI design metadata and are later used for
+    several output filenames.  They must remain a single portable path
+    component; accepting an absolute path, a drive-relative Windows path, or a
+    parent traversal would let generation write outside ``output_dir``.
+    """
+    if not isinstance(project_name, str):
+        raise ValueError("Project name must be a string")
+    if not project_name or project_name != project_name.strip():
+        raise ValueError("Project name must be non-empty and have no surrounding whitespace")
+    if project_name in {".", ".."} or "/" in project_name or "\\" in project_name:
+        raise ValueError("Project name must be a single filename component without path separators")
+    if Path(project_name).is_absolute() or PureWindowsPath(project_name).drive:
+        raise ValueError("Project name must not be an absolute or Windows drive path")
+    if any(ord(char) < 32 or ord(char) == 127 for char in project_name):
+        raise ValueError("Project name must not contain control characters")
+    if any(char in _WINDOWS_INVALID_FILENAME_CHARS for char in project_name):
+        raise ValueError("Project name contains characters that are invalid in Windows filenames")
+    if project_name.endswith((".", " ")):
+        raise ValueError("Project name must not end with a dot or space")
+    device_stem = project_name.split(".", 1)[0].upper()
+    if device_stem in _WINDOWS_RESERVED_FILENAMES:
+        raise ValueError(f"Project name '{project_name}' is reserved on Windows")
+    return project_name
+
+
+def _contained_output_path(output_path: Path, filename: str) -> Path:
+    """Return an output file path only when its resolved target is contained."""
+    if (
+        not filename
+        or filename in {".", ".."}
+        or "/" in filename
+        or "\\" in filename
+        or PureWindowsPath(filename).drive
+    ):
+        raise ValueError(f"Output filename must be one path component: {filename!r}")
+
+    output_root = output_path.resolve()
+    candidate = output_path / filename
+    resolved_candidate = candidate.resolve()
+    try:
+        resolved_candidate.relative_to(output_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"Refusing to write output outside '{output_root}': {resolved_candidate}"
+        ) from exc
+    return candidate
 
 
 def _classify_unhandled_pin(comp, pin_num, pname, ptype):
@@ -443,7 +509,7 @@ def _render_symbol_name_and_sexpr(comp: ComponentDef) -> tuple[str, str]:
         # Adjust Y coordinates to ensure all geometry has Y >= 0
         adjusted_sexpr = _adjust_symbol_y_coordinates(all_coords_normalized)
         return sym_name, adjusted_sexpr
-    sym_name = comp.mpn.replace("-", "_").replace(".", "_")
+    sym_name = re.sub(r"[^A-Za-z0-9_]", "_", comp.mpn or "UNKNOWN") or "UNKNOWN"
     generated_sexpr = create_generic_symbol(
         sym_name,
         comp.pin_tuples(),
@@ -455,6 +521,105 @@ def _render_symbol_name_and_sexpr(comp: ComponentDef) -> tuple[str, str]:
     # Apply Y-coordinate adjustment as final safeguard (should be minimal for generated symbols)
     adjusted_sexpr = _adjust_symbol_y_coordinates(generated_sexpr)
     return sym_name, adjusted_sexpr
+
+
+def _safe_symbol_identifier(name: str) -> str:
+    """Return a conservative KiCad library identifier."""
+    return re.sub(r"[^A-Za-z0-9_]", "_", name or "UNKNOWN") or "UNKNOWN"
+
+
+def _rename_symbol_definition(symbol_sexpr: str, old_name: str, new_name: str) -> str:
+    """Rename a top-level library symbol and all of its nested unit symbols."""
+    if old_name == new_name:
+        return symbol_sexpr
+    pattern = re.compile(rf'(\(symbol\s+"){re.escape(old_name)}(?="|_)')
+    return pattern.sub(rf"\g<1>{new_name}", symbol_sexpr)
+
+
+def _resolve_emitted_symbol(
+    base_name: str,
+    symbol_sexpr: str,
+    emitted: dict[str, str],
+) -> tuple[str, str, bool]:
+    """Resolve one component to the exact library definition emitted on disk.
+
+    A readable base name is retained when its definition is unique.  If two
+    components normalize to the same name but have different geometry, the
+    later definition receives a deterministic content-hash suffix.  Routing
+    must use the returned definition, never the pre-collision private one.
+    """
+    safe_base = _safe_symbol_identifier(base_name)
+    normalized = _rename_symbol_definition(symbol_sexpr, base_name, safe_base)
+
+    existing = emitted.get(safe_base)
+    if existing is None:
+        emitted[safe_base] = normalized
+        return safe_base, normalized, True
+    if existing == normalized:
+        return safe_base, existing, False
+
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:10]
+    candidate_base = f"{safe_base}__{digest}"
+    candidate = candidate_base
+    suffix = 2
+    while True:
+        renamed = _rename_symbol_definition(normalized, safe_base, candidate)
+        existing = emitted.get(candidate)
+        if existing is None:
+            emitted[candidate] = renamed
+            return candidate, renamed, True
+        if existing == renamed:
+            return candidate, existing, False
+        candidate = f"{candidate_base}_{suffix}"
+        suffix += 1
+
+
+def _validate_rendered_pin_mappings(
+    comp: ComponentDef,
+    pin_positions: dict[str, tuple],
+    ref: str,
+) -> None:
+    """Fail closed when source mappings cannot be realized by the emitted symbol."""
+    signal_keys = set(comp.pin_nets)
+    power_keys = set(comp.power_pins)
+    nc_keys = set(comp.explicit_no_connects)
+    rendered_keys = set(pin_positions)
+
+    non_string_keys = sorted(
+        repr(key) for key in signal_keys | power_keys | nc_keys if not isinstance(key, str)
+    )
+    empty_keys = sorted(
+        repr(key)
+        for key in signal_keys | power_keys | nc_keys
+        if isinstance(key, str) and not key.strip()
+    )
+    empty_signals = sorted(
+        str(pin) for pin, net in comp.pin_nets.items() if not isinstance(net, str) or not net.strip()
+    )
+    empty_power = sorted(
+        str(pin) for pin, net in comp.power_pins.items() if not isinstance(net, str) or not net.strip()
+    )
+    overlapping = sorted(str(pin) for pin in signal_keys & power_keys)
+    mapped_and_nc = sorted(str(pin) for pin in (signal_keys | power_keys) & nc_keys)
+    missing = sorted(str(pin) for pin in (signal_keys | power_keys | nc_keys) - rendered_keys)
+
+    problems = []
+    if non_string_keys:
+        problems.append(f"non-string pin identifiers: {', '.join(non_string_keys)}")
+    if empty_keys:
+        problems.append(f"empty pin identifiers: {', '.join(empty_keys)}")
+    if empty_signals:
+        problems.append(f"empty signal nets on pins: {', '.join(empty_signals)}")
+    if empty_power:
+        problems.append(f"empty power nets on pins: {', '.join(empty_power)}")
+    if overlapping:
+        problems.append(f"pins mapped as both signal and power: {', '.join(overlapping)}")
+    if mapped_and_nc:
+        problems.append(f"pins both mapped and explicitly no-connect: {', '.join(mapped_and_nc)}")
+    if missing:
+        problems.append(f"mapped or no-connect pins absent from emitted symbol: {', '.join(missing)}")
+    if problems:
+        raise ValueError(f"Pin mapping integrity failed for {ref} ({comp.mpn}): " + "; ".join(problems))
 
 
 def _resolve_late_pin_maps(components: list[ComponentDef]) -> None:
@@ -610,6 +775,7 @@ _STUB_MARKER_REACH = snap(5.08)
 _STUB_MARKER_HALF_WIDTH = snap(1.905)
 _STUB_STEP = snap(1.27)
 _STUB_MAX_EXTENSION = snap(12.7)
+_FOREIGN_NET_ANCHOR_CLEARANCE = snap(2.54)
 
 
 def _point_in_box(box: tuple[float, float, float, float], x: float, y: float, eps: float = 0.05) -> bool:
@@ -701,6 +867,56 @@ def _clear_stub_length(
             best = score
             best_len = cand
     return best_len
+
+
+def _avoid_foreign_net_anchors(
+    net_name: str,
+    cx: float,
+    cy: float,
+    pin_angle: int,
+    desired: float,
+    net_anchors: list[tuple[str, float, float]] | None,
+) -> float:
+    """Choose a stub length that cannot land on a different named net.
+
+    Topology-local anchors are real electrical nodes.  A support component
+    marker that lands on another net's anchor silently shorts both global nets
+    in KiCad.  Search the same 1.27 mm grid used by the rest of the renderer,
+    preferring the smallest deviation from the requested presentation length.
+    """
+    if not net_anchors:
+        return desired
+
+    foreign = [
+        (anchor_x, anchor_y)
+        for anchor_name, anchor_x, anchor_y in net_anchors
+        if anchor_name and anchor_name != net_name
+    ]
+    if not foreign:
+        return desired
+
+    desired = snap(desired)
+    candidates = [desired]
+    for steps in range(1, 11):
+        shorter = snap(desired - steps * _STUB_STEP)
+        longer = snap(desired + steps * _STUB_STEP)
+        if shorter >= _STUB_STEP - 0.01:
+            candidates.append(shorter)
+        if longer <= desired + _STUB_MAX_EXTENSION + 0.01:
+            candidates.append(longer)
+
+    for candidate in candidates:
+        endpoint = _stub_endpoint(cx, cy, pin_angle, candidate)
+        if all(
+            abs(endpoint[0] - x) > _FOREIGN_NET_ANCHOR_CLEARANCE + 0.01
+            or abs(endpoint[1] - y) > _FOREIGN_NET_ANCHOR_CLEARANCE + 0.01
+            for x, y in foreign
+        ):
+            return candidate
+    raise ValueError(
+        f"Cannot place {net_name} marker at ({cx:.2f}, {cy:.2f}) "
+        "without landing on a different-net anchor"
+    )
 
 
 def _detour_wires_around_bodies(
@@ -842,6 +1058,18 @@ def _normalize_polyline(points: list[tuple[float, float]]) -> list[tuple[float, 
     for x, y in points:
         pt = (snap(x), snap(y))
         if normalized and abs(normalized[-1][0] - pt[0]) < 0.01 and abs(normalized[-1][1] - pt[1]) < 0.01:
+            continue
+        # Routing candidates can escape to a lane and immediately return to
+        # the same point (A -> B -> A).  Emitting that hairpin creates two
+        # reversed duplicate wires; after KiCad deduplicates them, the lone
+        # branch is reported as an unconnected endpoint.  Cancel the reversal
+        # before S-expressions are created.
+        if (
+            len(normalized) >= 2
+            and abs(normalized[-2][0] - pt[0]) < 0.01
+            and abs(normalized[-2][1] - pt[1]) < 0.01
+        ):
+            normalized.pop()
             continue
         normalized.append(pt)
     return normalized
@@ -1079,10 +1307,19 @@ def _render_passive_net_endpoint(
     sheet_uuid: str,
     wire_len: float = 1.27,
     body_boxes: list[tuple[float, float, float, float]] | None = None,
+    net_anchors: list[tuple[str, float, float]] | None = None,
 ) -> None:
     """Render a passive pin endpoint symbolically via a short stub and net marker."""
     if body_boxes:
         wire_len = _clear_stub_length(pin_x, pin_y, pin_angle, wire_len, body_boxes)
+    wire_len = _avoid_foreign_net_anchors(
+        net_name,
+        pin_x,
+        pin_y,
+        pin_angle,
+        wire_len,
+        net_anchors,
+    )
     if _is_power_net(net_name):
         if pin_angle == 0:
             wx, wy = pin_x - wire_len, pin_y
@@ -1280,6 +1517,88 @@ def _collect_layout_nets(layout: SheetLayout) -> set[str]:
     return nets
 
 
+def _plan_power_flags(layouts: list[SheetLayout]) -> list[set[str]]:
+    """Assign at most one PWR_FLAG per genuinely undriven global power net.
+
+    KiCad power symbols are global across sheets, so planning independently in
+    each sheet creates duplicate power-output pins.  A mapped ``power_out`` pin
+    is already a real driver and must never receive a flag.  Remaining rails
+    receive one flag on the first stable sheet with a non-output mapped pin.
+    """
+    plans = [set() for _layout in layouts]
+    required: set[str] = set()
+    driven: set[str] = set()
+    candidates: dict[str, list[int]] = {}
+
+    for sheet_index, layout in enumerate(layouts):
+        for placed in layout.placed_ics:
+            pin_types = {pin.number: pin.electrical_type for pin in placed.comp.pins}
+            for pin_num, net_name in {
+                **placed.comp.pin_nets,
+                **placed.comp.power_pins,
+            }.items():
+                if not net_name or not _is_power_net(net_name):
+                    continue
+                required.add(net_name)
+                pin_type = pin_types.get(pin_num, "")
+                if pin_type == "power_out":
+                    driven.add(net_name)
+                elif pin_num in placed.comp.power_pins and pin_type not in {"output", "power_out"}:
+                    candidates.setdefault(net_name, []).append(sheet_index)
+
+        for passive in layout.placed_passives:
+            for net_name in (passive.net1, passive.net2):
+                if net_name and _is_power_net(net_name):
+                    required.add(net_name)
+                    candidates.setdefault(net_name, []).append(sheet_index)
+        for anchor in layout.local_net_anchors:
+            if anchor.name and _is_power_net(anchor.name):
+                required.add(anchor.name)
+                candidates.setdefault(anchor.name, []).append(sheet_index)
+
+    for net_name in sorted(required - driven):
+        sheet_candidates = candidates.get(net_name, [])
+        if sheet_candidates:
+            plans[sheet_candidates[0]].add(net_name)
+    return plans
+
+
+def _render_project_symbol_library(symbols: dict[str, str]) -> str:
+    """Render a deterministic KiCad 8-compatible project symbol library."""
+    parts = [
+        "(kicad_symbol_lib",
+        "  (version 20231120)",
+        "  (generator circuit_weaver)",
+    ]
+    parts.extend(symbols[name] for name in sorted(symbols, key=str.casefold))
+    parts.append(")")
+    return "\n".join(parts) + "\n"
+
+
+def _render_project_sym_lib_table() -> str:
+    """Render a portable project-local symbol library table."""
+    return (
+        "(sym_lib_table\n"
+        "  (version 7)\n"
+        f'  (lib (name "{_LOCAL_SYMBOL_LIBRARY_NAME}")(type "KiCad")'
+        f'(uri "${{KIPRJMOD}}/{_LOCAL_SYMBOL_LIBRARY_FILENAME}")'
+        '(options "")(descr "Circuit Weaver generated symbols"))\n'
+        ")\n"
+    )
+
+
+def _render_minimal_kicad_project(project_name: str) -> str:
+    """Render the project metadata KiCad needs to load local library tables."""
+    payload = {
+        "meta": {
+            "filename": f"{project_name}.kicad_pro",
+            "version": 1,
+        },
+        "schematic": {"meta": {"version": 1}},
+    }
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
 def _explicit_boundary_nets(layouts: list[SheetLayout]) -> set[str]:
     """Return non-power nets declared as explicit sheet boundary ports."""
     explicit_boundary_ports: set[str] = set()
@@ -1405,6 +1724,7 @@ def generate_from_components(
 
     Returns list of generated file paths.
     """
+    project_name = _validate_project_name(project_name)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -1417,6 +1737,7 @@ def generate_from_components(
 
     try:
         reset_ref_counters()
+        reserve_explicit_refs(components)
         root_uuid = uid(f"root:{project_name}")
 
         # 0. Auto-generate bypass caps for ICs that have power pins but none defined
@@ -1458,6 +1779,8 @@ def generate_from_components(
                 sheet_alloc.presentation_wiring_policy = resolved_presentation_wiring_policy
         if post_allocate:
             post_allocate(sheets)
+        ensure_unique_sheet_names(sheets)
+        reserve_explicit_refs([comp for sheet in sheets for comp in sheet.components])
         _logger.info("Allocated %d components to %d sheet(s)", len(components), len(sheets))
 
         # 1b. Layout all sheets first (needed for boundary net computation).
@@ -1504,6 +1827,15 @@ def generate_from_components(
             )
             idx += 1
         sheets = pending
+        ensure_unique_sheet_names(sheets)
+        for sheet_alloc, layout in zip(sheets, layouts):
+            layout.name = sheet_alloc.name
+
+        if len(sheets) > 1:
+            planned_filenames = [f"{sheet.name}.kicad_sch" for sheet in sheets]
+            folded = [name.casefold() for name in planned_filenames]
+            if len(folded) != len(set(folded)):
+                raise ValueError(f"Duplicate schematic output filenames after allocation: {planned_filenames}")
 
         # 1b'. Optional aesthetics scoring
         if score:
@@ -1527,6 +1859,9 @@ def generate_from_components(
                     resolved_interface_policy,
                 )
 
+        power_flag_plan = _plan_power_flags(layouts)
+        project_symbol_library: dict[str, str] = {}
+
         # 2. Generate each sub-sheet, collecting label info
         sheet_infos = []  # (alloc, uuid, filepath, labels_set)
         for i, (sheet_alloc, layout) in enumerate(zip(sheets, layouts)):
@@ -1548,6 +1883,9 @@ def generate_from_components(
                     sheet_uuid,
                     page_num,
                     boundary_nets=boundary_nets if use_hierarchy else None,
+                    power_flag_nets=power_flag_plan[i],
+                    symbol_scope=sheet_alloc.name,
+                    symbol_library_sink=project_symbol_library,
                 )
                 content = center_content(content, trial_layout.paper)
                 if _rendered_bounds_fit(content, trial_layout.paper):
@@ -1567,9 +1905,14 @@ def generate_from_components(
             layout = trial_layout
 
             filename = f"{project_name}.kicad_sch" if len(sheets) == 1 else f"{sheet_alloc.name}.kicad_sch"
-            filepath = output_path / filename
-            # Validate S-expression parenthesis balance before writing
-            _validate_sexpr_balance(content, filename)
+            filepath = _contained_output_path(output_path, filename)
+            # Never publish a file that the structural parser already knows is
+            # malformed.  A warning here leaves downstream KiCad/CI failures
+            # disconnected from the generation call that caused them.
+            if not _validate_sexpr_balance(content, filename):
+                raise ValueError(
+                    f"Refusing to write structurally invalid schematic: {filename}"
+                )
 
             filepath.write_text(content, encoding="utf-8", newline="")
 
@@ -1594,6 +1937,44 @@ def generate_from_components(
             _logger.info("  -> %s (%d labels)", filepath, label_count)
 
         generated_files = [str(si["filepath"]) for si in sheet_infos]
+
+        if project_symbol_library:
+            symbol_library_path = _contained_output_path(
+                output_path,
+                _LOCAL_SYMBOL_LIBRARY_FILENAME,
+            )
+            symbol_library_content = _render_project_symbol_library(project_symbol_library)
+            if not _validate_sexpr_balance(symbol_library_content, symbol_library_path.name):
+                raise ValueError(
+                    f"Refusing to write structurally invalid symbol library: {symbol_library_path.name}"
+                )
+            symbol_library_path.write_text(
+                symbol_library_content,
+                encoding="utf-8",
+                newline="",
+            )
+
+            sym_lib_table_path = _contained_output_path(output_path, "sym-lib-table")
+            sym_lib_table_content = _render_project_sym_lib_table()
+            if not _validate_sexpr_balance(sym_lib_table_content, sym_lib_table_path.name):
+                raise ValueError(
+                    f"Refusing to write structurally invalid symbol table: {sym_lib_table_path.name}"
+                )
+            sym_lib_table_path.write_text(
+                sym_lib_table_content,
+                encoding="utf-8",
+                newline="",
+            )
+
+            project_path = _contained_output_path(output_path, f"{project_name}.kicad_pro")
+            project_path.write_text(
+                _render_minimal_kicad_project(project_name),
+                encoding="utf-8",
+                newline="",
+            )
+            generated_files.extend(
+                (str(symbol_library_path), str(sym_lib_table_path), str(project_path))
+            )
 
         # 2b. Layout-quality gate (T239): analyze what was actually emitted
         # and surface overlaps / wire-body crossings as warnings so real
@@ -1625,7 +2006,7 @@ def generate_from_components(
         if validate:
             from .report import generate_report
 
-            report_path = output_path / f"{project_name}_report.md"
+            report_path = _contained_output_path(output_path, f"{project_name}_report.md")
             generate_report(
                 components,
                 validation_results=validation_results,
@@ -1644,6 +2025,7 @@ def generate_from_components(
         if pcb:
             from .pcb_export import generate_pcb_placement
 
+            _contained_output_path(output_path, f"{project_name}_placement.kicad_pcb")
             pcb_file, _placements = generate_pcb_placement(components, output_path, project_name)
             generated_files.append(pcb_file)
 
@@ -1705,6 +2087,7 @@ def _generate_root_schematic(
       stubs with global labels so matching boundary nets are actually tied
       together on the root sheet.
     """
+    project_name = _validate_project_name(project_name)
     pin_spacing = 2.54  # mm between hierarchical pins on the sheet symbol
 
     # Compute minimum sheet symbol height based on hierarchical pin count
@@ -1798,8 +2181,13 @@ def _generate_root_schematic(
     parts.append(f'  (sheet_instances\n    (path "/{root_uuid}/" (page "1"))\n  )\n')
     parts.append(")")
 
-    root_file = output_path / f"{project_name}.kicad_sch"
-    root_file.write_text("\n".join(parts), encoding="utf-8", newline="")
+    root_file = _contained_output_path(output_path, f"{project_name}.kicad_sch")
+    root_content = "\n".join(parts)
+    if not _validate_sexpr_balance(root_content, root_file.name):
+        raise ValueError(
+            f"Refusing to write structurally invalid schematic: {root_file.name}"
+        )
+    root_file.write_text(root_content, encoding="utf-8", newline="")
     return root_file
 
 
@@ -2131,6 +2519,9 @@ def _render_sheet(
     sheet_uuid: str,
     page_num: int,
     boundary_nets: set[str] | None = None,
+    power_flag_nets: set[str] | None = None,
+    symbol_scope: str | None = None,
+    symbol_library_sink: dict[str, str] | None = None,
 ) -> str:
     """Render a SheetLayout into a .kicad_sch string.
 
@@ -2156,6 +2547,9 @@ def _render_sheet(
     power_lib_names = set()
     no_connects = []
     wires = []
+    reserved_net_anchors = [
+        (anchor.name, snap(anchor.x), snap(anchor.y)) for anchor in layout.local_net_anchors
+    ]
 
     # Signal coordinates across the whole sheet:
     # net_name -> list of (cx, cy, pangle, ptype, wire_len) tuples
@@ -2170,8 +2564,9 @@ def _render_sheet(
             return connect_pin_to_hierarchical_label
         return connect_pin_to_label
 
-    # Track which lib_symbols we've emitted
-    emitted_symbols = set()
+    # Track the exact definition behind each emitted library identifier.
+    # Two distinct definitions may normalize to the same readable name.
+    emitted_symbols: dict[str, str] = {}
     # IC pin connection points for local wiring: {ref: {net: [(x, y)]}}
     pin_point_map: dict[str, dict[str, list[tuple[float, float]]]] = {}
     placed_ic_map: dict[str, object] = {}
@@ -2199,12 +2594,18 @@ def _render_sheet(
     for placed in layout.placed_ics:
         comp = placed.comp
 
-        sym_name, sym_sexpr = _render_symbol_name_and_sexpr(comp)
+        base_sym_name, private_sym_sexpr = _render_symbol_name_and_sexpr(comp)
+        sym_name, sym_sexpr, should_emit = _resolve_emitted_symbol(
+            base_sym_name,
+            private_sym_sexpr,
+            emitted_symbols,
+        )
 
         # Create and emit lib_symbol if not already done
-        if sym_name not in emitted_symbols:
+        if should_emit:
             lib_symbols.append(sym_sexpr)
-            emitted_symbols.add(sym_name)
+
+        pin_pos = get_pin_positions(sym_sexpr, sym_name)
 
         # Place component instance
         body_left, _body_top, body_right, _body_bottom = component_body_bounds(placed)
@@ -2225,8 +2626,7 @@ def _render_sheet(
             )
         )
 
-        # Get pin positions from the symbol S-expression
-        pin_pos = get_pin_positions(sym_sexpr, sym_name)
+        # Get pin positions from the exact symbol definition emitted above.
         body_rects = _symbol_body_rects(sym_sexpr)
         pin_stub_lengths = _dense_pin_stub_lengths(comp, pin_pos, body_rects)
 
@@ -2253,6 +2653,14 @@ def _render_sheet(
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
                 wlen = pin_stub_lengths.get(pin_num, _safe_label_stub_length(px, py, pangle, body_rects))
                 wlen = _clear_stub_length(cx, cy, pangle, wlen, sheet_body_boxes)
+                wlen = _avoid_foreign_net_anchors(
+                    net_name,
+                    cx,
+                    cy,
+                    pangle,
+                    wlen,
+                    reserved_net_anchors,
+                )
                 signal_pin_coords.setdefault(net_name, []).append((cx, cy, pangle, ptype, wlen))
                 ic_signal_pin_coords.setdefault(net_name, []).append((cx, cy, pangle, ptype))
                 ic_pin_points.setdefault(net_name, []).append((cx, cy))
@@ -2265,6 +2673,14 @@ def _render_sheet(
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
                 wire_len = pin_stub_lengths.get(pin_num, _safe_label_stub_length(px, py, pangle, body_rects))
                 wire_len = _clear_stub_length(cx, cy, pangle, wire_len, sheet_body_boxes)
+                wire_len = _avoid_foreign_net_anchors(
+                    net_name,
+                    cx,
+                    cy,
+                    pangle,
+                    wire_len,
+                    reserved_net_anchors,
+                )
 
                 # Create wire stub (cx -> wx based on pin angle)
                 if pangle == 0:
@@ -2316,6 +2732,11 @@ def _render_sheet(
         # Annotate the schematic with NC intent summary for non-trivial cases
         if nc_intent_notes and len(nc_intent_notes) <= 8:
             comp.annotations.append("Unused: " + ", ".join(nc_intent_notes))
+
+        # Check the source-to-rendered contract after the established floating
+        # critical-pin guard.  Both are hard failures; preserving that order
+        # keeps the most actionable electrical error as the primary diagnosis.
+        _validate_rendered_pin_mappings(comp, pin_pos, placed.ref)
 
         # Store pin points for local wiring by parent ref
         pin_point_map[placed.ref] = ic_pin_points
@@ -2481,6 +2902,7 @@ def _render_sheet(
                     sheet_uuid,
                     wire_len=endpoint_stub_len,
                     body_boxes=sheet_body_boxes,
+                    net_anchors=reserved_net_anchors,
                 )
 
         # Net2 (pin 2): local route only when explicitly requested.
@@ -2540,6 +2962,7 @@ def _render_sheet(
                     sheet_uuid,
                     wire_len=endpoint_stub_len,
                     body_boxes=sheet_body_boxes,
+                    net_anchors=reserved_net_anchors,
                 )
 
     # --- Explicit local anchor labels / power symbols for topology-aware motifs ---
@@ -2561,6 +2984,7 @@ def _render_sheet(
             sheet_uuid,
             wire_len=1.27,
             body_boxes=sheet_body_boxes,
+            net_anchors=reserved_net_anchors,
         )
 
     # --- Explicit local wires declared by the subcircuit template ---
@@ -2669,29 +3093,69 @@ def _render_sheet(
         for power_net in sorted(power_lib_names):
             lib_symbols.insert(0, sexpr_power_lib_entry(power_net))
 
-    # --- Add PWR_FLAG on each unique power net for KiCad ERC compliance ---
+    # --- Add one project-planned PWR_FLAG only on genuinely undriven rails ---
+    if power_flag_nets is None:
+        power_flag_nets = _plan_power_flags([layout])[0]
     pwr_flag_nets_placed: set[str] = set()
     pwr_flag_instances: list[str] = []
+
+    def append_power_flag(net_name: str, x: float, y: float) -> None:
+        pwr_flag_instances.append(
+            sexpr_pwr_flag_instance(
+                x,
+                y,
+                project_name=project_name,
+                root_uuid=root_uuid,
+                sheet_uuid=sheet_uuid,
+            )
+        )
+        pwr_flag_nets_placed.add(net_name)
+
     for placed in layout.placed_ics:
         for pin_num, net_name in placed.comp.power_pins.items():
-            if net_name in pwr_flag_nets_placed:
+            if net_name not in power_flag_nets or net_name in pwr_flag_nets_placed:
                 continue
             # Find the connection point for this pin to place PWR_FLAG nearby
             sym_name, sym_sexpr = _render_symbol_name_and_sexpr(placed.comp)
             pin_pos = get_pin_positions(sym_sexpr, sym_name)
             if pin_num in pin_pos:
-                px, py, pangle, plen, _pname, _ptype = pin_pos[pin_num]
+                px, py, pangle, plen, _pname, ptype = pin_pos[pin_num]
+                if ptype in {"output", "power_out"}:
+                    continue
                 cx, cy = pin_connection_point(placed.x, placed.y, px, py, pangle, plen)
-                pwr_flag_instances.append(
-                    sexpr_pwr_flag_instance(
-                        cx,
-                        cy,
-                        project_name=project_name,
-                        root_uuid=root_uuid,
-                        sheet_uuid=sheet_uuid,
-                    )
-                )
-                pwr_flag_nets_placed.add(net_name)
+                append_power_flag(net_name, cx, cy)
+
+    # Post-regulator rails often begin after a passive inductor, so no IC pin
+    # is mapped directly to the final rail.  Place their flags on the declared
+    # topology anchor (or, as a fallback, the matching passive pin) rather than
+    # silently omitting the driver marker.
+    for net_name in sorted(power_flag_nets - pwr_flag_nets_placed):
+        anchor = next(
+            (candidate for candidate in layout.local_net_anchors if candidate.name == net_name),
+            None,
+        )
+        if anchor is not None:
+            append_power_flag(net_name, anchor.x, anchor.y)
+            continue
+
+        placed_on_passive = False
+        for passive in layout.placed_passives:
+            pin1, pin2 = passive_pin_xy(
+                passive.x,
+                passive.y,
+                passive.angle,
+                pin_span=passive.pin_span,
+            )
+            if passive.net1 == net_name:
+                append_power_flag(net_name, *pin1)
+                placed_on_passive = True
+                break
+            if passive.net2 == net_name:
+                append_power_flag(net_name, *pin2)
+                placed_on_passive = True
+                break
+        if not placed_on_passive:
+            raise ValueError(f"Cannot place required PWR_FLAG for undriven rail {net_name!r}")
     if pwr_flag_instances:
         lib_symbols.insert(0, sexpr_pwr_flag_lib_entry())
         power_instances.extend(pwr_flag_instances)
@@ -2706,7 +3170,13 @@ def _render_sheet(
 
     # --- Wire hygiene: detour any remaining segment that crosses a symbol body ---
     wires = _detour_wires_around_bodies(wires, sheet_body_boxes)
-
+    # Resolve label geometry once here; assemble_sheet's identical fixed-point
+    # pass is then a no-op and preserves the settled wire endpoints.
+    labels, wires = _resolve_label_collisions(
+        list(labels),
+        list(wires),
+        obstacle_boxes=sheet_body_boxes,
+    )
     # Add bus notation (Phase 3b): wires go with wires, entries+labels are bus_elements
     wires.extend(bus_wires_all)
     bus_elements = bus_entries_all + bus_labels_all
@@ -2724,6 +3194,12 @@ def _render_sheet(
         root_uuid=root_uuid,
         sheet_uuid=sheet_uuid,
         page_num=page_num,
+        obstacle_boxes=sheet_body_boxes,
+        symbol_library_name=(
+            _LOCAL_SYMBOL_LIBRARY_NAME if symbol_library_sink is not None else None
+        ),
+        symbol_scope=symbol_scope or layout.name,
+        symbol_library_sink=symbol_library_sink,
     )
 
 
@@ -2891,6 +3367,8 @@ def main():
         print("     python -m schematic_engine.generator --demo")
         sys.exit(1)
 
+    project_name = _validate_project_name(project_name)
+
     # --- Dispatch to the selected export format ---
     if args.export_format != "kicad":
         from .exporters import export_altium_xml, export_eagle_xml, export_generic_netlist
@@ -2909,7 +3387,7 @@ def main():
 
         ext_map = {"altium": ".xml", "eagle": ".sch", "netlist": ".json"}
         ext = ext_map[args.export_format]
-        outfile = str(output_path / f"{project_name}{ext}")
+        outfile = str(_contained_output_path(output_path, f"{project_name}{ext}"))
 
         if args.export_format == "altium":
             result = export_altium_xml(components, outfile, project_name, company)

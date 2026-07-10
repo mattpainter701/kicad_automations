@@ -1,10 +1,10 @@
 ---
-name: kicad_gen
+name: kicad-gen
 description: >
-  Programmatic KiCad schematic generation -- generate .kicad_sch files from
-  Python scripts. Use when the design is too large or repetitive for manual
-  entry, or when schematic content must stay in sync with a machine-readable
-  source of truth (pin maps, CSV, datasheet tables).
+  Generate KiCad schematics from a Circuit Weaver design.yaml or a project's own
+  checked-in generator. Use for large, repetitive, or machine-synchronized designs.
+  Prefer the Circuit Weaver CLI unless the project actually contains and documents
+  its own generation scripts.
 ---
 
 ## When to Use
@@ -17,17 +17,20 @@ description: >
 ## Workflow
 
 ```
-1. Define pin maps   -> scripts/pin_maps.py (or equivalent)
-2. Generate sheets   -> scripts/generate_schematics.py
+1. Define components and pin maps in design.yaml
+2. Generate sheets   -> circuit-weaver generate
 3. Run ERC           -> kicad-cli sch erc
 4. Review in KiCad   -> open .kicad_sch files, run Update PCB from Schematic
 ```
 
 ## Project-Specific Setup
 
-**Script location:** `scripts/generate_schematics.py`
-**Pin maps:** `scripts/pin_maps.py`
-**Output directory:** `hardware/<project>/kicad/`
+**Spec:** `${SPEC_PATH}`
+**Output directory:** `${OUTPUT_DIR}`
+
+If a project supplies custom scripts, record their checked-in paths here. Do not
+invoke `scripts/generate_schematics.py` or `scripts/pin_maps.py` unless those
+files exist in the current project.
 
 Edit this file to record:
 - Which ICs are generated vs hand-drawn
@@ -52,11 +55,10 @@ KiCad 10 returns exit code 5 for ERC violations (changed from 0 in KiCad 9).
 
 ```bash
 # Regenerate from scratch (idempotent)
-python3 scripts/generate_schematics.py
+circuit-weaver generate "${SPEC_PATH}" --output "${OUTPUT_DIR}"
 
-# Validate with ERC
-kicad-cli sch erc hardware/<project>/kicad/<project>.kicad_sch \
-  --output hardware/<project>/kicad/erc.txt
+# Read root_schematic from generate's JSON, then validate that exact path.
+kicad-cli sch erc "${ROOT_SCHEMATIC}" --output "${OUTPUT_DIR}/erc.txt"
 
 # Then in KiCad GUI: Tools -> Update PCB from Schematic
 ```

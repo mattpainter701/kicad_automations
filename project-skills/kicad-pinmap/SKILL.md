@@ -1,5 +1,5 @@
 ---
-name: kicad_pinmap
+name: kicad-pinmap
 description: >
   Pin-to-net mapping auditor -- verifies that every IC pin in the schematic
   is connected to the correct net, matched against a pin map source of truth
@@ -33,19 +33,15 @@ Sources (in priority order):
 
 ## Audit Workflow
 
-```
-1. Extract pin-net mapping from schematic:
-   analyze_schematic.py -> nets section -> per-component pin list
-
-2. Compare against expected pin map:
-   scripts/audit_pinmap.py <ref> analysis.json pin_maps.py
-
-3. For each mismatch: investigate (may be intentional renaming or a bug)
-
-4. For each unmapped pin: decide connected/no-connect, update pin_maps.py
-
-5. Regenerate schematic to apply corrected mappings
-```
+1. Analyze the schematic with the `kicad` skill and retain the per-component
+   pin/net data as `analysis.json`.
+2. Compare that data with the checked-in pin-map source. If the project contains
+   a documented audit script, run it; do not assume `scripts/audit_pinmap.py`
+   exists.
+3. Investigate every mismatch; it can be an intentional net alias or a defect.
+4. Decide connected/no-connect status for every unmapped pin and update the
+   source of truth.
+5. Regenerate the schematic and repeat the audit.
 
 ## Gap Filling
 

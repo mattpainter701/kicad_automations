@@ -1,6 +1,6 @@
 ---
 name: circuit-weaver
-description: Master entry point for Circuit Weaver workflows. Routes to new design (wizard + research-driven IC selection + passive generation + schematic generation) or opens existing design for review/modification. Load the canonical Circuit Weaver skill from `skills/circuit-weaver/SKILL.md`.
+description: Create or resume an end-to-end Circuit Weaver electronic design. Load the canonical workflow from skills/circuit-weaver/SKILL.md. Do not use for standalone KiCad-file analysis, sourcing, or the explicitly requested interactive design-wizard.
 ---
 
 This is a repository-local compatibility entrypoint for the canonical Circuit Weaver master orchestrator skill.

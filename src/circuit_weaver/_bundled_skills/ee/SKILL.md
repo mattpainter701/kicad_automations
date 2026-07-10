@@ -4,7 +4,8 @@ description: >
   Electrical and electronic engineering reference — circuit analysis, component
   selection, power supply design, signal integrity, RF, thermal, EMC, and test
   & measurement. Use for design questions, calculations, component vetting, and
-  first-principles analysis.
+  first-principles analysis. Do not orchestrate a complete new board from
+  requirements; use circuit-weaver for that end-to-end workflow.
 ---
 
 ## Core Circuit Laws
@@ -484,14 +485,14 @@ This skill feeds the rest of the EDA workflow:
 
 | Calculation | → Use in |
 |-|-|
-| Voltage divider for VREF | `kicad_validate`: verify feedback resistors |
-| LDO dropout check | `kicad_validate`: verify rail headroom |
+| Voltage divider for VREF | `circuit-weaver validate --enhanced`: verify feedback resistors |
+| LDO dropout check | `circuit-weaver validate --enhanced`: verify rail headroom |
 | Inductor current ripple | `bom`: confirm Isat rating from DigiKey |
-| Crystal load caps | `kicad_validate`: verify Cload in schematic |
+| Crystal load caps | `circuit-weaver validate --enhanced`: verify Cload in schematic |
 | I²C pull-up values | `analyze_schematic.py` bus detection output |
 | Signal trace impedance | `analyze_pcb.py` trace width + stackup |
-| Thermal check | `kicad_validate`: flag missing thermal vias |
-| EMC filter values | `sim/SKILL.md` Layer 1 RF chain |
+| Thermal check | `circuit-weaver validate --enhanced`: flag missing thermal evidence |
+| EMC filter values | `circuit-weaver simulate` where supported; external RF analysis otherwise |
 
 ## Platform Guidance
 

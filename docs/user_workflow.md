@@ -13,13 +13,13 @@ Circuit Weaver offers **three ways** to design a circuit:
 
 | Path | Command/Trigger | Best For | Speed | Requirements |
 |------|-----------------|----------|-------|--------------|
-| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code (registered globally) | Automatic, same-agent IC research (`sonar-pro` or native web) | 5–10 min | `pip install circuit-weaver[skills]` + LLM access |
-| **`design_wizard` skill** | Say "design wizard" in Claude Code (registered globally) | Manual step-by-step control with AI guidance | 10–20 min | `pip install circuit-weaver[skills]` + LLM access |
+| **`/circuit-weaver` skill** | Say "design a circuit" in Claude Code (registered globally) | Automatic, same-agent IC research (`sonar-pro` or native web) | 5–10 min | `pip install circuit-weaver` + LLM access |
+| **`design-wizard` skill** | Invoke `/design-wizard` in Claude Code | Manual step-by-step control with AI guidance | 10–20 min | `pip install circuit-weaver` + LLM access |
 | **`circuit-weaver design-wizard` CLI** | Run `circuit-weaver design-wizard` in terminal | Offline, standalone, good for learning | 5–10 min | `pip install circuit-weaver` (no APIs, no agents) |
 
 **Getting Started:**
 
-1. Install circuit-weaver: `pip install circuit-weaver[skills]`
+1. Install circuit-weaver: `pip install circuit-weaver`
 2. Register skills: `circuit-weaver install-skills`
 3. Choose your path (see table above)
 
@@ -38,7 +38,7 @@ to confirm before moving on.
 - "I want to design a new board"
 - "Start a new project"
 - "/circuit-weaver" (fastest, agent-driven)
-- "/design_wizard" (manual step-by-step)
+- "/design-wizard" (manual step-by-step)
 - "Help me design a circuit"
 - "Walk me through a new design"
 
@@ -351,7 +351,7 @@ If the score is below 80, the wizard offers to loop back to fix action items.
 
 ```bash
 # Optimize component placement (simulated annealing)
-circuit-weaver optimize-placement design.yaml -o output/
+circuit-weaver optimize-placement design.yaml -o output/placement.json
 
 # Generate interactive HTML placement viewer
 circuit-weaver placement-viewer design.yaml -o output/placement.html
@@ -366,7 +366,7 @@ circuit-weaver generate design.yaml -o output/ --svg-placement
 circuit-weaver autoroute output/MyBoard.kicad_pcb -o output/MyBoard.ses
 
 # DFM check against manufacturer rules
-circuit-weaver check-dfm output/main_placement.kicad_pcb
+circuit-weaver check-dfm output/MyBoard.kicad_pcb
 ```
 
 > **Note on `{project}_placement.kicad_pcb`:** as of v0.27.0 this file is a

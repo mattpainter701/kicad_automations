@@ -15,7 +15,7 @@ circuit-weaver validate <spec.yaml> [--strict] [--enrich-parts]
 | `--strict` | Treat warnings as errors (production gate) |
 | `--enrich-parts` | Query LCSC/DigiKey to fill missing part data before validation |
 
-**Exit codes:** 0 = valid, 1 = validation errors found.
+**Exit codes:** 0 = valid, 2 = validation errors found.
 
 ---
 
@@ -30,7 +30,8 @@ circuit-weaver generate <spec.yaml> --output <dir> [flags]
 | Flag | Description |
 |-|-|
 | `--output`, `-o` | Output directory (required) |
-| `--no-require-valid` | Generate even if validation fails |
+| `--no-require-valid` | Bypass soft electrical findings only; structural and implementation errors still fail |
+| `--no-readiness-gate` | Debug-only bypass for placement-readiness errors |
 | `--no-svg` | Skip SVG export |
 | `--presentation-profile` | `default` or `review` (changes schematic layout) |
 | `--enrich-parts` | Query distributors for missing part data |
@@ -38,8 +39,14 @@ circuit-weaver generate <spec.yaml> --output <dir> [flags]
 | `--auto-source` | Auto-discover blank MPNs via DigiKey/Mouser APIs; caches results for 30 days |
 | `--update-spec` | Write discovered MPNs/LCSC back to the original YAML spec (requires `--auto-source`) |
 | `--svg-placement` | Export interactive SVG placement diagram to `placement.svg` for editing |
+| `--pinout` | Emit pinout CSV/config stubs even for non-MCU designs |
+| `--require-kicad` | Fail unless the exact final schematic passes real `kicad-cli` ERC |
 
-**Outputs:** `.kicad_sch` files, `_report.md`, placement hints, SVGs, (optional) `placement.svg`.
+**Outputs:** `.kicad_sch` files, `_report.md`, placement hints, SVGs,
+`artifact_manifest.json`, and optional placement/firmware artifacts. Read paths from
+the manifest instead of assuming a fixed project filename. Manifest artifact paths
+are relative to the manifest directory; its verification fields distinguish
+generated-but-unverified output from a schematic checked by KiCad.
 
 **Example:**
 ```bash
@@ -65,7 +72,7 @@ circuit-weaver apply-patch <spec.yaml> <patch.yaml> [--output <file>] [--enrich-
 | `--output`, `-o` | Write updated spec to file (default: stdout) |
 | `--enrich-parts` | Enrich parts before validation |
 
-**Exit codes:** 0 = patch accepted, 1 = patch rejected (validation failed).
+**Exit codes:** 0 = patch accepted, 2 = patch rejected (validation failed).
 
 ---
 

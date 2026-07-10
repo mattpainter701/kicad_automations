@@ -1,9 +1,10 @@
 ---
-name: kicad_pcb_place
+name: kicad-pcb-place
 description: >
-  PCB component placement -- generate and apply a constraint-driven placement
-  plan for KiCad PCB layouts. Covers placement strategy, pcbnew API usage,
-  and Freerouting autorouter integration.
+  Generate and review a constraint-driven placement plan, then apply it to an
+  electrically annotated KiCad PCB. Use after Circuit Weaver generation when the
+  user wants placement optimization or KiCad placement guidance. Never route the
+  generated placement-preview PCB.
 ---
 
 ## Two-Stage Workflow
@@ -11,23 +12,26 @@ description: >
 ### Stage 1: Generate Placement Plan
 
 ```bash
-python3 scripts/generate_placement.py \
-  hardware/<project>/kicad/<project>.kicad_pcb \
-  --output hardware/<project>/kicad/placement.json
+circuit-weaver optimize-placement "${SPEC_PATH}" \
+  --output "${OUTPUT_DIR}/placement.json"
+circuit-weaver placement-viewer "${SPEC_PATH}" \
+  --output "${OUTPUT_DIR}/placement.html"
 ```
 
 Outputs a reference JSON: `{reference: {x_mm, y_mm, rotation_deg, layer}}`.
 Validates all constraints before writing (edge clearance, group proximity, etc.).
 
-### Stage 2: Apply Placement
+### Stage 2: Apply Placement to an Electrical PCB
+
+First open the generated root schematic in KiCad, assign footprints, and run
+**Update PCB from Schematic**. Do not use the generated
+`*_placement.kicad_pcb` preview here; it has no electrical pads or nets.
 
 **Option A -- pcbnew scripting console (standalone):**
 ```python
-# In KiCad Scripting Console (PCB Editor -> Scripting Console)
-import importlib, sys
-sys.path.insert(0, r'path/to/project/scripts')
-import apply_placement; importlib.reload(apply_placement)
-apply_placement.run()
+# In KiCad Scripting Console (PCB Editor -> Scripting Console).
+# Apply the reviewed coordinates from placement.json using the KiCad version's
+# supported pcbnew API, then save to a new board and run DRC.
 ```
 
 **Option B -- KiCad IPC API (live session via kipy):**
@@ -50,11 +54,14 @@ Document project-specific constraints here:
 | Crystal isolation | 5mm from switchers | EMI |
 | Connector alignment | edge-flush | Mechanical fit |
 
-## pcbnew API Notes (KiCad 10)
+## pcbnew API Notes
 
 ```python
 import pcbnew
-board = pcbnew.LoadBoard(r"design.kicad_pcb")  # Windows: backslash required
+from pathlib import Path
+
+board_path = Path("design.kicad_pcb").resolve()
+board = pcbnew.LoadBoard(str(board_path))
 
 fp = board.FindFootprintByReference("U1")
 fp.SetPosition(pcbnew.VECTOR2I(pcbnew.FromMM(50), pcbnew.FromMM(40)))
@@ -64,9 +71,9 @@ board.Save(r"design.kicad_pcb")
 pcbnew.Refresh()
 ```
 
-**Windows gotcha:** `LoadBoard()` requires native backslash paths. Forward slashes return None silently.
-**KiCad 10:** `IO_MGR` is removed -- use `LoadBoard(path)` directly, no plugin argument.
-**KiCad 10 Python:** `C:/Program Files/KiCad/10.0/bin/pythonw.exe` -- use for pcbnew API scripts.
+KiCad's Python API changes between major versions. Use the Python environment
+bundled with the installed KiCad version and verify the board reloads before
+replacing the original. Do not hardcode a KiCad 10 installation path.
 
 ## Freerouting Integration
 
@@ -78,6 +85,9 @@ java -jar freerouting.jar -de design.dsn -do design.ses -mp 100
 
 Best results after: components placed with correct orientation, net classes assigned,
 DRU design rules imported from fab (JLCPCB or PCBWay).
+
+Run Freerouting only on the electrical PCB created from the schematic, never on
+`*_placement.kicad_pcb`.
 
 ## Post-Placement Checklist
 

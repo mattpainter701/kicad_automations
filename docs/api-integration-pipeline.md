@@ -207,28 +207,27 @@ specs/
 
 ```bash
 # Step 1: Scaffold design (user provides template + ref)
-circuit-weaver scaffold --template buck --ref U1 --auto-source
-# Discovers: TPS61023 MPN, symbol, footprint
+circuit-weaver scaffold --template buck --ref U1 --output design.yaml
 
 # Step 2: Build BOM via patches (manual or agent-assisted)
-circuit-weaver apply-patch design.yaml patch_ldo.json --auto-source
+circuit-weaver apply-patch design.yaml patch_ldo.json --output design.yaml --enrich-parts
 # Discovers: LDO IC + bypass cap
 
-# Step 3: Generate schematic + harvest specs
-circuit-weaver generate design.yaml --output out/ --with-specs --with-spice
-# Downloads: datasheets, SPICE models
-# Extracts: metadata.json, thermal specs, SI params
+# Step 3: Generate schematic, then harvest optional engineering data
+circuit-weaver generate design.yaml --output out/ --auto-source --update-spec --svg-placement
+circuit-weaver harvest-specs design.yaml --output out/
+circuit-weaver fetch-spice design.yaml --output out/
 
-# Step 4: Export placement to SVG
-circuit-weaver generate out/*.kicad_sch --svg-placement
-# User edits design_placement.svg in Inkscape
+# Step 4: Edit the generated placement SVG
+# User edits out/placement.svg in Inkscape
 
-# Step 5: Import placement back
-circuit-weaver import-placement design_placement.svg -o out/
-# Updates .kicad_pcb + CPL files
+# Step 5: Import placement into a real forward-annotated PCB
+circuit-weaver import-placement out/placement.svg out/MyBoard.kicad_pcb \
+  --output-pcb out/MyBoard.kicad_pcb
 
 # Step 6: Run placement optimizer (reads specs/)
-circuit-weaver optimize-placement out/ --strategy thermal
+circuit-weaver optimize-placement design.yaml --strategy thermal \
+  --specs-dir out/specs/ --output out/placement.json
 # Reads: specs/ic_thermal.json
 # Output: optimized coordinates
 ```
@@ -236,14 +235,15 @@ circuit-weaver optimize-placement out/ --strategy thermal
 ### Example 2: Specs-Only (No Placement Yet)
 
 ```bash
-# Generate schematic, download datasheets, extract specs
-circuit-weaver generate design.yaml --output out/ --with-specs
+# Generate schematic, then download datasheets and extract specs
+circuit-weaver generate design.yaml --output out/
+circuit-weaver harvest-specs design.yaml --output out/
 
 # Review what was extracted
 cat out/specs/metadata.json | jq '.[] | {mpn: .id, theta_ja, status}'
 
 # Regenerate specs if PDFs updated
-circuit-weaver extract-specs out/datasheets/ --output out/specs/ --force
+circuit-weaver extract-specs out/datasheets/ --output out/specs/
 ```
 
 ### Example 3: Manual Placement with Constraints
@@ -254,15 +254,13 @@ circuit-weaver generate design.yaml --output out/ --svg-placement
 
 # Edit in Inkscape, save as design_placement_custom.svg
 
-# Import and lock placement
-circuit-weaver import-placement design_placement_custom.svg \
-  --output out/placement_locked.kicad_pcb \
-  --no-optimize
+# Import and lock placement on the real forward-annotated PCB
+circuit-weaver import-placement design_placement_custom.svg out/MyBoard.kicad_pcb \
+  --output-pcb out/placement_locked.kicad_pcb
 
 # Now optimize routing (placement is fixed)
 circuit-weaver autoroute out/placement_locked.kicad_pcb \
-  --constraints out/specs/si_params.json \
-  --output out/routed.kicad_pcb
+  --output out/routed.ses
 ```
 
 ## Benefits of This Approach

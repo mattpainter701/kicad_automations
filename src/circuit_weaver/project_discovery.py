@@ -109,9 +109,9 @@ def _count_components(project_dir: Path) -> int | None:
     if not yaml_path.exists():
         return None
     try:
-        from .project_spec import _simple_yaml_parse
+        from .project_spec import _parse_yaml
 
-        spec = _simple_yaml_parse(yaml_path.read_text(encoding="utf-8"))
+        spec = _parse_yaml(yaml_path)
         blocks = spec.get("blocks", [])
         return len(blocks) if blocks else None
     except Exception:
