@@ -3,6 +3,20 @@
     "topology": "buck",
     "description": "3A Sync Buck Regulator SOT-23-6",
     "footprint": "SOT-23-6",
+    "official_references": [
+      {
+        "title": "AP62300 datasheet",
+        "url": "https://www.diodes.com/datasheet/download/AP62300.pdf",
+        "publisher": "Diodes Incorporated",
+        "why": "Pin functions, application circuit, component selection, and PCB layout guidance."
+      },
+      {
+        "title": "AP62300Z6-EVM user guide",
+        "url": "https://www.diodes.com/assets/Evaluation-Boards/AP62300Z6-EVM-User-Guide.pdf",
+        "publisher": "Diodes Incorporated",
+        "why": "Manufacturer reference placement, board artwork, and measured evaluation design."
+      }
+    ],
     "vref": 0.8,
     "fsw": 600000.0,
     "iout_max": 3.0,

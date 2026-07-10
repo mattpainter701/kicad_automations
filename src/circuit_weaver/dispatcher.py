@@ -13,6 +13,7 @@ import copy
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -20,6 +21,7 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass, field
+from functools import wraps
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -1037,7 +1039,9 @@ def _generate_compiled_artifacts(
         description=compiled.metadata.get("description", ""),
         stable_uuids=True,
         validate=True,
-        pcb=True,
+        # The legacy padless board is a placement sketch, not a KiCad board
+        # source. Generate the exhaustive SVG/HTML review model instead.
+        pcb=False,
         hierarchical=True,
         interface_policy="explicit",
         presentation_wiring_policy=pwp,
@@ -1636,6 +1640,37 @@ def _auto_source_report(
     }
 
 
+def _persist_generation_failure(func):
+    """Ensure every exception across the complete generation pipeline is durable."""
+
+    @wraps(func)
+    def wrapper(spec, *args, **kwargs):
+        try:
+            return func(spec, *args, **kwargs)
+        except Exception as exc:
+            output_dir = kwargs.get("output_dir")
+            if output_dir is not None:
+                try:
+                    from .project_state import record_generation_state
+
+                    record_generation_state(
+                        output_dir,
+                        project_name=str(
+                            spec.get("project") or spec.get("name") or Path(output_dir).name or "project"
+                        ),
+                        spec_path=kwargs.get("spec_path"),
+                        output_dir=output_dir,
+                        phase="failed",
+                        error=str(exc),
+                    )
+                except Exception as state_exc:
+                    _logger.error("Could not persist generation failure state: %s", state_exc)
+            raise
+
+    return wrapper
+
+
+@_persist_generation_failure
 def generate_artifacts(
     spec: dict[str, Any],
     *,
@@ -1648,7 +1683,7 @@ def generate_artifacts(
     auto_source: bool = False,
     update_spec: bool = False,
     spec_path: Path | None = None,
-    svg_placement: bool = False,
+    svg_placement: bool = True,
     export_pinout: bool = False,
     readiness_gate: bool = True,
 ) -> dict[str, Any]:
@@ -1656,6 +1691,41 @@ def generate_artifacts(
     profile = _ensure_profile(profile)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+    preexisting_output = {
+        path.relative_to(output_path).as_posix(): (path.stat().st_size, path.stat().st_mtime_ns)
+        for path in output_path.rglob("*")
+        if path.is_file() and ".circuit-weaver" not in path.relative_to(output_path).parts
+    }
+    previous_assembly_manifest = output_path / "assembly_manifest.json"
+    if not previous_assembly_manifest.is_file():
+        previous_assembly_manifest = None
+    for stale_preview in output_path.glob("*_placement_preview.kicad_pcb"):
+        stale_preview.unlink(missing_ok=True)
+    if not svg_placement:
+        for filename in (
+            "placement_result.json",
+            "placement_review_context.json",
+            "placement.svg",
+            "placement_editor.html",
+        ):
+            (output_path / filename).unlink(missing_ok=True)
+
+    from .project_state import record_generation_state
+
+    state_project_name = str(spec.get("project") or spec.get("name") or output_path.name or "project")
+    project_state_manifest = ""
+    try:
+        project_state_manifest = str(
+            record_generation_state(
+                output_path,
+                project_name=state_project_name,
+                spec_path=spec_path,
+                output_dir=output_path,
+                phase="running",
+            )
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Could not initialize durable project state: {exc}") from exc
 
     # Set up logging: use unified bridge if not already initialized, else fallback
     from .logging_bridge import cleanup_logging, get_design_logger, init_logging
@@ -1666,7 +1736,7 @@ def generate_artifacts(
         _owned_logging = True
     else:
         # Bridge already active -- still write circuit-weaver.log to output dir
-        _local_fh = logging.FileHandler(output_path / "circuit-weaver.log", mode="w", encoding="utf-8")
+        _local_fh = logging.FileHandler(output_path / "circuit-weaver.log", mode="a", encoding="utf-8")
         _local_fh.setLevel(logging.DEBUG)
         _local_fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
         logging.getLogger("circuit_weaver").addHandler(_local_fh)
@@ -1731,8 +1801,21 @@ def generate_artifacts(
             score=score,
             readiness_gate=readiness_gate,
         )
-    except Exception:
+    except Exception as exc:
         _logger.exception("Artifact generation failed for output directory %s", output_path)
+        try:
+            project_state_manifest = str(
+                record_generation_state(
+                    output_path,
+                    project_name=state_project_name,
+                    spec_path=spec_path,
+                    output_dir=output_path,
+                    phase="failed",
+                    error=str(exc),
+                )
+            )
+        except Exception as state_exc:
+            _logger.warning("Could not persist failed generation state: %s", state_exc)
         raise
     finally:
         if _owned_logging:
@@ -1747,6 +1830,19 @@ def generate_artifacts(
     ir_path.write_text(json.dumps(compiled.ir.to_dict(), indent=2), encoding="utf-8", newline="")
     report_path = output_path / "validation_report.json"
     report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="")
+
+    # Ship one canonical physical-part inventory with every generated design.
+    # Schematic generation consumes the same deterministic reference
+    # allocation, so primary and support parts reconcile across every output.
+    from .assembly_manifest import build_assembly_manifest
+
+    assembly_manifest = build_assembly_manifest(
+        compiled.components,
+        previous_manifest=previous_assembly_manifest,
+    )
+    assembly_manifest_path = output_path / "assembly_manifest.json"
+    assembly_manifest.write_json(assembly_manifest_path)
+    files.append(str(assembly_manifest_path))
 
     # Sprint 41 — placement readiness report. Shape is stable; consumed
     # by the placement pipeline and downstream agents to decide whether
@@ -1777,9 +1873,29 @@ def generate_artifacts(
         "validation_report": str(report_path),
         "design_ir": str(ir_path),
         "canonical_spec": str(canonical_spec_path),
+        "assembly_manifest": str(assembly_manifest_path),
         "placement_readiness": str(placement_ready_path),
         "valid": report.valid,
     }
+
+    if svg_placement:
+        from .placement_optimizer import PlacementConfig
+        from .placement_pipeline import generate_placement_review
+
+        placement_review = generate_placement_review(
+            compiled.components,
+            output_path,
+            project_name=compiled.metadata.get("project", "project"),
+            config=PlacementConfig(strategy="balanced", iterations=2000, seed=0),
+            constraints=list(getattr(compiled.ir, "pcb_constraints", []) or []),
+            assembly_manifest=assembly_manifest,
+        )
+        result["placement_review"] = placement_review
+        generated_paths = list(placement_review.get("generated_artifact_paths", {}).values())
+        result["files"].extend(path for path in generated_paths if path not in result["files"])
+        artifact_paths = placement_review.get("artifact_paths", {})
+        result["placement_svg"] = artifact_paths.get("placement_svg", "")
+        result["placement_editor"] = artifact_paths.get("placement_html", "")
 
     # Task 118: Auto-run ERC if KiCad CLI is present and a root schematic was generated
     if root is not None:
@@ -1832,6 +1948,36 @@ def generate_artifacts(
             update_spec=update_spec,
         )
         result["auto_source_summary"] = auto_source_result
+
+    generated_artifacts = sorted(
+        (
+            path
+            for path in output_path.rglob("*")
+            if path.is_file()
+            and ".circuit-weaver" not in path.relative_to(output_path).parts
+            and preexisting_output.get(path.relative_to(output_path).as_posix())
+            != (path.stat().st_size, path.stat().st_mtime_ns)
+        ),
+        key=lambda path: path.as_posix().casefold(),
+    )
+    result["files"] = [str(path) for path in generated_artifacts]
+    placement_review_path = output_path / "placement_result.json"
+    try:
+        project_state_manifest = str(
+            record_generation_state(
+                output_path,
+                project_name=result["project"],
+                spec_path=spec_path,
+                output_dir=output_path,
+                phase="generated",
+                artifacts=generated_artifacts,
+                validation_report=report_path,
+                placement_review=placement_review_path if placement_review_path.is_file() else None,
+            )
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Could not finalize durable project state: {exc}") from exc
+    result["project_state"] = project_state_manifest
 
     return result
 
@@ -2107,10 +2253,21 @@ def main() -> None:
         help="Write discovered MPNs/LCSC back to YAML spec (requires --auto-source)",
     )
     gen_p.add_argument(
+        "--placement-review",
         "--svg-placement",
+        dest="svg_placement",
         action="store_true",
-        default=False,
-        help="Export SVG placement diagram after PCB generation (Task 93)",
+        default=True,
+        help=(
+            "Generate exhaustive review-only placement JSON, editable SVG, and interactive HTML "
+            "(--svg-placement remains a compatibility alias)"
+        ),
+    )
+    gen_p.add_argument(
+        "--no-placement-review",
+        dest="svg_placement",
+        action="store_false",
+        help="Skip review-only placement JSON/SVG/HTML generation",
     )
     gen_p.set_defaults(require_valid=True, readiness_gate=True, export_svg=True)
 
@@ -2174,6 +2331,13 @@ def main() -> None:
     jlcpcb_p = subparsers.add_parser("export-jlcpcb", help="Export JLCPCB BOM and CPL files for assembly ordering")
     jlcpcb_p.add_argument("spec", help="Design spec YAML file")
     jlcpcb_p.add_argument("--output", "-o", required=True, help="Output directory for BOM/CPL files")
+    jlcpcb_p.add_argument(
+        "--pcb",
+        help=(
+            "Real pad-bearing .kicad_pcb used for CPL reconciliation. "
+            "Without this option the command intentionally exports BOM-only."
+        ),
+    )
 
     gerber_p = subparsers.add_parser("export-gerbers", help="Export Gerber and drill files from KiCad PCB")
     gerber_p.add_argument("kicad_pcb", help="KiCad PCB file (.kicad_pcb)")
@@ -2194,6 +2358,43 @@ def main() -> None:
         help="Output raw JSON instead of formatted table",
     )
 
+    import_design_p = subparsers.add_parser(
+        "import-design",
+        help="Open an existing KiCad or Gerber design without modifying source files",
+    )
+    import_design_p.add_argument("source", help="KiCad file, project directory, Gerber directory, or ZIP archive")
+    import_design_p.add_argument(
+        "--project-dir",
+        "-o",
+        default=None,
+        help="Directory for Circuit Weaver state (default: source directory; ZIPs use a sibling folder)",
+    )
+    import_design_p.add_argument(
+        "--analyze", action="store_true", default=False, help="Run every applicable bundled analyzer after import"
+    )
+    import_design_p.add_argument(
+        "--force", action="store_true", default=False, help="Replace prior ZIP staging and rerun cached analysis"
+    )
+    import_design_p.add_argument("--timeout", type=float, default=300.0, help="Per-analyzer timeout in seconds")
+
+    analyze_design_p = subparsers.add_parser(
+        "analyze-design",
+        help="Analyze every schematic, PCB, and Gerber source registered with a project",
+    )
+    analyze_design_p.add_argument("project", help="Project directory, manifest, design spec, or KiCad project path")
+    analyze_design_p.add_argument(
+        "--force", action="store_true", default=False, help="Rerun analyzers even when source fingerprints match"
+    )
+    analyze_design_p.add_argument("--timeout", type=float, default=300.0, help="Per-analyzer timeout in seconds")
+
+    status_p = subparsers.add_parser("status", help="Show durable project state and the next safe actions")
+    status_p.add_argument("project", help="Project directory or a file inside the project")
+    status_p.add_argument("--json", dest="json_output", action="store_true", default=False)
+
+    resume_p = subparsers.add_parser("resume", help="Reconcile an interrupted project and print a restart plan")
+    resume_p.add_argument("project", help="Project directory, manifest, design spec, or KiCad project path")
+    resume_p.add_argument("--json", dest="json_output", action="store_true", default=False)
+
     wizard_p = subparsers.add_parser(
         "design-wizard",
         help="Interactive circuit design wizard (offline, self-contained — no agents/APIs required)",
@@ -2201,7 +2402,7 @@ def main() -> None:
     wizard_p.add_argument(
         "--output",
         "-o",
-        help="Save final design.yaml to this file (default: design.yaml in current directory)",
+        help="Save to this exact file (default: <project-name>/design.yaml)",
     )
     wizard_p.add_argument(
         "--resume",
@@ -2266,23 +2467,75 @@ def main() -> None:
     autoroute_p = subparsers.add_parser(
         "autoroute", help="Route PCB using Freerouting (optional; requires Freerouting JAR)"
     )
-    autoroute_p.add_argument("kicad_pcb", help="Path to .kicad_pcb file")
+    autoroute_p.add_argument(
+        "kicad_pcb",
+        help="Real pad-bearing .kicad_pcb or user-exported Specctra .dsn input",
+    )
     autoroute_p.add_argument(
         "--output",
         "-o",
-        help="Output routed session/PCB (default: <name>.ses via kicad-cli, else <name>_routed.kicad_pcb)",
+        help="Validated Specctra .ses output",
     )
     autoroute_p.add_argument(
         "--effort",
         choices=["fast", "medium", "high"],
         default="medium",
-        help="Freerouting optimization-pass budget (default: medium)",
+        help="Pass preset: fast=100, medium=500, high=1000 (default: medium)",
+    )
+    autoroute_p.add_argument(
+        "--max-passes",
+        type=int,
+        help="Exact Freerouting pass limit; overrides --effort (0 means unlimited)",
     )
     autoroute_p.add_argument(
         "--timeout",
         type=float,
         default=300,
         help="Routing timeout in seconds (default: 300)",
+    )
+    autoroute_p.add_argument("--overwrite", action="store_true", help="Atomically replace existing DSN/SES outputs")
+    autoroute_p.add_argument(
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run Freerouting without its GUI (default: enabled)",
+    )
+    autoroute_p.add_argument(
+        "--optimization-threads",
+        type=int,
+        help="Freerouting optimizer thread count (0 disables optimization)",
+    )
+    autoroute_p.add_argument(
+        "--optimizer-strategy",
+        choices=["greedy", "global", "hybrid"],
+        help="Freerouting route-optimizer board update strategy",
+    )
+    autoroute_p.add_argument(
+        "--optimizer-hybrid-ratio",
+        help="Global:greedy pass ratio required by --optimizer-strategy hybrid (for example 1:1)",
+    )
+    autoroute_p.add_argument(
+        "--optimizer-item-selection",
+        choices=["sequential", "random", "prioritized"],
+        help="Freerouting route-optimizer item selection strategy",
+    )
+    autoroute_p.add_argument(
+        "--optimizer-improvement-threshold",
+        type=float,
+        help="Optimizer stopping threshold as a percentage (0 continues until no improvement)",
+    )
+    autoroute_p.add_argument(
+        "--seed",
+        type=int,
+        help="Deterministic seed, only when installed Freerouting -help advertises -random_seed",
+    )
+    autoroute_p.add_argument(
+        "--freerouting-path",
+        help="Freerouting launcher or JAR path (also supports CIRCUIT_WEAVER_FREEROUTING)",
+    )
+    autoroute_p.add_argument(
+        "--kicad-cli-path",
+        help="kicad-cli executable used only when its capability probe advertises Specctra export",
     )
 
     install_p = subparsers.add_parser(
@@ -2396,6 +2649,8 @@ def main() -> None:
     viewer_p.add_argument("--board-height", type=float, default=80.0, help="Board height in mm (default: 80)")
     viewer_p.add_argument("--specs-dir", help="Path to specs/ directory for thermal overlay")
     viewer_p.add_argument("--strategy", choices=["simple", "thermal", "si", "cost", "balanced"], default="balanced")
+    viewer_p.add_argument("--iterations", type=int, default=5000, help="SA iterations (default: 5000)")
+    viewer_p.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility (default: 0)")
 
     # Sprint 16 P1/P2: SI constraints, thermal analysis, dual-sided CPL, panelization
     si_p = subparsers.add_parser(
@@ -2715,7 +2970,9 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         auto_source = getattr(args, "auto_source", False)
         update_spec = getattr(args, "update_spec", False)
         svg_placement = getattr(args, "svg_placement", False)
-        spec_path = Path(args.spec) if update_spec else None
+        # Retain the source path for durable project-state/resume tracking even
+        # when the spec itself is not being updated.
+        spec_path = Path(args.spec)
         try:
             result = _run_with_stderr_capture(
                 lambda: generate_artifacts(
@@ -2750,39 +3007,6 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             )
             if s["unresolved_count"] > 0:
                 print(f"Warning: {s['unresolved_count']} parts could not be auto-sourced", file=sys.stderr)
-
-        # Task 93: Export SVG placement diagram if requested
-        if svg_placement and "project" in result:
-            from .placement_optimizer import PlacementConfig, optimize_placement
-            from .svg_placement import export_placement_svg
-
-            output_dir = Path(args.output)
-            placement_svg_path = output_dir / "placement.svg"
-
-            try:
-                # Note: components not available in this handler scope (compiled is
-                # local to generate_artifacts). Optimization works with empty list.
-                opt_result = optimize_placement(
-                    [],
-                    config=PlacementConfig(strategy="simple"),
-                )
-                placements = opt_result.get("placements", {})
-
-                # Convert to format expected by export_placement_svg
-                comp_dicts = []
-
-                _svg_str = export_placement_svg(
-                    comp_dicts,
-                    placements,
-                    opt_result.get("board_width_mm", 100.0),
-                    opt_result.get("board_height_mm", 80.0),
-                    output_path=placement_svg_path,
-                    title=f"PCB Placement — {result.get('project', 'Design')}",
-                )
-                result["placement_svg"] = str(placement_svg_path)
-                print(f"Exported SVG placement to {placement_svg_path}", file=sys.stderr)
-            except Exception as e:
-                print(f"Warning: SVG placement export failed: {e}", file=sys.stderr)
 
         _print_json(result)
         raise SystemExit(0)
@@ -2848,7 +3072,16 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         else:
             use_api = True
 
-        svg_placements = import_placement_from_svg(args.svg)
+        try:
+            svg_placements = import_placement_from_svg(args.svg)
+        except (OSError, ValueError, ET.ParseError) as exc:
+            _print_json(
+                {
+                    "status": "error",
+                    "message": f"Placement SVG import blocked: {exc}",
+                }
+            )
+            raise SystemExit(1) from None
 
         # Update .kicad_pcb
         output_pcb = getattr(args, "output_pcb", None) or args.kicad_pcb
@@ -2857,17 +3090,20 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             svg_placements,
             output_path=output_pcb if not args.dry_run else None,
             use_api=use_api,
+            dry_run=args.dry_run,
         )
 
         # Try to update CPL file (optional)
         cpl_result = {"updated": 0}
         cpl_path = Path(args.kicad_pcb).parent / f"{Path(args.kicad_pcb).stem}_cpl.csv"
-        if cpl_path.exists():
+        if cpl_path.exists() and pcb_result.get("success"):
             output_cpl = getattr(args, "output_cpl", None) or str(cpl_path)
             cpl_count = update_cpl_placements(
                 cpl_path, svg_placements, output_path=output_cpl if not args.dry_run else None
             )
             cpl_result = {"updated": cpl_count}
+        elif cpl_path.exists():
+            cpl_result = {"updated": 0, "blocked": True, "reason": "PCB placement update failed"}
 
         result = {
             "kicad_pcb": {
@@ -3038,10 +3274,13 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             lambda: export_jlcpcb(
                 _load_spec_file(args.spec),
                 args.output,
+                pcb_path=args.pcb,
             )
         )
         _print_json(result)
-        raise SystemExit(0 if result["status"] == "ok" else 1)
+        # BOM-only is a complete, truthful delivery mode. A supplied PCB that
+        # cannot be reconciled remains blocking and returns non-zero.
+        raise SystemExit(0 if result["status"] in {"ok", "bom_only"} else 1)
 
     if args.command == "export-gerbers":
         import zipfile
@@ -3197,6 +3436,69 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
 
         raise SystemExit(0)
 
+    if args.command == "import-design":
+        try:
+            from .design_import import import_design
+
+            result = import_design(
+                args.source,
+                project_dir=getattr(args, "project_dir", None),
+                analyze=getattr(args, "analyze", False),
+                force=getattr(args, "force", False),
+                timeout=getattr(args, "timeout", 300.0),
+            )
+            _print_json(result)
+            analysis_status = (
+                result.get("analysis", {}).get("status")
+                if isinstance(result.get("analysis"), dict)
+                else None
+            )
+            raise SystemExit(2 if analysis_status == "analysis_failed" else 0)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"[!] Import failed: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+    if args.command == "analyze-design":
+        try:
+            from .design_import import analyze_design
+
+            result = analyze_design(
+                args.project,
+                force=getattr(args, "force", False),
+                timeout=getattr(args, "timeout", 300.0),
+            )
+            _print_json(result)
+            raise SystemExit(0 if result.get("status") == "analyzed" else 2)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"[!] Analysis failed: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
+    if args.command in {"status", "resume"}:
+        try:
+            from .project_state import format_project_state, get_project_state_summary, resume_project
+
+            result = (
+                resume_project(args.project)
+                if args.command == "resume"
+                else get_project_state_summary(args.project)
+            )
+            if getattr(args, "json_output", False):
+                _print_json(result)
+            else:
+                print(format_project_state(result))
+                if args.command == "resume" and result.get("message"):
+                    print(f"\n{result['message']}")
+            raise SystemExit(0 if result.get("resumable", True) else 1)
+        except SystemExit:
+            raise
+        except Exception as exc:
+            print(f"[!] Unable to read project state: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+
     if args.command == "design-wizard":
         resume_spec = getattr(args, "resume", None)
         dry_run = getattr(args, "dry_run", False)
@@ -3210,6 +3512,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         _handle_design_workflow(
             resume=resume_spec,
             dry_run=dry_run,
+            output=getattr(args, "output", None),
             research_backend=effective_backend,
             research_depth=effective_depth,
         )
@@ -3281,11 +3584,26 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 output_path=args.output,
                 effort=args.effort,
                 timeout_seconds=args.timeout,
+                max_passes=args.max_passes,
+                overwrite=args.overwrite,
+                headless=args.headless,
+                optimization_threads=args.optimization_threads,
+                optimizer_strategy=args.optimizer_strategy,
+                optimizer_hybrid_ratio=args.optimizer_hybrid_ratio,
+                optimizer_item_selection=args.optimizer_item_selection,
+                optimizer_improvement_threshold=args.optimizer_improvement_threshold,
+                seed=args.seed,
+                freerouting_path=args.freerouting_path,
+                kicad_cli_path=args.kicad_cli_path,
             )
         )
 
         _print_json(result)
-        raise SystemExit(0 if result["status"] == "ok" else 1)
+        if result["status"] == "ok":
+            raise SystemExit(0)
+        if result["status"] == "partial":
+            raise SystemExit(2)
+        raise SystemExit(1)
 
     if args.command == "harvest-specs":
         from .spec_harvester import harvest_specs
@@ -3409,9 +3727,11 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
 
     if args.command == "optimize-placement":
         from .placement_optimizer import PlacementConfig, optimize_placement
+        from .placement_pipeline import build_placement_inventory
 
         spec = _load_spec_file(args.spec)
         compiled = compile_design_ir(spec)
+        inventory = build_placement_inventory(compiled.components)
         cfg = PlacementConfig(
             board_width_mm=args.board_width,
             board_height_mm=args.board_height,
@@ -3420,8 +3740,25 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             seed=args.seed,
         )
         result = _run_with_stderr_capture(
-            lambda: optimize_placement(compiled.components, config=cfg, specs_dir=args.specs_dir)
+            lambda: optimize_placement(
+                inventory.components,
+                config=cfg,
+                specs_dir=args.specs_dir,
+                constraints=list(compiled.ir.pcb_constraints),
+            )
         )
+        manifest_refs = set(inventory.references)
+        placement_refs = set(result.get("placements", {}))
+        result["assembly_item_count"] = len(inventory.references)
+        result["reference_reconciliation"] = {
+            "exact_match": manifest_refs == placement_refs,
+            "missing_from_placement": sorted(manifest_refs - placement_refs),
+            "unexpected_in_placement": sorted(placement_refs - manifest_refs),
+        }
+        result["review_required"] = True
+        result["fabrication_ready"] = False
+        if manifest_refs != placement_refs:
+            result["status"] = "error"
 
         if args.json_output:
             _print_json(result)
@@ -3444,18 +3781,31 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         raise SystemExit(0 if result.get("status") == "ok" else 1)
 
     if args.command == "placement-viewer":
+        from .placement_context import build_placement_context
         from .placement_optimizer import PlacementConfig, optimize_placement
+        from .placement_pipeline import build_placement_inventory
         from .placement_viewer import generate_viewer
 
         spec = _load_spec_file(args.spec)
         compiled = compile_design_ir(spec)
+        inventory = build_placement_inventory(compiled.components)
         cfg = PlacementConfig(
             board_width_mm=args.board_width,
             board_height_mm=args.board_height,
             strategy=args.strategy,
+            iterations=args.iterations,
+            seed=args.seed,
         )
-        opt_result = optimize_placement(compiled.components, config=cfg, specs_dir=args.specs_dir)
+        placement_constraints = list(compiled.ir.pcb_constraints)
+        opt_result = optimize_placement(
+            inventory.components,
+            config=cfg,
+            specs_dir=args.specs_dir,
+            constraints=placement_constraints,
+        )
         placements = opt_result["placements"]
+        if set(placements) != set(inventory.references):
+            raise ValueError("Placement references do not reconcile with the exhaustive assembly manifest")
 
         thermal_data = None
         if args.specs_dir:
@@ -3466,12 +3816,22 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 except Exception:
                     pass
 
+        board_width_mm = float(opt_result["board_width_mm"])
+        board_height_mm = float(opt_result["board_height_mm"])
         generate_viewer(
-            compiled.components,
+            inventory.components,
             placements,
-            board_width_mm=args.board_width,
-            board_height_mm=args.board_height,
+            board_width_mm=board_width_mm,
+            board_height_mm=board_height_mm,
             thermal_data=thermal_data,
+            placement_context=build_placement_context(
+                inventory.components,
+                placements,
+                board_width_mm=board_width_mm,
+                board_height_mm=board_height_mm,
+                constraints=placement_constraints,
+                constraint_evaluation=opt_result.get("constraint_evaluation"),
+            ),
             title=spec.get("project", "PCB Placement"),
             output_path=args.output,
         )
@@ -4056,7 +4416,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             raise SystemExit(1)
 
 
-def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 3) -> str:
+def _wizard_input(prompt: str, *, dry_run: bool = False, default: str = "", max_retries: int = 1) -> str:
     """Get user input with dry-run support.
 
     Args:
@@ -4102,6 +4462,7 @@ def _find_existing_circuits(root_dir: Path = None) -> list[Path]:
 def _handle_design_workflow(
     resume: str | None = None,
     dry_run: bool = False,
+    output: str | None = None,
     research_backend: str | None = None,
     research_depth: str | None = None,
 ) -> None:
@@ -4110,6 +4471,8 @@ def _handle_design_workflow(
     Args:
         resume: Path to a partially-completed design.yaml to resume from
         dry_run: If True, use default answers for all prompts
+        output: Exact YAML/JSON path to save. Resuming overwrites the source
+            spec when this is omitted.
         research_backend: Effective backend for downstream agent research steps
         research_depth: Effective research depth profile for downstream agent research steps
 
@@ -4117,14 +4480,105 @@ def _handle_design_workflow(
     1. Create a new circuit (captures name, creates folder, runs wizard)
     2. Open an existing circuit (lists available, loads and shows status)
     """
-    # If resume is specified, load and continue from that spec
+    def _absolute_path(value: str | Path) -> Path:
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        return candidate.resolve(strict=False)
+
+    def _project_name_from_spec(spec: dict[str, Any], fallback: str) -> str:
+        metadata = spec.get("metadata")
+        nested_title = metadata.get("title") if isinstance(metadata, dict) else None
+        return str(spec.get("project") or nested_title or fallback).strip() or fallback
+
+    def _write_spec(path: Path, spec: dict[str, Any]) -> None:
+        if path.exists() and path.is_dir():
+            raise IsADirectoryError(f"Wizard output must be a file, not a directory: {path}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                newline="",
+                dir=path.parent,
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                if path.suffix.lower() == ".json":
+                    json.dump(spec, handle, indent=2, ensure_ascii=False)
+                    handle.write("\n")
+                else:
+                    handle.write(spec_to_yaml_text(spec))
+                handle.flush()
+                os.fsync(handle.fileno())
+                temporary = Path(handle.name)
+            temporary.replace(path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def _finish(spec: dict[str, Any] | None, logger: DesignLogger | None, output_file: Path, name: str) -> None:
+        if not spec or logger is None:
+            raise SystemExit(1)
+        _write_spec(output_file, spec)
+        print(f"\n[+] Design saved to {output_file}")
+        print(f"[+] Workflow log saved to {logger.log_path}")
+        logger.log_step(
+            0,
+            "design-wizard completed",
+            {"output_file": str(output_file), "project_name": name, "resumed": bool(resume)},
+        )
+        logger.print_summary()
+
+        print("\nWorkflow commands:")
+        print(f"  circuit-weaver log-view \"{logger.project_dir}\"     # View log entries")
+        print(f"  circuit-weaver log-status \"{logger.project_dir}\"   # Show workflow summary\n")
+        print("Next steps:")
+        print(f"  1. Review the spec: {output_file}")
+        print(f'  2. Validate: circuit-weaver validate "{output_file}"')
+        print(f'  3. Generate: circuit-weaver generate "{output_file}" -o "{output_file.parent / "output"}"')
+        print()
+
+    # A restart begins with deterministic local state, then re-enters the
+    # requirements intake with prior values as defaults. This is deliberately
+    # narrower than automatically running generation: resume may update the
+    # design spec, but it never launches fabrication-affecting work implicitly.
     if resume:
-        print(f"\n[Resuming from {resume}]")
-        spec = _load_spec_file(resume)
-        print(f"Project: {spec.get('project', 'unnamed')}")
-        # For now, just show the spec and exit (full resume logic would continue wizard from step N)
-        print("\n[Resume support: load spec and continue wizard from current step]")
-        print("(Full implementation in future sprints)")
+        from .project_state import format_project_state, resume_project
+
+        resume_path = _absolute_path(resume)
+        if not resume_path.is_file():
+            print(f"[!] Resume spec does not exist: {resume_path}", file=sys.stderr)
+            raise SystemExit(1)
+        try:
+            existing_spec = _load_spec_file(resume_path)
+        except Exception as exc:
+            print(f"[!] Cannot load resume spec {resume_path}: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+        if not isinstance(existing_spec, dict):
+            print(f"[!] Resume spec must contain a YAML/JSON mapping: {resume_path}", file=sys.stderr)
+            raise SystemExit(1)
+
+        restart = resume_project(resume_path)
+        print(f"\n[Resume plan for {resume_path}]\n")
+        print(format_project_state(restart))
+        if restart.get("message"):
+            print(f"\n{restart['message']}")
+        print("\nContinuing the saved requirements intake. Existing values are preserved as defaults.\n")
+
+        output_file = _absolute_path(output) if output else resume_path
+        project_name = _project_name_from_spec(existing_spec, resume_path.parent.name or "MyCircuit_v1")
+        spec, logger = _run_design_wizard(
+            output_file.parent,
+            project_name_override=project_name,
+            research_backend=research_backend,
+            research_depth=research_depth,
+            dry_run=dry_run,
+            existing_spec=existing_spec,
+        )
+        _finish(spec, logger, output_file, project_name)
         return
 
     print("\n" + "=" * 72)
@@ -4152,7 +4606,13 @@ def _handle_design_workflow(
         print()
 
         try:
-            proj_choice = int(input(f"Select (1-{len(projects)}): ").strip())
+            proj_choice = int(
+                _wizard_input(
+                    f"Select (1-{len(projects)}): ",
+                    dry_run=dry_run,
+                    default="1",
+                )
+            )
             if proj_choice < 1 or proj_choice > len(projects):
                 raise ValueError
             selected_project = projects[proj_choice - 1]
@@ -4160,17 +4620,10 @@ def _handle_design_workflow(
             print("[!] Invalid choice.\n")
             raise SystemExit(1)
 
-        # Load and show status
-        logger = DesignLogger(selected_project)
-        print()
-        logger.print_summary()
+        from .project_state import format_project_state, resume_project
 
-        print("\nNext steps:")
-        spec_path = selected_project / "design.yaml"
-        output_path = selected_project / "output"
-        print(f"  1. Validate: circuit-weaver validate {spec_path}")
-        print(f"  2. Generate: circuit-weaver generate {spec_path} -o {output_path}")
-        print(f"  3. Modify: Edit {spec_path} and re-validate\n")
+        print()
+        print(format_project_state(resume_project(selected_project)))
 
         raise SystemExit(0)
 
@@ -4178,15 +4631,34 @@ def _handle_design_workflow(
         # NEW CIRCUIT FLOW
         print("\n--- New Circuit ---\n")
 
-        # Capture project name FIRST
-        project_name = input("Project name (folder will be created with this name): ").strip()
-        if not project_name:
-            project_name = "MyCircuit_v1"
+        requested_output = _absolute_path(output) if output else None
+        if requested_output is not None and requested_output.exists() and requested_output.is_dir():
+            print(f"[!] Wizard output must be a file, not a directory: {requested_output}", file=sys.stderr)
+            raise SystemExit(1)
+        if requested_output is not None:
+            name_default = (
+                requested_output.parent.name
+                if requested_output.name.lower() in {"design.yaml", "design.yml", "design.json"}
+                else requested_output.stem
+            )
+        else:
+            name_default = "MyCircuit_v1"
+        project_name = _wizard_input(
+            "Project name (folder will be created with this name): ",
+            dry_run=dry_run,
+            default=name_default or "MyCircuit_v1",
+        )
 
-        # Create project directory
-        project_dir = Path.cwd() / project_name
-        if project_dir.exists():
-            response = input(f"\nFolder '{project_name}' already exists. Continue? (y/n): ").strip().lower()
+        # An explicit --output is authoritative. Without it, retain the
+        # established one-folder-per-project workflow.
+        project_dir = requested_output.parent if requested_output is not None else Path.cwd() / project_name
+        output_file = requested_output if requested_output is not None else project_dir / "design.yaml"
+        if project_dir.exists() and requested_output is None:
+            response = _wizard_input(
+                f"\nFolder '{project_name}' already exists. Continue? (y/n): ",
+                dry_run=dry_run,
+                default="y",
+            ).lower()
             if response != "y":
                 print("[!] Cancelled.\n")
                 raise SystemExit(1)
@@ -4200,30 +4672,10 @@ def _handle_design_workflow(
             project_name_override=project_name,
             research_backend=research_backend,
             research_depth=research_depth,
+            dry_run=dry_run,
         )
-
-        if spec and logger:
-            output_file = project_dir / "design.yaml"
-            output_file.write_text(spec_to_yaml_text(spec), encoding="utf-8", newline="")
-            print(f"\n[+] Design saved to {output_file.absolute()}")
-            print(f"[+] Workflow log saved to {logger.log_path}")
-            logger.log_step(
-                0, "design-wizard completed", {"output_file": str(output_file), "project_name": project_name}
-            )
-            logger.print_summary()
-
-            print("\nWorkflow commands:")
-            print(f"  circuit-weaver log-view {project_dir}     # View log entries")
-            print(f"  circuit-weaver log-status {project_dir}   # Show workflow summary\n")
-            print("Next steps:")
-            print(f"  1. Review the spec: cat {output_file}")
-            print(f"  2. Validate: circuit-weaver validate {output_file}")
-            print(f"  3. Generate: circuit-weaver generate {output_file} -o {project_dir / 'output'}")
-            print()
-
-            raise SystemExit(0)
-        else:
-            raise SystemExit(1)
+        _finish(spec, logger, output_file, project_name)
+        return
 
     else:
         print("[!] Invalid choice. Please enter 1 or 2.\n")
@@ -4235,6 +4687,8 @@ def _run_design_wizard(
     project_name_override: str | None = None,
     research_backend: str | None = None,
     research_depth: str | None = None,
+    dry_run: bool = False,
+    existing_spec: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, DesignLogger | None]:
     """Interactive offline design wizard — capture requirements, scaffold spec (no hardcoded options).
 
@@ -4246,6 +4700,8 @@ def _run_design_wizard(
         project_name_override: If provided, use this project name instead of asking
         research_backend: Effective backend for downstream agent research steps
         research_depth: Effective research depth profile for downstream agent research steps
+        dry_run: Use defaults for every prompt without reading stdin
+        existing_spec: Partially completed spec whose content must be preserved
 
     Returns:
         Tuple of (spec dict, logger) or (None, None) if cancelled
@@ -4258,13 +4714,8 @@ def _run_design_wizard(
         if research_depth is None:
             research_depth = resolve_depth(None)
 
-    project_dir = Path(project_dir)
+    project_dir = Path(project_dir).expanduser().resolve(strict=False)
     project_dir.mkdir(parents=True, exist_ok=True)
-    from .logging_bridge import get_design_logger as _get_design_logger
-    from .logging_bridge import init_logging as _init_logging
-
-    _init_logging(project_dir)
-    logger = _get_design_logger()
 
     print("\n" + "=" * 80)
     print("Circuit Weaver Design Wizard")
@@ -4281,12 +4732,18 @@ def _run_design_wizard(
         project_name = project_name_override
         print(f"Project: {project_name}\n")
     else:
-        project_name = input("Project name [MyDesign_v1]: ").strip()
-        if not project_name:
-            project_name = "MyDesign_v1"
+        metadata = existing_spec.get("metadata") if isinstance(existing_spec, dict) else None
+        default_name = (
+            existing_spec.get("project") if isinstance(existing_spec, dict) else None
+        ) or (metadata.get("title") if isinstance(metadata, dict) else None) or "MyDesign_v1"
+        project_name = _wizard_input(
+            "Project name [MyDesign_v1]: ",
+            dry_run=dry_run,
+            default=str(default_name),
+        )
 
-    # Create project folder + initialize logger IMMEDIATELY
-    project_dir = Path(project_name)
+    # The caller owns output placement. Never rebuild project_dir from an
+    # untrusted project name or silently redirect logs into the process CWD.
     project_dir.mkdir(parents=True, exist_ok=True)
     from .logging_bridge import get_design_logger, init_logging
 
@@ -4294,12 +4751,12 @@ def _run_design_wizard(
     logger = get_design_logger()
     assert logger is not None
 
-    print(f"✓ Project folder created: {project_dir.resolve()}")
-    print(f"✓ Logfile created: {project_dir / 'design.log'}")
+    print(f"[+] Project folder created: {project_dir.resolve()}")
+    print(f"[+] Logfile created: {project_dir / 'design.log'}")
     if research_backend:
-        print(f"✓ Downstream research backend: {research_backend} (used by agent workflows)")
+        print(f"[+] Downstream research backend: {research_backend} (used by agent workflows)")
     if research_depth:
-        print(f"✓ Downstream research depth: {research_depth} (used by agent workflows)")
+        print(f"[+] Downstream research depth: {research_depth} (used by agent workflows)")
     print()
     project_context = {"project_name": project_name}
     if research_backend:
@@ -4312,7 +4769,15 @@ def _run_design_wizard(
     print("-" * 80)
     print("STEP 1b: EXPERIENCE LEVEL")
     print("-" * 80)
-    experience = input("Experience (Beginner/Intermediate/Advanced/Professional) [Intermediate]: ").strip()
+    existing_metadata = existing_spec.get("metadata") if isinstance(existing_spec, dict) else None
+    saved_context = existing_metadata.get("wizard_context") if isinstance(existing_metadata, dict) else None
+    if not isinstance(saved_context, dict):
+        saved_context = {}
+    experience = _wizard_input(
+        "Experience (Beginner/Intermediate/Advanced/Professional) [Intermediate]: ",
+        dry_run=dry_run,
+        default=str(saved_context.get("experience") or "Intermediate"),
+    )
     experience = _normalize_wizard_experience(experience)
 
     logger.log_step(2, "Step 1b: Experience level captured", {"experience": experience})
@@ -4333,8 +4798,13 @@ def _run_design_wizard(
 
     responses: dict[str, str] = {}
     for key, prompt, default in _wizard_requirement_prompt_plan(experience):
-        value = input(prompt).strip()
-        responses[key] = value or default
+        prior = saved_context.get(key)
+        effective_default = str(prior) if prior is not None and str(prior) else default
+        responses[key] = _wizard_input(
+            prompt,
+            dry_run=dry_run,
+            default=effective_default,
+        )
 
     purpose = responses["purpose"]
     form_factor = responses["form_factor"]
@@ -4357,23 +4827,38 @@ def _run_design_wizard(
         {"interfaces": interfaces, "mcu": mcu, "components": components, "special_reqs": special_reqs},
     )
 
-    # Build a minimal, editable spec scaffold
-    spec: dict[str, Any] = {
-        "metadata": {
-            "title": project_name,
-            "version": "1.0",
-            "description": f"{purpose}. Created via circuit-weaver design-wizard (offline).",
-            "research_backend": research_backend or "standard",
-            "research_depth": research_depth or "normal",
-        },
-        "interfaces": {
+    # Build a minimal editable scaffold, or enrich a resumed document without
+    # replacing its blocks, interfaces, constraints, overrides, or custom keys.
+    spec: dict[str, Any] = copy.deepcopy(existing_spec) if existing_spec is not None else {}
+    metadata = spec.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        spec["metadata"] = metadata
+    metadata.setdefault("title", project_name)
+    metadata.setdefault("version", "1.0")
+    metadata.setdefault("description", f"{purpose}. Created via circuit-weaver design-wizard (offline).")
+    metadata["research_backend"] = research_backend or str(metadata.get("research_backend") or "standard")
+    metadata["research_depth"] = research_depth or str(metadata.get("research_depth") or "normal")
+    metadata["wizard_context"] = {"experience": experience, **responses}
+
+    # Canonical consumers read top-level metadata. Keep the nested wizard
+    # metadata for backwards compatibility with existing agent workflows.
+    spec.setdefault("project", project_name)
+    spec.setdefault("version", str(metadata.get("version") or "1.0"))
+    spec.setdefault("description", str(metadata.get("description") or ""))
+    spec.setdefault(
+        "interfaces",
+        {
             "power_in": {
                 "purpose": f"Input: {input_power}",
                 "voltage": 3.3,  # placeholder
                 "current_budget_ma": 500,
             },
         },
-        "blocks": {
+    )
+    spec.setdefault(
+        "blocks",
+        {
             "U1_power": {
                 "ref": "U1",
                 "section": "power",
@@ -4386,7 +4871,7 @@ def _run_design_wizard(
                 },
             },
         },
-    }
+    )
 
     # Print summary in form-like table
     print("\n" + "=" * 80)

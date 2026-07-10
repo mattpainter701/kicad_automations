@@ -1732,6 +1732,13 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         pin_nets=pin_nets,
         bypass_caps=[],
         recommended_bypass=list(ic_data.get("recommended_bypass") or []),
+        datasheet_url=str(ic_data.get("datasheet_url") or ""),
+        reference_layout_url=str(ic_data.get("reference_layout_url") or ""),
+        official_references=[
+            {str(key): str(value) for key, value in item.items()}
+            for item in (ic_data.get("official_references") or [])
+            if isinstance(item, dict)
+        ],
         explicit_no_connects=explicit_ncs,
         unmapped_required_pins=unmapped_required_pins,
         annotations=[f"{ic_data.get('description', ic_name)}"],

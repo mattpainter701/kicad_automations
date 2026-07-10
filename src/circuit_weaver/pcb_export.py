@@ -22,6 +22,37 @@ from .component_db import ComponentDef
 
 _logger = logging.getLogger(__name__)
 
+_WINDOWS_RESERVED_FILENAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
+
+
+def _safe_project_filename(project_name: str) -> str:
+    """Return a portable basename that cannot escape the output directory."""
+
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', "_", str(project_name).strip())
+    cleaned = cleaned.rstrip(" .")
+    if not cleaned or cleaned in {".", ".."}:
+        cleaned = "project"
+    if cleaned.split(".", 1)[0].upper() in _WINDOWS_RESERVED_FILENAMES:
+        cleaned = f"_{cleaned}"
+    return cleaned
+
+
+def _kicad_string(value: object) -> str:
+    """Escape an arbitrary value for a quoted KiCad S-expression string."""
+
+    # KiCad accepts escaped quotes and backslashes. Normalize control
+    # characters to spaces so user-controlled values cannot create new tokens
+    # or lines and the preview remains portable across KiCad versions.
+    normalized = "".join(" " if ord(char) < 32 or ord(char) == 127 else char for char in str(value))
+    return normalized.replace("\\", "\\\\").replace('"', '\\"')
+
 # KiCad 10 validates fixed layers against canonical ids/names when loading a
 # board. The older KiCad 5-era numbering/casing used here previously emitted
 # B.Cu=31 and ECO1.User/ECO2.User, which triggers "not fixed layer hash" load
@@ -250,13 +281,13 @@ def _footprint_sexpr(
     else:
         fp_lib = f"Placement_Preview:Missing_{ref}"
     lines = [
-        f'  (footprint "{fp_lib}"',
+        f'  (footprint "{_kicad_string(fp_lib)}"',
         '    (layer "F.Cu")',
         f"    (at {x:.2f} {y:.2f})",
-        f'    (property "Reference" "{ref}" (at 0 -2 0)',
+        f'    (property "Reference" "{_kicad_string(ref)}" (at 0 -2 0)',
         "      (effects (font (size 1.0 1.0) (thickness 0.15)))",
         "    )",
-        f'    (property "Value" "{value}" (at 0 2 0)',
+        f'    (property "Value" "{_kicad_string(value)}" (at 0 2 0)',
         "      (effects (font (size 1.0 1.0) (thickness 0.15)))",
         "    )",
     ]
@@ -288,7 +319,10 @@ def generate_pcb_placement(
     Args:
         components: list of ComponentDef instances (same as passed to generate_from_components)
         output_path: directory to write the PCB file into
-        project_name: used for the filename ({project_name}_placement.kicad_pcb)
+        project_name: used for the filename
+            (``{project_name}_placement_preview.kicad_pcb``).  The explicit
+            suffix is part of the safety contract: this artifact has no pads
+            and must never be presented as a routable or fabrication-ready PCB.
 
     Returns:
         Tuple of (path_to_pcb_file, placements_dict) where:
@@ -419,7 +453,7 @@ def generate_pcb_placement(
     # Net declarations
     parts.append('  (net 0 "")')
     for name, idx in sorted(net_map.items(), key=lambda kv: kv[1]):
-        parts.append(f'  (net {idx} "{name}")')
+        parts.append(f'  (net {idx} "{_kicad_string(name)}")')
 
     # Net classes with per-net membership
     default_nets = net_classes.get("Default", [])
@@ -430,19 +464,19 @@ def generate_pcb_placement(
     parts.append("    (clearance 0.2) (trace_width 0.2) (via_dia 0.6) (via_drill 0.3)")
     parts.append("    (uvia_dia 0.3) (uvia_drill 0.1)")
     for net in default_nets:
-        parts.append(f'    (add_net "{net}")')
+        parts.append(f'    (add_net "{_kicad_string(net)}")')
     parts.append("  )")
     parts.append('  (net_class "Power_1A" "Power nets (1A)"')
     parts.append("    (clearance 0.2) (trace_width 0.5) (via_dia 0.8) (via_drill 0.4)")
     parts.append("    (uvia_dia 0.3) (uvia_drill 0.1)")
     for net in power1a_nets:
-        parts.append(f'    (add_net "{net}")')
+        parts.append(f'    (add_net "{_kicad_string(net)}")')
     parts.append("  )")
     parts.append('  (net_class "Power_3A" "High-current power nets (3A)"')
     parts.append("    (clearance 0.25) (trace_width 1.0) (via_dia 1.0) (via_drill 0.5)")
     parts.append("    (uvia_dia 0.3) (uvia_drill 0.1)")
     for net in power3a_nets:
-        parts.append(f'    (add_net "{net}")')
+        parts.append(f'    (add_net "{_kicad_string(net)}")')
     parts.append("  )")
 
     # Footprints
@@ -454,7 +488,8 @@ def generate_pcb_placement(
 
     parts.append(")")
 
-    pcb_file = output_path / f"{project_name}_placement.kicad_pcb"
+    safe_project_name = _safe_project_filename(project_name)
+    pcb_file = output_path / f"{safe_project_name}_placement_preview.kicad_pcb"
     pcb_file.write_text("\n".join(parts), encoding="utf-8")
 
     _logger.info("PCB placement hint: %s", pcb_file)

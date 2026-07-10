@@ -1769,7 +1769,11 @@ def layout_sheet(
 
             for idx, bc in enumerate(comp.bypass_caps):
                 sym_type, ref_prefix = _bypass_sym_type_and_prefix(bc.value, bc.footprint, bc.role)
-                cap_ref = _next_ref(ref_prefix)
+                cap_ref = str(getattr(bc, "source_ref", "") or "")
+                if cap_ref:
+                    _reserve_ref(cap_ref)
+                else:
+                    cap_ref = _next_ref(ref_prefix)
                 col = idx % cols
                 row = idx // cols
                 cap_x = snap(x_origin + col * col_pitch)
@@ -1806,7 +1810,11 @@ def layout_sheet(
             strap_pitch = _strap_pitch(comp)
 
             for strap in comp.straps:
-                res_ref = _next_ref("R")
+                res_ref = str(getattr(strap, "source_ref", "") or "")
+                if res_ref:
+                    _reserve_ref(res_ref)
+                else:
+                    res_ref = _next_ref("R")
                 layout.placed_passives.append(
                     PlacedPassive(
                         ref=res_ref,
@@ -1975,6 +1983,7 @@ def split_sheet_allocation(sheet_alloc) -> list | None:
                 sheet_annotations=list(sheet_alloc.sheet_annotations),
                 lock_paper_size=False,
                 presentation_wiring_policy=sheet_alloc.presentation_wiring_policy,
+                explicit_group=sheet_alloc.explicit_group,
             )
         )
     return halves

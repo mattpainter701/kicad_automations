@@ -1,80 +1,401 @@
-"""Freerouting PCB autorouting integration.
+"""Fail-closed Freerouting integration for KiCad boards and Specctra files.
 
-Optional best-effort wrapper around Freerouting for automated PCB routing.
-Simple circuits route 100% automatically; complex circuits ~90%.
+The supported routing contract is Specctra DSN input to Specctra SES output.
+Callers may provide a ``.dsn`` directly.  For a real ``.kicad_pcb`` input we
+use ``kicad-cli pcb export specctra`` only when the installed KiCad build
+advertises that capability.  Current stock KiCad builds may not expose the
+GUI's Specctra exporter through ``kicad-cli``; in that case the error explains
+how to export a DSN in PCB Editor and retry.
 
-The wrapper fails closed on boards that cannot be routed: the engine's own
-``*_placement.kicad_pcb`` export is a placement *preview* with zero pads
-(KiCad forward-annotation is the authoritative source of pads), so routing
-it would silently produce garbage. ``preflight_pcb`` detects that case and
-any other pad-less/net-less board before Freerouting is ever invoked.
-
-Routing pipeline (T240):
-
-1. Preflight the board (pads, nets, placement-preview marker).
-2. When ``kicad-cli`` is available, export a Specctra DSN
-   (``kicad-cli pcb export specctra``) and run Freerouting on it
-   (``-de board.dsn -do board.ses``). The resulting ``.ses`` session file
-   is imported in KiCad via *File → Import → Specctra Session*.
-3. Without ``kicad-cli``, fall back to invoking Freerouting directly on
-   the ``.kicad_pcb`` (some builds accept it).
-
-Freerouting installation:
-  Homebrew: brew install freerouting
-  Manual: Download from https://github.com/freerouting/freerouting/releases
-
-Usage:
-    from circuit_weaver.autoroute import autoroute_pcb
-    result = autoroute_pcb("board.kicad_pcb", effort="medium")
-    print(result["status"])  # "ok" or "error"
+Circuit Weaver placement previews are always rejected: they contain placement
+hints but intentionally contain no real pads.  Circuit Weaver never invokes
+Freerouting's ``-dr`` option as a board input: upstream defines it as a design
+rules file, not a direct KiCad routing mode.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import math
+import os
 import re
 import shutil
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Freerouting "-mp" max-passes budget per effort level.
-_EFFORT_PASSES = {
-    "fast": 10,
-    "medium": 25,
-    "high": 99,
-}
-
+_EFFORT_PASSES = {"fast": 100, "medium": 500, "high": 1000}
 _PREVIEW_GENERATOR_RE = re.compile(r'\(generator\s+"[^"]*placement_preview[^"]*"\)')
-_PAD_RE = re.compile(r"\(pad\s")
 _FOOTPRINT_RE = re.compile(r"\(footprint\s")
-# Board-level net declarations: (net 1 "GND") — net 0 is the unnamed net.
+_PAD_RE = re.compile(r"\(pad\s")
 _NET_DECL_RE = re.compile(r'\(net\s+(\d+)\s+"([^"]*)"\)')
+_SPECCTRA_TOKEN = r'"(?:\\.|[^"\\])*"|[^\s()]+'
+_FREEROUTING_VERSION_RE = re.compile(r"\bFreerouting\s+v?([0-9]+(?:\.[0-9]+){1,3}(?:[-+][\w.-]+)?)", re.IGNORECASE)
+_MIN_ARTIFACT_BYTES = 48
+def _result_error(message: str, **extra: Any) -> dict[str, Any]:
+    return {"status": "error", "message": message, **extra}
+
+
+def _iter_sexpr_blocks(text: str, keyword: str):
+    """Yield balanced top-level blocks beginning with ``(keyword``.
+
+    This is intentionally a small scanner, not a KiCad parser.  It is enough
+    to distinguish net declarations inside pads from board-level declarations
+    without accepting arbitrary text that happens to contain ``(pad``.
+    """
+    target = keyword.casefold()
+    index = 0
+    quoted = False
+    escaped = False
+    while index < len(text):
+        char = text[index]
+        if escaped:
+            escaped = False
+            index += 1
+            continue
+        if quoted and char == "\\":
+            escaped = True
+            index += 1
+            continue
+        if char == '"':
+            quoted = not quoted
+            index += 1
+            continue
+        if quoted or char != "(":
+            index += 1
+            continue
+
+        name_start = index + 1
+        name_end = name_start + len(keyword)
+        delimiter = text[name_end : name_end + 1]
+        invalid_delimiter = delimiter and not delimiter.isspace() and delimiter != ")"
+        if text[name_start:name_end].casefold() != target or invalid_delimiter:
+            index += 1
+            continue
+
+        block_start = index
+        depth = 0
+        block_quoted = False
+        block_escaped = False
+        for block_end in range(block_start, len(text)):
+            block_char = text[block_end]
+            if block_escaped:
+                block_escaped = False
+                continue
+            if block_quoted and block_char == "\\":
+                block_escaped = True
+                continue
+            if block_char == '"':
+                block_quoted = not block_quoted
+                continue
+            if block_quoted:
+                continue
+            if block_char == "(":
+                depth += 1
+            elif block_char == ")":
+                depth -= 1
+                if depth == 0:
+                    yield text[block_start : block_end + 1]
+                    index = block_end + 1
+                    break
+        else:
+            return
+
+
+def _first_sexpr_block(text: str, keyword: str) -> str | None:
+    return next(iter(_iter_sexpr_blocks(text, keyword)), None)
+
+
+def _block_payload(block: str, keyword: str) -> str:
+    opener = re.match(rf"\({re.escape(keyword)}(?=\s|\))", block, re.IGNORECASE)
+    if opener is None or not block.endswith(")"):
+        return ""
+    return block[opener.end() : -1].strip()
+
+
+def _decode_specctra_token(token: str) -> str:
+    if token.startswith('"') and token.endswith('"'):
+        try:
+            value = json.loads(token)
+        except json.JSONDecodeError:
+            value = token[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        return str(value)
+    return token
+
+
+def _first_payload_token(block: str, keyword: str) -> str | None:
+    match = re.match(_SPECCTRA_TOKEN, _block_payload(block, keyword))
+    return _decode_specctra_token(match.group(0)) if match else None
+
+
+def _validate_dsn_semantics(root: str) -> tuple[dict[str, Any] | None, str | None]:
+    structure_blocks = list(_iter_sexpr_blocks(root, "structure"))
+    placement_blocks = list(_iter_sexpr_blocks(root, "placement"))
+    network_blocks = list(_iter_sexpr_blocks(root, "network"))
+    if len(structure_blocks) != 1 or len(placement_blocks) != 1 or len(network_blocks) != 1:
+        return None, "DSN must contain exactly one structure, placement, and network section"
+
+    structure = structure_blocks[0]
+    if not list(_iter_sexpr_blocks(structure, "layer")):
+        return None, "DSN structure section contains no layers"
+    if _first_sexpr_block(structure, "boundary") is None:
+        return None, "DSN structure section contains no board boundary"
+
+    placement = placement_blocks[0]
+    if not list(_iter_sexpr_blocks(placement, "component")):
+        return None, "DSN placement section contains no components"
+    if not list(_iter_sexpr_blocks(placement, "place")):
+        return None, "DSN placement section contains no placed component instances"
+
+    network = network_blocks[0]
+    net_blocks = list(_iter_sexpr_blocks(network, "net"))
+    if not net_blocks:
+        return None, "DSN network section contains no nets"
+    net_names: set[str] = set()
+    for net_block in net_blocks:
+        name = _first_payload_token(net_block, "net")
+        if not name:
+            return None, "DSN network contains a net without a name"
+        if name in net_names:
+            return None, f"DSN network declares duplicate net {name!r}"
+        pins = _first_sexpr_block(net_block, "pins")
+        if pins is None or not _block_payload(pins, "pins"):
+            return None, f"DSN net {name!r} contains no pins"
+        net_names.add(name)
+
+    design_name = _first_payload_token(root, "pcb")
+    if not design_name:
+        return None, "DSN pcb root is missing its design name"
+    return {"design_name": design_name, "nets": net_names}, None
+
+
+def _validate_ses_semantics(root: str) -> tuple[dict[str, Any] | None, str | None]:
+    routes_blocks = list(_iter_sexpr_blocks(root, "routes"))
+    if len(routes_blocks) != 1:
+        return None, "SES must contain exactly one routes section"
+    routes = routes_blocks[0]
+    if _first_sexpr_block(routes, "resolution") is None:
+        return None, "SES routes section contains no resolution"
+    network_out_blocks = list(_iter_sexpr_blocks(routes, "network_out"))
+    if len(network_out_blocks) != 1:
+        return None, "SES routes section must contain exactly one network_out section"
+
+    net_blocks = list(_iter_sexpr_blocks(network_out_blocks[0], "net"))
+    if not net_blocks:
+        return None, "SES network_out section contains no routed nets"
+    net_names: set[str] = set()
+    for net_block in net_blocks:
+        name = _first_payload_token(net_block, "net")
+        if not name:
+            return None, "SES network_out contains a net without a name"
+        if name in net_names:
+            return None, f"SES network_out declares duplicate net {name!r}"
+        if _first_sexpr_block(net_block, "wire") is None and _first_sexpr_block(net_block, "via") is None:
+            return None, f"SES routed net {name!r} contains neither wire nor via data"
+        net_names.add(name)
+
+    session_name = _first_payload_token(root, "session")
+    if not session_name:
+        return None, "SES session root is missing its design name"
+    base_design_block = _first_sexpr_block(root, "base_design")
+    base_design = _first_payload_token(base_design_block, "base_design") if base_design_block else None
+    if not base_design:
+        return None, "SES session is missing its base_design reference"
+    return {"design_name": session_name, "base_design": base_design, "nets": net_names}, None
+
+
+def _sexpr_is_balanced(text: str) -> bool:
+    depth = 0
+    quoted = False
+    escaped = False
+    for char in text:
+        if escaped:
+            escaped = False
+            continue
+        if quoted and char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            quoted = not quoted
+            continue
+        if quoted:
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0 and not quoted
+
+
+def _validate_specctra_artifact(
+    path: str | Path,
+    kind: str,
+    *,
+    source_dsn: str | Path | None = None,
+) -> dict[str, Any]:
+    """Validate a DSN or SES artifact before it crosses a workflow boundary."""
+    artifact = Path(path)
+    if kind not in {"dsn", "ses"}:
+        raise ValueError(f"Unsupported Specctra artifact kind: {kind}")
+    if not artifact.exists() or not artifact.is_file():
+        return {"valid": False, "reason": f"{kind.upper()} output was not created: {artifact}"}
+
+    size = artifact.stat().st_size
+    if size < _MIN_ARTIFACT_BYTES:
+        return {
+            "valid": False,
+            "reason": f"{kind.upper()} artifact is empty or implausibly small ({size} bytes): {artifact}",
+            "size_bytes": size,
+        }
+
+    try:
+        text = artifact.read_text(encoding="utf-8", errors="strict")
+    except (OSError, UnicodeError) as exc:
+        return {"valid": False, "reason": f"Could not read {kind.upper()} artifact: {exc}", "size_bytes": size}
+
+    if "\x00" in text:
+        return {
+            "valid": False,
+            "reason": f"{kind.upper()} artifact contains NUL bytes",
+            "size_bytes": size,
+        }
+    if not _sexpr_is_balanced(text):
+        return {
+            "valid": False,
+            "reason": f"{kind.upper()} artifact has unbalanced or unterminated S-expressions",
+            "size_bytes": size,
+        }
+    root_keyword = "pcb" if kind == "dsn" else "session"
+    roots = list(_iter_sexpr_blocks(text, root_keyword))
+    if len(roots) != 1 or roots[0].strip() != text.strip():
+        return {
+            "valid": False,
+            "reason": f"{kind.upper()} artifact must contain exactly one {root_keyword} root expression",
+            "size_bytes": size,
+        }
+
+    details, semantic_error = (
+        _validate_dsn_semantics(roots[0]) if kind == "dsn" else _validate_ses_semantics(roots[0])
+    )
+    if semantic_error or details is None:
+        return {"valid": False, "reason": semantic_error, "size_bytes": size}
+
+    if kind == "ses" and source_dsn is not None:
+        dsn_path = Path(source_dsn)
+        dsn_validation = _validate_specctra_artifact(dsn_path, "dsn")
+        if not dsn_validation["valid"]:
+            return {
+                "valid": False,
+                "reason": f"Cannot correlate SES with invalid source DSN: {dsn_validation['reason']}",
+                "size_bytes": size,
+            }
+        dsn_nets = set(dsn_validation["nets"])
+        unexpected_nets = sorted(set(details["nets"]) - dsn_nets)
+        if unexpected_nets:
+            return {
+                "valid": False,
+                "reason": f"SES contains net(s) absent from source DSN: {', '.join(unexpected_nets)}",
+                "size_bytes": size,
+            }
+
+        dsn_design = str(dsn_validation["design_name"])
+        accepted_designs = {dsn_path.stem.casefold(), dsn_design.casefold()}
+        if str(details["design_name"]).casefold() not in accepted_designs:
+            return {
+                "valid": False,
+                "reason": (
+                    f"SES session {details['design_name']!r} does not match source DSN "
+                    f"design {dsn_design!r}"
+                ),
+                "size_bytes": size,
+            }
+        base_name = str(details["base_design"]).replace("\\", "/").rsplit("/", 1)[-1]
+        base_stem = Path(base_name).stem
+        accepted_bases = {dsn_path.name.casefold(), dsn_path.stem.casefold(), dsn_design.casefold()}
+        if base_name.casefold() not in accepted_bases and base_stem.casefold() not in accepted_bases:
+            return {
+                "valid": False,
+                "reason": (
+                    f"SES base_design {details['base_design']!r} does not reference source DSN "
+                    f"{dsn_path.name!r}"
+                ),
+                "size_bytes": size,
+            }
+
+    result = {
+        "valid": True,
+        "path": str(artifact),
+        "kind": kind,
+        "size_bytes": size,
+        "design_name": details["design_name"],
+        "nets": sorted(details["nets"]),
+        "net_count": len(details["nets"]),
+    }
+    if kind == "ses":
+        result["base_design"] = details["base_design"]
+    return result
 
 
 def preflight_pcb(pcb_path: str | Path) -> dict[str, Any]:
-    """Check that a .kicad_pcb is actually routable before autorouting.
-
-    Returns ``{"routable": bool, "reason": str, "stats": {...}}``. A board
-    is routable when it has at least one footprint pad and at least one
-    named net. The engine's own placement-preview export (zero pads by
-    design) is called out with a specific remediation message.
-    """
+    """Check that a real ``.kicad_pcb`` has routable pad/net connectivity."""
     path = Path(pcb_path)
-    text = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix.lower() != ".kicad_pcb":
+        return {"routable": False, "reason": f"Expected a .kicad_pcb file, got: {path.name}", "stats": {}}
+    if not path.exists() or not path.is_file():
+        return {"routable": False, "reason": f"PCB file not found: {path}", "stats": {}}
 
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return {"routable": False, "reason": f"Could not read PCB file {path}: {exc}", "stats": {}}
     footprints = len(_FOOTPRINT_RE.findall(text))
     pads = len(_PAD_RE.findall(text))
-    named_nets = {name for num, name in _NET_DECL_RE.findall(text) if name and num != "0"}
-    is_preview = bool(_PREVIEW_GENERATOR_RE.search(text))
+    board_level_text = text
+    for footprint_block in _iter_sexpr_blocks(text, "footprint"):
+        board_level_text = board_level_text.replace(footprint_block, "", 1)
+    declared_nets: dict[str, str] = {}
+    declaration_error: str | None = None
+    for number, name in _NET_DECL_RE.findall(board_level_text):
+        if number == "0" or not name:
+            continue
+        prior_name = declared_nets.get(number)
+        if prior_name is not None and prior_name != name:
+            declaration_error = f"Board net number {number} is declared with conflicting names"
+            break
+        prior_number = next((key for key, value in declared_nets.items() if value == name and key != number), None)
+        if prior_number is not None:
+            declaration_error = f"Board net {name!r} is declared under both {prior_number} and {number}"
+            break
+        declared_nets[number] = name
+    named_nets = set(declared_nets.values())
+    connected_pad_nets: set[str] = set()
+    invalid_pad_net: tuple[str, str] | None = None
+    for pad_block in _iter_sexpr_blocks(text, "pad"):
+        for number, name in _NET_DECL_RE.findall(pad_block):
+            if number == "0":
+                continue
+            if declared_nets.get(number) != name:
+                invalid_pad_net = (number, name)
+                break
+            connected_pad_nets.add(name)
+        if invalid_pad_net is not None:
+            break
 
+    marker_preview = bool(_PREVIEW_GENERATOR_RE.search(text))
+    filename_preview = path.name.lower().endswith("_placement_preview.kicad_pcb")
+    is_preview = marker_preview or filename_preview
     stats = {
         "footprints": footprints,
         "pads": pads,
         "nets": len(named_nets),
+        "connected_pad_nets": len(connected_pad_nets),
         "placement_preview": is_preview,
     }
 
@@ -82,287 +403,687 @@ def preflight_pcb(pcb_path: str | Path) -> dict[str, Any]:
         return {
             "routable": False,
             "reason": (
-                "This file is a Circuit Weaver placement preview — it has no pads "
-                "by design and cannot be routed. Open the generated schematic in "
-                "KiCad, forward-annotate to a real PCB (Tools → Update PCB from "
-                "Schematic), then autoroute that board."
+                "This file is a Circuit Weaver placement preview; it is not a routed-board source. "
+                "Open the generated schematic in KiCad, use Tools -> Update PCB from Schematic, then "
+                "export a Specctra DSN from PCB Editor and autoroute that .dsn file."
             ),
             "stats": stats,
         }
     if footprints == 0:
-        return {
-            "routable": False,
-            "reason": "Board has no footprints — nothing to route.",
-            "stats": stats,
-        }
+        return {"routable": False, "reason": "Board has no footprints; nothing can be routed.", "stats": stats}
     if pads == 0:
         return {
             "routable": False,
-            "reason": (
-                "Board footprints have no pads — routing would produce nothing. "
-                "Forward-annotate from the schematic in KiCad to populate real pads."
-            ),
+            "reason": "Board footprints have no pads; update the PCB from the schematic first.",
             "stats": stats,
         }
     if not named_nets:
         return {
             "routable": False,
+            "reason": "Board declares no named nets; update the PCB from the schematic first.",
+            "stats": stats,
+        }
+    if declaration_error:
+        return {"routable": False, "reason": declaration_error, "stats": stats}
+    if invalid_pad_net is not None:
+        number, name = invalid_pad_net
+        return {
+            "routable": False,
             "reason": (
-                "Board declares no named nets — there is no connectivity to route. "
-                "Forward-annotate from the schematic in KiCad first."
+                f"Board pad references undeclared or mismatched net {number} {name!r}; "
+                "update the PCB from the schematic before routing."
             ),
+            "stats": stats,
+        }
+    if not connected_pad_nets:
+        return {
+            "routable": False,
+            "reason": "Board pads are not assigned to named nets; update the PCB from the schematic first.",
             "stats": stats,
         }
     return {"routable": True, "reason": "", "stats": stats}
 
 
-def _find_freerouting_jar() -> Path | None:
-    """Locate a manually installed Freerouting JAR file."""
-    # Check user home directory
-    home_jar = Path.home() / ".freerouting" / "freerouting.jar"
-    if home_jar.exists():
-        return home_jar
+def _resolve_executable(candidate: str | Path | None) -> str | None:
+    if not candidate:
+        return None
+    value = os.path.expandvars(os.path.expanduser(str(candidate).strip().strip('"')))
+    if not value:
+        return None
+    path = Path(value)
+    if path.exists() and path.is_file():
+        return str(path.resolve())
+    return shutil.which(value)
 
+
+def _find_java() -> str | None:
+    for candidate in (os.getenv("CIRCUIT_WEAVER_JAVA"), os.getenv("JAVA")):
+        resolved = _resolve_executable(candidate)
+        if resolved:
+            return resolved
+    java_home = os.getenv("JAVA_HOME")
+    if java_home:
+        executable = "java.exe" if os.name == "nt" else "java"
+        resolved = _resolve_executable(Path(java_home) / "bin" / executable)
+        if resolved:
+            return resolved
+    return shutil.which("java")
+
+
+def _find_freerouting_jar(explicit_path: str | Path | None = None) -> Path | None:
+    """Locate a Freerouting JAR from an explicit path, environment, or home."""
+    candidates = (
+        explicit_path,
+        os.getenv("CIRCUIT_WEAVER_FREEROUTING"),
+        os.getenv("FREEROUTING_PATH"),
+        Path.home() / ".freerouting" / "freerouting.jar",
+    )
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(os.path.expandvars(os.path.expanduser(str(candidate).strip().strip('"'))))
+        if path.suffix.lower() == ".jar" and path.exists() and path.is_file():
+            return path.resolve()
     return None
 
 
-def _find_freerouting_command() -> list[str] | None:
-    """Return the command prefix used to invoke Freerouting.
+def _find_freerouting_command(explicit_path: str | Path | None = None) -> list[str] | None:
+    """Return a shell-free command prefix for Freerouting."""
+    if explicit_path:
+        explicit = str(explicit_path)
+        if explicit.lower().endswith(".jar"):
+            jar = _find_freerouting_jar(explicit_path)
+            java = _find_java()
+            return [java, "-jar", str(jar)] if jar is not None and java else None
+        resolved = _resolve_executable(explicit_path)
+        return [resolved] if resolved else None
 
-    Manual installs are usually a JAR under ``~/.freerouting`` and must be
-    launched with ``java -jar``. Package-manager installs (for example
-    Homebrew) expose a ``freerouting`` launcher on PATH; running those through
-    ``java -jar /path/to/freerouting`` fails because the launcher is a script,
-    not a JAR.
-    """
-    jar = _find_freerouting_jar()
+    jar = _find_freerouting_jar(explicit_path)
     if jar is not None:
-        return ["java", "-jar", str(jar)]
+        java = _find_java()
+        if java:
+            return [java, "-jar", str(jar)]
 
-    exe = shutil.which("freerouting")
-    if exe:
-        return [exe]
+    candidates = (explicit_path, os.getenv("CIRCUIT_WEAVER_FREEROUTING"), os.getenv("FREEROUTING_PATH"))
+    for candidate in candidates:
+        if candidate and not str(candidate).lower().endswith(".jar"):
+            resolved = _resolve_executable(candidate)
+            if resolved:
+                return [resolved]
+    launcher = shutil.which("freerouting")
+    return [launcher] if launcher else None
+
+
+def _find_kicad_cli(explicit_path: str | Path | None = None) -> str | None:
+    """Locate kicad-cli from an explicit path, environment, or PATH."""
+    for candidate in (
+        explicit_path,
+        os.getenv("CIRCUIT_WEAVER_KICAD_CLI"),
+        os.getenv("KICAD_CLI"),
+        "kicad-cli",
+    ):
+        resolved = _resolve_executable(candidate)
+        if resolved:
+            return resolved
     return None
 
 
-def _find_kicad_cli() -> str | None:
-    """Locate the kicad-cli executable for Specctra DSN export."""
-    return shutil.which("kicad-cli")
+def _kicad_cli_supports_specctra(kicad_cli: str, timeout_seconds: float = 10) -> bool:
+    """Probe the installed CLI instead of assuming it exposes GUI exporters."""
+    try:
+        result = subprocess.run(
+            [kicad_cli, "pcb", "export", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and "specctra" in f"{result.stdout}\n{result.stderr}".lower()
 
 
-def _parse_routing_stats(output_text: str) -> dict[str, int]:
-    """Best-effort extraction of trace/via/incomplete counts from Freerouting output."""
-    stats = {"traces": 0, "vias": 0, "incomplete": 0}
-    trace_match = re.search(r"(\d+)\s+traces?", output_text, re.IGNORECASE)
-    via_match = re.search(r"(\d+)\s+vias?", output_text, re.IGNORECASE)
-    incomplete_match = re.search(r"(\d+)\s+(?:incompletes?|unrouted)", output_text, re.IGNORECASE)
-    if trace_match:
-        stats["traces"] = int(trace_match.group(1))
-    if via_match:
-        stats["vias"] = int(via_match.group(1))
-    if incomplete_match:
-        stats["incomplete"] = int(incomplete_match.group(1))
+def _validate_timeout(timeout_seconds: float, label: str) -> str | None:
+    if not isinstance(timeout_seconds, (int, float)) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        return f"{label} timeout must be a finite number greater than zero"
+    return None
+
+
+def _prepare_destination(path: Path, *, overwrite: bool) -> str | None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return f"Could not create output directory {path.parent}: {exc}"
+    if path.exists():
+        if not path.is_file():
+            return f"Output path exists but is not a file: {path}"
+        if not overwrite:
+            return f"Output already exists; pass overwrite=True (CLI: --overwrite) to replace it: {path}"
+    return None
+
+
+def _staging_path(destination: Path) -> Path:
+    return destination.with_name(
+        f".{destination.stem}.cw-stage-{uuid.uuid4().hex}{destination.suffix}"
+    )
+
+
+def _remove_staging_file(path: Path) -> None:
+    try:
+        if path.exists() and path.is_file():
+            path.unlink()
+    except OSError:
+        log.warning("Could not remove routing staging file %s", path, exc_info=True)
+
+
+def _publish_staged_file(staging: Path, destination: Path, *, overwrite: bool) -> str | None:
+    if destination.exists() and not overwrite:
+        return f"Output appeared while routing; refusing to replace it without --overwrite: {destination}"
+    try:
+        os.replace(staging, destination)
+    except OSError as exc:
+        return f"Could not atomically publish output {destination}: {exc}"
+    return None
+
+
+def export_dsn(
+    pcb_path: str | Path,
+    dsn_path: str | Path,
+    timeout_seconds: float = 120,
+    *,
+    kicad_cli_path: str | Path | None = None,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    """Export and validate Specctra DSN when the installed CLI supports it."""
+    timeout_error = _validate_timeout(timeout_seconds, "Specctra export")
+    if timeout_error:
+        return _result_error(timeout_error)
+
+    destination = Path(dsn_path)
+    if destination.suffix.lower() != ".dsn":
+        return _result_error(f"Specctra export output must end in .dsn: {destination}")
+    prepare_error = _prepare_destination(destination, overwrite=overwrite)
+    if prepare_error:
+        return _result_error(prepare_error)
+
+    preflight = preflight_pcb(pcb_path)
+    if not preflight["routable"]:
+        return _result_error(f"Board failed DSN-export preflight: {preflight['reason']}", preflight=preflight)
+
+    kicad_cli = _find_kicad_cli(kicad_cli_path)
+    if kicad_cli is None:
+        return _result_error(
+            "kicad-cli was not found. Export Specctra DSN in KiCad PCB Editor, then pass the .dsn to autoroute."
+        )
+    if not _kicad_cli_supports_specctra(kicad_cli, timeout_seconds=min(timeout_seconds, 10)):
+        return _result_error(
+            "This kicad-cli build does not advertise Specctra DSN export. Export Specctra DSN in KiCad "
+            "PCB Editor, then pass the .dsn file to autoroute."
+        )
+
+    staging = _staging_path(destination)
+    try:
+        result = subprocess.run(
+            [kicad_cli, "pcb", "export", "specctra", "-o", str(staging), str(pcb_path)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        _remove_staging_file(staging)
+        return _result_error("kicad-cli Specctra export timed out")
+    except OSError as exc:
+        _remove_staging_file(staging)
+        return _result_error(f"Could not run kicad-cli: {exc}")
+    try:
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+            return _result_error(f"kicad-cli Specctra export failed: {detail}")
+
+        validation = _validate_specctra_artifact(staging, "dsn")
+        if not validation["valid"]:
+            return _result_error(f"kicad-cli produced an invalid DSN: {validation['reason']}", artifact=validation)
+        publish_error = _publish_staged_file(staging, destination, overwrite=overwrite)
+        if publish_error:
+            return _result_error(publish_error)
+        validation["path"] = str(destination)
+        return {
+            "status": "ok",
+            "message": "Specctra DSN exported, validated, and atomically published",
+            "output_path": str(destination),
+            "output_kind": "specctra_dsn",
+            "artifact": validation,
+        }
+    finally:
+        _remove_staging_file(staging)
+
+
+def _find_statistics_object(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        required = {"connections", "traces", "vias", "clearance_violations"}
+        if required.issubset(value):
+            return value
+        for nested in reversed(list(value.values())):
+            found = _find_statistics_object(nested)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for nested in reversed(value):
+            found = _find_statistics_object(nested)
+            if found is not None:
+                return found
+    return None
+
+
+def _last_structured_statistics(output_text: str) -> dict[str, Any] | None:
+    decoder = json.JSONDecoder()
+    candidates: list[dict[str, Any]] = []
+    for match in re.finditer(r"\{", output_text):
+        try:
+            decoded, _end = decoder.raw_decode(output_text[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        statistics = _find_statistics_object(decoded)
+        if statistics is not None:
+            candidates.append(statistics)
+    return candidates[-1] if candidates else None
+
+
+def _nonnegative_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _parse_routing_stats(output_text: str) -> dict[str, Any]:
+    """Extract final routing statistics without treating unknown values as zero."""
+    structured = _last_structured_statistics(output_text)
+    if structured is not None:
+        connections = structured.get("connections") if isinstance(structured.get("connections"), dict) else {}
+        traces = structured.get("traces") if isinstance(structured.get("traces"), dict) else {}
+        vias = structured.get("vias") if isinstance(structured.get("vias"), dict) else {}
+        clearance = (
+            structured.get("clearance_violations")
+            if isinstance(structured.get("clearance_violations"), dict)
+            else {}
+        )
+        return {
+            "traces": _nonnegative_int(traces.get("total_count")),
+            "vias": _nonnegative_int(vias.get("total_count")),
+            "incomplete": _nonnegative_int(connections.get("incomplete_count")),
+            "max_connections": _nonnegative_int(connections.get("maximum_count")),
+            "clearance_violations": _nonnegative_int(clearance.get("total_count")),
+            "statistics_source": "structured_json",
+        }
+
+    stats: dict[str, Any] = {
+        "traces": None,
+        "vias": None,
+        "incomplete": None,
+        "max_connections": None,
+        "clearance_violations": None,
+        "statistics_source": "text_summary",
+    }
+    patterns = {
+        "traces": (r"traces?\s*[:=]\s*(\d+)", r"(\d+)\s+traces?"),
+        "vias": (r"vias?\s*[:=]\s*(\d+)", r"(\d+)\s+vias?"),
+        "incomplete": (
+            r"(?:incompletes?|unrouted|unconnected)\s*[:=]\s*(\d+)",
+            r"(?:incomplete|unrouted|unconnected)\s+connections?\s*[:=]\s*(\d+)",
+            r"connections?\s+not\s+found\s*[:=]\s*(\d+)",
+            r"(\d+)\s+(?:incompletes?|unrouted|unconnected)",
+            r"(\d+)\s+connections?\s+not\s+found",
+        ),
+        "clearance_violations": (
+            r"clearance(?:\s+|_)violations?\s*[:=]\s*(\d+)",
+            r"(\d+)\s+clearance(?:\s+|_)violations?",
+        ),
+    }
+    for key, alternatives in patterns.items():
+        matches: list[re.Match[str]] = []
+        for pattern in alternatives:
+            matches.extend(re.finditer(pattern, output_text, re.IGNORECASE))
+        if matches:
+            final_match = max(matches, key=lambda item: item.start())
+            stats[key] = int(final_match.group(1))
     return stats
 
 
-def export_dsn(pcb_path: str | Path, dsn_path: str | Path, timeout_seconds: float = 120) -> dict[str, Any]:
-    """Export a Specctra DSN from a .kicad_pcb via kicad-cli.
+def _parse_freerouting_version(output_text: str) -> str | None:
+    matches = list(_FREEROUTING_VERSION_RE.finditer(output_text))
+    return matches[-1].group(1) if matches else None
 
-    Returns {"status": "ok"|"error", "dsn_path": str, "message": str}.
-    """
-    kicad_cli = _find_kicad_cli()
-    if kicad_cli is None:
-        return {
-            "status": "error",
-            "message": "kicad-cli not found — install KiCad 7+ or route the .kicad_pcb directly.",
-        }
+
+def _probe_freerouting_capabilities(command: list[str], *, timeout_seconds: float) -> dict[str, Any]:
     try:
         result = subprocess.run(
-            [kicad_cli, "pcb", "export", "specctra", "-o", str(dsn_path), str(pcb_path)],
+            [*command, "-help"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"probe_ok": False, "version": None, "seed": False, "reason": str(exc)}
+    output_text = f"{result.stdout}\n{result.stderr}"
+    return {
+        "probe_ok": result.returncode == 0,
+        "version": _parse_freerouting_version(output_text),
+        "seed": bool(re.search(r"(?<!\S)-random_seed(?:\s|$)", output_text)),
+        "reason": "" if result.returncode == 0 else f"help exited with code {result.returncode}",
+    }
+
+
+def _route_specctra(
+    dsn_path: Path,
+    ses_path: Path,
+    command: list[str],
+    *,
+    passes: int,
+    timeout_seconds: float,
+    overwrite: bool,
+    headless: bool,
+    optimization_threads: int | None,
+    optimizer_strategy: str | None,
+    optimizer_hybrid_ratio: str | None,
+    optimizer_item_selection: str | None,
+    optimizer_improvement_threshold: float | None,
+    seed: int | None,
+    capability_probe: dict[str, Any] | None,
+) -> dict[str, Any]:
+    prepare_error = _prepare_destination(ses_path, overwrite=overwrite)
+    if prepare_error:
+        return _result_error(prepare_error)
+    staging = _staging_path(ses_path)
+    routing_command = [
+        *command,
+        "-de",
+        str(dsn_path),
+        "-do",
+        str(staging),
+        "-mp",
+        str(passes),
+        "-l",
+        "en",
+    ]
+    if headless:
+        routing_command.append("--gui.enabled=false")
+    if optimization_threads is not None:
+        routing_command.extend(["-mt", str(optimization_threads)])
+    if optimizer_strategy is not None:
+        routing_command.extend(["-us", optimizer_strategy])
+    if optimizer_hybrid_ratio is not None:
+        routing_command.extend(["-hr", optimizer_hybrid_ratio])
+    if optimizer_item_selection is not None:
+        routing_command.extend(["-is", optimizer_item_selection])
+    if optimizer_improvement_threshold is not None:
+        routing_command.extend(["-oit", str(optimizer_improvement_threshold)])
+    if seed is not None:
+        routing_command.extend(["-random_seed", str(seed)])
+    try:
+        result = subprocess.run(
+            routing_command,
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
-        return {"status": "error", "message": "kicad-cli specctra export timed out"}
-    if result.returncode != 0 or not Path(dsn_path).exists():
-        return {
-            "status": "error",
-            "message": f"kicad-cli specctra export failed:\n{result.stderr.strip()}",
+        _remove_staging_file(staging)
+        return _result_error(f"Freerouting timed out after {timeout_seconds:.0f} seconds")
+    except OSError as exc:
+        _remove_staging_file(staging)
+        return _result_error(f"Could not run Freerouting: {exc}")
+    try:
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+            return _result_error(f"Freerouting failed: {detail}")
+
+        validation = _validate_specctra_artifact(staging, "ses", source_dsn=dsn_path)
+        if not validation["valid"]:
+            return _result_error(f"Freerouting produced an invalid SES: {validation['reason']}", artifact=validation)
+        output_text = f"{result.stdout}\n{result.stderr}"
+        stats = _parse_routing_stats(output_text)
+        router = {
+            "version": _parse_freerouting_version(output_text)
+            or (capability_probe or {}).get("version"),
+            "headless": headless,
+            "max_passes": passes,
+            "optimization_threads": optimization_threads,
+            "optimizer_strategy": optimizer_strategy,
+            "optimizer_hybrid_ratio": optimizer_hybrid_ratio,
+            "optimizer_item_selection": optimizer_item_selection,
+            "optimizer_improvement_threshold": optimizer_improvement_threshold,
+            "seed": seed,
         }
-    return {"status": "ok", "dsn_path": str(dsn_path), "message": "DSN exported"}
+        if stats["incomplete"] is None:
+            return _result_error(
+                "Freerouting did not report final connection completeness; refusing to publish an unverified SES",
+                artifact=validation,
+                stats=stats,
+                router=router,
+            )
+        if stats["clearance_violations"] is None:
+            return _result_error(
+                "Freerouting did not report final clearance-violation statistics; "
+                "refusing to publish an unverified SES",
+                artifact=validation,
+                stats=stats,
+                router=router,
+            )
+        if stats["clearance_violations"] > 0:
+            return _result_error(
+                f"Freerouting reported {stats['clearance_violations']} clearance violation(s); SES was not published",
+                artifact=validation,
+                stats=stats,
+                router=router,
+            )
+        publish_error = _publish_staged_file(staging, ses_path, overwrite=overwrite)
+        if publish_error:
+            return _result_error(publish_error, stats=stats, router=router)
+        validation["path"] = str(ses_path)
+        return {"status": "ok", "artifact": validation, "stats": stats, "router": router}
+    finally:
+        _remove_staging_file(staging)
 
 
 def autoroute_pcb(
-    pcb_path: str,
+    pcb_path: str | Path,
     output_path: str | None = None,
     effort: str = "medium",
     timeout_seconds: float = 300,
+    *,
+    max_passes: int | None = None,
+    overwrite: bool = False,
+    headless: bool = True,
+    optimization_threads: int | None = None,
+    optimizer_strategy: str | None = None,
+    optimizer_hybrid_ratio: str | None = None,
+    optimizer_item_selection: str | None = None,
+    optimizer_improvement_threshold: float | None = None,
+    seed: int | None = None,
+    freerouting_path: str | Path | None = None,
+    kicad_cli_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Route a KiCad PCB using Freerouting.
+    """Route a real KiCad board or a user-supplied DSN with Freerouting.
 
-    Args:
-        pcb_path: Path to .kicad_pcb file (must be a real board with pads
-            and nets — placement previews fail the preflight check)
-        output_path: Where to write the routed output. With the DSN/SES
-            pipeline this is the ``.ses`` session file (import in KiCad via
-            File → Import → Specctra Session); with the legacy direct
-            invocation it is a routed ``.kicad_pcb``.
-        effort: "fast" | "medium" | "high" — Freerouting optimization-pass
-            budget.
-        timeout_seconds: routing timeout.
-
-    Returns:
-        {
-            "status": "ok" | "error",
-            "pcb_path": str (output path if success),
-            "message": str,
-            "preflight": {...},
-            "stats": {
-                "traces": int,
-                "vias": int,
-                "incomplete": int,
-                "routing_time_seconds": float,
-            }
-        }
+    Successful normal operation returns ``output_kind="specctra_session"`` and
+    an ``output_path`` ending in ``.ses``.  The SES must be imported into KiCad;
+    it is never mislabeled as a routed PCB.  A non-zero incomplete count returns
+    ``status="partial"``.
     """
-    pcb = Path(pcb_path)
-    if not pcb.exists():
-        return {
-            "status": "error",
-            "message": f"PCB file not found: {pcb_path}",
-        }
-
+    timeout_error = _validate_timeout(timeout_seconds, "Routing")
+    if timeout_error:
+        return _result_error(timeout_error)
+    source = Path(pcb_path)
+    if not source.exists() or not source.is_file():
+        return _result_error(f"Routing input not found: {source}")
     if effort not in _EFFORT_PASSES:
-        return {
-            "status": "error",
-            "message": f"Unknown effort '{effort}' — pick one of {sorted(_EFFORT_PASSES)}",
+        return _result_error(f"Unknown effort '{effort}'; choose one of {sorted(_EFFORT_PASSES)}")
+    if max_passes is not None and (
+        not isinstance(max_passes, int) or isinstance(max_passes, bool) or not 0 <= max_passes <= 9999
+    ):
+        return _result_error("max_passes must be an integer from 0 (unlimited) through 9999")
+    if optimization_threads is not None and (
+        not isinstance(optimization_threads, int)
+        or isinstance(optimization_threads, bool)
+        or not 0 <= optimization_threads <= 1024
+    ):
+        return _result_error("optimization_threads must be an integer from 0 (disabled) through 1024")
+    if optimizer_strategy not in {None, "greedy", "global", "hybrid"}:
+        return _result_error("optimizer_strategy must be greedy, global, or hybrid")
+    if optimizer_hybrid_ratio is not None and not re.fullmatch(r"[1-9]\d*:[1-9]\d*", optimizer_hybrid_ratio):
+        return _result_error("optimizer_hybrid_ratio must use positive-integer m:n syntax, for example 1:1")
+    if optimizer_strategy == "hybrid" and optimizer_hybrid_ratio is None:
+        return _result_error("optimizer_strategy='hybrid' requires optimizer_hybrid_ratio")
+    if optimizer_hybrid_ratio is not None and optimizer_strategy != "hybrid":
+        return _result_error("optimizer_hybrid_ratio is only valid with optimizer_strategy='hybrid'")
+    if optimizer_item_selection not in {None, "sequential", "random", "prioritized"}:
+        return _result_error("optimizer_item_selection must be sequential, random, or prioritized")
+    if optimizer_improvement_threshold is not None and (
+        not isinstance(optimizer_improvement_threshold, (int, float))
+        or isinstance(optimizer_improvement_threshold, bool)
+        or not math.isfinite(optimizer_improvement_threshold)
+        or not 0 <= optimizer_improvement_threshold <= 100
+    ):
+        return _result_error("optimizer_improvement_threshold must be a percentage from 0 through 100")
+    if seed is not None and (
+        not isinstance(seed, int) or isinstance(seed, bool) or not 0 <= seed <= 9_223_372_036_854_775_807
+    ):
+        return _result_error("seed must be an integer from 0 through 9223372036854775807")
+    if not isinstance(headless, bool):
+        return _result_error("headless must be a boolean")
+    if not isinstance(overwrite, bool):
+        return _result_error("overwrite must be a boolean")
+
+    source_suffix = source.suffix.lower()
+    if source_suffix == ".dsn":
+        input_validation = _validate_specctra_artifact(source, "dsn")
+        if not input_validation["valid"]:
+            return _result_error(f"Invalid Specctra DSN input: {input_validation['reason']}")
+        dsn_path = source
+        preflight = None
+    elif source_suffix == ".kicad_pcb":
+        preflight = preflight_pcb(source)
+        if not preflight["routable"]:
+            return _result_error(f"Board failed routing preflight: {preflight['reason']}", preflight=preflight)
+        input_validation = {
+            "valid": True,
+            "path": str(source),
+            "kind": "kicad_pcb",
+            "stats": preflight["stats"],
         }
+        dsn_path = source.with_name(f"{source.stem}_autoroute.dsn")
+    else:
+        return _result_error("Routing input must be a real .kicad_pcb board or a Specctra .dsn file")
 
-    preflight = preflight_pcb(pcb)
-    if not preflight["routable"]:
-        return {
-            "status": "error",
-            "message": f"Board failed routing preflight: {preflight['reason']}",
-            "preflight": preflight,
-        }
+    ses_path = Path(output_path) if output_path else source.with_suffix(".ses")
+    if ses_path.suffix.lower() != ".ses":
+        return _result_error(f"Specctra routing output must end in .ses: {ses_path}")
+    output_error = _prepare_destination(ses_path, overwrite=overwrite)
+    if output_error:
+        return _result_error(output_error)
 
-    # Check if Freerouting is installed
-    freerouting_cmd = _find_freerouting_command()
-    if freerouting_cmd is None:
-        return {
-            "status": "error",
-            "message": (
-                "Freerouting not found. Install with:\n"
-                "  Homebrew: brew install freerouting\n"
-                "  Manual: https://github.com/freerouting/freerouting/releases\n"
-                "\nAlternatively, route manually in KiCad using placer_hints.json for guidance."
-            ),
-            "preflight": preflight,
-        }
-
-    log.info("Routing %s with Freerouting (effort=%s)...", pcb.name, effort)
-    start_time = time.perf_counter()
-    passes = _EFFORT_PASSES[effort]
-
-    kicad_cli = _find_kicad_cli()
-    try:
-        if kicad_cli:
-            # DSN/SES pipeline: the only officially supported Freerouting flow.
-            dsn_path = pcb.parent / f"{pcb.stem}.dsn"
-            ses_path = Path(output_path) if output_path else pcb.parent / f"{pcb.stem}.ses"
-            exported = export_dsn(pcb, dsn_path, timeout_seconds=min(timeout_seconds, 120))
-            if exported["status"] != "ok":
-                return {**exported, "preflight": preflight}
-            cmd = [
-                *freerouting_cmd,
-                "-de",
-                str(dsn_path),
-                "-do",
-                str(ses_path),
-                "-mp",
-                str(passes),
-            ]
-            output_file = ses_path
-            import_hint = (
-                f"Import the session in KiCad: File → Import → Specctra Session → {ses_path.name}"
+    kicad_cli: str | None = None
+    if source_suffix == ".kicad_pcb":
+        dsn_output_error = _prepare_destination(dsn_path, overwrite=overwrite)
+        if dsn_output_error:
+            return _result_error(dsn_output_error)
+        kicad_cli = _find_kicad_cli(kicad_cli_path)
+        if not kicad_cli or not _kicad_cli_supports_specctra(
+            kicad_cli,
+            timeout_seconds=min(timeout_seconds, 10),
+        ):
+            return _result_error(
+                "Automatic DSN export is unavailable because this kicad-cli build does not advertise "
+                "Specctra export. In KiCad PCB Editor, export a Specctra DSN, then run autoroute on the "
+                ".dsn file. Freerouting does not support direct .kicad_pcb input.",
+                preflight=preflight,
+                input=input_validation,
             )
-        else:
-            # Legacy fallback — some Freerouting builds accept .kicad_pcb directly.
-            if output_path is None:
-                output_path = str(pcb.parent / f"{pcb.stem}_routed.kicad_pcb")
-            cmd = [
-                *freerouting_cmd,
-                "-dr",
-                str(pcb),
-                "-out",
-                str(output_path),
-                "-mp",
-                str(passes),
-            ]
-            output_file = Path(output_path)
-            import_hint = ""
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
+    freerouting_command = _find_freerouting_command(freerouting_path)
+    if freerouting_command is None:
+        return _result_error(
+            "Freerouting was not found. Set CIRCUIT_WEAVER_FREEROUTING to a launcher or JAR path, "
+            "or install the freerouting launcher on PATH.",
+            input=input_validation,
         )
 
-        elapsed = time.perf_counter() - start_time
-
-        if result.returncode != 0:
-            log.warning("Freerouting failed: %s", result.stderr)
-            return {
-                "status": "error",
-                "message": f"Freerouting routing failed:\n{result.stderr}",
-                "preflight": preflight,
-            }
-
-        output_text = result.stdout + result.stderr
-        stats = _parse_routing_stats(output_text) if "routed" in output_text.lower() else {
-            "traces": 0,
-            "vias": 0,
-            "incomplete": 0,
-        }
-        stats["routing_time_seconds"] = elapsed
-
-        log.info(
-            "Routing complete in %.1fs: %d traces, %d vias, %d incomplete",
-            elapsed,
-            stats["traces"],
-            stats["vias"],
-            stats["incomplete"],
+    passes = _EFFORT_PASSES[effort] if max_passes is None else max_passes
+    capability_probe = _probe_freerouting_capabilities(
+        freerouting_command,
+        timeout_seconds=min(timeout_seconds, 10),
+    )
+    if seed is not None and (not capability_probe["probe_ok"] or not capability_probe["seed"]):
+        return _result_error(
+            "The installed Freerouting build does not advertise -random_seed; "
+            "remove --seed or install a build whose -help output includes that option.",
+            router=capability_probe,
         )
 
-        message = (
-            f"Routed successfully in {elapsed:.1f}s: "
-            f"{stats['traces']} traces, {stats['vias']} vias"
+    start_time = time.perf_counter()
+    if source_suffix == ".dsn":
+        route_result = _route_specctra(
+            dsn_path,
+            ses_path,
+            freerouting_command,
+            passes=passes,
+            timeout_seconds=timeout_seconds,
+            overwrite=overwrite,
+            headless=headless,
+            optimization_threads=optimization_threads,
+            optimizer_strategy=optimizer_strategy,
+            optimizer_hybrid_ratio=optimizer_hybrid_ratio,
+            optimizer_item_selection=optimizer_item_selection,
+            optimizer_improvement_threshold=optimizer_improvement_threshold,
+            seed=seed,
+            capability_probe=capability_probe,
         )
-        if stats["incomplete"]:
-            message += f", {stats['incomplete']} incomplete (re-run with --effort high)"
-        if import_hint:
-            message += f"\n{import_hint}"
+    else:
+        export_result = export_dsn(
+            source,
+            dsn_path,
+            timeout_seconds=min(timeout_seconds, 120),
+            kicad_cli_path=kicad_cli,
+            overwrite=overwrite,
+        )
+        if export_result["status"] != "ok":
+            return {**export_result, "preflight": preflight, "input": input_validation}
+        route_result = _route_specctra(
+            dsn_path,
+            ses_path,
+            freerouting_command,
+            passes=passes,
+            timeout_seconds=timeout_seconds,
+            overwrite=overwrite,
+            headless=headless,
+            optimization_threads=optimization_threads,
+            optimizer_strategy=optimizer_strategy,
+            optimizer_hybrid_ratio=optimizer_hybrid_ratio,
+            optimizer_item_selection=optimizer_item_selection,
+            optimizer_improvement_threshold=optimizer_improvement_threshold,
+            seed=seed,
+            capability_probe=capability_probe,
+        )
 
-        return {
-            "status": "ok",
-            "pcb_path": str(output_file),
-            "message": message,
-            "preflight": preflight,
-            "stats": stats,
-        }
+    elapsed = time.perf_counter() - start_time
+    if route_result["status"] != "ok":
+        return {**route_result, "preflight": preflight, "input": input_validation}
 
-    except subprocess.TimeoutExpired:
-        return {
-            "status": "error",
-            "message": f"Freerouting routing timed out after {timeout_seconds:.0f} seconds",
-            "preflight": preflight,
-        }
-    except Exception as e:
-        log.exception("Freerouting integration error")
-        return {
-            "status": "error",
-            "message": f"Freerouting error: {e}",
-            "preflight": preflight,
-        }
+    stats = {**route_result["stats"], "routing_time_seconds": elapsed}
+    incomplete = stats["incomplete"]
+    status = "partial" if incomplete else "ok"
+    message = (
+        f"Freerouting produced a validated Specctra session at {ses_path}. "
+        "Import it in KiCad PCB Editor with File -> Import -> Specctra Session."
+    )
+    if incomplete:
+        message += f" {incomplete} connection(s) remain incomplete; routing is partial."
+
+    return {
+        "status": status,
+        "output_path": str(ses_path),
+        "output_kind": "specctra_session",
+        "message": message,
+        "input": input_validation,
+        "preflight": preflight,
+        "artifact": route_result["artifact"],
+        "stats": stats,
+        "router": route_result["router"],
+    }

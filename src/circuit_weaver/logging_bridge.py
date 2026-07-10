@@ -53,6 +53,10 @@ _FILE_OUTPUT_SUFFIXES = {
     ".zip",
     ".stl",
     ".scad",
+    ".kicad_sch",
+    ".kicad_pcb",
+    ".gbr",
+    ".drl",
 }
 
 # Commands that intentionally don't touch a project directory — skip file
@@ -67,6 +71,9 @@ _NO_LOG_COMMANDS = {
     "log-status",
     "install-skills",
     "log-event",
+    "status",
+    "resume",
+    "import-design",
 }
 
 
@@ -252,35 +259,44 @@ def init_logging(
 
 
 def _resolve_log_dir(command: str, args: argparse.Namespace | None) -> Path | None:
-    """Pick a log directory from the CLI args.
+    """Pick one project-root log directory from the CLI arguments.
 
-    Rules:
-    1. ``command in _NO_LOG_COMMANDS`` → return None (no log file).
-    2. ``args.output`` is a directory-like path → use it.
-    3. ``args.output`` looks like a single-file artifact → use its parent.
-    4. ``args.spec`` / ``args.design`` → use the spec file's parent.
-    5. Otherwise → current working directory.
+    Input paths are authoritative because output directories commonly live
+    below the project root. This prevents generation and routing from creating
+    a second, disconnected ``design.log`` under ``output/``.
     """
     if not command or command in _NO_LOG_COMMANDS:
         return None
 
-    out = getattr(args, "output", None) if args is not None else None
-    if out:
-        p = Path(out)
-        if p.suffix.lower() in _FILE_OUTPUT_SUFFIXES:
-            return p.parent if str(p.parent) else Path.cwd()
-        return p
+    from .project_state import project_state_path, resolve_project_root
 
-    # Fall back to the spec file's directory when a YAML arg is present.
-    for attr in ("spec", "design", "schematic", "project_dir"):
+    if command == "generate" and args is not None:
+        spec_value = getattr(args, "spec", None)
+        output_value = getattr(args, "output", None)
+        if spec_value:
+            spec_root = resolve_project_root(Path(spec_value))
+            has_project_marker = (
+                project_state_path(spec_root).is_file()
+                or (spec_root / "design.yaml").is_file()
+                or any(spec_root.glob("*.kicad_pro"))
+            )
+            if has_project_marker:
+                return spec_root
+        if output_value:
+            return resolve_project_root(Path(output_value))
+
+    for attr in ("project_dir", "project", "spec", "design", "schematic", "kicad_pcb", "resume"):
         val = getattr(args, attr, None) if args is not None else None
         if val:
-            candidate = Path(val)
-            if candidate.exists() and candidate.is_file():
-                return candidate.parent
-            return candidate if candidate.is_dir() else Path.cwd()
+            return resolve_project_root(Path(val))
 
-    return Path.cwd()
+    out = getattr(args, "output", None) if args is not None else None
+    if out:
+        output_path = Path(out)
+        candidate = output_path.parent if output_path.suffix.lower() in _FILE_OUTPUT_SUFFIXES else output_path
+        return resolve_project_root(candidate)
+
+    return resolve_project_root(Path.cwd())
 
 
 def init_logging_for_cli(

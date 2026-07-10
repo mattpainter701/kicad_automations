@@ -982,6 +982,11 @@ def test_data_driven_template_via_registry():
     result = tmpl.generate({"vin": 12, "vout": 3.3, "iout": 1.0})
     assert len(result.components) > 0
     assert result.components[0].mpn == "AP62300"
+    assert {item["title"] for item in result.components[0].official_references} == {
+        "AP62300 datasheet",
+        "AP62300Z6-EVM user guide",
+    }
+    assert all(item["url"].startswith("https://www.diodes.com/") for item in result.components[0].official_references)
 
 
 def test_registry_uses_data_driven_first():

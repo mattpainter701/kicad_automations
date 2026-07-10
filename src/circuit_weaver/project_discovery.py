@@ -1,26 +1,45 @@
-"""Project discovery and auto-detection for circuit-weaver.
-
-Scans directories for existing circuit projects by detecting:
-- design.yaml (Circuit Weaver canonical projects)
-- *.kicad_pro (KiCad native projects)
-- *.kicad_sch (standalone schematics without a project file)
-
-Used by skills and the CLI to auto-detect projects in the current
-working directory before asking users for paths.
-"""
+"""Project discovery for generated, native KiCad, and Gerber projects."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
+
+from .project_state import (
+    STATE_DIR_NAME,
+    get_project_state_summary,
+    manufacturing_artwork_kind,
+    project_state_path,
+)
+
+_IGNORED_DIRS = {STATE_DIR_NAME, ".git", "__pycache__", ".pytest_cache", ".ruff_cache", "node_modules"}
+
+
+def _is_ignored(path: Path, root: Path) -> bool:
+    try:
+        return any(part in _IGNORED_DIRS for part in path.relative_to(root).parts)
+    except ValueError:
+        return True
+
+
+def _project_files(project_dir: Path) -> Iterable[Path]:
+    try:
+        for path in project_dir.rglob("*"):
+            if path.is_file() and not _is_ignored(path, project_dir):
+                yield path
+    except (OSError, PermissionError):
+        return
+
+
+def _is_gerber(path: Path) -> bool:
+    return manufacturing_artwork_kind(path) is not None
 
 
 @dataclass
 class DiscoveredProject:
-    """A discovered circuit project with metadata."""
+    """A discovered circuit project with enough metadata to reopen it."""
 
     path: Path
     name: str
@@ -31,8 +50,11 @@ class DiscoveredProject:
     has_design_log: bool = False
     last_modified: datetime | None = None
     component_count: int | None = None
-    status: str = "unknown"  # new, in_progress, generated, validated
-    project_type: str = "unknown"  # circuit_weaver, kicad_native, mixed
+    status: str = "unknown"
+    project_type: str = "unknown"
+    has_gerbers: bool = False
+    has_project_state: bool = False
+    project_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +65,9 @@ class DiscoveredProject:
             "has_kicad_pcb": self.has_kicad_pcb,
             "has_kicad_pro": self.has_kicad_pro,
             "has_design_log": self.has_design_log,
+            "has_gerbers": self.has_gerbers,
+            "has_project_state": self.has_project_state,
+            "project_id": self.project_id,
             "last_modified": self.last_modified.isoformat() if self.last_modified else None,
             "component_count": self.component_count,
             "status": self.status,
@@ -51,60 +76,46 @@ class DiscoveredProject:
 
 
 def detect_project_type(project_dir: Path) -> str:
-    """Classify a project directory.
+    """Classify canonical, native KiCad, PCB-only, and Gerber projects."""
 
-    Returns:
-        'circuit_weaver' if design.yaml exists,
-        'kicad_native' if .kicad_pro exists without design.yaml,
-        'mixed' if both exist,
-        'unknown' otherwise.
-    """
-    has_yaml = (project_dir / "design.yaml").exists()
-    has_pro = any(project_dir.glob("*.kicad_pro"))
-    if has_yaml and has_pro:
+    project_dir = Path(project_dir)
+    state_path = project_state_path(project_dir)
+    if state_path.is_file():
+        try:
+            kind = str(get_project_state_summary(project_dir).get("kind", ""))
+            if kind:
+                return kind
+        except (OSError, ValueError):
+            pass
+
+    try:
+        files = [path for path in project_dir.iterdir() if path.is_file()]
+    except OSError:
+        files = []
+    has_yaml = (project_dir / "design.yaml").is_file()
+    has_pro = any(path.suffix.lower() == ".kicad_pro" for path in files)
+    has_schematic = any(path.suffix.lower() in {".kicad_sch", ".sch"} for path in files)
+    has_pcb = any(path.suffix.lower() == ".kicad_pcb" for path in files)
+    has_gerber = any(_is_gerber(path) for path in files)
+    if has_yaml and (has_pro or has_schematic or has_pcb):
         return "mixed"
     if has_yaml:
         return "circuit_weaver"
-    if has_pro:
+    if has_pro or has_schematic or has_pcb:
         return "kicad_native"
-    if any(project_dir.glob("*.kicad_sch")):
-        return "kicad_native"
+    if has_gerber:
+        return "gerber_native"
     return "unknown"
 
 
 def _infer_status(project_dir: Path) -> str:
-    """Infer project status from filesystem state and design.log."""
-    log_path = project_dir / "design.log"
-    output_dir = project_dir / "output"
-
-    # Check for generated artifacts
-    has_output = output_dir.exists() and any(output_dir.glob("*.kicad_sch"))
-
-    if log_path.exists():
-        try:
-            last_entry: dict = {}
-            for line in log_path.read_text(encoding="utf-8").strip().splitlines():
-                line = line.strip()
-                if line:
-                    last_entry = json.loads(line)
-
-            # Check for validation results
-            if last_entry.get("type") == "validation" and last_entry.get("passed"):
-                return "validated"
-        except Exception:
-            pass
-
-    if has_output:
-        return "generated"
-
-    if (project_dir / "design.yaml").exists():
-        return "in_progress"
-
-    return "new"
+    try:
+        return str(get_project_state_summary(project_dir)["status"])
+    except (OSError, ValueError):
+        return "unknown"
 
 
 def _count_components(project_dir: Path) -> int | None:
-    """Try to count components from design.yaml."""
     yaml_path = project_dir / "design.yaml"
     if not yaml_path.exists():
         return None
@@ -119,33 +130,51 @@ def _count_components(project_dir: Path) -> int | None:
 
 
 def _latest_mtime(project_dir: Path) -> datetime | None:
-    """Get the most recent modification time of key project files."""
     times: list[float] = []
-    for pattern in ("design.yaml", "design.log", "*.kicad_sch", "*.kicad_pcb"):
-        for f in project_dir.glob(pattern):
+    for path in _project_files(project_dir):
+        if path.name in {"design.yaml", "design.log", "project.json"} or path.suffix.lower() in {
+            ".kicad_sch",
+            ".sch",
+            ".kicad_pcb",
+            ".kicad_pro",
+        } or _is_gerber(path):
             try:
-                times.append(f.stat().st_mtime)
+                times.append(path.stat().st_mtime)
             except OSError:
                 pass
-    if times:
-        return datetime.fromtimestamp(max(times))
-    return None
+    return datetime.fromtimestamp(max(times)) if times else None
 
 
 def get_project_status(project_dir: Path) -> DiscoveredProject:
-    """Get detailed status for a single project directory."""
-    project_dir = Path(project_dir)
+    """Get detailed reconciled status for one project directory."""
+
+    project_dir = Path(project_dir).resolve()
+    files = list(_project_files(project_dir))
+    summary: dict[str, Any] = {}
+    try:
+        summary = get_project_state_summary(project_dir)
+    except (OSError, ValueError):
+        pass
+    inventory = dict(summary.get("inventory") or {})
     return DiscoveredProject(
         path=project_dir,
-        name=project_dir.name,
-        has_design_yaml=(project_dir / "design.yaml").exists(),
-        has_kicad_sch=bool(list(project_dir.glob("*.kicad_sch"))),
-        has_kicad_pcb=bool(list(project_dir.glob("*.kicad_pcb"))),
-        has_kicad_pro=bool(list(project_dir.glob("*.kicad_pro"))),
-        has_design_log=(project_dir / "design.log").exists(),
+        name=str(summary.get("name") or project_dir.name),
+        has_design_yaml=(project_dir / "design.yaml").is_file()
+        or bool(inventory.get("design_specs")),
+        has_kicad_sch=any(path.suffix.lower() in {".kicad_sch", ".sch"} for path in files)
+        or bool(inventory.get("schematics")),
+        has_kicad_pcb=any(path.suffix.lower() == ".kicad_pcb" for path in files)
+        or bool(inventory.get("pcbs")),
+        has_kicad_pro=any(path.suffix.lower() == ".kicad_pro" for path in files)
+        or bool(inventory.get("kicad_projects")),
+        has_design_log=(project_dir / "design.log").is_file(),
+        has_gerbers=any(_is_gerber(path) for path in files)
+        or bool(inventory.get("gerber_files")),
+        has_project_state=project_state_path(project_dir).is_file(),
+        project_id=str(summary.get("project_id", "")),
         last_modified=_latest_mtime(project_dir),
         component_count=_count_components(project_dir),
-        status=_infer_status(project_dir),
+        status=str(summary.get("status") or _infer_status(project_dir)),
         project_type=detect_project_type(project_dir),
     )
 
@@ -155,65 +184,46 @@ def discover_projects(
     *,
     max_depth: int = 2,
 ) -> list[DiscoveredProject]:
-    """Find all circuit projects in a directory tree.
+    """Find projects, including when ``root_dir`` is itself a project."""
 
-    Detects projects by presence of:
-    - design.yaml (Circuit Weaver canonical)
-    - *.kicad_pro (KiCad native project)
-    - *.kicad_sch without design.yaml (imported/manual KiCad)
-
-    Args:
-        root_dir: Root directory to search (default: cwd)
-        max_depth: Maximum directory depth to search (default: 2)
-
-    Returns:
-        List of DiscoveredProject sorted by name.
-    """
-    if root_dir is None:
-        root_dir = Path.cwd()
-    root_dir = Path(root_dir)
-
-    if not root_dir.exists():
+    root = Path.cwd() if root_dir is None else Path(root_dir)
+    if not root.exists():
         return []
+    root = root.resolve()
 
-    seen: set[Path] = set()
+    if detect_project_type(root) != "unknown":
+        return [get_project_status(root)]
+
     projects: list[DiscoveredProject] = []
+    seen: set[Path] = set()
 
     def _scan(directory: Path, depth: int) -> None:
         if depth > max_depth:
             return
         try:
-            items = sorted(directory.iterdir())
-        except PermissionError:
+            items = sorted(directory.iterdir(), key=lambda item: item.name.casefold())
+        except (OSError, PermissionError):
             return
-
         for item in items:
-            if not item.is_dir():
+            if not item.is_dir() or item.name.startswith(".") or item.name in _IGNORED_DIRS:
                 continue
-            if item.name.startswith(".") or item.name in ("__pycache__", "node_modules", ".git"):
+            try:
+                resolved = item.resolve()
+            except OSError:
                 continue
-
-            resolved = item.resolve()
             if resolved in seen:
                 continue
             seen.add(resolved)
-
-            ptype = detect_project_type(item)
-            if ptype != "unknown":
+            if detect_project_type(item) != "unknown":
                 projects.append(get_project_status(item))
             else:
-                # Recurse deeper to find nested projects
                 _scan(item, depth + 1)
 
-    _scan(root_dir, 1)
-    return sorted(projects, key=lambda p: p.name)
+    _scan(root, 1)
+    return sorted(projects, key=lambda project: project.name.casefold())
 
 
 def format_project_table(projects: list[DiscoveredProject]) -> str:
-    """Format discovered projects as a readable table.
-
-    Returns a formatted string suitable for terminal or skill output.
-    """
     if not projects:
         return "No circuit projects found."
 
@@ -221,22 +231,23 @@ def format_project_table(projects: list[DiscoveredProject]) -> str:
         "  #  Project                  Type            Status       Files",
         "  -  -------                  ----            ------       -----",
     ]
-
-    for i, p in enumerate(projects, 1):
+    for index, project in enumerate(projects, 1):
         files = []
-        if p.has_design_yaml:
+        if project.has_design_yaml:
             files.append("yaml")
-        if p.has_kicad_sch:
+        if project.has_kicad_sch:
             files.append("sch")
-        if p.has_kicad_pcb:
+        if project.has_kicad_pcb:
             files.append("pcb")
-        if p.has_kicad_pro:
+        if project.has_kicad_pro:
             files.append("pro")
-        if p.has_design_log:
+        if project.has_gerbers:
+            files.append("gerber")
+        if project.has_design_log:
             files.append("log")
-
+        if project.has_project_state:
+            files.append("state")
         lines.append(
-            f"  {i:<3}{p.name:<25}{p.project_type:<16}{p.status:<13}{', '.join(files)}"
+            f"  {index:<3}{project.name:<25}{project.project_type:<16}{project.status:<13}{', '.join(files)}"
         )
-
     return "\n".join(lines)
