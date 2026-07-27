@@ -1,6 +1,92 @@
 # Changelog
 
-## [Unreleased]
+## [0.33.0] - 2026-07-27
+
+### Planning
+
+- Define Sprints 55-60 around release-truth recovery, measurable electrical-accuracy benchmarks, evidence-backed component decisions, authoritative KiCad PCB handoff, transactional imported-design repair, sourcing resilience, and calibrated simulation/confidence outputs.
+- Record the current Windows/Python 3.13 source-tree baseline (`1431 passed, 16 skipped, 7 failed, 6 errors`) as Sprint 55's first release-recovery gate instead of treating the v0.32 feature surface as implicitly complete.
+
+### Sprint 55 execution — T241 release-gate recovery
+
+- Keep long centered root-sheet title banners inside the page by reserving half their estimated rendered width at the left edge. This clears the `svg-left-overflow` errors in `oled_display_module`, `led_power_indicator`, and `usb_regulated_supply` and restores their dependent layout-quality fixtures.
+- Isolate the generate-call-count regression from presentation validation while preserving the production fail-closed gate: a successful generation performs one validation smoke generation plus one real generation, not three.
+- Make plain `python -m pytest tests -q` select and verify the checkout's `src/circuit_weaver`, propagate that identity to subprocess tests, and add an explicit exact-wheel mode that refuses checkout imports.
+- Require every skip to declare `platform`, `optional-tool`, `network`, or `defect`; missing checked-in fixtures fail, and unclassified runtime or setup skips fail the session.
+- Local Windows/Python 3.13 source command `python -m pytest tests -q`: **1448 passed, 16 classified skips**. Exact-wheel command `$env:CIRCUIT_WEAVER_TEST_PACKAGE='wheel'; <venv-python> -m pytest tests -q`: **1448 passed, 16 classified skips**. `python -m ruff check src tests` also passes.
+- CI now builds the distribution once, uploads that exact artifact, and runs the complete wheel suite across Linux Python 3.10–3.14 and Windows Python 3.12/3.13, matching the source matrix. The tag workflow selects exact-wheel mode explicitly as well.
+
+### Sprint 55 execution — T242 capability truth contract
+
+- Add a single checked-in registry for all 43 top-level CLI commands and the two `cache` child operations, with fixed maturity, surface, evidence, and verification vocabularies. Python entrypoints are listed only where a public function actually exists.
+- Keep the ordered design-verification ladder separate from the paired `not_applicable` state used by operational commands such as `doctor`, cache, logs, and skill installation. Default guarantees are conservative; stronger runtime claims require matching returned evidence.
+- Expose copy-safe registry JSON through the Python API, `doctor --json`, and HTTP `GET /capabilities`; terminal doctor output summarizes maturity counts.
+- Generate the README capability table deterministically from the registry and fail CI when the generated section drifts. Contract tests cover every dispatcher command, registry shape/vocabularies, and runtime verification overclaims.
+
+### Sprint 55 execution — T243 electrical-accuracy benchmark
+
+- Add a versioned 18-fixture corpus with positive and negative cases for power, clock, USB, I2C, SPI, UART, analog, protection, and manufacturing domains. Every oracle carries a stable `CW-<DOMAIN>-<NNN>` rule ID, rationale, and explicit provenance; generator-authored controls remain separate from independently authored adverse references.
+- Add a real-validation benchmark runner that reports per-rule and per-domain precision, recall, false positives, false negatives, unsupported scope, and runtime. Unmapped validator findings and not-yet-implemented review cases remain visible as unsupported instead of receiving false pass credit.
+- Check in a precision/recall-only baseline and CI gate. Supported power rules use the canonical `CW-PWR-*` namespace at 1.0 precision and 1.0 recall with zero regression budget; eight other domain rules are honestly recorded as unsupported for later accuracy sprints.
+
+### Sprint 55 execution — T244 evidence manifest
+
+- Add a versioned `evidence_manifest.json` with deterministic `EV-*` IDs for component identity, pinout and footprint provenance, critical parameters, validator findings, tool versions, and ERC verification. Retrieval timestamps do not destabilize IDs, and absent source facts remain absent rather than being inferred.
+- Propagate resolvable evidence IDs through validation JSON, generated design reports, review and confidence reports, assembly and delivery manifests, HTTP responses/archives, MCP results, and the portable artifact inventory.
+- Reject credentials, machine-local paths, unsafe relative references, malformed links, silent heuristic/stub upgrades, and unresolved conflicts. Fabrication-ready delivery claims now fail closed unless every represented critical subject has sufficiently trustworthy backing.
+- Full Windows/Python 3.13 source suite after T244: **1525 passed, 16 classified skips**. The focused exact-wheel evidence/surface suite passes **133 tests**.
+
+### Sprint 56 execution — T245 typed power domains
+
+- Add omission-preserving typed power envelopes across `PowerDomain`, component `PowerReq`, and `PowerPin`: optional min/nominal/max voltage, source/load/bidirectional direction, steady/peak current, sequencing order/dependency, tolerance, provenance, and regulator dropout. Canonical and legacy ingest, component registries/caches, template parameters, DesignIR round trips, auto-repair, and resolver hydration preserve declared values without filling unknowns.
+- Add conservative `CW-PWR-001` through `CW-PWR-007` checks for over-voltage, under-voltage, reverse flow, source contention, LDO/regulator dropout, steady/peak current budgets, and sequencing. A rule runs only when every required operand is present, and each finding exposes sparse unit-labelled inputs, observed/expected values, margin, remediation, and a first-class calculation evidence record.
+- Materialize user-declared rail envelopes into the evidence ledger, link component and rail parameter evidence to calculations, and remove unresolved provenance tokens before serialization so every published evidence ID resolves. Power-tree Markdown, design-document CSV/Markdown, HTML review, and placement/PCB constraint context now expose the same typed envelope without rendering absent values as zero.
+- Replace generic topology power-pin substring matching with prefix-exact matching plus a curated equivalence allowlist; signal names such as `MAINSVIN_SENSE` no longer bind accidentally to `VIN`.
+- Expand the electrical benchmark from 18 to 27 fixtures with valid multi-rail/battery margins and independently authored adverse cases for every new power rule. `CW-PWR-001`–`CW-PWR-007` each measure **1.0 precision and 1.0 recall** with zero false positives and false negatives.
+- Full Windows/Python 3.13 source suite after T245: **1551 passed, 16 classified skips**. CI-scoped Ruff and diff checks pass, the 27-fixture benchmark baseline passes, and the focused exact-wheel T245/evidence/report suite passes **72 tests**.
+
+### Sprint 56 execution — T246.1 shared passive calculations
+
+- Add a pure, immutable `CalculationRecord` substrate with explicit SI units, equation/version identity, deterministic `CALC-<FAMILY>-<12hex>` IDs, raw results, and frozen placeholders for later selection policy, margin, and evidence emission.
+- Move feedback-divider, RC/LC-cutoff, inverse RC sizing, and crystal-load equations into `calc.py`; validator checks and the clock, ADC, DAC, sensor-front-end, audio-coupling, and legacy synthesis paths delegate through the shared module, with monkeypatch contracts proving there is no second implementation in those paths.
+- Correct the pre-existing crystal synthesis drift from `2*CL - Cstray` to the validator/oracle-consistent `2*(CL - Cstray)`, accept zero idealized stray capacitance, and reject non-finite or invalid equation domains in the calculation core.
+- Extend the evidence subject grammar compatibly so both existing `calc:CW-*@<REF>` validation acts and frozen `calc:<equation_id>@<REF>` calculation acts resolve.
+- Full Windows/Python 3.13 source suite after T246.1: **1574 passed, 16 classified skips**. Ruff and diff checks pass; the focused exact-wheel calculation/evidence/delegation suite passes **36 tests**.
+
+### Sprint 56 execution — T246.2 calculation evidence and T247.1 identity
+
+- Emit pure calculation results through a separate deterministic ledger adapter as `kind=calculation` evidence, require cited inputs to resolve, preserve idempotence, and return a new `CalculationRecord` with the emitted evidence ID.
+- Add the P0 identity substrate joining exact manufacturer/MPN/package, symbol pins, footprint pads, explicit one-to-one pin→pad mappings, distributor aliases, and provenance without heuristic filling.
+- Reject ambiguous mappings and malformed identities while preserving real manufacturer, package, and distributor text exactly; integrated focused Wave 1 contracts pass **51 tests** with Ruff and diff checks clean.
+
+### Sprint 56 execution — passive policy and P0 identity handoff
+
+- Normalize passive recommendations with strict provenance and fail-closed datasheet → equation → bounded-fallback precedence; retire the validator's per-MPN feedback-Vref table in favor of sourced component metadata.
+- Add deterministic E-series selection, joint ratio-preserving divider snapping, safe-direction capacitor selection, traceable datasheet/fallback factories, and self-describing `CW-PSV-*` withheld-value findings.
+- Reconcile exact identity across independent sources with distinct agreement/conflict/missing/human-approved states; approvals target a specific identity and never rewrite the underlying source result.
+- Block physical CPL generation unless every primary part has a validated identity bundle, complete pin→pad coverage, and an exact selected-footprint match. BOM-only output remains available when the P0 gate blocks manufacturing placement.
+- Add nine executable identity adversarial/control fixtures; native reconciliation and handoff checks score `CW-ID-001` through `CW-ID-004` at 1.0 precision/recall with no unsupported identity scope.
+
+### Sprint 56 execution — T246 producer closure
+
+- Wire the shared calculation substrate through automatic bypass generation and representative switching/LDO, crystal, USB-C, CAN/RS-485, reset/display, and analog-filter producers. Emitted support parts retain policy, confidence, `CALC-*` identity, and resolvable calculation evidence; unprovenanced legacy parser hints remain compatibility data and are not promoted into typed recommendations.
+- Select feedback dividers jointly to preserve ratio within a declared impedance window, round minimum capacitors upward, and keep conventional support values only as bounded heuristic fallbacks. Invalid or incompatible selections are withheld under `CW-PSV-001` through `CW-PSV-003` before a passive network is emitted.
+- Verify ten independently reviewed passive cases through the calculation substrate and actual producers, including buck/boost/LDO, crystal, USB-C, CAN/RS-485, analog RC, and adverse fail-closed behavior. All three passive rules score 1.0 precision and recall.
+
+### Sprint 56 execution — T248 validator calibration
+
+- Split validator impact (`blocker|major|minor|info`) from detection confidence while retaining `level` as a derived compatibility property. Only verified/corroborated blockers render as hard defects; the verified stub-pinout safety gate remains blocking.
+- Require every actionable validator finding to publish its stable rule ID, unit-labelled observation, expected constraint, resolvable evidence, and safest next action. Versioned suppressions require a narrow target, owner, reason, approval, and future expiry; they mark findings without removing them from benchmark denominators.
+- Publish deterministic JSON and Markdown scorecards covering exactly 33 emitted/contract rule IDs: 14 scored and 19 explicitly unsupported. The 40-fixture supported aggregate is **1.000 precision / 1.000 recall**, above the **0.95 / 0.90** release floor, and the release workflow now runs the benchmark baseline gate.
+- Full Windows/Python 3.13 source and exact installed-wheel suites after Sprint 56: **1764 passed, 16 classified skips** each. The `0.33.0` wheel and sdist pass `twine check`; wheel provenance resolves from the isolated environment. Ruff, benchmark baseline, and diff checks pass.
+
+### T244 remediation — embedded-path safety and supersession
+
+- Reject machine-local Windows drive, UNC, POSIX/home, and `file://` paths anywhere inside recursively inspected evidence strings, including the real `footprint:C:\Users\…\.kicad_mod` producer path and local paths hidden in HTTP query/fragment text. Direct record validation and ledger admission use the same detector; HTTP(S) userinfo credentials are also rejected.
+- Restore the frozen nullable `supersedes` link across `EvidenceRecord`, builders, copies, manifests, and legacy-compatible rehydration without changing deterministic evidence IDs. Forward links load independently of manifest order; unresolved/self/cyclic links fail closed.
+- Make sorted-manifest rehydration order-independent for corroborated records and prevent superseded evidence from remaining authoritative at the fabrication trust gate.
+- Consolidate all emitted power-rule identities on `CW-PWR-*`; accept `CW-POWER-*` only as explicit legacy benchmark input aliases, canonicalize before scoring, and enforce the boundary with a repository namespace contract test.
+- Full Windows/Python 3.13 source suite after T244.R1/R2: **1601 passed, 16 classified skips**. Ruff and diff checks pass; the focused exact-wheel evidence safety/schema suite passes **60 tests**. T244.R3 adds **48 focused passing tests** plus a green benchmark baseline gate.
 
 ### Fixed
 
