@@ -2,6 +2,276 @@
 
 > Work only on what's listed here. Check boxes as completed, update CHANGELOG.md alongside.
 
+## Roadmap Principles (2026-07-25)
+
+The v0.32 release substantially improved artifact integrity, resumability, import analysis, placement review, and manufacturing-delivery safety. The next roadmap is deliberately narrower than the current command surface: first make every product claim measurable, then deepen electrical accuracy, then close the loop from schematic to a real PCB and from imported findings to safe repairs.
+
+> **Planner layer:** Sprints 55–60 below are grouped into six outcome epics (A–F) with dependency ordering, frozen cross-epic schemas, sub-task breakdowns, and exit gates in [`EPICS.md`](./EPICS.md). Read that first for the *why/what-order*; this file is the executable task list. Legacy audit findings F11/F17/F18/F19 are absorbed into Epics B (T245.4) and C (T249.1–.3).
+
+Every sprint below must preserve these cross-cutting rules:
+
+- **Truth before convenience:** unverified, estimated, heuristic, review-only, and fabrication-ready states remain distinct in CLI, API, MCP, reports, and manifests.
+- **Evidence before confidence:** a score or recommendation must link to the rule, calculation, source, or tool result that produced it. Missing evidence reduces confidence; it never silently receives credit.
+- **Fail closed at irreversible boundaries:** unresolved pinouts, ambiguous footprints, failed ERC/DRC, stale prices, and incomplete routing cannot become order-ready outputs.
+- **One behavior across surfaces:** CLI, Python, HTTP, MCP, and agent skills consume the same service-layer contracts and return the same status vocabulary.
+- **Benchmarks over anecdotes:** each accuracy feature lands with a positive/negative corpus, measured false-positive and false-negative behavior, and a checked-in regression fixture.
+
+### Roadmap success measures
+
+| Pillar | Measure | Target by Sprint 60 |
+|---|---|---|
+| Product truth | Advertised workflows with an explicit maturity/verification state | 100% |
+| Regression health | Required source and built-wheel suites | 100% green; no unexplained skips |
+| Electrical accuracy | Curated benchmark findings with traceable evidence | >=95% precision and >=90% recall |
+| Component trust | Routed critical parts with verified pinout + footprint evidence | 100% |
+| PCB handoff | Golden designs producing a pad-bearing board that loads and passes configured KiCad DRC | 100% |
+| Repair safety | Applied repairs that are transactional, idempotent, and auditable | 100% |
+| Confidence honesty | Score contribution backed by completed evidence | 100% |
+
+---
+
+## Sprint 55 — Release Truth, Regression Recovery, and Product Benchmarks (v0.32.1) — IN PROGRESS
+
+**Goal:** Restore a trustworthy green baseline and make product maturity measurable before adding more surface area. This is the immediate sprint.
+
+### T241. Restore the source-tree and installed-wheel release gates (P0, HIGH) — IN PROGRESS
+
+- [x] Fix the current source-selected baseline (`1431 passed, 16 skipped, 7 failed, 6 errors` on Windows/Python 3.13): the three sample `svg-left-overflow` regressions, their layout-quality fixture errors, and the generation-call determinism regression. Long centered root-sheet titles now reserve their estimated left half-width; the determinism test is isolated from presentation validation without weakening production gates.
+- [x] Make a plain developer `python -m pytest` test the checkout instead of accidentally collecting/importing an already-installed `circuit_weaver`; add a regression or documented runner that proves import origin and version. Source and wheel modes now verify the resolved package path/version and propagate the selected interpreter/package to subprocesses.
+- [ ] Run the same required gates against the source tree and the exact built wheel on Linux and Windows, with subprocess tests inheriting the intended package under test. Local Windows/Python 3.13 is green for both (`1764 passed, 16 classified skips` each against the `0.33.0` candidate); CI builds once and runs the full exact-wheel matrix beside the source matrix.
+  - **Issue (open):** the only remaining item — hosted Linux (3.10–3.14) + Windows (3.12/3.13) matrix has not been observed green; it cannot be confirmed from this machine.
+  - **Solution / status:** work is code-complete locally; closing this box requires a push that triggers the CI workflow and an observed green run. External dependency, not a code blocker — does **not** block starting T243/T244.
+- [x] Classify every skip as platform-required, optional-tool-required, network, or defect; fail CI on unknown/unclassified skips. Missing checked-in fixtures now fail instead of skipping, and runtime as well as collection/setup skips are enforced.
+- [x] Record the local source/wheel counts and exact commands in `CHANGELOG.md`; update CI/release workflows to select source or exact-wheel mode explicitly. Hosted matrix counts remain part of the preceding exit item.
+
+### T242. Publish a machine-readable capability and maturity registry (P1, MEDIUM) ✅ DONE
+
+- [x] Inventory every CLI command and corresponding Python/HTTP/MCP/skill path; assign one state: `supported`, `beta`, `experimental`, `review_only`, or `deprecated`. The registry covers all 43 top-level commands plus both `cache` child operations and advertises Python surfaces only when a real public function exists.
+- [x] Define verification prerequisites and output guarantees on the ordered design ladder, with a paired non-ordered `not_applicable` state for operational commands that make no design claim. Variable/tool-dependent commands publish conservative default guarantees and may claim more only with matching returned evidence.
+- [x] Generate the README capability table from the registry and surface the same copy-safe JSON through `doctor --json`, terminal doctor summaries, the public Python accessor, and HTTP `GET /capabilities`; CI rejects generated-doc drift.
+- [x] Add contract tests that reject missing CLI registrations, malformed schemas/vocabularies, mixed `not_applicable` states, and runtime claims stronger than their returned evidence supports.
+
+### T243. Establish a versioned electrical-accuracy benchmark corpus (P1, HIGH) ✅ DONE
+
+- [x] Add small, reviewable positive and negative fixtures for power, clocks, USB, I2C/SPI/UART, analog, protection, and manufacturing checks; every oracle uses the frozen `CW-<DOMAIN>-<NNN>` namespace and includes a rationale.
+- [x] Separate generator-owned positive fixtures from independently-authored negative reference fixtures with explicit source type, reference, and license provenance.
+- [x] Add a real-validation benchmark runner that reports precision, recall, false positives, false negatives, unsupported cases, and runtime by rule/domain without turning unsupported scope into false negatives.
+- [x] Store a versioned baseline artifact and gate per-rule/per-domain precision and recall rather than aggregate pass counts. The first supported rule now uses the canonical `CW-PWR-*` namespace and is gated at 1.0 precision/recall; the remaining eight domain cases stay explicitly unsupported until their normalized validators land.
+
+### T244. Emit an evidence manifest for generated and analyzed designs (P1, HIGH) ✅ DONE
+
+- [x] Add versioned `evidence_manifest.json` with timestamp-independent stable IDs and frozen subjects for component identity, pinout, footprint, power parameters, calculations, validator findings, tool versions, and verification results. Producers record only evidence they actually possess.
+- [x] Carry evidence IDs through validation JSON, generated design and review reports, confidence reports, assembly/delivery manifests, legacy and MVP HTTP validation, generated HTTP archives, and MCP validation/generation responses.
+- [x] Preserve source URI/document identity, retrieval time, content hash when available, extraction method, confidence, freshness, and conflicts while rejecting credentials, machine-local absolute paths, unsafe manifest references, and unresolved links.
+- [x] Fail closed on fabrication-ready delivery claims backed only by missing, stub, unacknowledged heuristic, insufficient-confidence, or conflicting evidence. Existing JLC export remains explicitly non-fabrication-ready unless a future board-verification path supplies trusted critical evidence.
+
+**Sprint exit:** all mandatory source/wheel gates are green; every public workflow has a maturity state; the benchmark and evidence schemas are versioned and consumed by at least validation and reporting.
+
+> **T244 REMEDIATION (reopened — planner code-review, 2026-07-27).** Suite is green and the ID scheme / fail-closed gate / manifest determinism verified correct, but three defects must close before T244 is truly done:
+> - [x] **T244.R1 (HIGH — data leak).** Redaction is now recursive and unanchored for embedded Windows drive, UNC, POSIX/home, and `file://` paths; direct record validation and ledger admission share one detector. The real `collect_component_evidence` absolute-`.kicad_mod` path is rejected before manifest emission. HTTP(S) userinfo and local paths hidden in URL queries are rejected without blocking ordinary remote URLs or slash notation.
+> - [x] **T244.R2 (MEDIUM — frozen-contract fork).** `EvidenceRecord.supersedes` now flows through builder, copy, manifest, and legacy-compatible rehydration; IDs remain independent of supersession metadata. Programmatic links must already resolve, forward manifest links load deterministically, cycles/unresolved links fail, corroborated records round-trip regardless of ID sort order, and superseded records cannot remain fabrication-authoritative.
+> - [x] **T244.R3 (cleanup).** Consolidated emitted rule IDs on `CW-PWR-*`; legacy `CW-POWER-*` values are accepted only at the benchmark input boundary and canonicalized before scoring or result emission. A repository contract test prevents the old namespace from returning outside that explicit alias map.
+>
+> **Remediation verification:** R1/R2 source suite `1601 passed, 16 classified skips`; focused exact-wheel evidence safety/schema suite `60 passed`. R3 focused namespace/benchmark suite `48 passed`, Ruff clean, and the benchmark baseline gate remains green at 1.0 precision/recall for supported power rules.
+
+---
+
+## Sprint 56 — Evidence-Backed Electrical Accuracy (v0.33.0) — ✅ DONE
+
+**Goal:** Move from structurally valid circuits to recommendations and generated support networks that are traceable to component limits, equations, and cross-checked identity data.
+
+### T245. Model typed power domains and operating envelopes end to end (P1, HIGH) ✅ DONE
+
+- [x] Extend the normalized schema with optional rail min/nominal/max voltage, source/load/bidirectional direction, peak and steady current, sequencing constraints, tolerance, and provenance. `PowerDomain`, `PowerReq`, and `PowerPin` reject invalid ranges/directions while retaining positional compatibility for legacy nominal-voltage and peak-current declarations.
+- [x] Propagate those fields through canonical/legacy ingest, component registries and resolver caches, templates, `DesignIR`, generational repair, validation, power-tree/design-document reporting, HTML review, and `placement_review_context.json`. Omission-preserving serialization keeps unknown values absent rather than converting them to zero or inferred limits.
+- [x] Detect over-voltage, under-voltage, reverse-flow, source contention, regulator dropout/headroom, steady/peak current-budget, and sequencing violations as `CW-PWR-001` through `CW-PWR-007`. Findings carry sparse unit-labelled inputs, observed/expected values, margins, remediations, and resolvable calculation/parameter/rail evidence; unresolved provenance tokens are removed rather than published as dangling evidence IDs.
+- [x] Expand the electrical corpus from 18 to 27 fixtures with valid multi-rail and battery margins plus a detected adverse case for every `CW-PWR-*` rule. All seven rules baseline at 1.0 precision/recall with zero false positives/negatives; source suite is `1551 passed, 16 classified skips`, and the focused exact-wheel T245/evidence/report suite is `72 passed`.
+
+### T246. Make support-passive synthesis equation- and datasheet-driven (P1, HIGH) ✅ DONE
+
+> **Planner spec:** see `EPICS.md` T246.1–.6 + the frozen **`CalculationRecord`** contract box. Land the shared `src/circuit_weaver/calc.py` equation module **first** (T246.1) — validators refactor to consume it so synth/validate/benchmark share one formula. Precedence is fail-closed `datasheet → equation → bounded fallback`; a value with none of those is **withheld** (`CW-PSV-*`), never a bare `100nF`. Retires the per-MPN `_FEEDBACK_VREF` table.
+
+> **Execution status (2026-07-27): T246.1 ✅ DONE.** Added the immutable, unit-explicit `CalculationRecord` substrate and deterministic `CALC-*` IDs in `calc.py`; feedback-divider, RC/LC-cutoff, inverse RC sizing, and crystal-load synthesis/validation now delegate to that module. The crystal equation drift was corrected to `Cext = 2*(CL - Cstray)`, and both legacy `calc:CW-*` acts and `calc:<equation_id>@<REF>` acts resolve through the evidence grammar. Source suite: `1574 passed, 16 classified skips`; focused exact-wheel contract/delegation suite: `36 passed`.
+
+> **Execution status (2026-07-27): T246.2 ✅ DONE.** A separate deterministic adapter now emits each `CalculationRecord` as idempotent `kind=calculation` evidence against its frozen `param:<REF>.<domain>.<field>` target, requires all cited input evidence to resolve, and returns a new record with `emits_evidence` populated without mutating the pure equation result. Integrated focused schema/calculation suite: `51 passed` across T246/T247/R3 contracts.
+
+> **Execution status (2026-07-27): T246.3–.6 ✅ DONE.** Normalized recommendations enforce datasheet → equation → bounded-fallback precedence and provenance; feedback Vref moved off the MPN table; E6/E12/E24/E96 selection, ratio-preserving divider-pair snapping, safe-up capacitor selection, and deterministic `CW-PSV-001…003` withholding are implemented. Auto-bypass plus switching/LDO, crystal, USB-C, CAN/RS-485, reset/display, and analog-filter producers retain calculation evidence and reject invalid selections before emission. The 10-case independent passive oracle is producer-verified, all three `CW-PSV-*` rules score 1.0 precision/recall, and representative synthesized designs self-validate. Full source suite: `1764 passed, 16 classified skips`.
+
+- [x] Replace remaining universal defaults for regulators, crystals, reset/enable straps, interface termination, and protection networks with normalized recommendation records plus bounded fallback policies.
+- [x] Emit a calculation record for every synthesized value: inputs, units, equation/rule version, chosen standard value, tolerance, margin, and source evidence.
+- [x] Reject incompatible or out-of-range synthesized networks instead of warning after emission.
+- [x] Verify representative buck/boost/LDO, crystal, USB, CAN/RS-485, and analog front-end designs against independently reviewed expected values.
+
+### T247. Cross-check part identity, pinout, symbol, and footprint before routing (P0, HIGH) ✅ DONE
+
+> ⚠️ **P0 — can't ship late.** Only P0 in Sprint 56; it's the identity guard Epic C's PCB handoff (T249/T251) calls before emitting pads, and it closes legacy F17/F18/F19's failure class. Must land **within** this sprint even if T246/T248 compress — do not let it roll into Sprint 57.
+
+> **Execution status (2026-07-27): T247.1 ✅ DONE.** Added an immutable, deterministic identity record for exact manufacturer/MPN/package, symbol pins, footprint pads, one-to-one pin→pad joins, distributor aliases, and evidence IDs. Unknown identity remains explicitly unresolved, ambiguous mappings fail closed, and real-world manufacturer/package/distributor text is preserved exactly. Focused identity suite: `9 passed`.
+
+> **Execution status (2026-07-27): T247.2–.4 ✅ DONE.** Exact independent-source reconciliation now preserves `agree|conflict|missing|human-approved`; approvals target a specific identity. The physical JLC CPL boundary calls the fail-closed handoff guard and requires complete pin→pad coverage plus exact footprint identity for every primary component. Nine adversarial/control fixtures execute the native guard; `CW-ID-001…004` each score 1.0 precision/recall with zero unsupported cases. Focused identity/JLC suite: `49 passed`; benchmark/baseline contracts: `42 passed`.
+
+- [x] Build a shared identity record joining manufacturer, exact MPN/package suffix, symbol pins, footprint pad numbers, and distributor aliases.
+- [x] Compare at least two independent sources when available; represent agreement, conflict, missing coverage, and explicit human approval as distinct states.
+- [x] Block routing/manufacturing when an exact package cannot be proven compatible with the selected footprint or when symbol-pin-to-pad mapping is ambiguous.
+- [x] Add adversarial fixtures for look-alike MPNs, package suffix changes, exposed pads, duplicated pin names, swapped differential pairs, and distributor stubs.
+
+### T248. Calibrate validator severity and remediation quality (P1, MEDIUM) ✅ DONE
+
+> **Planner spec:** see `EPICS.md` T248.1–.4. Core fix: `ValidationIssue.level` (validator.py:39) conflates *confidence* and *severity* — split into `detection_confidence` (frozen evidence ladder) + `severity` (`blocker|major|minor|info`), keep `level` as a derived compat property. Land that schema split **first**. A `blocker` may render as a hard defect only if `detection_confidence ∈ {verified, corroborated}`. Suppressions expire and stay in the scorecard denominators. This is the **last task in the sprint** — it certifies the Epic B ≥95%/≥90% gate, so it finalizes *after* T246/T247.
+
+> **Execution status (2026-07-27): T248.1–.4 ✅ DONE.** `ValidationIssue` now separates severity from detection confidence while retaining derived `level`; every validator finding carries a canonical rule ID, unit-labelled observation, expected constraint, resolvable evidence, and safest action. Versioned narrow/expiring suppressions are validated and mark rather than remove findings. The published 40-fixture scorecard inventories exactly 33 emitted/contract rule IDs: 14 scored and 19 explicitly unsupported; supported aggregate precision and recall are both `1.000`, above the `0.95/0.90` gate. The release workflow runs the benchmark baseline. Full source and exact installed-wheel suites: `1764 passed, 16 classified skips` each; the `0.33.0` distributions pass `twine check`, and Ruff, benchmark baseline, and diff checks pass.
+
+- [x] Run every validation rule through the Sprint 55 benchmark and publish per-rule precision/recall plus unsupported scope.
+- [x] Split detection confidence from issue severity; a severe but weakly evidenced suspicion must not masquerade as a confirmed defect.
+- [x] Require each actionable finding to name the violated constraint, observed value, expected range, evidence, and safest next action.
+- [x] Add explicit suppressions/approved overrides with owner, reason, scope, and expiry; stale or overly broad suppressions fail the release gate.
+
+**Sprint exit:** critical generated circuits have traceable operating envelopes, calculated support values, and verified pin-to-pad identity; benchmark targets reach >=95% precision and >=90% recall for supported rules.
+
+---
+
+## Sprint 57 — Real PCB Handoff and Constraint Closure (v0.34.0) — PLANNED
+
+**Goal:** Convert an approved placement review into a real, pad-bearing KiCad PCB with authoritative connectivity and verification, while preserving the review-only placement-preview contract.
+
+### T249. Create an authoritative schematic-to-PCB handoff (P0, HIGH)
+
+- [ ] Generate or update a real `.kicad_pcb` using resolved library footprints, pad numbers, net assignments, board outline, stack-up, and the approved placement state; never relabel the existing preview as authoritative.
+- [ ] Preserve stable references and UUID identity across regenerate/apply cycles, and produce a semantic change manifest for added, removed, moved, or remapped items.
+- [ ] Refuse handoff for placeholder geometry, unresolved footprints, pin/pad mismatches, stale placement approval, or missing board constraints.
+- [ ] Prove round-trip loadability in supported KiCad 8/9/10 gates with golden two-layer and four-layer designs.
+
+### T250. Compile electrical intent into enforceable PCB constraints (P1, HIGH)
+
+- [ ] Translate normalized interfaces and power domains into net classes, differential pairs, width/clearance/via rules, impedance targets, length constraints, keepouts, and placement constraints.
+- [ ] Record which constraints are calculated, user-specified, manufacturer-specified, or fabrication-profile-derived and flag conflicts before board mutation.
+- [ ] Cover USB 2.0, crystal loops, switch-mode power loops, I2C, CAN/RS-485, analog sense, and high-current rails in the benchmark corpus.
+- [ ] Verify that emitted KiCad project/board rules match the evidence manifest and survive reopen/export.
+
+### T251. Add transactional DRC and connectivity closure (P0, HIGH)
+
+- [ ] Run KiCad connectivity checks and DRC on the exact staged board bytes; parse violations into the shared findings schema with stable rule IDs and object references.
+- [ ] Require zero unapproved connectivity errors and zero fabrication-profile blockers before publishing an authoritative board.
+- [ ] Preserve the last known-good board and reports when apply, save, reload, DRC, or manifest reconciliation fails.
+- [ ] Add deterministic rerun and failure-injection tests for interrupted writes, stale board state, KiCad absence, version differences, and DRC parser drift.
+
+### T252. Define a single manufacturing-readiness contract (P1, MEDIUM)
+
+- [ ] Replace scattered readiness booleans with one state machine spanning identity, placement, routing, ERC, DRC, BOM/CPL reconciliation, Gerber/drill validation, and approved overrides.
+- [ ] Make CLI, API, MCP, HTML reports, and artifact manifests return the same state, blockers, evidence IDs, and next safe actions.
+- [ ] Add a `manufacturing-readiness --json` command and prevent export/publish paths from bypassing its blockers.
+- [ ] Gate two golden designs through schematic generation -> reviewed placement -> real PCB -> DRC -> verified BOM/CPL/Gerbers.
+
+**Sprint exit:** at least two representative designs complete a transactional, evidence-linked KiCad PCB handoff and pass the configured KiCad DRC/manufacturing-readiness gate.
+
+---
+
+## Sprint 58 — Imported-Design Review and Safe Repair Loop (v0.35.0) — PLANNED
+
+**Goal:** Turn import analysis from a report-only feature into a high-value, human-reviewable remediation workflow without making uncontrolled edits to customer designs.
+
+### T253. Unify findings across generated and imported artifacts (P1, MEDIUM)
+
+- [ ] Normalize schematic, PCB, Gerber, ERC, DRC, DFM, sourcing, and evidence conflicts into one versioned finding model.
+- [ ] Include stable rule/finding IDs, severity, detection confidence, exact object/location, evidence, remediation options, and verification status.
+- [ ] Deduplicate the same root cause across analyzers while retaining every supporting observation.
+- [ ] Add SARIF and JSON export for CI/code-review integration without weakening the native HTML report.
+
+### T254. Generate bounded, transactional repair plans (P0, HIGH)
+
+- [ ] Convert supported findings into explicit operations with prerequisites, affected objects/nets, expected postconditions, risk, and rollback data.
+- [ ] Separate `suggest`, `preview`, `apply`, and `verify`; require an explicit approved plan hash before mutating imported KiCad files.
+- [ ] Start with deterministic low-risk repairs: metadata/property normalization, library-table fixes, explicit no-connects, net-class assignment, missing test-point labels, and evidence-backed support passives.
+- [ ] Reject ambiguous topology, part replacement, pin remapping, or geometry edits unless a dedicated repair implementation proves the required invariants.
+
+### T255. Add semantic and visual before/after review (P1, HIGH)
+
+- [ ] Render affected schematic sheets/PCB regions before and after a proposed repair and pair them with a semantic net/component/constraint diff.
+- [ ] Verify unchanged regions remain byte- or semantically stable according to the operation contract.
+- [ ] Persist reviewer decision, plan hash, timestamps, evidence IDs, tool versions, and verification results in an append-only repair log.
+- [ ] Add idempotency, rollback, stale-plan, concurrent-edit, and partial-failure tests.
+
+### T256. Expose the complete review/repair lifecycle across product surfaces (P1, MEDIUM)
+
+- [ ] Implement shared service functions for import, analyze, findings, repair preview/apply/verify, and status/resume.
+- [ ] Route CLI, HTTP, MCP, and agent skills through those functions with schema parity and structured errors.
+- [ ] Add end-to-end contract tests proving the same project state, findings, plan hash, and blockers on every surface.
+- [ ] Document human approval boundaries and require agents to report unsupported repairs instead of improvising file edits.
+
+**Sprint exit:** a supported imported-design defect can be found, previewed, explicitly approved, applied transactionally, visually reviewed, and re-verified with a complete audit trail on CLI and MCP/API surfaces.
+
+---
+
+## Sprint 59 — Sourcing Intelligence and BOM Resilience (v0.36.0) — PLANNED
+
+**Goal:** Make BOM decisions genuinely useful for prototype and production planning by replacing placeholder lifecycle logic and weak keyword alternates with provenance-backed, compatibility-checked data.
+
+### T257. Replace placeholder lifecycle/availability results with sourced snapshots (P0, HIGH)
+
+- [ ] Remove the DigiKey lifecycle `Unknown` placeholder path from `sourcing_auditor.py`; use supported distributor/manufacturer integrations with explicit unavailable/offline states.
+- [ ] Normalize stock, price breaks, MOQ, packaging, factory lead time, lifecycle, timestamp, currency, region, and source into a cached snapshot schema.
+- [ ] Distinguish zero stock from lookup failure, missing credentials, stale cache, and a part not carried by that distributor.
+- [ ] Add deterministic recorded-response tests and keep live-network tests separately marked and non-authoritative.
+
+### T258. Require compatibility evidence for suggested alternates (P0, HIGH)
+
+- [ ] Replace description-keyword alternates with a constraint comparison over function, electrical limits, exact package/footprint, pinout, temperature grade, qualification, and critical parameters.
+- [ ] Classify candidates as `drop_in`, `schematic_change`, `pcb_change`, or `unverified`; never call a candidate pin-compatible without a verified pin/pad map.
+- [ ] Explain every passed, failed, missing, and waived constraint and link it to evidence.
+- [ ] Add adversarial alternate fixtures where similar descriptions hide incompatible pinouts, voltage grades, or packages.
+
+### T259. Add quantity- and risk-aware BOM scenarios (P1, MEDIUM)
+
+- [ ] Compare prototype, pilot, and production quantities across supported distributors, including price breaks, MOQ, cut-tape/reel effects, and configurable buffer/scrap.
+- [ ] Optimize for landed component cost, supplier count, stock coverage, lifecycle risk, or a user-defined weighted policy without hiding tradeoffs.
+- [ ] Preserve the exact chosen snapshot and policy in an order-plan artifact so results remain reproducible after market data changes.
+- [ ] Export order-ready lists only when identity and distributor part numbers reconcile exactly with the manufacturing BOM.
+
+### T260. Integrate sourcing freshness into readiness and change review (P1, MEDIUM)
+
+- [ ] Add configurable freshness thresholds and surface expired/partial snapshots as readiness blockers or explicit waivers.
+- [ ] Diff BOM revisions for cost, availability, lifecycle, identity, and alternate-status changes.
+- [ ] Carry sourcing blockers and evidence into the unified report, manifest, API/MCP responses, and project resume plan.
+- [ ] Benchmark a JLCPCB-focused prototype scenario and a mixed-distributor production scenario end to end.
+
+**Sprint exit:** every BOM risk statement and alternate recommendation is timestamped, sourced, reproducible, and compatibility-classified; no lookup failure is reported as zero stock.
+
+---
+
+## Sprint 60 — Simulation Evidence and Calibrated Confidence (v0.37.0) — PLANNED
+
+**Goal:** Make simulation and confidence outputs decision-grade for supported circuit classes and explicitly inconclusive everywhere else.
+
+### T261. Validate SPICE model acquisition and binding (P1, HIGH)
+
+- [ ] Replace guessed model URLs and MPN-derived subcircuit names with a manifest that records license, source, checksum, model kind, declared subcircuit, pin order, temperature/range limits, and validation state.
+- [ ] Safely unpack and inspect model archives; block path traversal, binary surprises, ambiguous subcircuits, and unverified pin-order bindings.
+- [ ] Map symbol pins to model nodes explicitly and fail closed on missing/duplicate/ambiguous mappings.
+- [ ] Add offline fixture models for supported regulator, op-amp, filter, MOSFET, and protection cases.
+
+### T262. Deliver trustworthy simulations for bounded topology classes (P1, HIGH)
+
+- [ ] Build complete testbenches with sources, loads, startup conditions, tolerances, and analysis directives from normalized design intent rather than emitting disconnected partial netlists.
+- [ ] Implement transient, operating-point, and AC metrics with units and pass/fail limits; remove the current placeholder AC metric behavior.
+- [ ] Detect convergence failures, skipped/unmodeled devices, invalid measurements, and insufficient simulation duration as inconclusive—not passing.
+- [ ] Compare simulated metrics to hand-calculated/golden expectations with numeric tolerances in CI.
+
+### T263. Rebuild confidence scoring around evidence coverage and calibration (P0, HIGH)
+
+- [ ] Inventory every confidence-score contribution and remove credit derived solely from component counts, names, unverified heuristics, or skipped tools.
+- [ ] Report separate dimensions for evidence coverage, rule results, external-tool verification, and unresolved risk instead of compressing uncertainty into one opaque grade.
+- [ ] Calibrate thresholds against the benchmark corpus and publish confusion matrices/reliability curves for any pass/fail recommendation derived from the score.
+- [ ] Ensure adding an unknown, skipped, stale, or conflicting input can only hold or reduce confidence unless new verified evidence resolves it.
+
+### T264. Close the roadmap with outcome-level release gates (P1, MEDIUM)
+
+- [ ] Run generation, import/repair, PCB handoff, manufacturing, sourcing, and supported simulation golden journeys from the exact built wheel.
+- [ ] Publish machine-readable latency, precision/recall, evidence coverage, KiCad verification, repair success/rollback, and sourcing freshness metrics as release artifacts.
+- [ ] Define regression budgets and require an explicit reviewed waiver for any release that falls below them.
+- [ ] Reconcile README claims, capability maturity, sample outputs, agent skills, and changelog against the measured release artifacts.
+
+**Sprint exit:** supported simulations have verified models/testbenches and numeric oracle tests; confidence outputs never reward missing evidence; every major product journey has an outcome-level release gate.
+
 ## Sprint 54 — Layout Quality Zero Gate, Density Strategy, Sheet Splitting, Autorouter Hardening (v0.31.0)
 
 **Goal:** Close the remaining Sprint 53 layout follow-ups (ENDPOINT-INSIDE crossings, F13, F15), give real designs the same geometric scrutiny as the test corpus, and turn the Freerouting wrapper from a placeholder into a fail-closed, pipeline-correct integration.
