@@ -78,7 +78,7 @@
 - Split validator impact (`blocker|major|minor|info`) from detection confidence while retaining `level` as a derived compatibility property. Only verified/corroborated blockers render as hard defects; the verified stub-pinout safety gate remains blocking.
 - Require every actionable validator finding to publish its stable rule ID, unit-labelled observation, expected constraint, resolvable evidence, and safest next action. Versioned suppressions require a narrow target, owner, reason, approval, and future expiry; they mark findings without removing them from benchmark denominators.
 - Publish deterministic JSON and Markdown scorecards covering exactly 33 emitted/contract rule IDs: 14 scored and 19 explicitly unsupported. The 40-fixture supported aggregate is **1.000 precision / 1.000 recall**, above the **0.95 / 0.90** release floor, and the release workflow now runs the benchmark baseline gate.
-- Full Windows/Python 3.13 source and exact installed-wheel suites after Sprint 56: **1764 passed, 16 classified skips** each. The `0.33.0` wheel and sdist pass `twine check`; wheel provenance resolves from the isolated environment. Ruff, benchmark baseline, and diff checks pass.
+- Full Windows/Python 3.13 source and exact installed-wheel suites after Sprint 56: **1766 passed, 16 classified skips** each. The `0.33.0` wheel and sdist pass `twine check`; wheel provenance resolves from the isolated environment. Ruff, benchmark baseline, and diff checks pass.
 
 ### T244 remediation — embedded-path safety and supersession
 
