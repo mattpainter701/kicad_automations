@@ -14,9 +14,10 @@ import json
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from .component_db import ComponentDef, auto_generate_bypass_caps
+from .evidence_policy import validate_output_relative_evidence_manifest
 
 _REFERENCE_RE = re.compile(r"^([A-Za-z]+)(\d+)$")
 
@@ -46,9 +47,12 @@ class AssemblyItem:
     dnp: bool = False
     exclude_from_bom: bool = False
     exclude_from_cpl: bool = False
+    evidence_ids: tuple[str, ...] = ()
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        payload = asdict(self)
+        payload["evidence_ids"] = list(self.evidence_ids)
+        return payload
 
 
 @dataclass
@@ -58,6 +62,8 @@ class AssemblyManifest:
     items: list[AssemblyItem]
     auto_bypass_components: int = 0
     retired_references: list[str] = field(default_factory=list)
+    evidence_ids: tuple[str, ...] = ()
+    evidence_manifest: str = ""
     schema_version: int = 2
     prepared_components: list[ComponentDef] = field(default_factory=list, repr=False)
 
@@ -67,6 +73,8 @@ class AssemblyManifest:
             "item_count": len(self.items),
             "auto_bypass_components": self.auto_bypass_components,
             "retired_references": list(self.retired_references),
+            "evidence_ids": list(self.evidence_ids),
+            "evidence_manifest": self.evidence_manifest,
             "items": [item.to_dict() for item in self.items],
         }
 
@@ -77,7 +85,13 @@ class AssemblyManifest:
             raise AssemblyManifestError("Assembly manifest items must be a list")
         allowed = set(AssemblyItem.__dataclass_fields__)
         items = [
-            AssemblyItem(**{key: value for key, value in raw.items() if key in allowed})
+            AssemblyItem(
+                **{
+                    key: tuple(value) if key == "evidence_ids" and isinstance(value, list) else value
+                    for key, value in raw.items()
+                    if key in allowed
+                }
+            )
             for raw in raw_items
             if isinstance(raw, dict)
         ]
@@ -85,6 +99,8 @@ class AssemblyManifest:
             items=items,
             auto_bypass_components=int(payload.get("auto_bypass_components", 0) or 0),
             retired_references=[str(ref) for ref in payload.get("retired_references", []) or []],
+            evidence_ids=tuple(str(item) for item in payload.get("evidence_ids", []) or []),
+            evidence_manifest=validate_output_relative_evidence_manifest(payload.get("evidence_manifest", "")),
             schema_version=int(payload.get("schema_version", 1) or 1),
         )
 
@@ -98,11 +114,7 @@ class AssemblyManifest:
         return [item for item in self.items if not item.dnp and not item.exclude_from_bom]
 
     def active_cpl_items(self) -> list[AssemblyItem]:
-        return [
-            item
-            for item in self.items
-            if not item.dnp and not item.exclude_from_cpl and not item.exclude_from_bom
-        ]
+        return [item for item in self.items if not item.dnp and not item.exclude_from_cpl and not item.exclude_from_bom]
 
     def missing_footprint_refs(self) -> list[str]:
         return sorted(item.reference for item in self.active_cpl_items() if not item.footprint)
@@ -199,6 +211,9 @@ def build_assembly_manifest(
     *,
     include_auto_bypass: bool = True,
     previous_manifest: AssemblyManifest | dict[str, Any] | str | Path | None = None,
+    evidence_ids_by_reference: Mapping[str, Iterable[str]] | None = None,
+    evidence_ids: Iterable[str] = (),
+    evidence_manifest: str = "",
 ) -> AssemblyManifest:
     """Build one exhaustive manifest with stable references.
 
@@ -208,6 +223,12 @@ def build_assembly_manifest(
     so manifest construction does not mutate the caller's compiled design.
     """
     prepared = copy.deepcopy(list(components))
+    evidence_by_reference = {
+        str(reference): tuple(str(evidence_id) for evidence_id in identifiers)
+        for reference, identifiers in (evidence_ids_by_reference or {}).items()
+    }
+    manifest_evidence_ids = tuple(str(evidence_id) for evidence_id in evidence_ids)
+    evidence_manifest = validate_output_relative_evidence_manifest(evidence_manifest)
     auto_bypass_components = auto_generate_bypass_caps(prepared) if include_auto_bypass else 0
 
     semantic_counts: dict[str, int] = {}
@@ -258,9 +279,7 @@ def build_assembly_manifest(
     retired_references = set(previous.retired_references if previous is not None else [])
     if previous is not None and previous.schema_version >= 2:
         retired_references.update(
-            item.reference
-            for item in previous.items
-            if item.semantic_key and item.semantic_key not in active_semantics
+            item.reference for item in previous.items if item.semantic_key and item.semantic_key not in active_semantics
         )
 
     allocator = _ReferenceAllocator()
@@ -287,9 +306,7 @@ def build_assembly_manifest(
         primary_refs.append(reference)
 
     items: list[AssemblyItem] = []
-    for comp_index, (comp, owner_ref, owner_key) in enumerate(
-        zip(prepared, primary_refs, primary_semantics)
-    ):
+    for comp_index, (comp, owner_ref, owner_key) in enumerate(zip(prepared, primary_refs, primary_semantics)):
         # Generation consumes the prepared inventory directly. Persist every
         # allocated designator on that copy so functional-sheet reordering
         # cannot swap support-part identities relative to BOM/placement data.
@@ -307,6 +324,7 @@ def build_assembly_manifest(
                 owner_ref=owner_ref,
                 functional_section=getattr(comp, "functional_section", "") or "",
                 block_id=getattr(comp, "block_id", "") or "",
+                evidence_ids=evidence_by_reference.get(owner_ref, ()),
             )
         )
 
@@ -316,9 +334,7 @@ def build_assembly_manifest(
             support_index += 1
             prefix = _bypass_prefix(bypass.value, bypass.footprint, bypass.role)
             prior_ref = previous_by_key.get(semantic_key, "")
-            support_ref = (
-                prior_ref if prior_ref.upper().startswith(prefix.upper()) else allocator.allocate(prefix)
-            )
+            support_ref = prior_ref if prior_ref.upper().startswith(prefix.upper()) else allocator.allocate(prefix)
             allocator.reserve(support_ref)
             setattr(bypass, "source_ref", support_ref)
             items.append(
@@ -334,6 +350,7 @@ def build_assembly_manifest(
                     block_id=getattr(comp, "block_id", "") or "",
                     net1=bypass.net,
                     net2=bypass.gnd_net,
+                    evidence_ids=evidence_by_reference.get(support_ref, ()),
                 )
             )
 
@@ -357,6 +374,7 @@ def build_assembly_manifest(
                     block_id=getattr(comp, "block_id", "") or "",
                     net1=strap.net,
                     net2=strap.rail,
+                    evidence_ids=evidence_by_reference.get(support_ref, ()),
                 )
             )
 
@@ -368,6 +386,8 @@ def build_assembly_manifest(
         items=items,
         auto_bypass_components=auto_bypass_components,
         retired_references=sorted(retired_references),
+        evidence_ids=manifest_evidence_ids,
+        evidence_manifest=evidence_manifest,
         prepared_components=prepared,
     )
 

@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "corpus_schema_version": "circuit-weaver-electrical-benchmark/v1",
+  "fixture_count": 40,
+  "regression_budget": {
+    "precision": 0.0,
+    "recall": 0.0
+  },
+  "rules": {
+    "CW-PWR-001": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PWR-002": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PWR-003": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PWR-004": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PWR-005": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PWR-006": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PWR-007": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PSV-001": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PSV-002": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-PSV-003": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-ID-001": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-ID-002": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-ID-003": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-ID-004": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    }
+  },
+  "domains": {
+    "power": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "identity": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "passives": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    }
+  },
+  "aggregate": {
+    "minimum_precision": 0.95,
+    "minimum_recall": 0.9
+  },
+  "coverage": {
+    "CW-ANALOG-001": "unsupported",
+    "CW-ANALOG-002": "unsupported",
+    "CW-ANALOG-003": "unsupported",
+    "CW-CLK-001": "unsupported",
+    "CW-ERC-001": "unsupported",
+    "CW-ERC-002": "unsupported",
+    "CW-ERC-003": "unsupported",
+    "CW-ERC-004": "unsupported",
+    "CW-I2C-001": "unsupported",
+    "CW-ID-001": "scored",
+    "CW-ID-002": "scored",
+    "CW-ID-003": "scored",
+    "CW-ID-004": "scored",
+    "CW-ID-005": "unsupported",
+    "CW-ID-006": "unsupported",
+    "CW-PSV-001": "scored",
+    "CW-PSV-002": "scored",
+    "CW-PSV-003": "scored",
+    "CW-PWR-001": "scored",
+    "CW-PWR-002": "scored",
+    "CW-PWR-003": "scored",
+    "CW-PWR-004": "scored",
+    "CW-PWR-005": "scored",
+    "CW-PWR-006": "scored",
+    "CW-PWR-007": "scored",
+    "CW-PWR-008": "unsupported",
+    "CW-PWR-009": "unsupported",
+    "CW-PWR-010": "unsupported",
+    "CW-PWR-011": "unsupported",
+    "CW-PWR-012": "unsupported",
+    "CW-PWR-013": "unsupported",
+    "CW-SPI-001": "unsupported",
+    "CW-UART-001": "unsupported"
+  },
+  "unsupported_scope": [
+    "CW-ANALOG-001",
+    "CW-CLOCK-001",
+    "CW-I2C-001",
+    "CW-MANUFACTURING-001",
+    "CW-PROTECTION-001",
+    "CW-SPI-001",
+    "CW-UART-001",
+    "CW-USB-001"
+  ]
+}

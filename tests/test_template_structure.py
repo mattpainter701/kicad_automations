@@ -32,6 +32,8 @@ SAMPLE_VALUES = {
     "speed_mhz": 10,
     "z_trace": 50,
     "i2c_addr_offset": 0,
+    "freq": 12e6,
+    "cl_spec": 12.0,
 }
 
 
@@ -62,10 +64,18 @@ def _build_params(template) -> dict[str, object]:
 
     if isinstance(template, DataDrivenTemplate) and not params:
         topo = template._topology
-        if topo in ("buck", "boost", "buck_boost"):
+        if topo == "buck":
             params.update({"vin": 12.0, "vout": 3.3, "iout": 1.0})
+        elif topo in ("boost", "buck_boost"):
+            params.update({"vin": 3.3, "vout": 12.0, "iout": 1.0})
         elif topo == "ldo":
             params.update({"vin": 5.0, "vout": 3.3, "iout": 0.5})
+
+    topology = getattr(template, "_topology", None)
+    if topology == "boost":
+        params.update({"vin": 3.3, "vout": 12.0})
+    elif topology == "buck_boost":
+        params.update({"vin": 3.3, "vout": 5.0})
 
     return params
 
@@ -225,9 +235,9 @@ def test_icl7660_nc_pins_are_explicit_no_connects():
     template = ChargePumpTemplate()
     result = template.generate({"ic": "ICL7660"})
     comp = result.components[0]
-    assert {"1", "6", "7"}.issubset(comp.explicit_no_connects), (
-        f"ICL7660 explicit_no_connects should include pins 1, 6, 7 but got {comp.explicit_no_connects}"
-    )
+    assert {"1", "6", "7"}.issubset(
+        comp.explicit_no_connects
+    ), f"ICL7660 explicit_no_connects should include pins 1, 6, 7 but got {comp.explicit_no_connects}"
     _assert_no_unhandled_critical_pins(result)
 
 
@@ -372,13 +382,17 @@ def test_schema_validation_passes_for_valid_params():
 # ================================================================
 
 
-def test_expanded_feedback_vref_database():
-    """Feedback Vref database should cover all switching converters."""
-    from circuit_weaver.validator import _FEEDBACK_VREF
+def test_switching_regulator_vrefs_carry_provenance_metadata():
+    """Feedback Vref belongs to normalized component metadata, not a validator table."""
+    import json
+    from pathlib import Path
 
+    data_path = Path(__file__).resolve().parents[1] / "src" / "circuit_weaver" / "ic_data" / "switching_regulator.json"
+    data = json.loads(data_path.read_text(encoding="utf-8"))
     expected_ics = ["AP62300", "TPS62088", "TPS61230A", "MT3608", "TPS63020", "TPS63000"]
     for ic in expected_ics:
-        assert ic in _FEEDBACK_VREF, f"{ic} missing from _FEEDBACK_VREF"
+        assert data[ic]["vref"] > 0
+        assert data[ic]["vref_provenance"].startswith("https://")
 
 
 def test_validator_has_inductor_and_cap_checks():

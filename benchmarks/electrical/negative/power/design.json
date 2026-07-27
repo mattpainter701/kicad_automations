@@ -1,0 +1,15 @@
+{
+  "project": "benchmark_power_negative",
+  "misc": [
+    {
+      "ic": "PINHDR-1x08-2.54",
+      "ref": "J1",
+      "description": "buck regulator benchmark sentinel"
+    }
+  ],
+  "benchmark_intent": {
+    "domain": "power",
+    "polarity": "negative",
+    "scenario": "A declared power-conversion component has neither power-pin nor load metadata, so a power budget cannot be established."
+  }
+}

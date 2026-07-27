@@ -1,0 +1,1 @@
+{"project":"benchmark_clock_negative","spec_version":"mvp_ir_v1","blocks":[{"id":"clock:Y1","section":"clock","kind":"component","ref":"Y1","ic":"crystal","params":{"frequency_hz":16000000}}],"benchmark_intent":{"domain":"clock","polarity":"negative","scenario":"A crystal has no load-capacitor declaration."}}

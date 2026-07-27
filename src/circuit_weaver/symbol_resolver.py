@@ -223,7 +223,7 @@ class SymbolResolver:
             routed 2-pin passive for a multi-pin part — stubs are marked so the
             validator can fail closed.
         """
-        from .component_db import BypassCap, ComponentDef, PinDef, PowerReq, StrapConfig
+        from .component_db import BypassCap, ComponentDef, PinDef, PowerPin, PowerReq, StrapConfig
 
         raw_pins = cached.get("pins") or []
         pins: list[PinDef] = []
@@ -290,8 +290,14 @@ class SymbolResolver:
                     power_reqs.append(
                         PowerReq(
                             net=str(raw.get("net", "")),
-                            voltage=float(raw.get("voltage", 0.0)),
-                            max_current_ma=float(raw.get("max_current_ma", raw.get("current_ma", 0.0))),
+                            voltage=raw.get("voltage"),
+                            max_current_ma=raw.get("max_current_ma", raw.get("current_ma")),
+                            v_min=raw.get("v_min"), v_nominal=raw.get("v_nominal"),
+                            v_max=raw.get("v_max"), direction=raw.get("direction"),
+                            i_peak_ma=raw.get("i_peak_ma"), i_steady_ma=raw.get("i_steady_ma"),
+                            sequence_order=raw.get("sequence_order"),
+                            sequence_dependency=raw.get("sequence_dependency"),
+                            tolerance=raw.get("tolerance"), evidence_id=raw.get("evidence_id"),
                         )
                     )
                 except (TypeError, ValueError) as exc:
@@ -312,6 +318,19 @@ class SymbolResolver:
             pins=pins,
             pin_nets=dict(cached.get("pin_nets", {}) or {}),
             power_pins=dict(cached.get("power_pins", {}) or {}),
+            power_pin_defs=[
+                PowerPin(
+                    pin=str(raw.get("pin", "")), net=str(raw.get("net", "")),
+                    v_min=raw.get("v_min"), v_nominal=raw.get("v_nominal"),
+                    v_max=raw.get("v_max"), direction=raw.get("direction"),
+                    i_peak_ma=raw.get("i_peak_ma"), i_steady_ma=raw.get("i_steady_ma"),
+                    sequence_order=raw.get("sequence_order"),
+                    sequence_dependency=raw.get("sequence_dependency"),
+                    tolerance=raw.get("tolerance"), evidence_id=raw.get("evidence_id"),
+                )
+                for raw in cached.get("power_pin_defs", []) or []
+                if isinstance(raw, dict) and raw.get("pin") and raw.get("net")
+            ],
             pin_roles=dict(cached.get("pin_roles", {}) or {}),
             power_reqs=power_reqs,
             bypass_caps=bypass_caps,

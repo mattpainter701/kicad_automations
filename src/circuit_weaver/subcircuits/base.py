@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from .. import calc
 from ..component_db import ComponentDef
 
 # ================================================================
@@ -23,9 +24,28 @@ from ..component_db import ComponentDef
 # placement_readiness, generational_repair — single source of truth)
 # ================================================================
 POWER_NET_PREFIXES = (
-    "VDD", "VCC", "VBUS", "VIN", "VDDA", "MGT", "VCCO",
-    "VBAT", "VSYS", "VAUX", "VS", "VM", "VB", "VCP", "VOUT",
-    "AVDD", "DVDD", "AVCC", "DVCC", "VDDIO", "VCCIO", "VDDCORE",
+    "VDD",
+    "VCC",
+    "VBUS",
+    "VIN",
+    "VDDA",
+    "MGT",
+    "VCCO",
+    "VBAT",
+    "VSYS",
+    "VAUX",
+    "VS",
+    "VM",
+    "VB",
+    "VCP",
+    "VOUT",
+    "AVDD",
+    "DVDD",
+    "AVCC",
+    "DVCC",
+    "VDDIO",
+    "VCCIO",
+    "VDDCORE",
     "VUSB",
 )
 GROUND_NET_PREFIXES = ("GND", "AGND", "DGND", "PGND", "VSS", "GNDA", "GNDD")
@@ -314,79 +334,121 @@ def format_inductance(henries: float) -> str:
 
 
 def feedback_divider_top(vout: float, vref: float, r_bottom: float) -> float:
-    """Calculate top feedback resistor: R_top = R_bottom * (Vout/Vref - 1)."""
-    if vref <= 0 or r_bottom <= 0:
-        raise ValueError(f"Invalid Vref={vref} or R_bottom={r_bottom}")
-    return r_bottom * (vout / vref - 1.0)
+    """Calculate top feedback resistor through the traceable calc API."""
+    return calc.feedback_divider_top(
+        target="param:CALC.feedback.r_top",
+        vout_v=vout,
+        vref_v=vref,
+        r_bottom_ohm=r_bottom,
+    ).raw_result.value
 
 
 def feedback_divider_vout(r_top: float, r_bottom: float, vref: float) -> float:
-    """Calculate output voltage from feedback divider: Vout = Vref * (1 + R_top/R_bottom)."""
-    if r_bottom <= 0:
-        raise ValueError(f"Invalid R_bottom={r_bottom}")
-    return vref * (1.0 + r_top / r_bottom)
+    """Calculate divider output voltage through the traceable calc API."""
+    return calc.feedback_divider_vout(
+        target="param:CALC.feedback.vout",
+        r_top_ohm=r_top,
+        r_bottom_ohm=r_bottom,
+        vref_v=vref,
+    ).raw_result.value
 
 
 def buck_inductor(vin: float, vout: float, fsw: float, iout: float, ripple_ratio: float = 0.3) -> float:
-    """Calculate buck converter inductor value for target ripple ratio.
-
-    L = (Vin - Vout) * D / (fsw * delta_IL)
-    where D = Vout/Vin, delta_IL = ripple_ratio * Iout
-    """
-    d = vout / vin
-    delta_il = ripple_ratio * iout
-    if delta_il <= 0 or fsw <= 0:
-        return 2.2e-6  # default 2.2uH
-    return (vin - vout) * d / (fsw * delta_il)
+    """Calculate buck inductance through the traceable ideal-CCM equation API."""
+    return calc.buck_inductor(
+        target="param:CALC.switching.buck_inductor",
+        vin_v=vin,
+        vout_v=vout,
+        switching_frequency_hz=fsw,
+        output_current_a=iout,
+        ripple_ratio=ripple_ratio,
+    ).raw_result.value
 
 
 def buck_output_cap(delta_il: float, fsw: float, delta_vout: float = 0.020) -> float:
-    """Calculate minimum output capacitance for target voltage ripple.
-
-    Cout >= delta_IL / (8 * fsw * delta_Vout)
-    """
-    if fsw <= 0 or delta_vout <= 0:
-        return 22e-6  # default 22uF
-    return delta_il / (8.0 * fsw * delta_vout)
+    """Calculate ideal ripple capacitance through the traceable equation API."""
+    return calc.buck_output_cap(
+        target="param:CALC.switching.buck_output_cap",
+        ripple_current_a=delta_il,
+        switching_frequency_hz=fsw,
+        output_ripple_v=delta_vout,
+    ).raw_result.value
 
 
 def boost_inductor(vin: float, vout: float, fsw: float, iout: float, ripple_ratio: float = 0.3) -> float:
-    """Calculate boost converter inductor value for target ripple ratio.
-
-    L = Vin * D / (fsw * delta_IL)
-    where D = 1 - Vin/Vout, delta_IL = ripple_ratio * Iout / (1 - D)
-    """
-    if vout <= 0 or fsw <= 0 or iout <= 0:
-        return 2.2e-6
-    d = 1.0 - vin / vout
-    iin = iout / (1.0 - d) if d < 1.0 else iout
-    delta_il = ripple_ratio * iin
-    if delta_il <= 0:
-        return 2.2e-6
-    return vin * d / (fsw * delta_il)
+    """Calculate boost inductance through the traceable ideal-CCM equation API."""
+    return calc.boost_inductor(
+        target="param:CALC.switching.boost_inductor",
+        vin_v=vin,
+        vout_v=vout,
+        switching_frequency_hz=fsw,
+        output_current_a=iout,
+        ripple_ratio=ripple_ratio,
+    ).raw_result.value
 
 
 def buck_boost_inductor(vin_min: float, vout: float, fsw: float, iout: float, ripple_ratio: float = 0.3) -> float:
-    """Calculate buck-boost inductor for worst-case boost mode at minimum Vin.
-
-    Uses the boost inductor formula at Vin_min since that's the hardest case.
-    """
-    return boost_inductor(vin_min, vout, fsw, iout, ripple_ratio)
+    """Calculate buck-boost inductance for worst-case boost mode through calc."""
+    return calc.buck_boost_inductor(
+        target="param:CALC.switching.buck_boost_inductor",
+        vin_min_v=vin_min,
+        vout_v=vout,
+        switching_frequency_hz=fsw,
+        output_current_a=iout,
+        ripple_ratio=ripple_ratio,
+    ).raw_result.value
 
 
 def crystal_load_caps(cl_spec: float, c_stray: float = 4e-12) -> float:
     """Calculate external load capacitors for a crystal.
 
-    CL_ext = 2 * CL_spec - Cstray (each cap)
+    CL_ext = 2 * (CL_spec - Cstray) (each cap).
+
+    The legacy 1 pF floor remains here for compatibility with callers that
+    expect a selectable capacitor even when an invalid or over-large stray
+    capacitance makes the ideal result non-positive.
     """
-    return max(1e-12, 2.0 * cl_spec - c_stray)
+    try:
+        c_external = calc.crystal_external_load_cap(
+            target="param:CALC.crystal.load_cap",
+            load_capacitance_f=cl_spec,
+            stray_capacitance_f=c_stray,
+        ).raw_result.value
+    except ValueError:
+        return 1e-12
+    return max(1e-12, c_external)
 
 
 def rc_filter_cutoff(r: float, c: float) -> float:
-    """RC low-pass filter cutoff frequency: fc = 1 / (2*pi*R*C)."""
-    if r <= 0 or c <= 0:
+    """Calculate RC low-pass cutoff through the traceable calc API."""
+    try:
+        return calc.rc_cutoff(
+            target="param:CALC.filter.cutoff",
+            resistance_ohm=r,
+            capacitance_f=c,
+        ).raw_result.value
+    except ValueError:
+        # Preserve the historic scalar helper contract while the calculation
+        # service itself remains fail-closed for invalid inputs.
         return 0.0
-    return 1.0 / (2.0 * math.pi * r * c)
+
+
+def rc_capacitance_for_cutoff(r: float, fc: float) -> float:
+    """Return the capacitor required for a target RC cutoff."""
+    return calc.rc_capacitance_for_cutoff(
+        target="param:CALC.filter.capacitance",
+        resistance_ohm=r,
+        cutoff_hz=fc,
+    ).raw_result.value
+
+
+def rc_resistance_for_cutoff(c: float, fc: float) -> float:
+    """Return the resistor required for a target RC cutoff."""
+    return calc.rc_resistance_for_cutoff(
+        target="param:CALC.filter.resistance",
+        capacitance_f=c,
+        cutoff_hz=fc,
+    ).raw_result.value
 
 
 # ================================================================
@@ -667,10 +729,7 @@ class SubcircuitTemplate(ABC):
             "interfaces",
             "terminal",
         }
-        unknown = [
-            k for k in params
-            if k not in known and k not in framework_passthrough
-        ]
+        unknown = [k for k in params if k not in known and k not in framework_passthrough]
         if unknown:
             return ["Unknown parameter(s): " + ", ".join(unknown)]
         return []

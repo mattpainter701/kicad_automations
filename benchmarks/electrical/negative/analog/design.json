@@ -1,0 +1,1 @@
+{"project":"benchmark_analog_negative","spec_version":"mvp_ir_v1","blocks":[{"id":"analog:R1","section":"analog","kind":"component","ref":"R1","ic":"RC_FILTER","params":{"resistance_ohms":1000,"capacitance_f":0.0000001,"cutoff_hz":100000}}],"benchmark_intent":{"domain":"analog","polarity":"negative","scenario":"An RC filter's stated cutoff conflicts with its R and C values."}}

@@ -1,0 +1,13 @@
+{
+  "project": "benchmark_power_multi_rail_valid",
+  "spec_version": "mvp_ir_v1",
+  "power_domains": [
+    {"net": "VIN_5V", "v_min": 4.75, "v_nominal": 5.0, "v_max": 5.25, "direction": "source", "i_steady_ma": 900, "i_peak_ma": 1200, "sequence_order": 1, "evidence_id": "EV-DATASHEET-111111111111"},
+    {"net": "VDD_3P3", "v_min": 3.15, "v_nominal": 3.3, "v_max": 3.45, "direction": "source", "i_steady_ma": 450, "i_peak_ma": 600, "sequence_order": 2, "sequence_dependency": "VIN_5V", "evidence_id": "EV-DATASHEET-222222222222"}
+  ],
+  "blocks": [
+    {"id": "power:U1", "section": "power", "kind": "component", "ref": "U1", "ic": "PINHDR-1x08-2.54", "params": {"power_reqs": [{"net": "VIN_5V", "v_min": 4.75, "v_nominal": 5.0, "v_max": 5.25, "direction": "load", "i_steady_ma": 300, "i_peak_ma": 450, "evidence_id": "EV-DATASHEET-333333333333"}]}},
+    {"id": "digital:U2", "section": "digital", "kind": "component", "ref": "U2", "ic": "PINHDR-1x08-2.54", "params": {"power_reqs": [{"net": "VDD_3P3", "v_min": 3.0, "v_nominal": 3.3, "v_max": 3.6, "direction": "load", "i_steady_ma": 180, "i_peak_ma": 260, "sequence_order": 3, "sequence_dependency": "VIN_5V", "evidence_id": "EV-DATASHEET-444444444444"}]}}
+  ],
+  "benchmark_intent": {"domain": "power", "polarity": "positive", "scenario": "A two-rail design has declared voltage, current, and sequencing margins."}
+}

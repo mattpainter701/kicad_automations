@@ -661,6 +661,7 @@ def auto_repair_design(
         metadata=dict(ir.metadata),
         blocks=patched_blocks,
         interfaces=all_interfaces,
+        power_domains=list(ir.power_domains),
         approved_overrides=list(ir.approved_overrides),
         pcb_constraints=list(ir.pcb_constraints),
     )

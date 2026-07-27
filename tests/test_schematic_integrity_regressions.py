@@ -36,8 +36,17 @@ from circuit_weaver.primitives import (
     sexpr_junction,
     sexpr_no_connect,
     sexpr_wire,
+    sheet_title_text,
 )
 from circuit_weaver.validator import _validate_pin_mapping_integrity
+
+
+def test_sheet_title_banner_is_left_anchored_at_the_safe_margin():
+    """Long project titles must not render left of their in-bounds anchor."""
+    banner = sheet_title_text("OLED_Display_Module", "Top-level overview", x=20, y=15)
+
+    assert '(text "OLED_Display_Module" (at 38.10 15.24 0)' in banner
+    assert '(text "Top-level overview" (at 38.10 20.32 0)' in banner
 
 
 def _label_anchor(label: str) -> tuple[float, float]:

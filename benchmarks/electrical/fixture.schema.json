@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Circuit Weaver electrical benchmark fixture v1",
+  "type": "object",
+  "required": ["schema_version", "fixture_id", "domain", "polarity", "authoring_source", "provenance", "expected_findings", "expected_absent_rule_ids"],
+  "properties": {
+    "schema_version": {"const": "circuit-weaver-electrical-benchmark/v1"},
+    "fixture_id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "domain": {"enum": ["power", "clock", "usb", "i2c", "spi", "uart", "analog", "protection", "manufacturing", "identity"]},
+    "polarity": {"enum": ["positive", "negative"]},
+    "authoring_source": {"enum": ["generator_authored", "independent_reference"]},
+    "provenance": {"type": "object", "required": ["source_type", "source_ref", "license"]},
+    "expected_findings": {"type": "array", "items": {"type": "object", "required": ["rule_id", "expectation", "rationale"]}},
+    "expected_absent_rule_ids": {"type": "array", "items": {"type": "string", "pattern": "^CW-[A-Z0-9]+-[0-9]{3}$"}}
+  },
+  "additionalProperties": false
+}

@@ -18,6 +18,7 @@
       }
     ],
     "vref": 0.8,
+    "vref_provenance": "https://www.diodes.com/datasheet/download/AP62300.pdf",
     "fsw": 600000.0,
     "iout_max": 3.0,
     "pins": [
@@ -71,6 +72,7 @@
     "description": "2A Sync Buck 3MHz SOT-583-8",
     "footprint": "SOT-583-8",
     "vref": 0.6,
+    "vref_provenance": "https://www.ti.com/lit/ds/symlink/tps62088.pdf",
     "fsw": 3000000.0,
     "iout_max": 2.0,
     "pins": [
@@ -139,6 +141,7 @@
     "description": "5.5A Switch Boost Converter SOT-23-6",
     "footprint": "SOT-23-6",
     "vref": 0.5,
+    "vref_provenance": "https://www.ti.com/lit/ds/symlink/tps61230.pdf",
     "fsw": 2500000.0,
     "iout_max": 5.5,
     "pins": [
@@ -192,6 +195,7 @@
     "description": "2A Switch Boost Converter SOT-23-6",
     "footprint": "SOT-23-6",
     "vref": 0.6,
+    "vref_provenance": "https://www.lcsc.com/datasheet/lcsc_datasheet_1811151624_XLSEMI-MT3608_C84817.pdf",
     "fsw": 1200000.0,
     "iout_max": 2.0,
     "pins": [
@@ -245,6 +249,7 @@
     "description": "Buck-Boost Converter 2A QFN-14",
     "footprint": "Package_DFN_QFN:QFN-14-1EP_3.5x3.5mm_P0.5mm_EP2.05x2.05mm",
     "vref": 0.5,
+    "vref_provenance": "https://www.ti.com/lit/ds/symlink/tps63020.pdf",
     "fsw": 2400000.0,
     "vin_range": [
       1.8,
@@ -364,6 +369,7 @@
     "description": "Buck-Boost Converter 800mA QFN-10",
     "footprint": "Package_DFN_QFN:QFN-10-1EP_2x2mm_P0.4mm_EP0.6x0.6mm",
     "vref": 0.5,
+    "vref_provenance": "https://www.ti.com/lit/ds/symlink/tps63000.pdf",
     "fsw": 1500000.0,
     "vin_range": [
       1.8,

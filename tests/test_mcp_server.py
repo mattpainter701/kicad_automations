@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from circuit_weaver.dispatcher import ValidationMessage, ValidationReport
 from circuit_weaver.mcp_server import (
     _call_without_stdout,
     _discover_projects_tool,
@@ -37,6 +38,30 @@ def test_invalid_json_has_a_stable_error_envelope() -> None:
     assert "line 1" in result["error"]["message"]
 
 
+def test_validate_tool_serializes_evidence_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    from circuit_weaver import dispatcher
+
+    monkeypatch.setattr(
+        dispatcher,
+        "validate_design",
+        lambda *_args, **_kwargs: ValidationReport(
+            profile="standard",
+            valid=True,
+            categories={
+                "electrical": [
+                    ValidationMessage("electrical", "rule", "warning", "U1", "finding", evidence_ids=["EV-USER-1"])
+                ]
+            },
+            evidence_manifest="evidence_manifest.json",
+        ),
+    )
+
+    result = json.loads(_validate_design_tool("{}"))
+
+    assert result["evidence_ids"] == ["EV-USER-1"]
+    assert result["evidence_manifest"] == "evidence_manifest.json"
+
+
 def test_generate_reports_skipped_kicad_verification(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -45,6 +70,8 @@ def test_generate_reports_skipped_kicad_verification(
 
     manifest = tmp_path / "artifact_manifest.json"
     manifest.write_text("{}\n", encoding="utf-8")
+    evidence_manifest = tmp_path / "evidence_manifest.json"
+    evidence_manifest.write_text("{}\n", encoding="utf-8")
     current_schematic = tmp_path / "unverified-project.kicad_sch"
     current_schematic.write_text("(kicad_sch)\n", encoding="utf-8")
     stale_schematic = tmp_path / "stale.kicad_sch"
@@ -66,6 +93,7 @@ def test_generate_reports_skipped_kicad_verification(
                 "skip_reason": "KiCad CLI not available",
             },
             "artifact_manifest": str(manifest),
+            "evidence_manifest": str(evidence_manifest),
         },
     )
 
@@ -77,6 +105,7 @@ def test_generate_reports_skipped_kicad_verification(
     assert result["verification_status"] == "unverified"
     assert result["erc"]["status"] == "skipped"
     assert result["artifact_manifest"] == str(manifest)
+    assert result["evidence_manifest"] == str(evidence_manifest)
     assert result["files"] == [str(current_schematic), str(manifest)]
     assert str(stale_schematic) not in result["files"]
 

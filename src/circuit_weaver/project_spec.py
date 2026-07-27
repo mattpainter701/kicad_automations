@@ -46,6 +46,8 @@ from .component_db import (
     ComponentDef,
     ComponentRegistry,
     PinDef,
+    PowerPin,
+    PowerReq,
 )
 from .kicad_lib import KiCadLibrary
 from .subcircuits.base import BoundaryPort, SubcircuitRegistry, get_default_registry
@@ -325,6 +327,94 @@ def _apply_power_map(item: dict, comp: ComponentDef) -> None:
         else:
             updated[pin_num] = net
     comp.power_pins = updated
+    for power_pin in comp.power_pin_defs:
+        if power_pin.net in explicit_map:
+            power_pin.net = str(explicit_map[power_pin.net])
+        elif power_pin.net.upper() in _DEFAULT_POWER_MAP:
+            power_pin.net = _DEFAULT_POWER_MAP[power_pin.net.upper()]
+    for req in comp.power_reqs:
+        if req.net in explicit_map:
+            req.net = str(explicit_map[req.net])
+        elif req.net.upper() in _DEFAULT_POWER_MAP:
+            req.net = _DEFAULT_POWER_MAP[req.net.upper()]
+
+
+def _apply_power_envelopes(item: dict, comp: ComponentDef) -> None:
+    """Apply explicit instance-level typed power metadata.
+
+    This intentionally only changes fields supplied in the spec.  In
+    particular, unspecified current and voltage limits remain ``None``.
+    """
+    raw_reqs = item.get("power_reqs")
+    if "dropout_voltage" in item:
+        comp.dropout_voltage = item.get("dropout_voltage")
+    if "feedback_vref_voltage" in item or "feedback_vref" in item:
+        comp.feedback_vref_voltage = item.get("feedback_vref_voltage", item.get("feedback_vref"))
+        comp.feedback_vref_provenance = item.get("feedback_vref_provenance") or item.get("vref_provenance")
+        comp.feedback_vref_evidence_id = item.get("feedback_vref_evidence_id")
+        if comp.feedback_vref_voltage is not None and comp.feedback_vref_voltage <= 0:
+            raise ValueError("feedback Vref must be positive")
+        if comp.feedback_vref_voltage is not None and not (
+            comp.feedback_vref_provenance or comp.feedback_vref_evidence_id
+        ):
+            raise ValueError("feedback Vref requires feedback_vref_provenance or feedback_vref_evidence_id")
+    if isinstance(raw_reqs, list):
+        parsed: list[PowerReq] = []
+        for raw in raw_reqs:
+            if not isinstance(raw, dict):
+                continue
+            net = str(raw.get("net", "")).strip()
+            if not net:
+                continue
+            sequencing = raw.get("sequencing") if isinstance(raw.get("sequencing"), dict) else {}
+            provenance = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+            parsed.append(
+                PowerReq(
+                    net=net,
+                    voltage=raw.get("voltage"),
+                    max_current_ma=raw.get("max_current_ma"),
+                    v_min=raw.get("v_min"),
+                    v_nominal=raw.get("v_nominal"),
+                    v_max=raw.get("v_max"),
+                    direction=raw.get("direction"),
+                    i_peak_ma=raw.get("i_peak_ma"),
+                    i_steady_ma=raw.get("i_steady_ma"),
+                    sequence_order=raw.get("sequence_order", sequencing.get("order")),
+                    sequence_dependency=raw.get("sequence_dependency", sequencing.get("dependency")),
+                    tolerance=raw.get("tolerance"),
+                    evidence_id=raw.get("evidence_id", provenance.get("evidence_id")),
+                )
+            )
+        comp.power_reqs = parsed
+
+    raw_pins = item.get("power_pin_defs")
+    if isinstance(raw_pins, list):
+        parsed_pins: list[PowerPin] = []
+        for raw in raw_pins:
+            if not isinstance(raw, dict):
+                continue
+            pin, net = str(raw.get("pin", "")).strip(), str(raw.get("net", "")).strip()
+            if not pin or not net:
+                continue
+            sequencing = raw.get("sequencing") if isinstance(raw.get("sequencing"), dict) else {}
+            provenance = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+            parsed_pins.append(
+                PowerPin(
+                    pin=pin,
+                    net=net,
+                    v_min=raw.get("v_min"),
+                    v_nominal=raw.get("v_nominal"),
+                    v_max=raw.get("v_max"),
+                    direction=raw.get("direction"),
+                    i_peak_ma=raw.get("i_peak_ma"),
+                    i_steady_ma=raw.get("i_steady_ma"),
+                    sequence_order=raw.get("sequence_order", sequencing.get("order")),
+                    sequence_dependency=raw.get("sequence_dependency", sequencing.get("dependency")),
+                    tolerance=raw.get("tolerance"),
+                    evidence_id=raw.get("evidence_id", provenance.get("evidence_id")),
+                )
+            )
+        comp.power_pin_defs = parsed_pins
 
 
 def _apply_net_prefix(item: dict, comp: ComponentDef) -> None:
@@ -471,9 +561,7 @@ def _apply_partial_pin_overrides(item: dict, comp: ComponentDef) -> None:
     # valid.
     still_dropped = dropped_nets - added_nets
     if still_dropped and comp.template_boundary_ports:
-        comp.template_boundary_ports = [
-            port for port in comp.template_boundary_ports if port.name not in still_dropped
-        ]
+        comp.template_boundary_ports = [port for port in comp.template_boundary_ports if port.name not in still_dropped]
 
     # Added nets become declared interfaces so
     # ``_validate_shared_net_interfaces`` doesn't complain about the
@@ -568,9 +656,7 @@ def _apply_pinout_overrides(item: dict, comp: ComponentDef) -> None:
     added_nets = new_nets - previous_nets
 
     if dropped_nets and comp.template_boundary_ports:
-        comp.template_boundary_ports = [
-            port for port in comp.template_boundary_ports if port.name not in dropped_nets
-        ]
+        comp.template_boundary_ports = [port for port in comp.template_boundary_ports if port.name not in dropped_nets]
 
     if added_nets:
         existing_port_names = {port.name for port in comp.template_boundary_ports}
@@ -700,6 +786,8 @@ def _resolve_component(
             if ref:
                 comp.source_ref = ref
             comp.category = section_category
+            _apply_power_envelopes(item, comp)
+            _apply_power_map(item, comp)
             _maybe_enrich_component(item, comp, parts_lookup)
         return result.components
 
@@ -780,6 +868,7 @@ def _resolve_component(
         instance.source_mpn = str(item["mpn"])
     _apply_pinout_overrides(item, instance)
     _apply_partial_pin_overrides(item, instance)
+    _apply_power_envelopes(item, instance)
     _apply_power_map(item, instance)
     _apply_net_prefix(item, instance)
     _maybe_enrich_component(item, instance, parts_lookup)
@@ -819,6 +908,7 @@ def resolve_project_spec(
     kicad_lib: KiCadLibrary | None = None,
     parts_lookup=None,
     enrich_parts: bool = False,
+    use_kicad: bool = True,
 ) -> tuple[list[ComponentDef], dict]:
     """Resolve a parsed project spec dict into component instances + metadata."""
     if subcircuit_reg is None:
@@ -831,8 +921,9 @@ def resolve_project_spec(
     # for shared registries, but projects should not need a global install or
     # machine-specific KiCad setup to resolve approved components.
     components_db = spec.get("components_db", "")
-    if not components_db:
-        sibling_registry = Path(spec.get("_source_path", "")).with_name("components.json")
+    source_path = spec.get("_source_path")
+    if not components_db and source_path:
+        sibling_registry = Path(source_path).with_name("components.json")
         if sibling_registry.is_file():
             components_db = str(sibling_registry)
     if components_db:
@@ -845,7 +936,7 @@ def resolve_project_spec(
         elif p.is_dir():
             n = component_reg.load_json_dir(str(p))
             print(f"  Loaded {n} components from {p}/")
-    if kicad_lib is None:
+    if kicad_lib is None and use_kicad:
         kicad_lib = KiCadLibrary()
     if enrich_parts and parts_lookup is None:
         from .parts_lookup import PartsLookup
@@ -873,6 +964,7 @@ def resolve_project_spec(
             "spec_version",
             "presentation_profile",
             "components_db",
+            "power_domains",
         ):
             continue
 

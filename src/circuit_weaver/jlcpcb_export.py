@@ -20,7 +20,7 @@ import time
 import uuid
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping
 
 from .assembly_manifest import (
     AssemblyItem,
@@ -99,11 +99,7 @@ def _owned_delivery_files(directory: Path) -> list[Path]:
     return [
         path
         for path in directory.iterdir()
-        if path.is_file()
-        and (
-            path.name in exact
-            or re.fullmatch(r"(?:bom|cpl)_jlcpcb_.+\.csv", path.name) is not None
-        )
+        if path.is_file() and (path.name in exact or re.fullmatch(r"(?:bom|cpl)_jlcpcb_.+\.csv", path.name) is not None)
     ]
 
 
@@ -139,9 +135,7 @@ def _publish_delivery_staging(
     backup.mkdir()
     try:
         previous_files = _owned_delivery_files(destination)
-        previous_files.sort(
-            key=lambda path: (path.name != "delivery_manifest.json", path.name)
-        )
+        previous_files.sort(key=lambda path: (path.name != "delivery_manifest.json", path.name))
         for previous in previous_files:
             os.replace(previous, backup / previous.name)
         for source in staged:
@@ -197,7 +191,7 @@ def _footprint_identity(block: str) -> str:
     match = re.match(r'^\(footprint\s+"((?:\\.|[^"\\])*)"', block)
     if match is None:
         return ""
-    return match.group(1).replace(r'\"', '"').replace(r"\\", "\\").strip()
+    return match.group(1).replace(r"\"", '"').replace(r"\\", "\\").strip()
 
 
 def _normalized_footprint_identity(value: str) -> str:
@@ -289,9 +283,7 @@ def parse_pcb_placements(
             raise CplSourceError(f"PCB is missing pad-bearing assembly refs: {preview}{suffix}")
         allowed_extra = re.compile(r"^(?:FID|MH|H)\d+$", re.IGNORECASE)
         unexpected = sorted(
-            reference
-            for reference in set(placements) - required_refs
-            if not allowed_extra.fullmatch(reference)
+            reference for reference in set(placements) - required_refs if not allowed_extra.fullmatch(reference)
         )
         if unexpected:
             preview = ", ".join(unexpected[:12])
@@ -399,9 +391,7 @@ def write_jlcpcb_cpl(
             if not reference or reference not in placements:
                 continue
             x, y, rotation, layer = placements[reference]
-            writer.writerow(
-                [reference, f"{x:.2f}", f"{y:.2f}", f"{rotation:.1f}", _pcb_layer_to_cpl(layer)]
-            )
+            writer.writerow([reference, f"{x:.2f}", f"{y:.2f}", f"{rotation:.1f}", _pcb_layer_to_cpl(layer)])
 
 
 def write_dual_sided_cpl(
@@ -511,22 +501,16 @@ def generate_assembly_variants(
                     + ", ".join(unknown_include_refs)
                 )
             candidate_refs = include_refs & all_refs
-            candidate_refs |= {
-                item.reference for item in by_ref.values() if item.owner_ref in include_refs
-            }
+            candidate_refs |= {item.reference for item in by_ref.values() if item.owner_ref in include_refs}
         else:
             candidate_refs = set(all_refs)
 
         removed_owner_refs = exclude_refs | dnp_refs
         removed_refs = (exclude_refs | dnp_refs) & all_refs
-        removed_refs |= {
-            item.reference for item in by_ref.values() if item.owner_ref in removed_owner_refs
-        }
+        removed_refs |= {item.reference for item in by_ref.values() if item.owner_ref in removed_owner_refs}
         assembled_refs = sorted(candidate_refs - removed_refs)
         if include_refs and not assembled_refs:
-            raise ValueError(
-                f"Assembly variant {name!r} include_refs resolve to no active assembly items"
-            )
+            raise ValueError(f"Assembly variant {name!r} include_refs resolve to no active assembly items")
         assembled_components = [by_ref[ref] for ref in assembled_refs]
         omitted_refs = sorted(all_refs - set(assembled_refs))
 
@@ -649,14 +633,16 @@ def _detect_price_breaks(bom_rows: list[dict]) -> list[dict]:
                     savings_100 = round((1 - price_100 / price_1) * 100, 1)
 
                 if savings_100 >= 20:
-                    alerts.append({
-                        "designators": row.get("designators", ""),
-                        "lcsc_pn": lcsc_pn,
-                        "price_1": price_1,
-                        "price_10": price_10,
-                        "price_100": price_100,
-                        "savings_pct_100": savings_100,
-                    })
+                    alerts.append(
+                        {
+                            "designators": row.get("designators", ""),
+                            "lcsc_pn": lcsc_pn,
+                            "price_1": price_1,
+                            "price_10": price_10,
+                            "price_100": price_100,
+                            "savings_pct_100": savings_100,
+                        }
+                    )
         except Exception:
             continue
 
@@ -710,6 +696,11 @@ def export_jlcpcb(
     enrich_parts: bool = False,
     assembly_variants: list[dict[str, Any]] | None = None,
     pcb_path: str | Path | None = None,
+    identity_bundles_by_reference: Mapping[str, Any] | None = None,
+    evidence_ids_by_reference: Mapping[str, Iterable[str]] | None = None,
+    evidence_ids_by_artifact: Mapping[str, Iterable[str]] | None = None,
+    evidence_ids: Iterable[str] = (),
+    evidence_manifest: str = "",
 ) -> dict[str, Any]:
     """Export an exhaustive JLCPCB BOM and, when safe, a physical-board CPL.
 
@@ -722,6 +713,10 @@ def export_jlcpcb(
         pcb_path: A real, pad-bearing ``.kicad_pcb`` file. If omitted, export
             succeeds as BOM-only and reports why no CPL was produced. Placement
             preview and padless boards are rejected.
+        evidence_ids_by_reference: Optional real evidence IDs keyed by designator.
+        evidence_ids_by_artifact: Optional real evidence IDs keyed by delivery artifact kind.
+        evidence_ids: Optional real delivery-level evidence IDs.
+        evidence_manifest: Optional output-relative evidence manifest reference.
 
     Returns:
         Summary dict: {
@@ -757,7 +752,14 @@ def export_jlcpcb(
         assembly_manifest = build_assembly_manifest(
             components,
             previous_manifest=previous_manifest_path if previous_manifest_path.is_file() else None,
+            evidence_ids_by_reference=evidence_ids_by_reference,
+            evidence_ids=evidence_ids,
+            evidence_manifest=evidence_manifest,
         )
+        artifact_evidence = {
+            str(kind): tuple(str(evidence_id) for evidence_id in identifiers)
+            for kind, identifiers in (evidence_ids_by_artifact or {}).items()
+        }
         bom_rows = group_bom_rows(assembly_manifest)
         active_bom_items = assembly_manifest.active_bom_items()
         active_cpl_items = assembly_manifest.active_cpl_items()
@@ -816,29 +818,43 @@ def export_jlcpcb(
             blocked_reasons.append("Assembly manifest has no active placement references")
         missing_footprints = assembly_manifest.missing_footprint_refs()
         if missing_footprints:
-            blocked_reasons.append(
-                "Assembly items missing footprints: " + ", ".join(missing_footprints[:12])
-            )
+            blocked_reasons.append("Assembly items missing footprints: " + ", ".join(missing_footprints[:12]))
 
         if pcb_path is None:
             blocked_reasons.append(
                 "CPL not generated: provide a real, pad-bearing .kicad_pcb; placement previews are review-only"
             )
         elif active_cpl_items and not missing_footprints:
-            required_refs = {item.reference for item in active_cpl_items}
-            expected_footprints = {
-                item.reference: item.footprint for item in active_cpl_items
-            }
-            try:
-                placements = parse_pcb_placements(
-                    pcb_path,
-                    required_refs=required_refs,
-                    expected_footprints=expected_footprints,
-                )
-                write_jlcpcb_cpl(active_cpl_items, placements, staged_cpl_path)
-                cpl_generated = True
-            except CplSourceError as exc:
-                blocked_reasons.append(f"CPL not generated: {exc}")
+            identity_blockers: list[str] = []
+            for item in active_cpl_items:
+                if item.source_kind != "component":
+                    continue
+                bundle = (identity_bundles_by_reference or {}).get(item.reference)
+                if bundle is None:
+                    identity_blockers.append(f"CW-ID-001 {item.reference}: missing identity handoff bundle")
+                    continue
+                try:
+                    result = bundle.evaluate()
+                    if not result.ready or bundle.footprint_ref != item.footprint:
+                        codes = result.blocker_codes or ("CW-ID-001",)
+                        identity_blockers.append(f"{','.join(codes)} {item.reference}: identity/footprint not ready")
+                except (AttributeError, ValueError):
+                    identity_blockers.append(f"CW-ID-001 {item.reference}: invalid identity handoff bundle")
+            if identity_blockers:
+                blocked_reasons.extend(f"CPL not generated: {reason}" for reason in identity_blockers)
+            else:
+                required_refs = {item.reference for item in active_cpl_items}
+                expected_footprints = {item.reference: item.footprint for item in active_cpl_items}
+                try:
+                    placements = parse_pcb_placements(
+                        pcb_path,
+                        required_refs=required_refs,
+                        expected_footprints=expected_footprints,
+                    )
+                    write_jlcpcb_cpl(active_cpl_items, placements, staged_cpl_path)
+                    cpl_generated = True
+                except CplSourceError as exc:
+                    blocked_reasons.append(f"CPL not generated: {exc}")
         elif not active_cpl_items:
             blocked_reasons.append("CPL not generated: assembly has no active placement references")
 
@@ -856,9 +872,7 @@ def export_jlcpcb(
 
         missing_lcsc = sum(1 for row in bom_rows if not row["has_lcsc"])
         if missing_lcsc:
-            blocked_reasons.append(
-                f"{missing_lcsc} BOM row(s) have no LCSC part number and require explicit sourcing"
-            )
+            blocked_reasons.append(f"{missing_lcsc} BOM row(s) have no LCSC part number and require explicit sourcing")
 
         assembly_ready = bool(active_bom_items) and bool(active_cpl_items) and cpl_generated
         assembly_ready = assembly_ready and not missing_lcsc and not missing_footprints
@@ -885,31 +899,50 @@ def export_jlcpcb(
             _append_price_breaks(staged_readme_path, price_breaks)
 
         delivery_artifacts = [
-            DeliveryArtifact("assembly_manifest", assembly_manifest_path.name, "ready"),
+            DeliveryArtifact(
+                "assembly_manifest",
+                assembly_manifest_path.name,
+                "ready",
+                evidence_ids=artifact_evidence.get("assembly_manifest", ()),
+            ),
             DeliveryArtifact(
                 "bom",
                 bom_path.name,
                 "ready" if active_bom_items else "blocked",
                 reason="" if active_bom_items else "Assembly manifest has no active BOM items",
+                evidence_ids=artifact_evidence.get("bom", ()),
             ),
             DeliveryArtifact(
                 "cpl",
                 cpl_path.name,
                 "ready" if cpl_generated else ("omitted" if pcb_path is None else "blocked"),
-                reason="" if cpl_generated else next(
+                reason=""
+                if cpl_generated
+                else next(
                     (reason for reason in blocked_reasons if reason.startswith("CPL not generated")),
                     "CPL generation prerequisites were not met",
                 ),
+                evidence_ids=artifact_evidence.get("cpl", ()),
             ),
-            DeliveryArtifact("readme", readme_path.name, "ready"),
+            DeliveryArtifact("readme", readme_path.name, "ready", evidence_ids=artifact_evidence.get("readme", ())),
         ]
         for variant_output in variant_outputs:
             delivery_artifacts.append(
-                DeliveryArtifact("variant_bom", Path(variant_output["bom"]).name, "ready")
+                DeliveryArtifact(
+                    "variant_bom",
+                    Path(variant_output["bom"]).name,
+                    "ready",
+                    evidence_ids=artifact_evidence.get("variant_bom", ()),
+                )
             )
             if variant_output["cpl"]:
                 delivery_artifacts.append(
-                    DeliveryArtifact("variant_cpl", Path(variant_output["cpl"]).name, "ready")
+                    DeliveryArtifact(
+                        "variant_cpl",
+                        Path(variant_output["cpl"]).name,
+                        "ready",
+                        evidence_ids=artifact_evidence.get("variant_cpl", ()),
+                    )
                 )
         delivery = DeliveryManifest(
             status=status,
@@ -921,6 +954,8 @@ def export_jlcpcb(
             warnings=[
                 "BOM/CPL export does not establish fabrication readiness; run board DRC and verify Gerber/drill files"
             ],
+            evidence_ids=tuple(str(evidence_id) for evidence_id in evidence_ids),
+            evidence_manifest=evidence_manifest,
         )
         delivery.write_json(staged_delivery_manifest_path)
 
@@ -959,6 +994,7 @@ def export_jlcpcb(
             "assembly_variants": variant_outputs,
             "assembly_manifest": str(assembly_manifest_path),
             "delivery_manifest": str(delivery_manifest_path),
+            "evidence_manifest": evidence_manifest,
             "cpl": str(cpl_path) if cpl_generated else "",
             "pcb_source": str(pcb_path) if pcb_path is not None else "",
             "assembly_ready": assembly_ready,

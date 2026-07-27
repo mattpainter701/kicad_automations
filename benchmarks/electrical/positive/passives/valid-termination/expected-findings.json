@@ -1,0 +1,10 @@
+{
+  "schema_version": "circuit-weaver-electrical-benchmark/v1",
+  "fixture_id": "passive-valid-termination",
+  "domain": "passives",
+  "polarity": "positive",
+  "authoring_source": "generator_authored",
+  "provenance": {"source_type": "generator-control", "source_ref": "T246 termination producer", "license": "CC0-1.0"},
+  "expected_findings": [],
+  "expected_absent_rule_ids": ["CW-PSV-001", "CW-PSV-002", "CW-PSV-003"]
+}

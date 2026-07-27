@@ -12,15 +12,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .. import calc
 from ..component_db import (
     BypassCap,
     ComponentDef,
     PinDef,
     StrapConfig,
+    emit_and_retain_passive_synthesis,
     infer_pin_roles_from_pins,
     normalize_pin_role_name,
     normalize_pin_roles,
 )
+from ..evidence import EvidenceLedger, EvidenceSource
 from .base import (
     FP_0402C,
     FP_0402R,
@@ -28,21 +31,14 @@ from .base import (
     POWER_NET_PREFIXES,
     BoundaryPort,
     SubcircuitResult,
-    boost_inductor,
-    buck_boost_inductor,
-    buck_inductor,
-    buck_output_cap,
     cap_footprint,
     crystal_load_caps,
-    feedback_divider_top,
-    feedback_divider_vout,
     format_capacitance,
     format_inductance,
     format_resistance,
     ind_footprint,
     res_footprint,
     snap_cap,
-    snap_ind,
     snap_to_e24,
     snap_to_e96,
 )
@@ -55,6 +51,48 @@ _NC_PIN_NAME_RE = re.compile(
     r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$",
     re.IGNORECASE,
 )
+
+# A power pin name is a documented identity, not a substring search.  The
+# allowlist covers package/vendor spelling variants that are electrically the
+# same rail.  In particular, signal labels such as MAINSVIN_SENSE must never
+# acquire a synthesized VIN connection merely because they contain "VIN".
+_POWER_PIN_EQUIVALENTS = frozenset(
+    {
+        "VINA",
+        "VINB",
+        "VIN1",
+        "VIN2",
+        "PVIN",
+        "AVIN",
+        "DVIN",
+        "INPUT",
+        "IN",
+        "IN1",
+        "IN2",
+        "VI",
+        "VBAT",
+        "VPLUS",
+        "VPOS",
+        "V+",
+        "AVDDH",
+        "AVDDL",
+        "DVDDH",
+        "DVDDL",
+        "DVDDIO",
+        "VDDL",
+        "VDDA",
+    }
+)
+
+
+def _is_power_input_pin_name(name: str) -> bool:
+    """Return whether *name* exactly identifies a positive power input pin."""
+
+    normalized = str(name or "").strip().upper()
+    if normalized in _POWER_PIN_EQUIVALENTS:
+        return True
+    return any(normalized == prefix or normalized.startswith(f"{prefix}_") for prefix in POWER_NET_PREFIXES)
+
 
 _SAFE_UNMAPPED_PIN_TYPES = frozenset(
     {
@@ -133,62 +171,23 @@ def build_switching_regulator(ic_data: dict, params: dict[str, Any]) -> Subcircu
 
 def _build_buck(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     """Build a buck (step-down) regulator."""
-    vin = params["vin"]
-    vout = params["vout"]
-    iout = params["iout"]
-    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
-    ripple_ratio = params.get("ripple_ratio", 0.3)
-    l_raw = buck_inductor(vin, vout, fsw, iout, ripple_ratio)
-    l_val = snap_ind(l_raw)
-    if fsw > 0 and l_val > 0:
-        d = vout / vin
-        delta_il = (vin - vout) * d / (fsw * l_val)
-    else:
-        delta_il = iout * 0.3
-    return _build_switching_core(ic_data, params, "buck", l_val, delta_il)
+    return _build_switching_core(ic_data, params, "buck")
 
 
 def _build_boost(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     """Build a boost (step-up) regulator."""
-    vin = params["vin"]
-    vout = params["vout"]
-    iout = params["iout"]
-    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
-    ripple_ratio = params.get("ripple_ratio", 0.3)
-    l_raw = boost_inductor(vin, vout, fsw, iout, ripple_ratio)
-    l_val = snap_ind(l_raw)
-    if fsw > 0 and l_val > 0:
-        d = 1.0 - vin / vout if vout > vin else 0.5
-        delta_il = vin * d / (fsw * l_val)
-    else:
-        delta_il = iout * 0.3
-    return _build_switching_core(ic_data, params, "boost", l_val, delta_il)
+    return _build_switching_core(ic_data, params, "boost")
 
 
 def _build_buck_boost(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     """Build a buck-boost (inverting/step-up-down) regulator."""
-    vin = params["vin"]
-    vout = params["vout"]
-    iout = params["iout"]
-    fsw = params.get("fsw", ic_data.get("fsw", 600e3))
-    ripple_ratio = params.get("ripple_ratio", 0.3)
-    vin_min = params.get("vin_min", vin * 0.8)
-    l_raw = buck_boost_inductor(vin_min, vout, fsw, iout, ripple_ratio)
-    l_val = snap_ind(l_raw)
-    if fsw > 0 and l_val > 0:
-        d = 1.0 - vin_min / vout if vout > vin_min else 0.5
-        delta_il = vin_min * d / (fsw * l_val)
-    else:
-        delta_il = iout * 0.3
-    return _build_switching_core(ic_data, params, "buck_boost", l_val, delta_il)
+    return _build_switching_core(ic_data, params, "buck_boost")
 
 
 def _build_switching_core(
     ic_data: dict,
     params: dict[str, Any],
     topology: str,
-    l_val: float,
-    delta_il: float,
 ) -> SubcircuitResult:
     """Shared core: feedback, caps, pins, and component assembly for switching regulators."""
     vin = params["vin"]
@@ -202,20 +201,207 @@ def _build_switching_core(
     vout_ripple = params.get("vout_ripple", 0.020)
     fsw = params.get("fsw", ic_data.get("fsw", 600e3))
 
-    vref = ic_data.get("vref", 0.8)
-    r_fbb = params.get("r_fbb", ic_data.get("r_fbb_default", 100e3))
+    vref = float(ic_data.get("vref", 0.8))
+    r_fbb = float(params.get("r_fbb", ic_data.get("r_fbb_default", 100e3)))
 
-    # Feedback divider
-    r_fbt_raw = feedback_divider_top(vout, vref, r_fbb)
-    r_fbt = snap_to_e96(r_fbt_raw)
-    r_fbb_snapped = snap_to_e96(r_fbb)
-    actual_vout = feedback_divider_vout(r_fbt, r_fbb_snapped, vref)
+    # Each actual design input gets one local source record before it is fed to
+    # a calculation.  In particular, a data-driven IC value is configuration
+    # evidence, not an invented datasheet citation.
+    ledger = EvidenceLedger()
+    calc_records: list[calc.CalculationRecord] = []
 
-    # Output capacitor
-    cout_raw = buck_output_cap(abs(delta_il), fsw, vout_ripple)
-    cout_val = snap_cap(cout_raw)
-    cin_val = 22e-6 if iout > 2.0 else 10e-6
-    cbst_val = 100e-9
+    def _input_evidence(name: str, value: float, unit: str) -> str:
+        return ledger.record(
+            subject_ref=f"param:{ref}.switching.{name}",
+            claim=f"user-declared switching parameter {name}={value:g} {unit}",
+            kind="user",
+            source=EvidenceSource(extraction_method="switching-topology-parameter"),
+            confidence="single_source",
+            freshness="unknown",
+        )
+
+    evidence = {
+        "vin_v": _input_evidence("vin", vin, "V"),
+        "vout_v": _input_evidence("vout", vout, "V"),
+        "output_current_a": _input_evidence("iout", iout, "A"),
+        "switching_frequency_hz": _input_evidence("fsw", fsw, "Hz"),
+        "ripple_ratio": _input_evidence("ripple_ratio", float(params.get("ripple_ratio", 0.3)), "ratio"),
+        "output_ripple_v": _input_evidence("vout_ripple", vout_ripple, "V"),
+        "r_bottom_ohm": _input_evidence("r_fbb", r_fbb, "ohm"),
+    }
+    vref_provenance = ic_data.get("vref_provenance")
+    if vref_provenance:
+        vref_evidence = ledger.record(
+            subject_ref=f"param:{ref}.feedback.vref",
+            claim=f"declared feedback reference voltage={vref:g} V",
+            kind="datasheet",
+            source=EvidenceSource(doc_id=str(vref_provenance), extraction_method="feedback-vref"),
+            confidence="single_source",
+            freshness="unknown",
+        )
+    else:
+        vref_evidence = _input_evidence("vref", vref, "V")
+    evidence["vref_v"] = vref_evidence
+
+    def _emit(record: calc.CalculationRecord) -> calc.CalculationRecord:
+        emitted = calc.emit_calculation_evidence(record, ledger)
+        calc_records.append(emitted)
+        return emitted
+
+    try:
+        # Divider legs are selected jointly.  The <=2x per-leg scale window is
+        # part of the record, so a future selector cannot independently round
+        # its ratio away.
+        feedback_top = calc.feedback_divider_top(
+            target=f"param:{ref}.feedback.rtop",
+            vout_v=vout,
+            vref_v=vref,
+            r_bottom_ohm=r_fbb,
+            evidence_ids={
+                "vout_v": evidence["vout_v"],
+                "vref_v": vref_evidence,
+                "r_bottom_ohm": evidence["r_bottom_ohm"],
+            },
+        )
+        feedback_bottom_decision = calc.bounded_fallback_scalar(
+            target=f"param:{ref}.feedback.rbottom",
+            value=r_fbb,
+            minimum=1e3,
+            maximum=1e6,
+            unit="ohm",
+            series=None,
+        )
+        if feedback_bottom_decision.finding is not None:
+            raise ValueError(f"{feedback_bottom_decision.finding.rule_id}: feedback-bottom selection withheld")
+        divider = calc.apply_ratio_preserving_divider_selection(
+            feedback_top,
+            feedback_bottom_decision.calculation,
+            target_vout_v=vout,
+            vref_v=vref,
+            series="E96",
+            max_scale_factor=2.0,
+        )
+        feedback_top = _emit(divider.top)
+        feedback_bottom = _emit(divider.bottom)
+        r_fbt = calc.require_selection(feedback_top).value
+        r_fbb_snapped = calc.require_selection(feedback_bottom).value
+        feedback_vout = _emit(
+            calc.feedback_divider_vout(
+                target=f"param:{ref}.feedback.vout",
+                r_top_ohm=r_fbt,
+                r_bottom_ohm=r_fbb_snapped,
+                vref_v=vref,
+                evidence_ids={
+                    "r_top_ohm": feedback_top.emits_evidence,
+                    "r_bottom_ohm": feedback_bottom.emits_evidence,
+                    "vref_v": vref_evidence,
+                },
+            )
+        )
+        actual_vout = feedback_vout.raw_result.value
+
+        if topology == "buck":
+            inductor_raw = calc.buck_inductor(
+                target=f"param:{ref}.switching.inductor",
+                vin_v=vin,
+                vout_v=vout,
+                switching_frequency_hz=fsw,
+                output_current_a=iout,
+                ripple_ratio=float(params.get("ripple_ratio", 0.3)),
+                evidence_ids=evidence,
+            )
+        elif topology == "boost":
+            inductor_raw = calc.boost_inductor(
+                target=f"param:{ref}.switching.inductor",
+                vin_v=vin,
+                vout_v=vout,
+                switching_frequency_hz=fsw,
+                output_current_a=iout,
+                ripple_ratio=float(params.get("ripple_ratio", 0.3)),
+                evidence_ids=evidence,
+            )
+        else:
+            vin_min = float(params.get("vin_min", vin * 0.8))
+            vin_min_evidence = _input_evidence("vin_min", vin_min, "V")
+            inductor_raw = calc.buck_boost_inductor(
+                target=f"param:{ref}.switching.inductor",
+                vin_min_v=vin_min,
+                vout_v=vout,
+                switching_frequency_hz=fsw,
+                output_current_a=iout,
+                ripple_ratio=float(params.get("ripple_ratio", 0.3)),
+                evidence_ids={**evidence, "vin_min_v": vin_min_evidence},
+            )
+        inductor = _emit(calc.apply_e_series_selection(inductor_raw, series="E24", direction="nearest"))
+        l_val = calc.require_selection(inductor).value
+        if topology == "buck":
+            duty_cycle = vout / vin
+            delta_il = (vin - vout) * duty_cycle / (fsw * l_val)
+        else:
+            sizing_vin = vin if topology == "boost" else vin_min
+            duty_cycle = 1.0 - sizing_vin / vout
+            delta_il = sizing_vin * duty_cycle / (fsw * l_val)
+
+        output_cap_raw = calc.buck_output_cap(
+            target=f"param:{ref}.switching.cout",
+            ripple_current_a=abs(delta_il),
+            switching_frequency_hz=fsw,
+            output_ripple_v=vout_ripple,
+            evidence_ids={
+                "switching_frequency_hz": evidence["switching_frequency_hz"],
+                "output_ripple_v": evidence["output_ripple_v"],
+                "ripple_current_a": _input_evidence("delta_il", abs(delta_il), "A"),
+            },
+        )
+        output_cap = _emit(calc.apply_capacitor_selection(output_cap_raw, series="E24"))
+        cout_val = calc.require_selection(output_cap).value
+
+        def _fallback_cap(name: str, value: float, minimum: float, maximum: float) -> calc.CalculationRecord:
+            decision = calc.bounded_fallback_scalar(
+                target=f"param:{ref}.switching.{name}",
+                value=value,
+                minimum=minimum,
+                maximum=maximum,
+                unit="F",
+                series="E24",
+                direction="up",
+            )
+            if decision.finding is not None:
+                raise ValueError(f"{decision.finding.rule_id}: {name} selection withheld")
+            return _emit(decision.calculation)
+
+        cin = _fallback_cap("cin", 22e-6 if iout > 2.0 else 10e-6, 1e-6, 47e-6)
+        bootstrap = _fallback_cap("cbst", 100e-9, 10e-9, 1e-6)
+        cin_val = calc.require_selection(cin).value
+        cbst_val = calc.require_selection(bootstrap).value
+        if topology == "buck_boost":
+            cin_bulk = _fallback_cap("cin_bulk", 10e-6, 1e-6, 47e-6)
+            cin_hf = _fallback_cap("cin_hf", 100e-9, 10e-9, 1e-6)
+            cout_bulk = _fallback_cap("cout_bulk", 22e-6, 1e-6, 47e-6)
+            cout_hf = _fallback_cap("cout_hf", 100e-9, 10e-9, 1e-6)
+            cvaux = _fallback_cap("cvaux", 10e-6, 1e-6, 47e-6)
+            cin_bulk_val = calc.require_selection(cin_bulk).value
+            cin_hf_val = calc.require_selection(cin_hf).value
+            cout_bulk_val = calc.require_selection(cout_bulk).value
+            cout_hf_val = calc.require_selection(cout_hf).value
+            c_vaux_val = calc.require_selection(cvaux).value
+    except ValueError as exc:
+        message = str(exc)
+        if "CW-PSV-" not in message:
+            message = f"CW-PSV-001: switching passive synthesis withheld: {message}"
+        raise ValueError(message) from exc
+
+    def _trace(record: calc.CalculationRecord) -> dict[str, object]:
+        """Return the mandatory passive trace fields from an emitted record."""
+        calc.require_selection(record)
+        if record.emits_evidence is None:
+            raise ValueError("CW-PSV-001: selected switching passive has no calculation evidence")
+        return {
+            "selection_policy": record.policy,
+            "confidence": record.confidence,
+            "calculation_id": record.id,
+            "evidence_ids": (record.emits_evidence,),
+        }
 
     # Net names
     sw_net = f"SW_{ref}"
@@ -296,11 +482,6 @@ def _build_switching_core(
 
     bypass_caps: list[BypassCap] = []
     if topology == "buck_boost":
-        cin_bulk_val = 10e-6
-        cin_hf_val = 100e-9
-        cout_bulk_val = 22e-6
-        cout_hf_val = 100e-9
-        c_vaux_val = 10e-6
         bypass_caps = [
             BypassCap(
                 "CIN_BULK",
@@ -310,6 +491,7 @@ def _build_switching_core(
                 cap_footprint(cin_bulk_val),
                 role="input_cap",
                 presentation="topology_local",
+                **_trace(cin_bulk),
             ),
             BypassCap(
                 "CIN_HF",
@@ -319,6 +501,7 @@ def _build_switching_core(
                 cap_footprint(cin_hf_val),
                 role="input_cap",
                 presentation="topology_local",
+                **_trace(cin_hf),
             ),
             BypassCap(
                 "COUT_BULK",
@@ -328,6 +511,7 @@ def _build_switching_core(
                 cap_footprint(cout_bulk_val),
                 role="output_cap",
                 presentation="topology_local",
+                **_trace(cout_bulk),
             ),
             BypassCap(
                 "COUT_HF",
@@ -337,6 +521,7 @@ def _build_switching_core(
                 cap_footprint(cout_hf_val),
                 role="output_cap",
                 presentation="topology_local",
+                **_trace(cout_hf),
             ),
             BypassCap(
                 "L",
@@ -346,6 +531,7 @@ def _build_switching_core(
                 ind_footprint(l_val, iout),
                 role="inductor",
                 presentation="topology_local",
+                **_trace(inductor),
             ),
         ]
         if pin_vaux and ic_data.get("has_vaux"):
@@ -358,6 +544,7 @@ def _build_switching_core(
                     cap_footprint(c_vaux_val),
                     role="decoupling",
                     presentation="topology_local",
+                    **_trace(cvaux),
                 ),
             )
     else:
@@ -370,6 +557,7 @@ def _build_switching_core(
                 cap_footprint(cin_val),
                 role="input_cap",
                 presentation="topology_local",
+                **_trace(cin),
             ),
             BypassCap(
                 "COUT",
@@ -379,6 +567,7 @@ def _build_switching_core(
                 cap_footprint(cout_val),
                 role="output_cap",
                 presentation="topology_local",
+                **_trace(output_cap),
             ),
             BypassCap(
                 "L",
@@ -388,6 +577,7 @@ def _build_switching_core(
                 ind_footprint(l_val, iout),
                 role="inductor",
                 presentation="topology_local",
+                **_trace(inductor),
             ),
         ]
         if pin_bst:
@@ -400,6 +590,7 @@ def _build_switching_core(
                     FP_0402C,
                     role="bootstrap_cap",
                     presentation="topology_local",
+                    **_trace(bootstrap),
                 ),
             )
 
@@ -412,6 +603,7 @@ def _build_switching_core(
             FP_0402R,
             role="feedback_top",
             presentation="topology_local",
+            **_trace(feedback_top),
         ),
         StrapConfig(
             "FBB",
@@ -421,6 +613,7 @@ def _build_switching_core(
             FP_0402R,
             role="feedback_bottom",
             presentation="topology_local",
+            **_trace(feedback_bottom),
         ),
     ]
 
@@ -429,10 +622,6 @@ def _build_switching_core(
         f"Vout = {vref}V * (1 + {format_resistance(r_fbt)}/{format_resistance(r_fbb_snapped)}) = {actual_vout:.3f}V",
     ]
     if topology == "buck_boost":
-        cin_bulk_val = 10e-6
-        cin_hf_val = 100e-9
-        cout_bulk_val = 22e-6
-        cout_hf_val = 100e-9
         annotations += [
             f"L={format_inductance(l_val)} (sized for Vin_min={params.get('vin_min', vin * 0.8)}V)",
             f"Cin={format_capacitance(cin_bulk_val)}+{format_capacitance(cin_hf_val)}, "
@@ -459,7 +648,23 @@ def _build_switching_core(
         straps=straps,
         annotations=annotations,
         explicit_no_connects=explicit_no_connects,
+        feedback_vref_voltage=vref,
+        feedback_vref_provenance=ic_data.get("vref_provenance") or "switching-topology-parameter",
+        feedback_vref_evidence_id=vref_evidence,
     )
+    ic_comp.source_ref = ref
+
+    # Retain every exact producer record through the shared ComponentDef
+    # boundary.  This deliberately reuses the same deterministic evidence IDs
+    # emitted into the local construction ledger rather than reconstructing
+    # provenance later during validation.
+    for record in calc_records:
+        input_evidence = tuple(
+            item
+            for item in (ledger.get(item.evidence_id) for item in record.inputs if item.evidence_id)
+            if item is not None
+        )
+        emit_and_retain_passive_synthesis(ic_comp, record, input_evidence=input_evidence)
 
     ports = [
         BoundaryPort(vin_net, "input"),
@@ -503,8 +708,67 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
     if pdiss > 0.5:
         warnings.append(f"WARNING: Pdiss={pdiss:.2f}W > 500mW — needs heatsink")
 
-    cin_val = ic_data.get("cin", 1e-6)
-    cout_val = ic_data.get("cout", 1e-6)
+    ref = params.get("ref", "U")
+    ledger = EvidenceLedger()
+    records: list[calc.CalculationRecord] = []
+
+    def _ldo_cap(role: str, value: float) -> calc.CalculationRecord:
+        target = f"param:{ref}.ldo.{role}"
+        datasheet_url = str(ic_data.get("datasheet_url") or "").strip()
+        if datasheet_url:
+            source_id = ledger.record(
+                subject_ref=target,
+                claim=f"datasheet recommends {value:g} F for {role}",
+                kind="datasheet",
+                source=EvidenceSource(uri=datasheet_url, extraction_method="ldo-cap-recommendation"),
+                confidence="single_source",
+                freshness="unknown",
+            )
+            decision = calc.ldo_minimum_capacitor(
+                target=target,
+                minimum_capacitance_f=value,
+                evidence_id=source_id,
+            )
+            if decision.finding is not None:
+                raise ValueError(f"{decision.finding.rule_id}: LDO {role} selection withheld")
+            selected = decision.calculation
+        else:
+            decision = calc.bounded_fallback_scalar(
+                target=target,
+                value=value,
+                minimum=100e-9,
+                maximum=100e-6,
+                unit="F",
+                series="E24",
+                direction="up",
+            )
+            if decision.finding is not None:
+                raise ValueError(f"{decision.finding.rule_id}: LDO {role} selection withheld")
+            selected = decision.calculation
+        emitted = calc.emit_calculation_evidence(selected, ledger)
+        records.append(emitted)
+        return emitted
+
+    try:
+        cin = _ldo_cap("cin", float(ic_data.get("cin", 1e-6)))
+        cout = _ldo_cap("cout", float(ic_data.get("cout", 1e-6)))
+        cin_val = calc.require_selection(cin).value
+        cout_val = calc.require_selection(cout).value
+    except ValueError as exc:
+        message = str(exc)
+        if "CW-PSV-" not in message:
+            message = f"CW-PSV-001: LDO passive synthesis withheld: {message}"
+        raise ValueError(message) from exc
+
+    def _trace(record: calc.CalculationRecord) -> dict[str, object]:
+        if record.emits_evidence is None:
+            raise ValueError("CW-PSV-001: LDO passive has no calculation evidence")
+        return {
+            "selection_policy": record.policy,
+            "confidence": record.confidence,
+            "calculation_id": record.id,
+            "evidence_ids": (record.emits_evidence,),
+        }
 
     pin_vin = _pin_role(ic_data, "vin")
     pin_gnd = _pin_role(ic_data, "gnd")
@@ -532,6 +796,7 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
             cap_footprint(cin_val),
             role="decoupling",
             presentation="topology_local",
+            **_trace(cin),
         ),
         BypassCap(
             "COUT",
@@ -541,6 +806,7 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
             cap_footprint(cout_val),
             role="decoupling",
             presentation="topology_local",
+            **_trace(cout),
         ),
     ]
 
@@ -563,6 +829,16 @@ def build_linear_regulator(ic_data: dict, params: dict[str, Any]) -> SubcircuitR
         bypass_caps=bypass_caps,
         annotations=annotations,
     )
+    ic_comp.source_ref = ref
+    for record in records:
+        input_evidence = tuple(
+            item
+            for item in (
+                ledger.get(input_value.evidence_id) for input_value in record.inputs if input_value.evidence_id
+            )
+            if item is not None
+        )
+        emit_and_retain_passive_synthesis(ic_comp, record, input_evidence=input_evidence)
 
     ports = [
         BoundaryPort(vin_net, "input"),
@@ -625,9 +901,80 @@ def build_can_transceiver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRe
     elif ic_data.get("rs_highspeed_to_gnd", False):
         pin_nets[pin_rs] = "GND"
 
+    ledger = EvidenceLedger()
+    records: list[calc.CalculationRecord] = []
+
+    def _fallback(
+        name: str,
+        value: float,
+        minimum: float,
+        maximum: float,
+        unit: str,
+        *,
+        series: str,
+        direction: str = "nearest",
+    ) -> calc.CalculationRecord:
+        decision = calc.bounded_fallback_scalar(
+            target=f"param:{ref}.can.{name}",
+            value=value,
+            minimum=minimum,
+            maximum=maximum,
+            unit=unit,
+            series=series,
+            direction=direction,
+        )
+        if decision.finding is not None:
+            raise ValueError(f"{decision.finding.rule_id}: CAN {name} selection withheld")
+        emitted = calc.emit_calculation_evidence(decision.calculation, ledger)
+        records.append(emitted)
+        return emitted
+
+    try:
+        cvcc = _fallback("cvcc", 100e-9, 10e-9, 1e-6, "F", series="E24", direction="up")
+        cvref = _fallback("cvref", 100e-9, 10e-9, 1e-6, "F", series="E24", direction="up")
+        if slope_control:
+            rs = _fallback("slope_control", 10e3, 1e3, 100e3, "ohm", series="E24")
+        if termination:
+            rt1 = _fallback("termination_top", 60.0, 54.0, 66.0, "ohm", series="E96")
+            rt2 = _fallback("termination_bottom", 60.0, 54.0, 66.0, "ohm", series="E96")
+            ct = _fallback("termination_cap", 4.7e-9, 1e-9, 10e-9, "F", series="E24", direction="up")
+    except ValueError as exc:
+        message = str(exc)
+        if "CW-PSV-" not in message:
+            message = f"CW-PSV-001: CAN passive synthesis withheld: {message}"
+        raise ValueError(message) from exc
+
+    def _trace(record: calc.CalculationRecord) -> dict[str, object]:
+        selected = calc.require_selection(record)
+        if record.emits_evidence is None:
+            raise ValueError("CW-PSV-001: CAN passive has no calculation evidence")
+        return {
+            "value": format_capacitance(selected.value) if selected.unit == "F" else format_resistance(selected.value),
+            "selection_policy": record.policy,
+            "confidence": record.confidence,
+            "calculation_id": record.id,
+            "evidence_ids": (record.emits_evidence,),
+        }
+
     bypass_caps = [
-        BypassCap("C_VCC", vdd_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
-        BypassCap("C_VREF", vref_net, "GND", "100nF", FP_0402C, role="decoupling", presentation="topology_local"),
+        BypassCap(
+            "C_VCC",
+            vdd_net,
+            "GND",
+            footprint=FP_0402C,
+            role="decoupling",
+            presentation="topology_local",
+            **_trace(cvcc),
+        ),
+        BypassCap(
+            "C_VREF",
+            vref_net,
+            "GND",
+            footprint=FP_0402C,
+            role="decoupling",
+            presentation="topology_local",
+            **_trace(cvref),
+        ),
     ]
     straps = []
     if slope_control:
@@ -636,10 +983,10 @@ def build_can_transceiver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRe
                 "RS",
                 rs_net,
                 "GND",
-                format_resistance(snap_to_e24(10e3)),
-                FP_0402R,
+                footprint=FP_0402R,
                 role="slope_control",
                 presentation="topology_local",
+                **_trace(rs),
             )
         )
     if termination:
@@ -650,19 +997,19 @@ def build_can_transceiver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRe
                     "RT1",
                     canh_net,
                     term_mid_net,
-                    format_resistance(snap_to_e96(60)),
-                    FP_0402R,
+                    footprint=FP_0402R,
                     role="termination",
                     presentation="topology_local",
+                    **_trace(rt1),
                 ),
                 StrapConfig(
                     "RT2",
                     term_mid_net,
                     canl_net,
-                    format_resistance(snap_to_e96(60)),
-                    FP_0402R,
+                    footprint=FP_0402R,
                     role="termination",
                     presentation="topology_local",
+                    **_trace(rt2),
                 ),
             ]
         )
@@ -671,10 +1018,10 @@ def build_can_transceiver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRe
                 "CT",
                 term_mid_net,
                 "GND",
-                format_capacitance(snap_cap(4.7e-9)),
-                cap_footprint(4.7e-9),
+                footprint=cap_footprint(4.7e-9),
                 role="termination",
                 presentation="topology_local",
+                **_trace(ct),
             )
         )
 
@@ -696,6 +1043,8 @@ def build_can_transceiver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRe
         ],
     )
     comp.source_ref = ref
+    for record in records:
+        emit_and_retain_passive_synthesis(comp, record)
 
     return SubcircuitResult(
         components=[comp],
@@ -1277,10 +1626,46 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
             pin_nets[str(ic_data["pin_cs_n"])] = params.get("cs_net", cs_n_net)
         interface_note = "Interface: SPI (4-wire)"
 
-    cdec_val = snap_cap(100e-9)
-    cbulk_val = snap_cap(10e-6)
-    rres_val = snap_to_e96(10e3)
-    cres_val = snap_cap(100e-9)
+    ledger = EvidenceLedger()
+    records: list[calc.CalculationRecord] = []
+
+    def _reset_fallback(
+        name: str, value: float, minimum: float, maximum: float, unit: str, series: str, direction: str
+    ) -> calc.CalculationRecord:
+        decision = calc.bounded_fallback_scalar(
+            target=f"param:{ref}.display.{name}",
+            value=value,
+            minimum=minimum,
+            maximum=maximum,
+            unit=unit,
+            series=series,
+            direction=direction,
+        )
+        if decision.finding is not None:
+            raise ValueError(f"{decision.finding.rule_id}: display {name} selection withheld")
+        emitted = calc.emit_calculation_evidence(decision.calculation, ledger)
+        records.append(emitted)
+        return emitted
+
+    reset_resistor = _reset_fallback("reset_pullup", 10e3, 1e3, 100e3, "ohm", "E96", "nearest")
+    reset_cap = _reset_fallback("reset_delay_cap", 100e-9, 10e-9, 1e-6, "F", "E24", "up")
+    decoupling_cap = _reset_fallback("decoupling", 100e-9, 10e-9, 1e-6, "F", "E24", "up")
+    bulk_cap = _reset_fallback("bulk_cap", 10e-6, 1e-6, 47e-6, "F", "E24", "up")
+    rres_val = calc.require_selection(reset_resistor).value
+    cres_val = calc.require_selection(reset_cap).value
+    cdec_val = calc.require_selection(decoupling_cap).value
+    cbulk_val = calc.require_selection(bulk_cap).value
+
+    def _reset_trace(record: calc.CalculationRecord) -> dict[str, object]:
+        if record.emits_evidence is None:
+            raise ValueError("CW-PSV-001: display reset passive has no calculation evidence")
+        return {
+            "selection_policy": record.policy,
+            "confidence": record.confidence,
+            "calculation_id": record.id,
+            "evidence_ids": (record.emits_evidence,),
+        }
+
     bypass_caps = [
         BypassCap(
             "CVDD",
@@ -1290,6 +1675,7 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
             cap_footprint(cdec_val),
             role="decoupling",
             presentation="topology_local",
+            **_reset_trace(decoupling_cap),
         ),
         BypassCap(
             "CVDD_BULK",
@@ -1299,6 +1685,7 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
             cap_footprint(cbulk_val),
             role="bulk_cap",
             presentation="topology_local",
+            **_reset_trace(bulk_cap),
         ),
         BypassCap(
             "CRES",
@@ -1308,6 +1695,7 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
             cap_footprint(cres_val),
             role="reset_delay",
             presentation="topology_local",
+            **_reset_trace(reset_cap),
         ),
     ]
     straps = [
@@ -1319,6 +1707,7 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
             FP_0402R,
             role="reset_pullup",
             presentation="topology_local",
+            **_reset_trace(reset_resistor),
         )
     ]
     annotations = [
@@ -1328,7 +1717,17 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
     ]
 
     if ic_data.get("has_charge_pump"):
-        riref_val = snap_to_e96(ic_data.get("riref_default", 910e3))
+        riref = _reset_fallback(
+            "iref_set",
+            float(ic_data.get("riref_default", 910e3)),
+            100e3,
+            10e6,
+            "ohm",
+            "E96",
+            "nearest",
+        )
+        cpump = _reset_fallback("charge_pump_cap", 2.2e-6, 100e-9, 10e-6, "F", "E24", "up")
+        riref_val = calc.require_selection(riref).value
         pin_nets[str(ic_data.get("pin_iref"))] = iref_net
         straps.append(
             StrapConfig(
@@ -1339,9 +1738,10 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
                 FP_0402R,
                 role="iref_set",
                 presentation="topology_local",
+                **_reset_trace(riref),
             )
         )
-        cpump_val = snap_cap(2.2e-6)
+        cpump_val = calc.require_selection(cpump).value
         if ic_data.get("pin_c1p"):
             c1p_net = f"C1P_{ref}"
             pin_nets[str(ic_data["pin_c1p"])] = c1p_net
@@ -1354,6 +1754,7 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
                     cap_footprint(cpump_val),
                     role="charge_pump_cap",
                     presentation="topology_local",
+                    **_reset_trace(cpump),
                 )
             )
         if ic_data.get("pin_c2p"):
@@ -1368,6 +1769,7 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
                     cap_footprint(cpump_val),
                     role="charge_pump_cap",
                     presentation="topology_local",
+                    **_reset_trace(cpump),
                 )
             )
         if ic_data.get("pin_vcomh"):
@@ -1391,6 +1793,8 @@ def build_display_driver(ic_data: dict, params: dict[str, Any]) -> SubcircuitRes
         annotations=annotations,
     )
     comp.source_ref = ref
+    for record in records:
+        emit_and_retain_passive_synthesis(comp, record)
     ports = [BoundaryPort(vdd_net, "input"), BoundaryPort(gnd_net, "passive")]
     for net_name in dict.fromkeys(comp.pin_nets.values()):
         if net_name not in {vdd_net, gnd_net}:
@@ -1585,22 +1989,7 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
                 name_upper == p or name_upper.startswith(f"{p}_") or name_upper == p for p in GROUND_NET_PREFIXES
             ) or name_upper in ("VEE", "SGND", "COM", "V-", "EPAD"):
                 power_pins[pin.number] = gnd_net
-            elif any(
-                name_upper == p or name_upper.startswith(f"{p}_") or p in name_upper for p in POWER_NET_PREFIXES
-            ) or name_upper in (
-                "IN1",
-                "IN2",
-                "VPLUS",
-                "VPOS",
-                "V+",
-                "AVDDH",
-                "AVDDL",
-                "DVDDH",
-                "DVDDL",
-                "DVDDIO",
-                "VDDL",
-                "VDDA",
-            ):
+            elif _is_power_input_pin_name(name_upper):
                 power_pins[pin.number] = vdd_net
 
     # T228/T234 — shared interface routing now keys off normalized pin roles
@@ -1719,6 +2108,15 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
     elif topo in ("mosfet_switch",):
         detected_ref_prefix = "Q"
     ref_prefix = ic_data.get("ref_prefix", detected_ref_prefix)
+    raw_recommended_bypass = list(ic_data.get("recommended_bypass") or [])
+    default_datasheet = str(ic_data.get("datasheet_url") or "").strip()
+    normalizable_recommended_bypass = [
+        item
+        for item in raw_recommended_bypass
+        if not isinstance(item, dict)
+        or str(item.get("precedence_policy") or item.get("policy") or "datasheet") != "datasheet"
+        or bool(item.get("provenance") or item.get("evidence_id") or default_datasheet)
+    ]
     ic_comp = ComponentDef(
         mpn=ic_name,
         ref_prefix=ref_prefix,
@@ -1731,7 +2129,8 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         pin_roles=pin_roles,
         pin_nets=pin_nets,
         bypass_caps=[],
-        recommended_bypass=list(ic_data.get("recommended_bypass") or []),
+        recommended_bypass=normalizable_recommended_bypass,
+        passive_recommendations=list(ic_data.get("passive_recommendations") or []),
         datasheet_url=str(ic_data.get("datasheet_url") or ""),
         reference_layout_url=str(ic_data.get("reference_layout_url") or ""),
         official_references=[
@@ -1742,7 +2141,16 @@ def build_generic(ic_data: dict, params: dict[str, Any]) -> SubcircuitResult:
         explicit_no_connects=explicit_ncs,
         unmapped_required_pins=unmapped_required_pins,
         annotations=[f"{ic_data.get('description', ic_name)}"],
+        feedback_vref_voltage=(
+            ic_data.get("vref") if (ic_data.get("vref_provenance") or ic_data.get("vref_evidence_id")) else None
+        ),
+        feedback_vref_provenance=ic_data.get("vref_provenance"),
+        feedback_vref_evidence_id=ic_data.get("vref_evidence_id"),
     )
+    # Preserve legacy parser output for round-trip compatibility, but do not
+    # promote an unprovenanced text hint into the typed recommendation list.
+    # Consumers synthesize only from ``passive_recommendations``.
+    ic_comp.recommended_bypass = raw_recommended_bypass
     ic_comp.source_ref = ref
 
     # T228 / F7 — only declare BoundaryPort entries for nets that genuinely
@@ -1855,7 +2263,12 @@ _SWITCHER_COMMON_SCHEMA: list[dict[str, Any]] = [
     {"name": "vin_net", "type": "string", "default": "VIN", "description": "Input rail net name"},
     {"name": "en_net", "type": "string", "description": "Enable net name; defaults to vin_net"},
     {"name": "fsw", "type": "number", "description": "Switching frequency override in hertz"},
-    {"name": "r_fbb", "type": "number", "description": "Bottom feedback resistor override in ohms"},
+    {
+        "name": "r_fbb",
+        "type": "number",
+        "minimum": 1000.0,
+        "description": "Bottom feedback resistor override in ohms (1k to 1M declared selection window)",
+    },
     {"name": "ripple_ratio", "type": "number", "default": 0.3, "description": "Target inductor ripple ratio"},
     {"name": "vout_ripple", "type": "number", "default": 0.02, "description": "Target output ripple in volts"},
 ]

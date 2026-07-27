@@ -102,6 +102,8 @@ extend-exclude = ["src/circuit_weaver/_bundled_skills"]
 select = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 markers = [
   "network: tests that require live network access",
+  "skip_category(category): classify a skip as platform, optional-tool, network, or defect",
 ]

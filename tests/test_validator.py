@@ -99,12 +99,16 @@ def _stub_registry_component(mpn: str = "UNKNOWN_IC", ref_prefix: str = "U") -> 
 # ---------------------------------------------------------------------------
 
 
-def test_stub_ic_fails_validation():
-    """An unverified stub IC must produce an 'unverified-pinout' error."""
+def test_stub_ic_is_a_verified_blocker():
+    """A known stub pinout remains a confirmed generation safety defect."""
     issues = validate_circuit([_stub_ic()])
-    pinout_errors = [i for i in issues if i.code == "unverified-pinout" and i.level == "error"]
-    assert pinout_errors, "Expected unverified-pinout error for stub IC"
-    assert "BGB707" in pinout_errors[0].message
+    pinout_issues = [i for i in issues if i.code == "unverified-pinout"]
+    assert pinout_issues, "Expected unverified-pinout review item for stub IC"
+    assert pinout_issues[0].severity == "blocker"
+    assert pinout_issues[0].detection_confidence == "verified"
+    assert pinout_issues[0].level == "error"
+    assert pinout_issues[0].is_confirmed_blocker
+    assert "BGB707" in pinout_issues[0].message
 
 
 def test_explicit_ic_passes_validation():
@@ -155,7 +159,7 @@ def test_multiple_stubs_each_emit_error():
 
 
 def test_run_validation_checks_includes_pinout_check():
-    """run_validation_checks must include the pinout-source check and return FAIL for stubs."""
+    """A verified observation of stub pinout state remains a hard-fail result."""
     results = run_validation_checks([_stub_ic()])
     pinout_result = next((r for r in results if r.code == "pinout-source"), None)
     assert pinout_result is not None, "pinout-source check not registered in _VALIDATION_CHECKS"

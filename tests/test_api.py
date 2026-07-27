@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from circuit_weaver.api import create_app
+from circuit_weaver.capabilities import get_capability_registry
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 
@@ -91,6 +92,19 @@ class TestTemplates:
 
 
 # ================================================================
+# /capabilities
+# ================================================================
+
+
+class TestCapabilities:
+    def test_capabilities_returns_shared_registry(self, client):
+        response = client.get("/capabilities")
+
+        assert response.status_code == 200
+        assert response.json() == get_capability_registry()
+
+
+# ================================================================
 # /validate
 # ================================================================
 
@@ -105,6 +119,10 @@ class TestValidate:
         assert isinstance(data.get("component_count"), int)
         assert "validation" in data
         assert isinstance(data["validation"], list)
+        assert data["evidence_ids"]
+        assert data["evidence_manifest"]["schema_version"] == "circuit-weaver-evidence-manifest/v1"
+        known_ids = {record["id"] for record in data["evidence_manifest"]["records"]}
+        assert set(data["evidence_ids"]) <= known_ids
 
     def test_validate_empty_yaml_returns_400(self, client):
         """Sending an empty body with explicit text/yaml content-type → 4xx."""
@@ -173,6 +191,8 @@ class TestMvpValidate:
             assert "valid" in data
             assert "categories" in data
             assert isinstance(data["categories"], dict)
+            assert "evidence_ids" in data
+            assert "evidence_manifest" in data
 
 
 # ================================================================

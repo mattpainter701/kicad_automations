@@ -12,9 +12,11 @@ and optional ESD diodes on data lines.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, StrapConfig
+from .. import calc
+from ..component_db import BypassCap, ComponentDef, StrapConfig, emit_and_retain_passive_synthesis
 from .base import (
     FP_0402C,
     FP_0402R,
@@ -22,6 +24,7 @@ from .base import (
     BoundaryPort,
     SubcircuitResult,
     SubcircuitTemplate,
+    format_capacitance,
     format_resistance,
     snap_to_e24,
 )
@@ -291,6 +294,74 @@ class USBCConnectorTemplate(SubcircuitTemplate):
             explicit_no_connects=explicit_nc,
         )
         ic_comp.source_ref = ref
+
+        # The USB-C CC and VBUS support values are deliberately declared
+        # bounded policies.  They are not silently treated as facts from the
+        # connector's pinout; every emitted passive keeps the calculation and
+        # calculation-evidence record which selected it.
+        def retain(decision: calc.PassiveSelectionDecision) -> calc.CalculationRecord:
+            emitted = emit_and_retain_passive_synthesis(ic_comp, decision.calculation, finding=decision.finding)
+            assert isinstance(emitted, calc.CalculationRecord)
+            return emitted
+
+        def trace(record: calc.CalculationRecord) -> dict[str, object]:
+            return {
+                "selection_policy": record.policy,
+                "confidence": record.confidence,
+                "calculation_id": record.id,
+                "evidence_ids": (record.emits_evidence,) if record.emits_evidence else (),
+            }
+
+        cc_min, cc_max = (4.7e3, 5.6e3) if role == "device" else (9.1e3, 62e3)
+        traced_straps: list[StrapConfig] = []
+        for strap in straps:
+            record = retain(
+                calc.bounded_fallback_scalar(
+                    target=f"param:{ref}.usb_c_{strap.role}.{strap.pin.lower()}",
+                    value=r_cc,
+                    minimum=cc_min,
+                    maximum=cc_max,
+                    unit="ohm",
+                    series="E24",
+                )
+            )
+            if calc.is_selection_eligible(record):
+                traced_straps.append(
+                    replace(
+                        strap,
+                        value=format_resistance(calc.require_selection(record).value),
+                        **trace(record),
+                    )
+                )
+        ic_comp.straps = traced_straps
+
+        cap_bounds = {
+            "vbus_bulk": (10e-6, 1e-6, 47e-6, "up"),
+            "vbus_decoupling": (100e-9, 10e-9, 1e-6, "up"),
+        }
+        traced_caps: list[BypassCap] = []
+        for cap in bypass_caps:
+            value, minimum, maximum, direction = cap_bounds[cap.role]
+            record = retain(
+                calc.bounded_fallback_scalar(
+                    target=f"param:{ref}.usb_c_{cap.role}.{cap.pin.lower()}",
+                    value=value,
+                    minimum=minimum,
+                    maximum=maximum,
+                    unit="F",
+                    series="E24",
+                    direction=direction,
+                )
+            )
+            if calc.is_selection_eligible(record):
+                traced_caps.append(
+                    replace(
+                        cap,
+                        value=format_capacitance(calc.require_selection(record).value),
+                        **trace(record),
+                    )
+                )
+        ic_comp.bypass_caps = traced_caps
 
         # Boundary ports
         ports = [

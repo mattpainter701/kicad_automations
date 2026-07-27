@@ -13,8 +13,10 @@ import pytest
 
 import circuit_weaver.dispatcher as dispatcher
 from circuit_weaver.component_db import ComponentDef
-from circuit_weaver.dispatcher import ValidationReport, apply_design_patch
+from circuit_weaver.dispatcher import ValidationMessage, ValidationReport, apply_design_patch
 from circuit_weaver.erc_runner import ErcResult
+
+pytestmark = pytest.mark.skip_category("platform")
 
 
 def _valid_report() -> ValidationReport:
@@ -468,6 +470,26 @@ def test_unmovable_prior_manifest_rolls_back_without_mutating_output(
     assert manifest_path.read_text(encoding="utf-8") == manifest_text
     assert not (tmp_path / "contract.kicad_sch").exists()
     assert not (tmp_path / "validation_report.json").exists()
+
+
+def test_validation_report_serializes_message_and_report_evidence_ids() -> None:
+    report = ValidationReport(
+        profile="standard",
+        valid=False,
+        categories={
+            "electrical": [
+                ValidationMessage("electrical", "rule", "error", "U1", "finding", evidence_ids=["EV-DATASHEET-a"])
+            ]
+        },
+        evidence_ids=["EV-CALC-b", "EV-DATASHEET-a"],
+        evidence_manifest="evidence_manifest.json",
+    )
+
+    payload = report.to_dict()
+
+    assert payload["evidence_ids"] == ["EV-CALC-b", "EV-DATASHEET-a"]
+    assert payload["evidence_manifest"] == "evidence_manifest.json"
+    assert payload["categories"]["electrical"][0]["evidence_ids"] == ["EV-DATASHEET-a"]
 
 
 def test_concurrent_process_cannot_invalidate_manifest_while_lock_is_held(tmp_path: Path) -> None:

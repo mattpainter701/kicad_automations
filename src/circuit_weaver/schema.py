@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, get_type_hints
+import types
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
-from .design_ir import DesignBlock, DesignInterface
+from .design_ir import DesignBlock, DesignInterface, PowerDomain
 
 
 def _get_type_schema(python_type: Any) -> dict[str, Any]:
@@ -33,6 +34,12 @@ def _get_type_schema(python_type: Any) -> dict[str, Any]:
         if "dict" in python_type or "Dict" in python_type:
             return {"type": "object"}
         return {"type": "object"}
+
+    origin = get_origin(python_type)
+    if origin in (Union, types.UnionType):
+        non_null = [item for item in get_args(python_type) if item is not type(None)]
+        if len(non_null) == 1 and len(non_null) != len(get_args(python_type)):
+            return _get_type_schema(non_null[0])
 
     # Handle None/NoneType
     if python_type is type(None):
@@ -118,6 +125,12 @@ def get_design_ir_schema() -> dict[str, Any]:
         "required": ["project", "blocks"],
     }
 
+    power_domain_schema = _dataclass_to_schema(PowerDomain)
+    power_domain_properties = power_domain_schema["properties"]
+    power_domain_properties["direction"]["enum"] = ["source", "load", "bidirectional"]
+    for name in ("i_peak_ma", "i_steady_ma", "tolerance", "sequence_order"):
+        power_domain_properties[name]["minimum"] = 0
+
     # Manually define the top-level properties (DesignIR fields)
     design_ir_fields = {
         "project": {"type": "string", "description": "Project name"},
@@ -130,6 +143,11 @@ def get_design_ir_schema() -> dict[str, Any]:
             "type": "array",
             "description": "List of design interfaces",
             "items": _dataclass_to_schema(DesignInterface),
+        },
+        "power_domains": {
+            "type": "array",
+            "description": "Declared power rails and optional operating envelopes",
+            "items": power_domain_schema,
         },
         "metadata": {
             "type": "object",

@@ -1,0 +1,1 @@
+{"schema_version":"circuit-weaver-electrical-benchmark/v1","fixture_id":"uart-paired","domain":"uart","polarity":"positive","authoring_source":"generator_authored","provenance":{"source_type":"hand-authored-benchmark","source_ref":"benchmarks/electrical/positive/uart/design.json","license":"CC0-1.0"},"expected_findings":[],"expected_absent_rule_ids":["CW-UART-001"]}

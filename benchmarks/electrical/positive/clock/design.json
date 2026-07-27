@@ -1,0 +1,1 @@
+{"project":"benchmark_clock_positive","spec_version":"mvp_ir_v1","blocks":[{"id":"clock:Y1","section":"clock","kind":"component","ref":"Y1","ic":"crystal","params":{"frequency_hz":16000000,"load_cap_pf":18}}],"benchmark_intent":{"domain":"clock","polarity":"positive","scenario":"A crystal declares its frequency and matched load capacitance."}}

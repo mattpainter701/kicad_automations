@@ -44,6 +44,11 @@ jobs:
       - name: Validate distributions
         run: python -m twine check dist/*
 
+      - name: Verify electrical benchmark scorecard
+        run: |
+          python -m pip install -e ".[test]"
+          python benchmarks/run.py --check-baseline --output .release-benchmark/scorecard.json
+
       - name: Verify built wheel metadata
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
@@ -147,6 +152,7 @@ jobs:
         run: >-
           python -c "import os, pytest;
           os.environ.pop('CI', None);
+          os.environ['CIRCUIT_WEAVER_TEST_PACKAGE'] = 'wheel';
           raise SystemExit(pytest.main(['tests', '-q']))"
 
   kicad-validation:

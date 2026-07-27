@@ -30,7 +30,7 @@ version value to `pyproject.toml`.
 For this release:
 
 ```python
-__version__ = "0.32.0"
+__version__ = "0.33.0"
 ```
 
 The release workflow rejects a tag whose value does not exactly match the
@@ -48,8 +48,8 @@ package version, so a stale tag cannot accidentally republish an older wheel.
    ```bash
    git switch main
    git pull --ff-only
-   git tag -a v0.32.0 -m "circuit-weaver 0.32.0"
-   git push origin v0.32.0
+   git tag -a v0.33.0 -m "circuit-weaver 0.33.0"
+   git push origin v0.33.0
    ```
 
 5. Watch the `Release to PyPI` workflow. It will:
@@ -74,7 +74,7 @@ Run these commands from a clean checkout before tagging:
 python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
 python -m ruff check src tests
-python -c "import os, pytest; os.environ.pop('CI', None); raise SystemExit(pytest.main(['tests', '-q']))"
+python -c "import os, pytest; os.environ.pop('CI', None); os.environ['CIRCUIT_WEAVER_TEST_PACKAGE']='source'; raise SystemExit(pytest.main(['tests', '-q']))"
 python -m build
 python -m twine check dist/*
 ```
@@ -84,12 +84,13 @@ the editable checkout:
 
 ```bash
 python -m venv .wheel-test
-.wheel-test/bin/python -m pip install "dist/circuit_weaver-0.32.0-py3-none-any.whl[test]"
-.wheel-test/bin/python -m pytest tests/test_release_contract.py tests/test_mcp_server.py -q
+.wheel-test/bin/python -m pip install "dist/circuit_weaver-0.33.0-py3-none-any.whl[test]"
+CIRCUIT_WEAVER_TEST_PACKAGE=wheel .wheel-test/bin/python -m pytest tests -q
 ```
 
 On Windows, replace `.wheel-test/bin/python` with
-`.wheel-test/Scripts/python.exe`.
+`.wheel-test/Scripts/python.exe` and set
+`$env:CIRCUIT_WEAVER_TEST_PACKAGE = "wheel"` before invoking pytest.
 
 ## Post-publish verification
 
@@ -98,7 +99,7 @@ PyPI package:
 
 ```bash
 python -m venv .pypi-smoke
-.pypi-smoke/bin/python -m pip install --no-cache-dir "circuit-weaver[mcp]==0.32.0"
+.pypi-smoke/bin/python -m pip install --no-cache-dir "circuit-weaver[mcp]==0.33.0"
 .pypi-smoke/bin/circuit-weaver --version
 .pypi-smoke/bin/python -c "from importlib.metadata import version; print(version('circuit-weaver'))"
 ```

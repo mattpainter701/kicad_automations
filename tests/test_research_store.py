@@ -178,6 +178,7 @@ class TestListResearchTopics:
             assert Path(t["path"]).exists()
 
 
+@pytest.mark.skip_category("platform")
 @pytest.mark.skipif(sys.platform == "win32" and sys.version_info < (3, 11), reason="Windows subprocess encoding quirk")
 class TestSaveResearchCli:
     """End-to-end: `circuit-weaver save-research` reads JSON from stdin."""

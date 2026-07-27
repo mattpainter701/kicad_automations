@@ -8,6 +8,8 @@ import pytest
 from circuit_weaver.cost_bom import cost_bom
 from circuit_weaver.parts_lookup import get_unit_price
 
+pytestmark = pytest.mark.skip_category("network")
+
 
 class TestGetUnitPrice:
     """Test price tier lookup helper."""

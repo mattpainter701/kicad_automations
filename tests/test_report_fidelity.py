@@ -115,7 +115,7 @@ def test_user_reported_iot_audit_would_be_caught():
 # Power tree section — release-prep regressions
 # ---------------------------------------------------------------------------
 
-from circuit_weaver.component_db import BypassCap, StrapConfig  # noqa: E402
+from circuit_weaver.component_db import BypassCap, PowerReq, StrapConfig  # noqa: E402
 from circuit_weaver.report import _power_tree_section  # noqa: E402
 
 
@@ -179,3 +179,28 @@ def test_power_tree_marks_unconsumed_rails():
     tree = _power_tree_section([_buck("U1")])
     rail_line = next(line for line in tree.splitlines() if "[VDD_3P3]" in line)
     assert "(no consumers)" in rail_line, tree
+
+
+def test_power_tree_serializes_declared_envelopes_without_turning_unknowns_into_zeroes():
+    consumer = _mcu("U2")
+    consumer.power_reqs = [
+        PowerReq(
+            "VDD_3P3", v_min=3.0, v_nominal=3.3, v_max=3.6, direction="load",
+            i_steady_ma=80, i_peak_ma=140, sequence_order=2,
+            sequence_dependency="VDD_1V8", tolerance=0.1, evidence_id="EV-DATASHEET-123456789abc",
+        )
+    ]
+    tree = _power_tree_section([_buck("U1"), consumer])
+    assert "### Operating Envelopes" in tree
+    assert "3.6" in tree and "140" in tree
+    assert "EV-DATASHEET-123456789abc" in tree
+
+
+def test_power_tree_does_not_relabel_legacy_peak_current_as_steady_current():
+    consumer = _mcu("U2")
+    consumer.power_reqs = [PowerReq("VDD_3P3", 3.3, 140)]
+
+    tree = _power_tree_section([consumer])
+    envelope_row = next(line for line in tree.splitlines() if line.startswith("| VDD_3P3 |"))
+
+    assert "| — | 140 |" in envelope_row

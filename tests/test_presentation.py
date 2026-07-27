@@ -20,6 +20,8 @@ from circuit_weaver.dispatcher import compile_design_ir, validate_design
 from circuit_weaver.subcircuits.base import get_default_registry
 from circuit_weaver.subcircuits.usb import USBControllerTemplate, USBHubTemplate
 
+pytestmark = pytest.mark.skip_category("optional-tool")
+
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "samples"
 
 
@@ -130,7 +132,7 @@ def _load_sample_spec(name: str) -> dict:
 
     yaml_path = SAMPLES_DIR / name / f"{name}.yaml"
     if not yaml_path.exists():
-        pytest.skip(f"Sample {name} not found at {yaml_path}")
+        pytest.fail(f"Checked-in sample is missing: {yaml_path}")
     return _parse_yaml(yaml_path)
 
 

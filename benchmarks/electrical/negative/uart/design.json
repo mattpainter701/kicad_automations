@@ -1,0 +1,1 @@
+{"project":"benchmark_uart_negative","spec_version":"mvp_ir_v1","blocks":[{"id":"interfaces:J1","section":"interfaces","kind":"component","ref":"J1","ic":"UART_HEADER","params":{"tx_net":"UART_TX"}}],"benchmark_intent":{"domain":"uart","polarity":"negative","scenario":"A UART TX net has no corresponding RX net."}}

@@ -5,11 +5,35 @@ in a schematic: pins, power requirements, bypass caps, strap resistors.
 Keyed by MPN (manufacturer part number).
 """
 
+import math
 import re
 from dataclasses import dataclass, field
 
+from .evidence_policy import EVIDENCE_ID_PATTERN, validate_evidence_text
+
 SUPPORT_PASSIVE_PRESENTATIONS = {"inherit", "literal_local", "symbolic", "topology_local"}
 _ROLE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+_POWER_DIRECTIONS = {"source", "load", "bidirectional"}
+_PASSIVE_RECOMMENDATION_FAMILIES = {
+    "regulator_io_cap",
+    "crystal_cap",
+    "reset_enable_strap",
+    "interface_termination",
+    "protection",
+}
+_PASSIVE_RECOMMENDATION_POLICIES = {"datasheet", "equation", "bounded_fallback"}
+_PASSIVE_RECOMMENDATION_CONFIDENCES = {"verified", "corroborated", "single_source", "heuristic", "stub"}
+_PASSIVE_RECOMMENDATION_UNITS = {
+    "regulator_io_cap": {"F"},
+    "crystal_cap": {"F"},
+    "reset_enable_strap": {"ohm"},
+    "interface_termination": {"ohm"},
+    "protection": {"F", "ohm", "V", "A"},
+}
+_CALCULATION_ID_RE = re.compile(r"^CALC-[A-Z0-9_]+-[a-f0-9]{12}$")
+_WITHHELD_FINDING_ID_RE = re.compile(r"^CW-PSV-[0-9]{3}-[a-f0-9]{12}$")
+_RECOMMENDATION_PRECEDENCE = ("datasheet", "equation", "bounded_fallback")
+_PASSIVE_ELIGIBILITY = {"eligible", "ineligible", "withheld"}
 _GENERIC_PURPOSE_BY_CATEGORY = {
     "power": "Power conversion and rail conditioning",
     "transceiver": "RF conversion and high-speed signal processing",
@@ -175,10 +199,17 @@ class BypassCap:
     footprint: str  # e.g. FP_0402C
     role: str = "decoupling"
     presentation: str = "topology_local"
+    selection_policy: str | None = None
+    confidence: str | None = None
+    calculation_id: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    withheld_finding_id: str | None = None
+    eligibility: str = "eligible"
 
     def __post_init__(self) -> None:
         if self.role and not _ROLE_RE.match(self.role):
             raise ValueError(f"Invalid BypassCap role: {self.role!r} (must be lowercase identifier)")
+        _validate_passive_traceability(self)
 
 
 @dataclass
@@ -192,19 +223,380 @@ class StrapConfig:
     footprint: str
     role: str = "strap"
     presentation: str = "topology_local"
+    selection_policy: str | None = None
+    confidence: str | None = None
+    calculation_id: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    withheld_finding_id: str | None = None
+    eligibility: str = "eligible"
 
     def __post_init__(self) -> None:
         if self.role and not _ROLE_RE.match(self.role):
             raise ValueError(f"Invalid StrapConfig role: {self.role!r} (must be lowercase identifier)")
+        _validate_passive_traceability(self)
 
 
 @dataclass
 class PowerReq:
-    """A power rail required by a component."""
+    """A component-level power operating envelope.
+
+    ``voltage`` and ``max_current_ma`` remain compatibility aliases for the
+    historic three positional arguments. ``None`` means the source did not
+    state a value; it is deliberately distinct from zero.
+    """
 
     net: str  # "VDD_3P3", "VCCINT"
-    voltage: float  # 3.3, 1.0
-    max_current_ma: float = 0  # peak current draw
+    voltage: float | None = None  # legacy alias for v_nominal
+    max_current_ma: float | None = None  # legacy alias for i_peak_ma
+    v_min: float | None = None
+    v_nominal: float | None = None
+    v_max: float | None = None
+    direction: str | None = None
+    i_peak_ma: float | None = None
+    i_steady_ma: float | None = None
+    sequence_order: int | None = None
+    sequence_dependency: str | None = None
+    tolerance: float | None = None
+    evidence_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.v_nominal is None and self.voltage is not None:
+            self.v_nominal = self.voltage
+        elif self.voltage is None and self.v_nominal is not None:
+            self.voltage = self.v_nominal
+        if self.i_peak_ma is None and self.max_current_ma is not None:
+            self.i_peak_ma = self.max_current_ma
+        elif self.max_current_ma is None and self.i_peak_ma is not None:
+            self.max_current_ma = self.i_peak_ma
+        _validate_power_envelope(self)
+
+
+@dataclass
+class PowerPin:
+    """A typed power-pin connection and its declared operating envelope."""
+
+    pin: str
+    net: str
+    v_min: float | None = None
+    v_nominal: float | None = None
+    v_max: float | None = None
+    direction: str | None = None
+    i_peak_ma: float | None = None
+    i_steady_ma: float | None = None
+    sequence_order: int | None = None
+    sequence_dependency: str | None = None
+    tolerance: float | None = None
+    evidence_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_power_envelope(self)
+
+
+@dataclass(frozen=True)
+class PassiveRecommendation:
+    """A normalized support-passive recommendation with explicit authority.
+
+    Values are SI quantities.  A recommendation carries either one selected
+    value plus unit, or a bounded range plus unit.  Fallback bounds are always
+    explicit so generic values cannot silently masquerade as datasheet facts.
+    """
+
+    family: str
+    role: str
+    precedence_policy: str
+    confidence: str
+    provenance: str | None = None
+    evidence_id: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    fallback_min: float | None = None
+    fallback_max: float | None = None
+    net: str | None = None
+    count: int = 1
+    gnd_net: str | None = None
+    footprint: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.family not in _PASSIVE_RECOMMENDATION_FAMILIES:
+            raise ValueError(f"unknown passive recommendation family: {self.family!r}")
+        if not self.role or not _ROLE_RE.fullmatch(self.role):
+            raise ValueError("passive recommendation role must be a lowercase identifier")
+        if self.precedence_policy not in _PASSIVE_RECOMMENDATION_POLICIES:
+            raise ValueError(f"unknown recommendation precedence policy: {self.precedence_policy!r}")
+        if self.confidence not in _PASSIVE_RECOMMENDATION_CONFIDENCES:
+            raise ValueError(f"unknown recommendation confidence: {self.confidence!r}")
+        if self.unit not in _PASSIVE_RECOMMENDATION_UNITS[self.family]:
+            allowed_units = ", ".join(sorted(_PASSIVE_RECOMMENDATION_UNITS[self.family]))
+            raise ValueError(f"unsupported unit {self.unit!r} for {self.family}; expected one of: {allowed_units}")
+        if self.precedence_policy == "bounded_fallback" and self.confidence != "heuristic":
+            raise ValueError("bounded fallback recommendations must be heuristic")
+        has_value = self.value is not None
+        has_bounds = self.min_value is not None or self.max_value is not None
+        if has_value == has_bounds:
+            raise ValueError("recommendation requires either value+unit or min/max bounds+unit")
+        for field_name in ("value", "min_value", "max_value", "fallback_min", "fallback_max"):
+            value = getattr(self, field_name)
+            if value is not None and (
+                not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value)
+            ):
+                raise ValueError(f"recommendation {field_name} must be a finite number")
+        if has_value and self.value <= 0:
+            raise ValueError("recommendation value must be positive")
+        if has_bounds:
+            if (
+                self.min_value is None
+                or self.max_value is None
+                or self.min_value <= 0
+                or self.min_value > self.max_value
+            ):
+                raise ValueError("recommendation bounds must be positive and ordered")
+        if (self.fallback_min is None) != (self.fallback_max is None):
+            raise ValueError("fallback bounds require both minimum and maximum")
+        if self.fallback_min is not None and (self.fallback_min <= 0 or self.fallback_min > self.fallback_max):
+            raise ValueError("fallback bounds must be positive and ordered")
+        if self.precedence_policy == "bounded_fallback" and self.fallback_min is None:
+            raise ValueError("bounded fallback recommendations require declared fallback bounds")
+        if not isinstance(self.count, int) or isinstance(self.count, bool) or self.count < 1:
+            raise ValueError("recommendation count must be a positive integer")
+        provenance = self.provenance.strip() if isinstance(self.provenance, str) else ""
+        evidence_id = self.evidence_id.strip() if isinstance(self.evidence_id, str) else ""
+        if self.provenance is not None and not provenance:
+            raise ValueError("recommendation provenance must be non-empty text")
+        if provenance:
+            validate_evidence_text(provenance)
+        if self.evidence_id is not None and not EVIDENCE_ID_PATTERN.fullmatch(evidence_id):
+            raise ValueError("recommendation evidence_id is malformed")
+        if self.precedence_policy == "datasheet" and not (provenance or evidence_id):
+            raise ValueError("datasheet recommendations require source provenance or evidence_id")
+        if self.precedence_policy == "equation" and (
+            not evidence_id or not evidence_id.upper().startswith("EV-CALCULATION-")
+        ):
+            raise ValueError("equation recommendations require a calculation evidence_id")
+        if self.precedence_policy == "bounded_fallback" and not (provenance or evidence_id):
+            raise ValueError("bounded fallback recommendations require declared provenance or evidence_id")
+
+
+@dataclass(frozen=True)
+class RecommendationSelection:
+    """Deterministic selection result for one passive recommendation key."""
+
+    outcome: str
+    family: str
+    role: str
+    net: str | None
+    recommendation: PassiveRecommendation | None = None
+    detail: str = ""
+
+    @property
+    def selected(self) -> bool:
+        return self.outcome == "selected" and self.recommendation is not None
+
+
+def _validate_passive_traceability(passive: BypassCap | StrapConfig) -> None:
+    """Validate optional provenance carried by emitted support passives."""
+    if passive.selection_policy is not None and passive.selection_policy not in _PASSIVE_RECOMMENDATION_POLICIES:
+        raise ValueError(f"unknown passive selection policy: {passive.selection_policy!r}")
+    if passive.confidence is not None and passive.confidence not in _PASSIVE_RECOMMENDATION_CONFIDENCES:
+        raise ValueError(f"unknown passive confidence: {passive.confidence!r}")
+    if passive.calculation_id is not None:
+        if not isinstance(passive.calculation_id, str) or not _CALCULATION_ID_RE.fullmatch(passive.calculation_id):
+            raise ValueError("calculation_id is malformed")
+        validate_evidence_text(passive.calculation_id)
+    evidence_ids = tuple(passive.evidence_ids)
+    if any(not isinstance(item, str) or not EVIDENCE_ID_PATTERN.fullmatch(item) for item in evidence_ids):
+        raise ValueError("evidence_ids must contain valid evidence IDs")
+    passive.evidence_ids = evidence_ids
+    if passive.withheld_finding_id is not None:
+        if not isinstance(passive.withheld_finding_id, str) or not _WITHHELD_FINDING_ID_RE.fullmatch(
+            passive.withheld_finding_id
+        ):
+            raise ValueError("withheld_finding_id is malformed")
+        validate_evidence_text(passive.withheld_finding_id)
+        if passive.value:
+            raise ValueError("an emitted passive value cannot be marked withheld")
+    if passive.eligibility not in _PASSIVE_ELIGIBILITY:
+        raise ValueError(f"unknown passive eligibility: {passive.eligibility!r}")
+    if passive.eligibility == "withheld" and not passive.withheld_finding_id:
+        raise ValueError("withheld eligibility requires withheld_finding_id")
+    if passive.withheld_finding_id and passive.eligibility != "withheld":
+        raise ValueError("withheld_finding_id requires withheld eligibility")
+    trace_declared = any(
+        (
+            passive.selection_policy is not None,
+            passive.confidence is not None,
+            passive.calculation_id is not None,
+            bool(passive.evidence_ids),
+            passive.eligibility != "eligible",
+        )
+    )
+    if trace_declared and (
+        passive.selection_policy is None or passive.confidence is None or passive.calculation_id is None
+    ):
+        raise ValueError("passive traceability requires policy, confidence, and calculation_id together")
+    if passive.selection_policy == "bounded_fallback" and passive.confidence != "heuristic":
+        raise ValueError("bounded fallback passive traceability must remain heuristic")
+    if trace_declared and passive.eligibility == "eligible" and not passive.evidence_ids:
+        raise ValueError("an eligible synthesized passive requires emitted evidence_ids")
+
+
+def _capacitance_value_f(value: object) -> float:
+    """Parse the legacy compact capacitance notation into SI farads."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    match = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([pnum]?F)\s*", str(value), re.IGNORECASE)
+    if not match:
+        raise ValueError(f"unsupported legacy capacitance value: {value!r}")
+    magnitude, suffix = match.groups()
+    scale = {"pf": 1e-12, "nf": 1e-9, "uf": 1e-6, "mf": 1e-3, "f": 1.0}[suffix.lower()]
+    return float(magnitude) * scale
+
+
+def _format_capacitance_value(farads: float) -> str:
+    """Format a normalized capacitance without importing the builder layer."""
+    if farads >= 1e-3:
+        return f"{farads * 1e3:g}mF"
+    if farads >= 1e-6:
+        return f"{farads * 1e6:g}uF"
+    if farads >= 1e-9:
+        return f"{farads * 1e9:g}nF"
+    return f"{farads * 1e12:g}pF"
+
+
+def normalize_passive_recommendation(
+    recommendation: PassiveRecommendation | dict,
+    *,
+    default_provenance: str | None = None,
+) -> PassiveRecommendation:
+    """Normalize typed or legacy recommendation input at the model boundary."""
+    if isinstance(recommendation, PassiveRecommendation):
+        return recommendation
+    if not isinstance(recommendation, dict):
+        raise TypeError("passive recommendation must be a mapping or PassiveRecommendation")
+    raw_value = recommendation.get("value")
+    unit = recommendation.get("unit")
+    if unit is None and raw_value is not None:
+        value = _capacitance_value_f(raw_value)
+        unit = "F"
+    else:
+        value = raw_value
+    policy = str(recommendation.get("precedence_policy") or recommendation.get("policy") or "datasheet")
+    return PassiveRecommendation(
+        family=str(recommendation.get("family") or "regulator_io_cap"),
+        role=str(recommendation.get("role") or "decoupling"),
+        precedence_policy=policy,
+        confidence=str(
+            recommendation.get("confidence") or ("heuristic" if policy == "bounded_fallback" else "single_source")
+        ),
+        provenance=(
+            str(recommendation["provenance"]).strip()
+            if recommendation.get("provenance")
+            else (str(default_provenance).strip() if default_provenance else None)
+        ),
+        evidence_id=(str(recommendation["evidence_id"]) if recommendation.get("evidence_id") else None),
+        value=value,
+        unit=str(unit) if unit else None,
+        min_value=recommendation.get("min_value"),
+        max_value=recommendation.get("max_value"),
+        fallback_min=recommendation.get("fallback_min"),
+        fallback_max=recommendation.get("fallback_max"),
+        net=(str(recommendation["net"]) if recommendation.get("net") else None),
+        count=recommendation.get("count", 1),
+        gnd_net=(str(recommendation["gnd_net"]) if recommendation.get("gnd_net") else None),
+        footprint=(str(recommendation["footprint"]) if recommendation.get("footprint") else None),
+    )
+
+
+def _recommendation_configuration(recommendation: PassiveRecommendation) -> tuple[object, ...]:
+    """Fields that change a selected recommendation, excluding authority metadata."""
+    return (
+        recommendation.family,
+        recommendation.role,
+        recommendation.precedence_policy,
+        recommendation.value,
+        recommendation.unit,
+        recommendation.min_value,
+        recommendation.max_value,
+        recommendation.fallback_min,
+        recommendation.fallback_max,
+        recommendation.net,
+        recommendation.count,
+        recommendation.gnd_net,
+        recommendation.footprint,
+    )
+
+
+def _recommendation_within_declared_bounds(recommendation: PassiveRecommendation) -> bool:
+    """Return whether selected data remains within any declared fallback range."""
+    if recommendation.fallback_min is None:
+        return True
+    if recommendation.value is not None:
+        return recommendation.fallback_min <= recommendation.value <= recommendation.fallback_max
+    return (
+        recommendation.min_value is not None
+        and recommendation.max_value is not None
+        and recommendation.fallback_min
+        <= recommendation.min_value
+        <= recommendation.max_value
+        <= recommendation.fallback_max
+    )
+
+
+def select_passive_recommendation(
+    recommendations: list[PassiveRecommendation], *, family: str, role: str, net: str | None = None
+) -> RecommendationSelection:
+    """Select one recommendation without depending on source-list order.
+
+    A requested net first considers exact-net records, then global records.
+    Omitted nets select only global records.  Multiple distinct records at the
+    winning policy tier are surfaced as a conflict rather than arbitrarily
+    selecting one.
+    """
+    candidates = [item for item in recommendations if item.family == family and item.role == role]
+    if net is not None:
+        exact = [item for item in candidates if item.net == net]
+        candidates = exact or [item for item in candidates if item.net is None]
+    else:
+        candidates = [item for item in candidates if item.net is None]
+    for policy in _RECOMMENDATION_PRECEDENCE:
+        tier = [item for item in candidates if item.precedence_policy == policy]
+        if not tier:
+            continue
+        configurations = {_recommendation_configuration(item) for item in tier}
+        if len(configurations) != 1:
+            return RecommendationSelection(
+                "conflict", family, role, net, detail=f"conflicting {policy} recommendations"
+            )
+        chosen = min(tier, key=lambda item: (item.evidence_id or "", item.provenance or ""))
+        if not _recommendation_within_declared_bounds(chosen):
+            return RecommendationSelection(
+                "out_of_bounds", family, role, net, detail="recommendation is outside declared fallback bounds"
+            )
+        return RecommendationSelection("selected", family, role, net, recommendation=chosen)
+    return RecommendationSelection("missing", family, role, net, detail="no recommendation for key")
+
+
+def _validate_power_envelope(envelope: object) -> None:
+    """Reject contradictory typed power values while allowing unknowns."""
+    direction = getattr(envelope, "direction", None)
+    if direction is not None:
+        normalized = str(direction).strip().lower()
+        if normalized not in _POWER_DIRECTIONS:
+            valid = ", ".join(sorted(_POWER_DIRECTIONS))
+            raise ValueError(f"Unknown power direction '{direction}'. Expected one of: {valid}")
+        setattr(envelope, "direction", normalized)
+    v_min, v_nominal, v_max = (getattr(envelope, key, None) for key in ("v_min", "v_nominal", "v_max"))
+    if v_min is not None and v_max is not None and v_min > v_max:
+        raise ValueError("Power envelope v_min cannot exceed v_max")
+    if v_min is not None and v_nominal is not None and v_nominal < v_min:
+        raise ValueError("Power envelope v_nominal cannot be below v_min")
+    if v_max is not None and v_nominal is not None and v_nominal > v_max:
+        raise ValueError("Power envelope v_nominal cannot exceed v_max")
+    for key in ("i_peak_ma", "i_steady_ma", "max_current_ma", "tolerance", "sequence_order"):
+        value = getattr(envelope, key, None)
+        if value is not None and value < 0:
+            raise ValueError(f"Power envelope {key} cannot be negative")
 
 
 @dataclass
@@ -249,6 +641,9 @@ class ComponentDef:
     pins: list[PinDef] = field(default_factory=list)
     pin_nets: dict = field(default_factory=dict)  # {pin_num: net_name} — signal connections
     power_pins: dict = field(default_factory=dict)  # {pin_num: power_net} — power connections
+    # Typed metadata complements the legacy mapping so old templates and
+    # schematic rendering continue to receive the string-only pin map.
+    power_pin_defs: list[PowerPin] = field(default_factory=list)
     pin_roles: dict[str, str] = field(default_factory=dict)  # normalized role -> pin number
 
     power_reqs: list[PowerReq] = field(default_factory=list)
@@ -263,6 +658,9 @@ class ComponentDef:
     datasheet_url: str = ""
     reference_layout_url: str = ""
     official_references: list[dict[str, str]] = field(default_factory=list)
+    # Regulator input-output headroom requirement, when a source explicitly
+    # supplies it.  Unknown dropout stays None rather than a guessed value.
+    dropout_voltage: float | None = None
 
     # Pin numbers intentionally left unconnected (no-connect by design).
     # The generator will place NC markers on these pins without warnings.
@@ -294,6 +692,41 @@ class ComponentDef:
     # unverified-pinout validator error without requiring a full pin_map entry.
     pinout_verified: bool = False
 
+    # Normalized support-passive contract. ``recommended_bypass`` remains an
+    # ingest compatibility field; consumers must use this typed list.
+    passive_recommendations: list[PassiveRecommendation] = field(default_factory=list)
+    feedback_vref_voltage: float | None = None
+    feedback_vref_provenance: str | None = None
+    feedback_vref_evidence_id: str | None = None
+    # Immutable calc/evidence records produced while synthesizing support
+    # passives.  These are retained on the component so a later validation
+    # ledger can merge the exact producer records rather than recreating IDs.
+    passive_synthesis_calculations: list[object] = field(default_factory=list)
+    passive_synthesis_findings: list[object] = field(default_factory=list)
+    passive_synthesis_evidence: list[object] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        provenance = self.datasheet_url or None
+        normalized = [
+            normalize_passive_recommendation(item, default_provenance=provenance)
+            for item in self.passive_recommendations
+        ]
+        normalized.extend(
+            normalize_passive_recommendation(item, default_provenance=provenance) for item in self.recommended_bypass
+        )
+        seen: set[PassiveRecommendation] = set()
+        self.passive_recommendations = [item for item in normalized if not (item in seen or seen.add(item))]
+        if self.feedback_vref_voltage is not None:
+            if self.feedback_vref_voltage <= 0:
+                raise ValueError("feedback_vref_voltage must be positive")
+            if not self.feedback_vref_provenance and not self.feedback_vref_evidence_id:
+                raise ValueError("feedback Vref requires provenance or evidence_id")
+        _dedupe_passive_synthesis_records(self)
+
+    def select_passive_recommendation(self, family: str, role: str, net: str | None = None) -> RecommendationSelection:
+        """Return the explicit deterministic outcome for one recommendation key."""
+        return select_passive_recommendation(self.passive_recommendations, family=family, role=role, net=net)
+
     def pin_tuples(self):
         """Return pins as list of (number, name, type, side) tuples for create_generic_symbol."""
         return [p.as_tuple() for p in self.pins]
@@ -305,6 +738,16 @@ class ComponentDef:
     def all_power_nets(self):
         """All power net names this component needs."""
         return set(self.power_pins.values()) | {r.net for r in self.power_reqs}
+
+    def typed_power_pins(self) -> list[PowerPin]:
+        """Return typed pins without inventing legacy electrical limits."""
+        explicit = {str(pin.pin): pin for pin in self.power_pin_defs}
+        mapped = [
+            explicit.get(str(pin_num), PowerPin(pin=str(pin_num), net=str(net)))
+            for pin_num, net in self.power_pins.items()
+        ]
+        mapped_pins = {str(pin_num) for pin_num in self.power_pins}
+        return mapped + [pin for pin_num, pin in explicit.items() if pin_num not in mapped_pins]
 
     def resolved_pin_roles(self) -> dict[str, str]:
         """Normalized role mapping, using explicit metadata plus pin-name inference."""
@@ -567,6 +1010,46 @@ class ComponentRegistry:
                 )
                 for s in entry.get("straps", [])
             ]
+            power_reqs = [
+                PowerReq(
+                    net=str(req.get("net", "")),
+                    voltage=req.get("voltage"),
+                    max_current_ma=req.get("max_current_ma"),
+                    v_min=req.get("v_min"),
+                    v_nominal=req.get("v_nominal"),
+                    v_max=req.get("v_max"),
+                    direction=req.get("direction"),
+                    i_peak_ma=req.get("i_peak_ma"),
+                    i_steady_ma=req.get("i_steady_ma"),
+                    sequence_order=req.get("sequence_order"),
+                    sequence_dependency=req.get("sequence_dependency"),
+                    tolerance=req.get("tolerance"),
+                    evidence_id=req.get("evidence_id"),
+                )
+                for req in entry.get("power_reqs", [])
+                if isinstance(req, dict)
+            ]
+            power_pin_defs = [
+                PowerPin(
+                    pin=str(pin.get("pin", "")),
+                    net=str(pin.get("net", "")),
+                    v_min=pin.get("v_min"),
+                    v_nominal=pin.get("v_nominal"),
+                    v_max=pin.get("v_max"),
+                    direction=pin.get("direction"),
+                    i_peak_ma=pin.get("i_peak_ma"),
+                    i_steady_ma=pin.get("i_steady_ma"),
+                    sequence_order=pin.get("sequence_order"),
+                    sequence_dependency=pin.get("sequence_dependency"),
+                    tolerance=pin.get("tolerance"),
+                    evidence_id=pin.get("evidence_id"),
+                )
+                for pin in entry.get("power_pin_defs", [])
+                if isinstance(pin, dict)
+            ]
+            feedback_vref_provenance = entry.get("feedback_vref_provenance", entry.get("vref_provenance"))
+            feedback_vref_evidence_id = entry.get("feedback_vref_evidence_id")
+            feedback_vref_voltage = entry.get("feedback_vref_voltage", entry.get("vref"))
             comp = ComponentDef(
                 mpn=str(entry["mpn"]),
                 ref_prefix=str(entry.get("ref_prefix", "U")),
@@ -577,7 +1060,11 @@ class ComponentRegistry:
                 pins=pins,
                 pin_nets={str(k): str(v) for k, v in entry.get("pin_nets", {}).items()},
                 power_pins={str(k): str(v) for k, v in entry.get("power_pins", {}).items()},
+                power_pin_defs=power_pin_defs,
                 pin_roles=normalize_pin_roles(entry.get("pin_roles", {})),
+                power_reqs=power_reqs,
+                recommended_bypass=list(entry.get("recommended_bypass", []) or []),
+                passive_recommendations=list(entry.get("passive_recommendations", []) or []),
                 bypass_caps=caps,
                 straps=straps,
                 datasheet_url=str(entry.get("datasheet_url", "")),
@@ -587,6 +1074,12 @@ class ComponentRegistry:
                     for item in entry.get("official_references", [])
                     if isinstance(item, dict)
                 ],
+                dropout_voltage=entry.get("dropout_voltage"),
+                feedback_vref_voltage=(
+                    feedback_vref_voltage if (feedback_vref_provenance or feedback_vref_evidence_id) else None
+                ),
+                feedback_vref_provenance=feedback_vref_provenance,
+                feedback_vref_evidence_id=feedback_vref_evidence_id,
             )
             self.register(comp)
             count += 1
@@ -1039,6 +1532,10 @@ def _append_bypass_caps(
     value: str,
     count: int,
     footprint: str | None = None,
+    selection_policy: str | None = None,
+    confidence: str | None = None,
+    calculation_id: str | None = None,
+    evidence_ids: tuple[str, ...] = (),
 ) -> int:
     """Add the requested number of bypass caps without duplicating existing ones."""
     existing = _bypass_counts(comp)
@@ -1055,23 +1552,139 @@ def _append_bypass_caps(
                 gnd_net=gnd_net,
                 value=value,
                 footprint=footprint or _bypass_footprint_for_value(value),
+                selection_policy=selection_policy,
+                confidence=confidence,
+                calculation_id=calculation_id,
+                evidence_ids=evidence_ids,
             )
         )
         added += 1
     return added
 
 
+def _passive_target(comp: ComponentDef, net: str, kind: str) -> str:
+    ref = re.sub(r"[^A-Za-z0-9_]", "_", comp.source_ref or comp.ref_prefix or "U").strip("_") or "U"
+    if not ref[0].isalpha():
+        ref = f"U_{ref}"
+    normalized_net = re.sub(r"[^A-Za-z0-9_-]", "_", net).strip("_") or "rail"
+    return f"param:{ref}.passive.{kind}_{normalized_net}"
+
+
+def _dedupe_passive_synthesis_records(comp: ComponentDef) -> None:
+    """Keep only unique, self-contained producer records on a component."""
+    from . import calc
+    from .evidence import EvidenceRecord
+
+    evidence: dict[str, EvidenceRecord] = {}
+    for record in comp.passive_synthesis_evidence:
+        if not isinstance(record, EvidenceRecord):
+            raise TypeError("passive_synthesis_evidence must contain EvidenceRecord values")
+        if record.id in evidence and evidence[record.id] != record:
+            raise ValueError("conflicting passive synthesis evidence IDs")
+        evidence[record.id] = record
+    calculations: dict[str, calc.CalculationRecord] = {}
+    for record in comp.passive_synthesis_calculations:
+        if not isinstance(record, calc.CalculationRecord):
+            raise TypeError("passive_synthesis_calculations must contain CalculationRecord values")
+        if record.id in calculations and calculations[record.id] != record:
+            raise ValueError("conflicting passive synthesis calculation IDs")
+        if record.emits_evidence is not None and record.emits_evidence not in evidence:
+            raise ValueError("passive synthesis calculation has dangling emitted evidence")
+        if any(item.evidence_id and item.evidence_id not in evidence for item in record.inputs):
+            raise ValueError("passive synthesis calculation has dangling input evidence")
+        calculations[record.id] = record
+    findings: dict[str, calc.PassiveSynthesisFinding] = {}
+    for finding in comp.passive_synthesis_findings:
+        if not isinstance(finding, calc.PassiveSynthesisFinding):
+            raise TypeError("passive_synthesis_findings must contain PassiveSynthesisFinding values")
+        if finding.calculation_id not in calculations:
+            raise ValueError("passive synthesis finding has dangling calculation")
+        if any(item not in evidence for item in finding.evidence_ids):
+            raise ValueError("passive synthesis finding has dangling evidence")
+        if finding.id in findings and findings[finding.id] != finding:
+            raise ValueError("conflicting passive synthesis finding IDs")
+        findings[finding.id] = finding
+    comp.passive_synthesis_evidence = [evidence[key] for key in sorted(evidence)]
+    comp.passive_synthesis_calculations = [calculations[key] for key in sorted(calculations)]
+    comp.passive_synthesis_findings = [findings[key] for key in sorted(findings)]
+
+
+def _store_passive_synthesis(
+    comp: ComponentDef, calculation: object, finding: object | None, evidence_records: list[object]
+) -> None:
+    comp.passive_synthesis_calculations.append(calculation)
+    if finding is not None:
+        comp.passive_synthesis_findings.append(finding)
+    comp.passive_synthesis_evidence.extend(evidence_records)
+    _dedupe_passive_synthesis_records(comp)
+
+
+def emit_and_retain_passive_synthesis(
+    comp: ComponentDef,
+    calculation: object,
+    *,
+    finding: object | None = None,
+    input_evidence: tuple[object, ...] = (),
+) -> object:
+    """Emit calculation evidence and retain the complete producer trace on ``comp``.
+
+    Topology producers use this boundary instead of independently assembling
+    ledgers and component-owned record lists.  Supplied input evidence is
+    admitted before the calculation, so a datasheet-backed calculation still
+    fails closed when its cited evidence is missing or malformed.
+    """
+    from . import calc
+    from .evidence import EvidenceLedger, EvidenceRecord
+
+    if not isinstance(calculation, calc.CalculationRecord):
+        raise TypeError("calculation must be a CalculationRecord")
+    if finding is not None and not isinstance(finding, calc.PassiveSynthesisFinding):
+        raise TypeError("finding must be a PassiveSynthesisFinding or None")
+    ledger = EvidenceLedger()
+    retained_evidence: list[object] = []
+    for record in input_evidence:
+        if not isinstance(record, EvidenceRecord):
+            raise TypeError("input_evidence must contain EvidenceRecord values")
+        ledger.add(record)
+        retained_evidence.append(record)
+    emitted = calc.emit_calculation_evidence(calculation, ledger)
+    if emitted.emits_evidence is None:
+        raise RuntimeError("calculation evidence emission did not return an evidence ID")
+    calculation_evidence = ledger.get(emitted.emits_evidence)
+    if calculation_evidence is None:
+        raise RuntimeError("emitted calculation evidence is missing from its ledger")
+    retained_evidence.append(calculation_evidence)
+    _store_passive_synthesis(comp, emitted, finding, retained_evidence)
+    return emitted
+
+
+def _withheld_bypass_trace(comp: ComponentDef, *, net: str, reason: str, kind: str = "bypass") -> None:
+    """Create a retained fail-closed calculation/finding for a withheld rail."""
+    from . import calc
+    from .evidence import EvidenceLedger
+
+    value = 2e-6 if reason == "out_of_range" else 100e-9
+    decision = calc.bounded_fallback_scalar(
+        target=_passive_target(comp, net, kind), value=value, minimum=10e-9, maximum=1e-6, unit="F"
+    )
+    if reason == "out_of_range":
+        withheld, finding = decision.calculation, decision.finding
+    else:
+        withheld, finding = calc.withhold_calculation(decision.calculation, reason=reason)
+    if finding is None:
+        raise RuntimeError("withheld bypass trace requires a passive synthesis finding")
+    ledger = EvidenceLedger()
+    emitted = calc.emit_calculation_evidence(withheld, ledger)
+    evidence_records = [ledger.get(emitted.emits_evidence)] if emitted.emits_evidence else []
+    _store_passive_synthesis(comp, emitted, finding, [item for item in evidence_records if item is not None])
+
+
 def auto_generate_bypass_caps(components: list[ComponentDef]) -> int:
     """Add/augment decoupling caps for ICs with power pins.
 
-    The policy owner is centralized here rather than spread across builders.
-    If ``recommended_bypass`` is present on a component, that datasheet-driven
-    policy wins. Otherwise the generic heuristic applies:
-    - one 100nF HF cap per unique non-ground rail
-    - one 10uF bulk cap if there are >= 3 unique power rails
-
-    Existing caps are preserved and missing caps are appended without
-    duplicating net/value pairs already present.
+    Every newly emitted capacitor is backed by a retained calculation and
+    evidence record.  The historic integer return remains the number of
+    components augmented, not the number of capacitors added.
     """
     count = 0
     _power_categories = {"power", "regulator", "poe"}
@@ -1097,45 +1710,203 @@ def auto_generate_bypass_caps(components: list[ComponentDef]) -> int:
             continue
 
         added = 0
-        if comp.recommended_bypass:
-            main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[0]
-            for rec in comp.recommended_bypass:
-                if not isinstance(rec, dict):
+        for net in sorted(power_nets):
+            selection = comp.select_passive_recommendation("regulator_io_cap", "decoupling", net=net)
+            if selection.outcome in {"conflict", "out_of_bounds"}:
+                reason = "out_of_range" if selection.outcome == "out_of_bounds" else "incompatible_network"
+                _withheld_bypass_trace(comp, net=net, reason=reason)
+                continue
+            recommendation = selection.recommendation
+            if recommendation is not None and recommendation.precedence_policy == "equation":
+                # An externally supplied EV-CALCULATION ID cannot be safely
+                # reconstructed into this ledger without its original record.
+                _withheld_bypass_trace(comp, net=net, reason="missing_basis")
+                continue
+            if recommendation is not None and recommendation.precedence_policy == "datasheet":
+                if recommendation.value is None or not recommendation.provenance:
+                    _withheld_bypass_trace(comp, net=net, reason="missing_basis")
                     continue
-                net = str(rec.get("net") or main_rail).strip()
-                value = str(rec.get("value") or "").strip()
-                if not value or net not in power_nets:
-                    continue
-                rec_count = int(rec.get("count", 1) or 1)
-                added += _append_bypass_caps(
-                    comp,
-                    net=net,
-                    gnd_net=str(rec.get("gnd_net") or gnd_net),
-                    value=value,
-                    count=max(rec_count, 1),
-                    footprint=str(rec.get("footprint") or "") or None,
-                )
-        else:
-            for net in sorted(power_nets):
-                added += _append_bypass_caps(
-                    comp,
-                    net=net,
-                    gnd_net=gnd_net,
-                    value="100nF",
-                    count=1,
-                    footprint=_AUTO_BYPASS_FP_HF,
-                )
+                from . import calc
+                from .evidence import EvidenceLedger, EvidenceSource
 
-            if len(power_nets) >= 3:
-                main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[0]
+                target = _passive_target(comp, net, "bypass")
+                ledger = EvidenceLedger()
+                datasheet_id = ledger.record(
+                    subject_ref=target,
+                    claim=f"datasheet recommends {recommendation.value:g} {recommendation.unit} for {net}",
+                    kind="datasheet",
+                    source=EvidenceSource(uri=recommendation.provenance, extraction_method="passive-recommendation"),
+                    confidence=recommendation.confidence,
+                    freshness="unknown",
+                )
+                calculation = calc.datasheet_selected_scalar(
+                    target=target, value=recommendation.value, unit=recommendation.unit or "F", evidence_id=datasheet_id
+                )
+                calculation = calc.emit_calculation_evidence(calculation, ledger)
+                evidence_ids = tuple(item for item in (datasheet_id, calculation.emits_evidence) if item)
+                _store_passive_synthesis(
+                    comp,
+                    calculation,
+                    None,
+                    [ledger.get(item) for item in evidence_ids if ledger.get(item) is not None],
+                )
                 added += _append_bypass_caps(
                     comp,
-                    net=main_rail,
-                    gnd_net=gnd_net,
-                    value="10uF",
-                    count=1,
-                    footprint=_AUTO_BYPASS_FP_BULK,
+                    net=net,
+                    gnd_net=str(recommendation.gnd_net or gnd_net),
+                    value=_format_capacitance_value(recommendation.value),
+                    count=recommendation.count,
+                    footprint=recommendation.footprint,
+                    selection_policy=calculation.policy,
+                    confidence=calculation.confidence,
+                    calculation_id=calculation.id,
+                    evidence_ids=evidence_ids,
                 )
+                continue
+
+            from . import calc
+            from .evidence import EvidenceLedger
+
+            # The central default is itself an explicit, versioned bounded
+            # policy: 100nF within 10nF..1uF, never an unlabeled literal.
+            value, minimum, maximum, footprint = 100e-9, 10e-9, 1e-6, _AUTO_BYPASS_FP_HF
+            if recommendation is not None:
+                if recommendation.value is None or recommendation.fallback_min is None:
+                    _withheld_bypass_trace(comp, net=net, reason="missing_basis")
+                    continue
+                value, minimum, maximum = recommendation.value, recommendation.fallback_min, recommendation.fallback_max
+                footprint = recommendation.footprint or footprint
+            decision = calc.bounded_fallback_scalar(
+                target=_passive_target(comp, net, "bypass"),
+                value=value,
+                minimum=minimum,
+                maximum=maximum,
+                unit="F",
+            )
+            ledger = EvidenceLedger()
+            calculation = calc.emit_calculation_evidence(decision.calculation, ledger)
+            evidence_ids = tuple(item for item in (calculation.emits_evidence,) if item)
+            _store_passive_synthesis(
+                comp,
+                calculation,
+                decision.finding,
+                [ledger.get(item) for item in evidence_ids if ledger.get(item) is not None],
+            )
+            if decision.finding is not None:
+                continue
+            added += _append_bypass_caps(
+                comp,
+                net=net,
+                gnd_net=str(recommendation.gnd_net if recommendation and recommendation.gnd_net else gnd_net),
+                value=_format_capacitance_value(calculation.chosen_value.value),  # type: ignore[union-attr]
+                count=recommendation.count if recommendation else 1,
+                footprint=footprint,
+                selection_policy=calculation.policy,
+                confidence=calculation.confidence,
+                calculation_id=calculation.id,
+                evidence_ids=evidence_ids,
+            )
+
+        if len(power_nets) >= 3:
+            main_rail = sorted(power_nets, key=lambda n: ("5V" in n, "3P3" in n, n), reverse=True)[0]
+            from . import calc
+            from .evidence import EvidenceLedger, EvidenceSource
+
+            selection = comp.select_passive_recommendation("regulator_io_cap", "bulk", net=main_rail)
+            recommendation = selection.recommendation
+            if selection.outcome in {"conflict", "out_of_bounds"}:
+                reason = "out_of_range" if selection.outcome == "out_of_bounds" else "missing_basis"
+                _withheld_bypass_trace(comp, net=main_rail, reason=reason, kind="bulk_bypass")
+            elif recommendation is not None and recommendation.precedence_policy == "equation":
+                _withheld_bypass_trace(comp, net=main_rail, reason="missing_basis", kind="bulk_bypass")
+            elif recommendation is not None and recommendation.precedence_policy == "datasheet":
+                if recommendation.value is None or not recommendation.provenance:
+                    _withheld_bypass_trace(comp, net=main_rail, reason="missing_basis", kind="bulk_bypass")
+                else:
+                    target = _passive_target(comp, main_rail, "bulk_bypass")
+                    ledger = EvidenceLedger()
+                    source_id = ledger.record(
+                        subject_ref=target,
+                        claim=f"datasheet recommends {recommendation.value:g} {recommendation.unit} bulk capacitance",
+                        kind="datasheet",
+                        source=EvidenceSource(
+                            uri=recommendation.provenance, extraction_method="passive-recommendation"
+                        ),
+                        confidence=recommendation.confidence,
+                        freshness="unknown",
+                    )
+                    calculation = calc.emit_calculation_evidence(
+                        calc.datasheet_selected_scalar(
+                            target=target,
+                            value=recommendation.value,
+                            unit=recommendation.unit or "F",
+                            evidence_id=source_id,
+                        ),
+                        ledger,
+                    )
+                    evidence_ids = tuple(item for item in (source_id, calculation.emits_evidence) if item)
+                    _store_passive_synthesis(
+                        comp,
+                        calculation,
+                        None,
+                        [ledger.get(item) for item in evidence_ids if ledger.get(item) is not None],
+                    )
+                    added += _append_bypass_caps(
+                        comp,
+                        net=main_rail,
+                        gnd_net=str(recommendation.gnd_net or gnd_net),
+                        value=_format_capacitance_value(recommendation.value),
+                        count=recommendation.count,
+                        footprint=recommendation.footprint or _AUTO_BYPASS_FP_BULK,
+                        selection_policy=calculation.policy,
+                        confidence=calculation.confidence,
+                        calculation_id=calculation.id,
+                        evidence_ids=evidence_ids,
+                    )
+            else:
+                value, minimum, maximum = 10e-6, 1e-6, 47e-6
+                footprint = _AUTO_BYPASS_FP_BULK
+                if recommendation is not None:
+                    if recommendation.value is None or recommendation.fallback_min is None:
+                        _withheld_bypass_trace(comp, net=main_rail, reason="missing_basis", kind="bulk_bypass")
+                        continue
+                    value, minimum, maximum = (
+                        recommendation.value,
+                        recommendation.fallback_min,
+                        recommendation.fallback_max,
+                    )
+                    footprint = recommendation.footprint or footprint
+                ledger = EvidenceLedger()
+                decision = calc.bounded_fallback_scalar(
+                    target=_passive_target(comp, main_rail, "bulk_bypass"),
+                    value=value,
+                    minimum=minimum,
+                    maximum=maximum,
+                    unit="F",
+                )
+                calculation = calc.emit_calculation_evidence(decision.calculation, ledger)
+                evidence_ids = tuple(item for item in (calculation.emits_evidence,) if item)
+                _store_passive_synthesis(
+                    comp,
+                    calculation,
+                    decision.finding,
+                    [ledger.get(item) for item in evidence_ids if ledger.get(item) is not None],
+                )
+                if decision.finding is None:
+                    count_value = recommendation.count if recommendation else 1
+                    selected_gnd = str(recommendation.gnd_net if recommendation and recommendation.gnd_net else gnd_net)
+                    added += _append_bypass_caps(
+                        comp,
+                        net=main_rail,
+                        gnd_net=selected_gnd,
+                        value=_format_capacitance_value(calculation.chosen_value.value),  # type: ignore[union-attr]
+                        count=count_value,
+                        footprint=footprint,
+                        selection_policy=calculation.policy,
+                        confidence=calculation.confidence,
+                        calculation_id=calculation.id,
+                        evidence_ids=evidence_ids,
+                    )
 
         if added:
             count += 1
@@ -1245,8 +2016,7 @@ def _builtin_components():
                 {
                     "title": "ESP32-WROOM-32E/32UE datasheet",
                     "url": (
-                        "https://documentation.espressif.com/esp32-wroom-32e_"
-                        "esp32-wroom-32ue_datasheet_en.html"
+                        "https://documentation.espressif.com/esp32-wroom-32e_" "esp32-wroom-32ue_datasheet_en.html"
                     ),
                     "publisher": "Espressif Systems",
                     "why": "Module land pattern, antenna area, dimensions, and operating limits.",
@@ -1336,8 +2106,7 @@ def _builtin_components():
                 BypassCap("8", "VDD_3P3", "GND", "100nF", "Capacitor_SMD:C_0402_1005Metric"),
             ],
             datasheet_url=(
-                "https://www.bosch-sensortec.com/media/boschsensortec/downloads/"
-                "datasheets/bst-bme280-ds002.pdf"
+                "https://www.bosch-sensortec.com/media/boschsensortec/downloads/" "datasheets/bst-bme280-ds002.pdf"
             ),
         )
     )

@@ -22,11 +22,13 @@ _METADATA_KEYS = (
 _CANONICAL_KEYS = {
     "blocks",
     "interfaces",
+    "power_domains",
     "approved_overrides",
     "pcb_constraints",
 }
 _BLOCK_KINDS = {"template", "component"}
 _INTERFACE_DIRECTIONS = {"input", "output", "bidirectional", "passive"}
+_POWER_DIRECTIONS = {"source", "load", "bidirectional"}
 _OVERRIDE_KINDS = {
     "annotation_append",
     "footprint_override",
@@ -108,6 +110,64 @@ class DesignInterface:
 
 
 @dataclass
+class PowerDomain:
+    """A declared rail and its optional operating envelope.
+
+    A field is only populated when supplied by an authoritative input.  This
+    makes unknown limits representable and prevents a nominal rail label from
+    being mistaken for a component limit.
+    """
+
+    net: str
+    v_min: float | None = None
+    v_nominal: float | None = None
+    v_max: float | None = None
+    direction: str | None = None
+    i_peak_ma: float | None = None
+    i_steady_ma: float | None = None
+    sequence_order: int | None = None
+    sequence_dependency: str | None = None
+    tolerance: float | None = None
+    evidence_id: str | None = None
+
+    def normalized(self) -> "PowerDomain":
+        direction = str(self.direction or "").strip().lower() or None
+        if direction is not None and direction not in _POWER_DIRECTIONS:
+            valid = ", ".join(sorted(_POWER_DIRECTIONS))
+            raise ValueError(f"Unknown power direction '{self.direction}'. Expected one of: {valid}")
+        net = str(self.net or "").strip()
+        if not net:
+            raise ValueError("Power domain net must be non-empty")
+        if self.v_min is not None and self.v_max is not None and self.v_min > self.v_max:
+            raise ValueError("Power domain v_min cannot exceed v_max")
+        if self.v_min is not None and self.v_nominal is not None and self.v_nominal < self.v_min:
+            raise ValueError("Power domain v_nominal cannot be below v_min")
+        if self.v_max is not None and self.v_nominal is not None and self.v_nominal > self.v_max:
+            raise ValueError("Power domain v_nominal cannot exceed v_max")
+        for key, value in (
+            ("i_peak_ma", self.i_peak_ma),
+            ("i_steady_ma", self.i_steady_ma),
+            ("tolerance", self.tolerance),
+            ("sequence_order", self.sequence_order),
+        ):
+            if value is not None and value < 0:
+                raise ValueError(f"Power domain {key} cannot be negative")
+        return PowerDomain(
+            net=net,
+            v_min=self.v_min,
+            v_nominal=self.v_nominal,
+            v_max=self.v_max,
+            direction=direction,
+            i_peak_ma=self.i_peak_ma,
+            i_steady_ma=self.i_steady_ma,
+            sequence_order=self.sequence_order,
+            sequence_dependency=str(self.sequence_dependency or "").strip() or None,
+            tolerance=self.tolerance,
+            evidence_id=str(self.evidence_id or "").strip() or None,
+        )
+
+
+@dataclass
 class DesignBlock:
     id: str
     section: str
@@ -160,6 +220,7 @@ class DesignIR:
     metadata: dict[str, Any] = field(default_factory=dict)
     blocks: list[DesignBlock] = field(default_factory=list)
     interfaces: list[DesignInterface] = field(default_factory=list)
+    power_domains: list[PowerDomain] = field(default_factory=list)
     approved_overrides: list[dict[str, Any]] = field(default_factory=list)
     pcb_constraints: list[dict[str, Any]] = field(default_factory=list)
 
@@ -204,6 +265,34 @@ def _normalize_interface_dict(
     ).normalized()
 
 
+def _normalize_power_domain(raw: Any) -> PowerDomain:
+    """Normalize a canonical rail declaration without filling absent limits."""
+    if isinstance(raw, str):
+        return PowerDomain(net=raw).normalized()
+    if not isinstance(raw, dict):
+        raise TypeError("power_domains entries must be objects or net-name strings")
+    sequence = raw.get("sequencing") if isinstance(raw.get("sequencing"), dict) else {}
+    provenance = raw.get("provenance") if isinstance(raw.get("provenance"), dict) else {}
+    return PowerDomain(
+        net=str(raw.get("net") or raw.get("name") or ""),
+        v_min=raw.get("v_min"),
+        v_nominal=raw.get("v_nominal", raw.get("voltage")),
+        v_max=raw.get("v_max"),
+        direction=raw.get("direction"),
+        i_peak_ma=raw.get("i_peak_ma", raw.get("max_current_ma")),
+        i_steady_ma=raw.get("i_steady_ma"),
+        sequence_order=raw.get("sequence_order", sequence.get("order")),
+        sequence_dependency=raw.get("sequence_dependency", sequence.get("dependency")),
+        tolerance=raw.get("tolerance"),
+        evidence_id=raw.get("evidence_id", provenance.get("evidence_id")),
+    ).normalized()
+
+
+def _power_domain_to_spec(domain: PowerDomain) -> dict[str, Any]:
+    """Serialize a rail while preserving absence instead of writing nulls."""
+    return {key: value for key, value in asdict(domain.normalized()).items() if value is not None}
+
+
 def _normalize_block(raw: dict[str, Any], *, default_section: str, index: int) -> DesignBlock:
     if not isinstance(raw, dict):
         raise TypeError("blocks entries must be objects")
@@ -231,6 +320,13 @@ def _normalize_block(raw: dict[str, Any], *, default_section: str, index: int) -
             "no_connects",
             "pinout_verified",
             "power_map",
+            "power_reqs",
+            "power_pin_defs",
+            "dropout_voltage",
+            "feedback_vref",
+            "feedback_vref_voltage",
+            "feedback_vref_provenance",
+            "feedback_vref_evidence_id",
             "lcsc",
         )
         for key in _COMPONENT_PIN_OVERRIDES:
@@ -349,6 +445,7 @@ def normalize_design_spec(spec: dict[str, Any]) -> DesignIR:
         metadata=metadata,
         blocks=merged_blocks,
         interfaces=all_interfaces,
+        power_domains=[_normalize_power_domain(item) for item in (spec.get("power_domains") or [])],
         approved_overrides=[
             _normalize_override(item) for item in (spec.get("approved_overrides") or []) if isinstance(item, dict)
         ],
@@ -394,6 +491,7 @@ def design_ir_to_spec(ir: DesignIR) -> dict[str, Any]:
     spec = dict(metadata)
     spec["blocks"] = blocks
     spec["interfaces"] = interfaces
+    spec["power_domains"] = [_power_domain_to_spec(domain) for domain in ir.power_domains]
     spec["approved_overrides"] = [copy.deepcopy(item) for item in ir.approved_overrides]
     spec["pcb_constraints"] = [copy.deepcopy(item) for item in ir.pcb_constraints]
     return spec
@@ -436,6 +534,10 @@ def design_ir_to_engine_spec(ir: DesignIR) -> dict[str, Any]:
             item["mpn"] = block.mpn
         grouped.setdefault(block.section, []).append(item)
     spec.update(grouped)
+    # Retain typed electrical intent for template consumers and downstream
+    # validators; project-spec resolution explicitly treats this as metadata.
+    if ir.power_domains:
+        spec["power_domains"] = [_power_domain_to_spec(domain) for domain in ir.power_domains]
     return spec
 
 

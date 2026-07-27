@@ -41,17 +41,26 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         run: python -m ruff check src tests
 
+      - name: Verify generated capability documentation
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: python scripts/gen_capability_docs.py --check
+
+      - name: Verify electrical benchmark baseline
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: python benchmarks/run.py --check-baseline --output .test-tmp/electrical-benchmark.json
+
       - name: Pytest (full, including integration corpus)
         run: >-
           python -c "import os, pytest;
           os.environ.pop('CI', None);
+          os.environ['CIRCUIT_WEAVER_TEST_PACKAGE'] = 'source';
           raise SystemExit(pytest.main(['tests', '-q']))"
 
       - name: CLI smoke test
         run: python -m circuit_weaver --version
 
   distribution:
-    name: Build and test wheel contract
+    name: Build exact distribution artifact
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -104,7 +113,61 @@ jobs:
           python -m venv .wheel-test
           .wheel-test/bin/python -m pip install --upgrade pip
           .wheel-test/bin/python -m pip install "${wheel}[test]"
-          .wheel-test/bin/python -m pytest tests/test_release_contract.py tests/test_mcp_server.py -q
+          CIRCUIT_WEAVER_TEST_PACKAGE=wheel .wheel-test/bin/python -m pytest tests/test_release_contract.py tests/test_mcp_server.py -q
+
+      - name: Upload exact distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  test-wheel:
+    name: Exact wheel / Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    needs: distribution
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.13"
+
+    steps:
+      - name: Checkout tests
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download exact distribution artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-distributions
+          path: dist
+
+      - name: Install exact wheel with test dependencies
+        shell: bash
+        run: |
+          wheel=$(find dist -maxdepth 1 -name 'circuit_weaver-*.whl' -print -quit)
+          test -n "$wheel"
+          python -m pip install --upgrade pip
+          python -m pip install "${wheel}[test]"
+
+      - name: Test exact wheel (full suite, including integration corpus)
+        run: >-
+          python -c "import os, pytest;
+          os.environ.pop('CI', None);
+          os.environ['CIRCUIT_WEAVER_TEST_PACKAGE'] = 'wheel';
+          raise SystemExit(pytest.main(['tests', '-q']))"
 
   bundled-skills:
     runs-on: ubuntu-latest

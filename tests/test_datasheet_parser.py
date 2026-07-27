@@ -201,6 +201,7 @@ Bypass the VDD pin with a 0.1 µF ceramic capacitor placed close to the pin.
         assert comp.pin_nets["6"] == "XTAL_OUT"
         assert "8" in comp.explicit_no_connects
         assert comp.recommended_bypass == [{"net": "VDD", "value": "100nF", "count": 1}]
+        assert comp.passive_recommendations == []
         # The EN pin has no declared interface — fail closed, not FOO_U9.
         assert comp.unmapped_required_pins.get("9") == "EN"
         # Declared debug pins are optional: unrouted SWDIO must not hard-fail.

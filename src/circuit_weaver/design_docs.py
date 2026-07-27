@@ -79,6 +79,37 @@ def _generate_power_budget(design_ir: DesignIR) -> list[dict[str, Any]]:
     """
     budget = []
 
+    # A typed power-domain declaration is authoritative.  It is deliberately
+    # not supplemented with category-derived estimates: unknown current or
+    # voltage remains unknown in the handoff document.
+    typed_domains = list(getattr(design_ir, "power_domains", []) or [])
+    if typed_domains:
+        for domain in sorted(typed_domains, key=lambda item: str(getattr(item, "net", ""))):
+            nominal = getattr(domain, "v_nominal", None)
+            steady = getattr(domain, "i_steady_ma", None)
+            power_w = None
+            if isinstance(nominal, (int, float)) and isinstance(steady, (int, float)):
+                power_w = round(nominal * steady / 1000, 6)
+            budget.append(
+                {
+                    "rail": getattr(domain, "net", ""),
+                    "voltage": nominal,
+                    "current_ma": steady,
+                    "power_w": power_w,
+                    "v_min": getattr(domain, "v_min", None),
+                    "v_nominal": nominal,
+                    "v_max": getattr(domain, "v_max", None),
+                    "direction": getattr(domain, "direction", None),
+                    "i_steady_ma": steady,
+                    "i_peak_ma": getattr(domain, "i_peak_ma", None),
+                    "sequence_order": getattr(domain, "sequence_order", None),
+                    "sequence_dependency": getattr(domain, "sequence_dependency", None),
+                    "tolerance": getattr(domain, "tolerance", None),
+                    "evidence_id": getattr(domain, "evidence_id", None),
+                }
+            )
+        return budget
+
     # Estimate power per IC based on category and typical specs
     power_map = {
         "mcu": 0.1,  # 100mW typical for MCU at 3.3V
@@ -215,16 +246,28 @@ def generate_power_budget_csv(
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["Rail", "Voltage", "Current (mA)", "Power (W)"],
+            fieldnames=[
+                "Rail", "Voltage", "Current (mA)", "Power (W)", "Vmin (V)", "Vnom (V)", "Vmax (V)",
+                "Direction", "Peak (mA)", "Sequence Order", "Sequence Dependency", "Tolerance", "Evidence ID",
+            ],
         )
         writer.writeheader()
         for item in budget:
             writer.writerow(
                 {
                     "Rail": item["rail"],
-                    "Voltage": item["voltage"],
-                    "Current (mA)": item["current_ma"],
-                    "Power (W)": item["power_w"],
+                    "Voltage": item.get("voltage", ""),
+                    "Current (mA)": item.get("current_ma", ""),
+                    "Power (W)": item.get("power_w", ""),
+                    "Vmin (V)": item.get("v_min", ""),
+                    "Vnom (V)": item.get("v_nominal", ""),
+                    "Vmax (V)": item.get("v_max", ""),
+                    "Direction": item.get("direction", ""),
+                    "Peak (mA)": item.get("i_peak_ma", ""),
+                    "Sequence Order": item.get("sequence_order", ""),
+                    "Sequence Dependency": item.get("sequence_dependency", ""),
+                    "Tolerance": item.get("tolerance", ""),
+                    "Evidence ID": item.get("evidence_id", ""),
                 }
             )
 

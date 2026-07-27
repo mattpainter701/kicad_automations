@@ -171,3 +171,27 @@ def test_retired_support_reference_is_never_reused_for_different_part() -> None:
     new_item = next(item for item in replaced.items if item.value == "47nF")
     assert "C1" in replaced.retired_references
     assert new_item.reference == "C3"
+
+
+def test_manifest_propagates_only_caller_supplied_evidence_ids() -> None:
+    component = ComponentDef(mpn="SENSOR", source_ref="U1", ref_prefix="U", footprint="Package:QFN")
+
+    manifest = build_assembly_manifest(
+        [component],
+        include_auto_bypass=False,
+        evidence_ids_by_reference={"U1": ["EV-datasheet-0123456789ab"]},
+        evidence_ids=["EV-tool_result-fedcba987654"],
+        evidence_manifest="evidence_manifest.json",
+    )
+
+    payload = manifest.to_dict()
+    assert payload["evidence_ids"] == ["EV-tool_result-fedcba987654"]
+    assert payload["evidence_manifest"] == "evidence_manifest.json"
+    assert payload["items"][0]["evidence_ids"] == ["EV-datasheet-0123456789ab"]
+
+
+def test_manifest_rejects_absolute_evidence_manifest_reference() -> None:
+    component = ComponentDef(mpn="SENSOR", source_ref="U1", ref_prefix="U", footprint="Package:QFN")
+
+    with pytest.raises(ValueError, match="output-relative"):
+        build_assembly_manifest([component], include_auto_bypass=False, evidence_manifest="C:\\private.json")
