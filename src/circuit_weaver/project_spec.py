@@ -920,8 +920,9 @@ def resolve_project_spec(
     # for shared registries, but projects should not need a global install or
     # machine-specific KiCad setup to resolve approved components.
     components_db = spec.get("components_db", "")
-    if not components_db:
-        sibling_registry = Path(spec.get("_source_path", "")).with_name("components.json")
+    source_path = spec.get("_source_path")
+    if not components_db and source_path:
+        sibling_registry = Path(source_path).with_name("components.json")
         if sibling_registry.is_file():
             components_db = str(sibling_registry)
     if components_db:
