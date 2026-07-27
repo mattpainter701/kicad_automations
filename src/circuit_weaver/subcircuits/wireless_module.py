@@ -13,9 +13,11 @@ strapping, and programming interface.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, StrapConfig
+from .. import calc
+from ..component_db import BypassCap, ComponentDef, StrapConfig, emit_and_retain_passive_synthesis
 from .base import (
     FP_0402C,
     FP_0402R,
@@ -24,6 +26,7 @@ from .base import (
     LegacyDBProxy,
     SubcircuitResult,
     SubcircuitTemplate,
+    format_capacitance,
     format_resistance,
     snap_to_e24,
 )
@@ -79,16 +82,13 @@ class WirelessModuleTemplate(SubcircuitTemplate):
         ic_name = params.get("ic", "ESP32-S3-WROOM-1")
         if ic_name not in WIRELESS_MODULE_IC_DATABASE:
             errors.append(
-                f"Unknown wireless module '{ic_name}'. "
-                f"Available: {', '.join(WIRELESS_MODULE_IC_DATABASE)}"
+                f"Unknown wireless module '{ic_name}'. " f"Available: {', '.join(WIRELESS_MODULE_IC_DATABASE)}"
             )
         return errors
 
     def generate(self, params: dict[str, Any]) -> SubcircuitResult:
         ic_name = params.get("ic", "ESP32-S3-WROOM-1")
-        ic_db = WIRELESS_MODULE_IC_DATABASE.get(
-            ic_name, WIRELESS_MODULE_IC_DATABASE["ESP32-S3-WROOM-1"]
-        )
+        ic_db = WIRELESS_MODULE_IC_DATABASE.get(ic_name, WIRELESS_MODULE_IC_DATABASE["ESP32-S3-WROOM-1"])
         ref = params.get("ref", "U")
         vdd_net = params.get("vdd_net", "VDD_3P3")
 
@@ -184,18 +184,22 @@ class WirelessModuleTemplate(SubcircuitTemplate):
                 if pin.electrical_type in ("bidirectional", "input", "output"):
                     explicit_nc.add(pin.number)
 
-            ports.extend([
-                BoundaryPort(txd_net, "output"),
-                BoundaryPort(rxd_net, "input"),
-                BoundaryPort(en_net, "input"),
-                BoundaryPort(boot_net, "input"),
-            ])
+            ports.extend(
+                [
+                    BoundaryPort(txd_net, "output"),
+                    BoundaryPort(rxd_net, "input"),
+                    BoundaryPort(en_net, "input"),
+                    BoundaryPort(boot_net, "input"),
+                ]
+            )
 
-            annotations.extend([
-                f"WiFi + BLE 5.0, peak {ic_db['peak_current_ma']}mA",
-                "EN=10k pull-up + 1uF, IO0=10k pull-up (normal boot)",
-                f"UART: TXD={txd_net}, RXD={rxd_net}",
-            ])
+            annotations.extend(
+                [
+                    f"WiFi + BLE 5.0, peak {ic_db['peak_current_ma']}mA",
+                    "EN=10k pull-up + 1uF, IO0=10k pull-up (normal boot)",
+                    f"UART: TXD={txd_net}, RXD={rxd_net}",
+                ]
+            )
 
         elif ic_name == "nRF52840-MODULE":
             # RESET_N: 10k pull-up
@@ -227,16 +231,20 @@ class WirelessModuleTemplate(SubcircuitTemplate):
                 if pin.electrical_type in ("bidirectional", "input", "output"):
                     explicit_nc.add(pin.number)
 
-            ports.extend([
-                BoundaryPort(rst_net, "input"),
-                BoundaryPort(swdio_net, "bidirectional"),
-                BoundaryPort(swdclk_net, "input"),
-            ])
+            ports.extend(
+                [
+                    BoundaryPort(rst_net, "input"),
+                    BoundaryPort(swdio_net, "bidirectional"),
+                    BoundaryPort(swdclk_net, "input"),
+                ]
+            )
 
-            annotations.extend([
-                f"BLE 5.0, peak {ic_db['peak_current_ma']}mA",
-                f"SWD: SWDIO={swdio_net}, SWDCLK={swdclk_net}",
-            ])
+            annotations.extend(
+                [
+                    f"BLE 5.0, peak {ic_db['peak_current_ma']}mA",
+                    f"SWD: SWDIO={swdio_net}, SWDCLK={swdclk_net}",
+                ]
+            )
 
         ic_comp = ComponentDef(
             mpn=ic_name,
@@ -254,6 +262,66 @@ class WirelessModuleTemplate(SubcircuitTemplate):
             explicit_no_connects=explicit_nc,
         )
         ic_comp.source_ref = ref
+
+        # The module templates have no normalized passive recommendation for
+        # these support values yet.  Preserve their conventional values only
+        # as explicit, bounded heuristics, with an emitted calculation ledger
+        # entry per physical part.
+        def retain(decision: calc.PassiveSelectionDecision) -> calc.CalculationRecord:
+            emitted = emit_and_retain_passive_synthesis(ic_comp, decision.calculation, finding=decision.finding)
+            assert isinstance(emitted, calc.CalculationRecord)
+            return emitted
+
+        def trace(record: calc.CalculationRecord) -> dict[str, object]:
+            return {
+                "selection_policy": record.policy,
+                "confidence": record.confidence,
+                "calculation_id": record.id,
+                "evidence_ids": (record.emits_evidence,) if record.emits_evidence else (),
+            }
+
+        cap_bounds = {
+            "bulk_decoupling": (22e-6, 1e-6, 47e-6, "up"),
+            "decoupling": (100e-9, 10e-9, 1e-6, "up"),
+            "reset_delay": (1e-6, 100e-9, 10e-6, "up"),
+        }
+        traced_caps: list[BypassCap] = []
+        for cap in bypass_caps:
+            value, minimum, maximum, direction = cap_bounds[cap.role]
+            record = retain(
+                calc.bounded_fallback_scalar(
+                    target=f"param:{ref}.wireless_{cap.role}.{cap.pin.lower()}",
+                    value=value,
+                    minimum=minimum,
+                    maximum=maximum,
+                    unit="F",
+                    series="E24",
+                    direction=direction,
+                )
+            )
+            if calc.is_selection_eligible(record):
+                traced_caps.append(
+                    replace(cap, value=format_capacitance(calc.require_selection(record).value), **trace(record))
+                )
+        ic_comp.bypass_caps = traced_caps
+
+        traced_straps: list[StrapConfig] = []
+        for strap in straps:
+            record = retain(
+                calc.bounded_fallback_scalar(
+                    target=f"param:{ref}.wireless_{strap.role}.{strap.pin.lower()}",
+                    value=10e3,
+                    minimum=4.7e3,
+                    maximum=47e3,
+                    unit="ohm",
+                    series="E24",
+                )
+            )
+            if calc.is_selection_eligible(record):
+                traced_straps.append(
+                    replace(strap, value=format_resistance(calc.require_selection(record).value), **trace(record))
+                )
+        ic_comp.straps = traced_straps
 
         return SubcircuitResult(
             components=[ic_comp],

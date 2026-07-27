@@ -11,6 +11,8 @@ import pytest
 
 from circuit_weaver import skill_installer
 
+pytestmark = pytest.mark.skip_category("platform")
+
 
 @pytest.fixture
 def skills_tree(tmp_path: Path) -> tuple[Path, Path]:
@@ -487,7 +489,7 @@ def test_bundled_skills_parity_with_repo_skills() -> None:
     src = repo_root / "skills"
     bundled = repo_root / "src" / "circuit_weaver" / "_bundled_skills"
     if not src.is_dir() or not bundled.is_dir():
-        pytest.skip("skills source or bundled directory missing in this checkout")
+        pytest.fail("checked-in skills source or bundled directory is missing")
 
     src_names = {p.name for p in src.iterdir() if p.is_dir()}
     bundled_names = {p.name for p in bundled.iterdir() if p.is_dir()}
@@ -509,9 +511,9 @@ def test_install_skills_reports_collision_for_real_repo_skills() -> None:
     content reports 'unchanged'; with different content it is skipped."""
     src, _ = skill_installer._find_skills_source()
     if src is None:
-        pytest.skip("skills source not available in this environment")
+        pytest.fail("checked-in skills source is missing")
     demo_skill = next((d for d in src.iterdir() if d.is_dir()), None)
     if demo_skill is None:
-        pytest.skip("no skill found under source")
+        pytest.fail("checked-in skills source contains no skills")
     # Touch nothing else — just ensure the helper runs end-to-end without raising.
     assert (demo_skill / "SKILL.md").exists()

@@ -110,6 +110,7 @@ def _generate_artifacts_tool(spec_json: str, output_dir: str = "") -> str:
                 "verification_status": result.get("verification_status", "unverified"),
                 "erc": result.get("erc"),
                 "artifact_manifest": result.get("artifact_manifest", ""),
+                "evidence_manifest": result.get("evidence_manifest", ""),
             },
             default=str,
         )

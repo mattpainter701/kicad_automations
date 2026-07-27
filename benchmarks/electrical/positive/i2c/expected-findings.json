@@ -1,0 +1,1 @@
+{"schema_version":"circuit-weaver-electrical-benchmark/v1","fixture_id":"i2c-pulled-up","domain":"i2c","polarity":"positive","authoring_source":"generator_authored","provenance":{"source_type":"hand-authored-benchmark","source_ref":"benchmarks/electrical/positive/i2c/design.json","license":"CC0-1.0"},"expected_findings":[],"expected_absent_rule_ids":["CW-I2C-001"]}

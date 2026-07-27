@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Circuit Weaver passive synthesis oracle v1",
+  "type": "object",
+  "required": ["schema_version", "authoring_source", "cases"],
+  "properties": {
+    "schema_version": {"const": "circuit-weaver-passive-oracle/v1"},
+    "authoring_source": {"const": "independent_reference"},
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "family", "operation", "provenance", "inputs", "expected", "producer_integration"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+          "family": {"enum": ["buck", "boost", "ldo", "crystal", "usb", "can", "rs485", "analog"]},
+          "operation": {"type": "string"},
+          "provenance": {
+            "type": "object",
+            "required": ["source_type", "source_ref", "license", "rationale"]
+          },
+          "producer_integration": {
+            "type": "object",
+            "required": ["status", "reason"],
+            "properties": {
+              "status": {"const": "verified"},
+              "reason": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  }
+}

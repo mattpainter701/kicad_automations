@@ -12,7 +12,6 @@ Supports INA128PA (default) and AD8421BRZ topologies.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, StrapConfig
@@ -27,6 +26,8 @@ from .base import (
     cap_footprint,
     format_capacitance,
     format_resistance,
+    rc_capacitance_for_cutoff,
+    rc_filter_cutoff,
     snap_cap,
     snap_to_e24,
     snap_to_e96,
@@ -250,10 +251,9 @@ class SensorFrontendTemplate(SubcircuitTemplate):
         # ---- Anti-alias RC filter on output (optional) ----
         if filter_bw:
             r_filter = snap_to_e24(1e3)  # 1k series resistor
-            # C = 1 / (2 * pi * R * fc)
-            c_filter_raw = 1.0 / (2.0 * math.pi * r_filter * filter_bw)
+            c_filter_raw = rc_capacitance_for_cutoff(r_filter, filter_bw)
             c_filter = snap_cap(c_filter_raw)
-            actual_fc = 1.0 / (2.0 * math.pi * r_filter * c_filter) if c_filter > 0 else 0
+            actual_fc = rc_filter_cutoff(r_filter, c_filter) if c_filter > 0 else 0
 
             # Filter resistor: VOUT_RAW -> FILT -> output
             straps.append(

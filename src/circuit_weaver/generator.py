@@ -20,6 +20,7 @@ import re
 import sys
 import zlib
 from pathlib import Path, PureWindowsPath
+from typing import Iterable
 
 from .allocator import allocate_sheets, ensure_unique_sheet_names
 from .assembly_manifest import build_assembly_manifest
@@ -1935,6 +1936,8 @@ def generate_from_components(
     compiled_ir=None,
     readiness_gate: bool = True,
     previous_assembly_manifest=None,
+    evidence_manifest: str | Path | None = None,
+    evidence_ids: Iterable[str] | None = None,
 ) -> list[str]:
     """Generate KiCad schematics from a list of ComponentDefs.
 
@@ -2265,6 +2268,8 @@ def generate_from_components(
                     "description": description,
                     "layout_quality": layout_quality_reports,
                 },
+                evidence_manifest=evidence_manifest,
+                evidence_ids=evidence_ids,
             )
             generated_files.append(str(report_path))
             _logger.info("  -> %s (design report)", report_path)

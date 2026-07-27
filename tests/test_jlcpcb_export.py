@@ -15,6 +15,13 @@ import pytest
 
 from circuit_weaver.assembly_manifest import AssemblyItem
 from circuit_weaver.component_db import BypassCap, ComponentDef
+from circuit_weaver.identity import (
+    IdentityHandoffBundle,
+    PinPadMap,
+    build_identity_record,
+    build_identity_source_assertion,
+    reconcile_identity_assertions,
+)
 from circuit_weaver.jlcpcb_export import (
     CplSourceError,
     _detect_price_breaks,
@@ -39,11 +46,13 @@ def _comp(ref: str, value: str = "10k", footprint: str = "Resistor_SMD:R_0402", 
 
 
 def test_group_bom_rows_groups_by_value_footprint_and_lcsc():
-    rows = group_bom_rows([
-        _comp("R1", "10k", "Resistor_SMD:R_0402", "C25744"),
-        _comp("R2", "10k", "Resistor_SMD:R_0402", "C25744"),
-        _comp("C1", "100nF", "Capacitor_SMD:C_0402", "C1525"),
-    ])
+    rows = group_bom_rows(
+        [
+            _comp("R1", "10k", "Resistor_SMD:R_0402", "C25744"),
+            _comp("R2", "10k", "Resistor_SMD:R_0402", "C25744"),
+            _comp("C1", "100nF", "Capacitor_SMD:C_0402", "C1525"),
+        ]
+    )
 
     assert len(rows) == 2
     resistor = next(row for row in rows if row["comment"] == "10k")
@@ -71,9 +80,37 @@ def test_group_bom_rows_does_not_merge_same_value_footprint_with_incompatible_mp
             ),
         ]
     )
-
     assert len(rows) == 2
     assert {row["designators"] for row in rows} == {"U1", "U2"}
+
+
+def _bundle(comp: ComponentDef):
+    identity = build_identity_record(
+        status="resolved",
+        manufacturer="Test",
+        mpn=comp.mpn,
+        package_suffix="pkg",
+        symbol_ref="Test:Symbol",
+        footprint_ref=comp.footprint,
+        symbol_pins=("1",),
+        footprint_pads=("1",),
+        pin_pad_map=(PinPadMap("1", "1"),),
+    )
+    assertions = tuple(
+        build_identity_source_assertion(
+            source_family=family, source_uri=f"https://example.test/{doc}", source_doc_id=doc, identity=identity
+        )
+        for family, doc in (("manufacturer", "ds"), ("distributor", "listing"))
+    )
+    return IdentityHandoffBundle(
+        assertions=assertions,
+        reconciliation=reconcile_identity_assertions(assertions),
+        manufacturer="Test",
+        mpn=comp.mpn,
+        package_suffix="pkg",
+        symbol_ref="Test:Symbol",
+        footprint_ref=comp.footprint,
+    )
 
 
 def test_write_jlcpcb_bom_quotes_grouped_designators_as_one_csv_field(tmp_path):
@@ -106,18 +143,16 @@ def _write_real_pcb(path, refs=("R1", "R2")):
     for index, ref in enumerate(refs):
         layer = "F.Cu" if index % 2 == 0 else "B.Cu"
         footprints.append(
-            f'''  (footprint "Resistor_SMD:R_0402"
+            f"""  (footprint "Resistor_SMD:R_0402"
     (layer "{layer}")
     (at {12.5 + index} {23.0 + index} {90 * index})
     (property "Reference" "{ref}" (at 0 0 0))
     (pad "1" smd roundrect (at 0 0) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask"))
-  )'''
+  )"""
         )
     path.write_text(
         '(kicad_pcb (version 20240108) (generator "pcbnew")\n'
-        '  (setup (aux_axis_origin 10 20))\n'
-        + "\n".join(footprints)
-        + "\n)\n",
+        "  (setup (aux_axis_origin 10 20))\n" + "\n".join(footprints) + "\n)\n",
         encoding="utf-8",
     )
 
@@ -156,11 +191,11 @@ def test_parse_pcb_placements_rejects_unexpected_pad_bearing_assembly_refs(tmp_p
 def test_parse_pcb_placements_rejects_preview_or_padless_board(tmp_path, generator):
     board = tmp_path / "blocked.kicad_pcb"
     board.write_text(
-        f'''(kicad_pcb (version 20240108) (generator "{generator}")
+        f"""(kicad_pcb (version 20240108) (generator "{generator}")
   (footprint "Package:Part" (layer "F.Cu") (at 1 2)
     (property "Reference" "U1" (at 0 0 0))
   )
-)''',
+)""",
         encoding="utf-8",
     )
     expected = "Placement preview" if "preview" in generator else "no pad-bearing"
@@ -210,9 +245,7 @@ def test_generate_assembly_variants_respects_include_exclude_and_dnp_refs():
 
 def test_generate_assembly_variants_keep_support_parts_with_owner():
     owner = _comp("U1", value="CTRL", footprint="Package_QFN:QFN-8")
-    owner.bypass_caps = [
-        BypassCap("1", "VDD", "GND", "100nF", "Capacitor_SMD:C_0402")
-    ]
+    owner.bypass_caps = [BypassCap("1", "VDD", "GND", "100nF", "Capacitor_SMD:C_0402")]
 
     included = generate_assembly_variants(
         [owner],
@@ -265,6 +298,7 @@ def test_export_jlcpcb_writes_variant_bom_and_cpl_from_real_board(tmp_path):
             tmp_path,
             assembly_variants=[{"name": "R1 Only", "include_refs": ["R1"]}],
             pcb_path=board,
+            identity_bundles_by_reference={ref.source_ref: _bundle(ref) for ref in comps},
         )
 
     assert result["status"] == "ok"
@@ -287,9 +321,7 @@ def test_export_jlcpcb_writes_variant_bom_and_cpl_from_real_board(tmp_path):
 
 def test_export_jlcpcb_without_physical_board_is_truthful_bom_only(tmp_path):
     component = _comp("U1", value="SENSOR", footprint="Package_QFN:QFN-8", lcsc="C123")
-    component.bypass_caps = [
-        BypassCap("1", "VDD", "GND", "100nF", "Capacitor_SMD:C_0402")
-    ]
+    component.bypass_caps = [BypassCap("1", "VDD", "GND", "100nF", "Capacitor_SMD:C_0402")]
     with (
         patch(
             "circuit_weaver.dispatcher.compile_design_ir",
@@ -314,13 +346,55 @@ def test_export_jlcpcb_without_physical_board_is_truthful_bom_only(tmp_path):
     assert any("real, pad-bearing" in reason for reason in delivery["blocked_reasons"])
 
 
+def test_export_jlcpcb_propagates_supplied_evidence_without_absolute_reference(tmp_path):
+    component = _comp("U1", value="SENSOR", footprint="Package_QFN:QFN-8", lcsc="C123")
+    with (
+        patch(
+            "circuit_weaver.dispatcher.compile_design_ir",
+            return_value=SimpleNamespace(components=[component]),
+        ),
+        patch("circuit_weaver.jlcpcb_export._detect_price_breaks", return_value=[]),
+    ):
+        export_jlcpcb(
+            {"project": "board"},
+            tmp_path,
+            evidence_ids_by_reference={"U1": ["EV-datasheet-0123456789ab"]},
+            evidence_ids_by_artifact={"bom": ["EV-tool_result-fedcba987654"]},
+            evidence_ids=["EV-user-111111111111"],
+            evidence_manifest="evidence_manifest.json",
+        )
+
+    assembly = json.loads((tmp_path / "assembly_manifest.json").read_text(encoding="utf-8"))
+    delivery = json.loads((tmp_path / "delivery_manifest.json").read_text(encoding="utf-8"))
+    bom = next(artifact for artifact in delivery["artifacts"] if artifact["kind"] == "bom")
+    assert assembly["evidence_manifest"] == "evidence_manifest.json"
+    assert assembly["items"][0]["evidence_ids"] == ["EV-datasheet-0123456789ab"]
+    assert delivery["evidence_ids"] == ["EV-user-111111111111"]
+    assert delivery["evidence_manifest"] == "evidence_manifest.json"
+    assert bom["evidence_ids"] == ["EV-tool_result-fedcba987654"]
+
+
+def test_export_jlcpcb_rejects_absolute_evidence_manifest_reference(tmp_path):
+    component = _comp("U1", value="SENSOR", footprint="Package_QFN:QFN-8", lcsc="C123")
+    with patch(
+        "circuit_weaver.dispatcher.compile_design_ir",
+        return_value=SimpleNamespace(components=[component]),
+    ):
+        result = export_jlcpcb({"project": "board"}, tmp_path, evidence_manifest="C:\\private.json")
+
+    assert result["status"] == "error"
+    assert "output-relative" in result["message"]
+    assert not (tmp_path / "assembly_manifest.json").exists()
+    assert not (tmp_path / "delivery_manifest.json").exists()
+
+
 def test_export_jlcpcb_rejects_preview_as_cpl_source_but_preserves_bom(tmp_path):
     board = tmp_path / "preview.kicad_pcb"
     board.write_text(
-        '''(kicad_pcb (version 20240108) (generator "schematic_engine placement_preview")
+        """(kicad_pcb (version 20240108) (generator "schematic_engine placement_preview")
   (footprint "Placement_Preview:Missing_R1" (layer "F.Cu") (at 1 2)
     (property "Reference" "R1" (at 0 0 0)))
-)''',
+)""",
         encoding="utf-8",
     )
     with (
@@ -330,7 +404,10 @@ def test_export_jlcpcb_rejects_preview_as_cpl_source_but_preserves_bom(tmp_path)
         ),
         patch("circuit_weaver.jlcpcb_export._detect_price_breaks", return_value=[]),
     ):
-        result = export_jlcpcb({"project": "board"}, tmp_path, pcb_path=board)
+        comp = _comp("R1")
+        result = export_jlcpcb(
+            {"project": "board"}, tmp_path, pcb_path=board, identity_bundles_by_reference={"R1": _bundle(comp)}
+        )
 
     assert result["status"] == "blocked"
     assert (tmp_path / "bom_jlcpcb.csv").exists()
@@ -350,7 +427,12 @@ def test_export_jlcpcb_blocks_matching_ref_with_wrong_physical_footprint(tmp_pat
         ),
         patch("circuit_weaver.jlcpcb_export._detect_price_breaks", return_value=[]),
     ):
-        result = export_jlcpcb({"project": "mismatch"}, tmp_path / "delivery", pcb_path=board)
+        result = export_jlcpcb(
+            {"project": "mismatch"},
+            tmp_path / "delivery",
+            pcb_path=board,
+            identity_bundles_by_reference={"U1": _bundle(intended)},
+        )
 
     assert result["status"] == "blocked"
     assert result["assembly_ready"] is False
@@ -541,7 +623,4 @@ def test_concurrent_delivery_publications_cannot_mix_generations(tmp_path):
     assert not second.is_alive()
     assert errors == []
     assert second_payload_moved.is_set()
-    assert {
-        (destination / name).read_text(encoding="utf-8").split(":", 1)[0]
-        for name in artifact_names
-    } == {"B"}
+    assert {(destination / name).read_text(encoding="utf-8").split(":", 1)[0] for name in artifact_names} == {"B"}

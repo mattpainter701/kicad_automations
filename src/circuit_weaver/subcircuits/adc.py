@@ -10,10 +10,10 @@ Auto-calculates: filter capacitor from target bandwidth, address strap.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, StrapConfig
+from .. import calc
+from ..component_db import BypassCap, ComponentDef, StrapConfig, emit_and_retain_passive_synthesis
 from .base import (
     FP_0402C,
     FP_0402R,
@@ -24,6 +24,7 @@ from .base import (
     cap_footprint,
     format_capacitance,
     format_resistance,
+    rc_capacitance_for_cutoff,
     rc_filter_cutoff,
     snap_cap,
 )
@@ -202,8 +203,15 @@ class ADCTemplate(SubcircuitTemplate):
 
         # ---- Anti-alias RC filter calculation ----
         r_filter = 1000.0  # 1k standard input protection
-        c_filter_raw = 1.0 / (2.0 * math.pi * r_filter * input_filter_bw)
-        c_filter = snap_cap(c_filter_raw)
+        filter_calculation = calc.apply_capacitor_selection(
+            calc.rc_capacitance_for_cutoff(
+                target=f"param:{ref}.filter.input_rc",
+                resistance_ohm=r_filter,
+                cutoff_hz=input_filter_bw,
+            ),
+            series="E24",
+        )
+        c_filter = filter_calculation.chosen_value.value
         actual_fc = rc_filter_cutoff(r_filter, c_filter)
 
         # ---- Power pins ----
@@ -329,6 +337,78 @@ class ADCTemplate(SubcircuitTemplate):
             annotations=annotations,
         )
         ic_comp.source_ref = ref
+        filter_calculation = emit_and_retain_passive_synthesis(ic_comp, filter_calculation)
+
+        def retain_fallback(
+            field: str,
+            *,
+            value: float,
+            minimum: float,
+            maximum: float,
+            unit: str,
+            series: str,
+            direction: str = "nearest",
+        ) -> calc.CalculationRecord:
+            decision = calc.bounded_fallback_scalar(
+                target=f"param:{ref}.filter.{field}",
+                value=value,
+                minimum=minimum,
+                maximum=maximum,
+                unit=unit,
+                series=series,
+                direction=direction,
+            )
+            emitted = emit_and_retain_passive_synthesis(
+                ic_comp,
+                decision.calculation,
+                finding=decision.finding,
+            )
+            assert isinstance(emitted, calc.CalculationRecord)
+            return emitted
+
+        decoupling_calculation = retain_fallback(
+            "decoupling",
+            value=100e-9,
+            minimum=10e-9,
+            maximum=1e-6,
+            unit="F",
+            series="E24",
+            direction="up",
+        )
+        bulk_calculation = retain_fallback(
+            "bulk_cap",
+            value=10e-6,
+            minimum=1e-6,
+            maximum=47e-6,
+            unit="F",
+            series="E24",
+            direction="up",
+        )
+        resistor_calculation = retain_fallback(
+            "input_resistor",
+            value=r_filter,
+            minimum=100.0,
+            maximum=10e3,
+            unit="ohm",
+            series="E24",
+        )
+
+        def apply_trace(passive: BypassCap | StrapConfig, calculation: calc.CalculationRecord) -> None:
+            passive.selection_policy = calculation.policy
+            passive.confidence = calculation.confidence
+            passive.calculation_id = calculation.id
+            passive.evidence_ids = (calculation.emits_evidence,)
+
+        for capacitor in ic_comp.bypass_caps:
+            if capacitor.role == "input_filter":
+                apply_trace(capacitor, filter_calculation)
+            elif capacitor.role == "decoupling":
+                apply_trace(capacitor, decoupling_calculation)
+            elif capacitor.role == "bulk_cap":
+                apply_trace(capacitor, bulk_calculation)
+        for strap in ic_comp.straps:
+            if strap.role == "input_filter":
+                apply_trace(strap, resistor_calculation)
 
         # ---- Boundary ports ----
         ports = [
@@ -370,7 +450,7 @@ class ADCTemplate(SubcircuitTemplate):
 
         # ---- Anti-alias RC filter calculation ----
         r_filter = 1000.0  # 1k standard input protection
-        c_filter_raw = 1.0 / (2.0 * math.pi * r_filter * input_filter_bw)
+        c_filter_raw = rc_capacitance_for_cutoff(r_filter, input_filter_bw)
         c_filter = snap_cap(c_filter_raw)
         actual_fc = rc_filter_cutoff(r_filter, c_filter)
 

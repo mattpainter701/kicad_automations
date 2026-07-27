@@ -70,6 +70,42 @@ def _component_nets(comp: ComponentDef) -> set[str]:
     return {str(net) for net in nets if net}
 
 
+def _power_envelopes(comp: ComponentDef) -> list[dict[str, Any]]:
+    """Serialize declared electrical envelopes without filling missing limits.
+
+    The compatibility aliases retain useful review context for legacy imported
+    parts while the typed T245 record becomes available across all producers.
+    """
+
+    def value(requirement: object, *names: str) -> Any:
+        for name in names:
+            candidate = getattr(requirement, name, None)
+            if candidate is not None:
+                return candidate
+        return None
+
+    rows: list[dict[str, Any]] = []
+    for requirement in getattr(comp, "power_reqs", []) or []:
+        rail = value(requirement, "net", "rail", "name")
+        if not isinstance(rail, str) or not rail:
+            continue
+        row = {
+            "rail": rail,
+            "direction": value(requirement, "direction"),
+            "v_min": value(requirement, "v_min", "voltage_min_v"),
+            "v_nominal": value(requirement, "v_nominal", "voltage", "voltage_nominal_v"),
+            "v_max": value(requirement, "v_max", "voltage_max_v"),
+            "i_steady_ma": value(requirement, "i_steady_ma", "steady_current_ma"),
+            "i_peak_ma": value(requirement, "i_peak_ma", "peak_current_ma", "max_current_ma"),
+            "sequence_order": value(requirement, "sequence_order"),
+            "sequence_dependency": value(requirement, "sequence_dependency"),
+            "tolerance": value(requirement, "tolerance"),
+            "provenance": value(requirement, "provenance", "evidence_id"),
+        }
+        rows.append({key: item for key, item in row.items() if item is not None})
+    return sorted(rows, key=lambda row: row["rail"])
+
+
 def _net_kind(net: str) -> str:
     upper = net.upper()
     if upper.startswith(_GROUND_PREFIXES):
@@ -341,6 +377,7 @@ def build_placement_context(
                 "parent_ref": str(getattr(comp, "placement_parent_ref", "") or ""),
                 "placement_role": str(getattr(comp, "placement_role", "") or ""),
                 "nets": nets,
+                "power_envelopes": _power_envelopes(comp),
                 "placement": placements.get(ref),
                 "sourcing": sourcing,
                 "geometry": {
@@ -427,6 +464,12 @@ def build_placement_context(
     quality = placement_quality or {}
     review_blockers.extend(_placement_quality_blockers(components, quality))
 
+    power_domains = [
+        {"ref": row["ref"], **envelope}
+        for row in component_rows
+        for envelope in row["power_envelopes"]
+    ]
+
     return {
         "schema_version": 2,
         "artifact_kind": "placement_review_context",
@@ -437,6 +480,7 @@ def build_placement_context(
         "components": component_rows,
         "groups": {key: sorted(values) for key, values in sorted(groups.items())},
         "critical_nets": critical_nets,
+        "power_domains": power_domains,
         "constraints": constraints or [],
         "constraint_evaluation": evaluation,
         "placement_quality": quality,

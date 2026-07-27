@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from circuit_weaver.component_db import ComponentDef, PinDef
+from circuit_weaver.component_db import ComponentDef, PinDef, PowerReq
 from circuit_weaver.placement_context import build_placement_context, write_placement_context
 
 
@@ -133,3 +133,39 @@ def test_context_exposes_component_official_reference_and_suppresses_virtual_que
     specific = next(reference for reference in context["references"] if reference.get("ref") == "U1")
     assert specific["source"] == "component_metadata"
     assert specific["url"] == "https://manufacturer.example/MCU-1-layout.pdf"
+
+
+def test_context_serializes_declared_power_envelopes_without_false_defaults():
+    component = _component("U1", "power", "REGULATOR", {"1": "VBAT", "2": "VDD_3P3"})
+    component.power_reqs = [
+        PowerReq(
+            "VBAT", v_min=3.0, v_nominal=3.7, v_max=4.2, direction="source",
+            i_steady_ma=250, i_peak_ma=500, sequence_order=1,
+            sequence_dependency="battery_present", tolerance=0.05, evidence_id="EV-DATASHEET-123456789abc",
+        )
+    ]
+    context = build_placement_context(
+        [component], {"U1": {"x": 10, "y": 10, "rotation": 0, "layer": "front"}},
+        board_width_mm=30, board_height_mm=20,
+    )
+    envelope = context["components"][0]["power_envelopes"][0]
+    assert envelope["v_min"] == 3.0
+    assert envelope["i_peak_ma"] == 500
+    assert envelope["sequence_dependency"] == "battery_present"
+    assert context["power_domains"] == [{"ref": "U1", **envelope}]
+
+
+def test_legacy_max_current_remains_peak_not_inferred_steady_current():
+    component = _component("U1", "digital", "LOAD", {"1": "VDD_3P3"})
+    component.power_reqs = [PowerReq("VDD_3P3", 3.3, 500)]
+
+    context = build_placement_context(
+        [component],
+        {"U1": {"x": 10, "y": 10, "rotation": 0, "layer": "front"}},
+        board_width_mm=30,
+        board_height_mm=20,
+    )
+
+    envelope = context["components"][0]["power_envelopes"][0]
+    assert "i_steady_ma" not in envelope
+    assert envelope["i_peak_ma"] == 500

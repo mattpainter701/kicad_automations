@@ -1,0 +1,1 @@
+{"project":"benchmark_spi_negative","spec_version":"mvp_ir_v1","blocks":[{"id":"interfaces:U1","section":"interfaces","kind":"component","ref":"U1","ic":"SPI_FLASH","params":{"sck_net":"SPI_SCK","mosi_net":"SPI_MOSI","miso_net":"SPI_MISO"}}],"benchmark_intent":{"domain":"spi","polarity":"negative","scenario":"An SPI peripheral leaves chip select undeclared."}}

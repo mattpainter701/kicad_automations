@@ -202,6 +202,7 @@ def test_cli_reference_does_not_advertise_removed_or_unsafe_contracts() -> None:
     assert "falls back to routing the `.kicad_pcb` directly" not in text
 
 
+@pytest.mark.skip_category("platform")
 @pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="native bash is not installed")
 def test_bash_installer_parses() -> None:
     subprocess.run(["bash", "-n", str(REPO_ROOT / "install.sh")], check=True)

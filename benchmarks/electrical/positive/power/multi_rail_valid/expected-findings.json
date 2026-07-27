@@ -1,0 +1,10 @@
+{
+  "schema_version": "circuit-weaver-electrical-benchmark/v1",
+  "fixture_id": "power-multi-rail-valid-margins",
+  "domain": "power",
+  "polarity": "positive",
+  "authoring_source": "generator_authored",
+  "provenance": {"source_type": "hand-authored-generator-case", "source_ref": "T245 valid two-rail envelope review", "license": "CC0-1.0"},
+  "expected_findings": [],
+  "expected_absent_rule_ids": ["CW-PWR-001", "CW-PWR-002", "CW-PWR-003", "CW-PWR-004", "CW-PWR-005", "CW-PWR-006", "CW-PWR-007"]
+}

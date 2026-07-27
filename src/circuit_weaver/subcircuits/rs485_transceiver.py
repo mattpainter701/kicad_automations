@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, StrapConfig
+from .. import calc
+from ..component_db import BypassCap, ComponentDef, StrapConfig, emit_and_retain_passive_synthesis
 from .base import (
     FP_0402C,
     FP_0402R,
@@ -21,8 +22,6 @@ from .base import (
     SubcircuitTemplate,
     format_capacitance,
     format_resistance,
-    snap_to_e24,
-    snap_to_e96,
 )
 
 # Known RS-485 transceiver ICs
@@ -154,61 +153,6 @@ class RS485TransceiverTemplate(SubcircuitTemplate):
             ic_db["pin_b"]: b_net,
         }
 
-        # ---- Bypass capacitors ----
-        bypass_caps = [
-            BypassCap(
-                "C_VCC",
-                vdd_net,
-                "GND",
-                format_capacitance(100e-9),
-                FP_0402C,
-                role="decoupling",
-                presentation="topology_local",
-            ),
-        ]
-
-        # ---- Strap resistors ----
-        straps = []
-
-        # Termination: 120R between A and B
-        if termination:
-            straps.append(
-                StrapConfig(
-                    "RT",
-                    a_net,
-                    b_net,
-                    format_resistance(snap_to_e96(120)),
-                    FP_0402R,
-                    role="termination",
-                    presentation="topology_local",
-                )
-            )
-
-        # Failsafe bias: pull A high, pull B low to ensure idle = logic 1
-        if failsafe_bias:
-            straps.append(
-                StrapConfig(
-                    "RBIAS_A",
-                    a_net,
-                    vdd_net,
-                    format_resistance(snap_to_e24(390)),
-                    FP_0402R,
-                    role="bias",
-                    presentation="topology_local",
-                )
-            )
-            straps.append(
-                StrapConfig(
-                    "RBIAS_B",
-                    b_net,
-                    "GND",
-                    format_resistance(snap_to_e24(390)),
-                    FP_0402R,
-                    role="bias",
-                    presentation="topology_local",
-                )
-            )
-
         # ---- Annotations ----
         annotations = [
             f"RS-485 {ic_name}: {ic_db['vdd']}V half-duplex, {ic_db['speed_mbps']}Mbps",
@@ -227,10 +171,130 @@ class RS485TransceiverTemplate(SubcircuitTemplate):
             pins=list(ic_db["pins"]),
             power_pins=power_pins,
             pin_nets=pin_nets,
-            bypass_caps=bypass_caps,
-            straps=straps,
+            bypass_caps=[],
+            straps=[],
             annotations=annotations,
         )
+        ic_comp.source_ref = ref
+
+        def retain(decision: calc.PassiveSelectionDecision) -> calc.CalculationRecord:
+            emitted = emit_and_retain_passive_synthesis(
+                ic_comp,
+                decision.calculation,
+                finding=decision.finding,
+            )
+            assert isinstance(emitted, calc.CalculationRecord)
+            return emitted
+
+        def trace(record: calc.CalculationRecord) -> dict[str, object]:
+            return {
+                "selection_policy": record.policy,
+                "confidence": record.confidence,
+                "calculation_id": record.id,
+                "evidence_ids": (record.emits_evidence,) if record.emits_evidence else (),
+            }
+
+        # The generic rail decoupler is an explicit bounded heuristic, never
+        # an unlabelled universal default.
+        decoupling = retain(
+            calc.bounded_fallback_scalar(
+                target=f"param:{ref}.power.decoupling",
+                value=100e-9,
+                minimum=10e-9,
+                maximum=1e-6,
+                unit="F",
+                series="E24",
+                direction="up",
+            )
+        )
+        ic_comp.bypass_caps.append(
+            BypassCap(
+                "C_VCC",
+                vdd_net,
+                "GND",
+                format_capacitance(calc.require_selection(decoupling).value),
+                FP_0402C,
+                role="decoupling",
+                presentation="topology_local",
+                **trace(decoupling),
+            )
+        )
+
+        # A supplied bus impedance is equation-backed.  With no impedance
+        # input, the conventional 120-ohm value remains an explicit bounded
+        # heuristic so downstream confidence reporting cannot mistake it for
+        # a datasheet fact.
+        if termination:
+            if "bus_impedance_ohm" in params:
+                termination_record = calc.termination_resistor_match(
+                    target=f"param:{ref}.interface.termination",
+                    impedance_ohm=float(params["bus_impedance_ohm"]),
+                    series="E24",
+                )
+                finding = None
+                if not 80.0 <= termination_record.raw_result.value <= 150.0:
+                    termination_record, finding = calc.withhold_calculation(
+                        termination_record,
+                        reason="out_of_range",
+                        expected_min=80.0,
+                        expected_max=150.0,
+                        expected_unit="ohm",
+                        observed_value=termination_record.raw_result.value,
+                    )
+                emitted = emit_and_retain_passive_synthesis(ic_comp, termination_record, finding=finding)
+                assert isinstance(emitted, calc.CalculationRecord)
+                termination_record = emitted
+            else:
+                termination_record = retain(
+                    calc.bounded_fallback_scalar(
+                        target=f"param:{ref}.interface.termination",
+                        value=120.0,
+                        minimum=100.0,
+                        maximum=130.0,
+                        unit="ohm",
+                        series="E24",
+                    )
+                )
+            if calc.is_selection_eligible(termination_record):
+                ic_comp.straps.append(
+                    StrapConfig(
+                        "RT",
+                        a_net,
+                        b_net,
+                        format_resistance(calc.require_selection(termination_record).value),
+                        FP_0402R,
+                        role="termination",
+                        presentation="topology_local",
+                        **trace(termination_record),
+                    )
+                )
+
+        # Failsafe values are topology-sensitive.  Until a datasheet record is
+        # present, retain the legacy value only as a declared bounded fallback.
+        if failsafe_bias:
+            for suffix, pin, rail in (("a", a_net, vdd_net), ("b", b_net, "GND")):
+                bias_record = retain(
+                    calc.bounded_fallback_scalar(
+                        target=f"param:{ref}.interface.bias_{suffix}",
+                        value=390.0,
+                        minimum=330.0,
+                        maximum=680.0,
+                        unit="ohm",
+                        series="E24",
+                    )
+                )
+                ic_comp.straps.append(
+                    StrapConfig(
+                        f"RBIAS_{suffix.upper()}",
+                        pin,
+                        rail,
+                        format_resistance(calc.require_selection(bias_record).value),
+                        FP_0402R,
+                        role="bias",
+                        presentation="topology_local",
+                        **trace(bias_record),
+                    )
+                )
 
         # ---- Boundary ports ----
         ports = [

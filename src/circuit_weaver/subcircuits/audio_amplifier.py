@@ -11,7 +11,6 @@ Supports PAM8302AASCR (analog Class-D, default) and MAX98357AETE+T (I2S Class-D)
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, StrapConfig
@@ -23,6 +22,8 @@ from .base import (
     cap_footprint,
     format_capacitance,
     format_resistance,
+    rc_capacitance_for_cutoff,
+    rc_filter_cutoff,
     snap_cap,
     snap_to_e96,
 )
@@ -185,10 +186,9 @@ class AudioAmplifierTemplate(SubcircuitTemplate):
             # ---- PAM8302 analog path ----
             r_in = ic_db.get("r_in", 20e3)
 
-            # Input coupling cap: C = 1 / (2*pi*f_low*R_in)
-            c_couple_raw = 1.0 / (2.0 * math.pi * f_low * r_in)
+            c_couple_raw = rc_capacitance_for_cutoff(r_in, f_low)
             c_couple = snap_cap(c_couple_raw)
-            actual_f_low = 1.0 / (2.0 * math.pi * r_in * c_couple) if c_couple > 0 else f_low
+            actual_f_low = rc_filter_cutoff(r_in, c_couple) if c_couple > 0 else f_low
 
             # Coupling cap between audio_in_net and inp_net
             bypass_caps.append(

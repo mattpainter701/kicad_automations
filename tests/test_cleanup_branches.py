@@ -19,6 +19,7 @@ def _commit(repo: Path, name: str, content: str) -> None:
     _git(repo, "commit", "-m", f"add {name}")
 
 
+@pytest.mark.skip_category("optional-tool")
 @pytest.mark.skipif(shutil.which("git") is None, reason="git executable is required")
 def test_cleanup_archives_and_deletes_only_merged_unprotected_branches(tmp_path: Path) -> None:
     repo = tmp_path / "repo"

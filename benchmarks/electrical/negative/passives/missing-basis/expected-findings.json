@@ -1,0 +1,10 @@
+{
+  "schema_version": "circuit-weaver-electrical-benchmark/v1",
+  "fixture_id": "passive-missing-basis-withheld",
+  "domain": "passives",
+  "polarity": "negative",
+  "authoring_source": "independent_reference",
+  "provenance": {"source_type": "hand-authored-adversarial", "source_ref": "T246 fail-closed review", "license": "CC0-1.0"},
+  "expected_findings": [{"rule_id": "CW-PSV-001", "expectation": "detected", "rationale": "A passive with no allowed basis is withheld before emission."}],
+  "expected_absent_rule_ids": ["CW-PSV-002", "CW-PSV-003"]
+}

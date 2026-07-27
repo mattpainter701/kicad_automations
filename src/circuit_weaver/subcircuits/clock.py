@@ -12,7 +12,6 @@ using rc_filter_cutoff() solved for R, VDD/VDDO decoupling caps.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, StrapConfig
@@ -28,6 +27,7 @@ from .base import (
     format_capacitance,
     format_resistance,
     rc_filter_cutoff,
+    rc_resistance_for_cutoff,
     snap_to_e96,
 )
 
@@ -36,14 +36,10 @@ CLOCK_IC_DATABASE = LegacyDBProxy("clock_synth")  # backed by ic_data/*.json (Ta
 
 
 def _loop_filter_r(fc: float, c: float) -> float:
-    """Solve rc_filter_cutoff for R: R = 1 / (2*pi*fc*C).
-
-    Given target cutoff frequency and capacitor value, returns the
-    resistor value needed.
-    """
+    """Return the resistor needed for a target cutoff and capacitor value."""
     if fc <= 0 or c <= 0:
         return 1e3  # default 1k
-    return 1.0 / (2.0 * math.pi * fc * c)
+    return rc_resistance_for_cutoff(c, fc)
 
 
 class ClockSynthTemplate(SubcircuitTemplate):
@@ -234,7 +230,7 @@ class ClockSynthTemplate(SubcircuitTemplate):
             c1_val = ic_db.get("pll_filter_c1_default", 100e-9)
             c2_val = ic_db.get("pll_filter_c2_default", 10e-9)
 
-            # Solve R = 1 / (2*pi*fc*C1) for target PLL bandwidth
+            # Size R from the shared RC calculation for target PLL bandwidth.
             r_val_raw = _loop_filter_r(pll_bw, c1_val)
             r_val = snap_to_e96(r_val_raw)
 

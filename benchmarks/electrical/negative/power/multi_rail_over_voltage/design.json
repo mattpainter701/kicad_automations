@@ -1,0 +1,7 @@
+{
+  "project": "benchmark_power_multi_rail_over_voltage",
+  "spec_version": "mvp_ir_v1",
+  "power_domains": [{"net": "VDD_3P3", "v_min": 3.15, "v_nominal": 3.3, "v_max": 3.61, "direction": "source", "evidence_id": "EV-DATASHEET-555555555555"}],
+  "blocks": [{"id": "digital:U1", "section": "digital", "kind": "component", "ref": "U1", "ic": "PINHDR-1x08-2.54", "params": {"power_reqs": [{"net": "VDD_3P3", "v_min": 3.0, "v_nominal": 3.3, "v_max": 3.6, "direction": "load", "i_steady_ma": 50, "i_peak_ma": 75, "evidence_id": "EV-DATASHEET-666666666666"}]}}],
+  "benchmark_intent": {"domain": "power", "polarity": "negative", "scenario": "A multi-rail consumer is 10 mV above its maximum operating envelope."}
+}

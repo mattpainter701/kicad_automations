@@ -11,9 +11,11 @@ Supports HC-49S (through-hole, 2-pin) and ABM8G (SMD 4-pin) crystals.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
-from ..component_db import BypassCap, ComponentDef, StrapConfig
+from .. import calc
+from ..component_db import BypassCap, ComponentDef, StrapConfig, emit_and_retain_passive_synthesis
 from .base import (
     FP_0402R,
     BoundaryPort,
@@ -21,10 +23,8 @@ from .base import (
     SubcircuitResult,
     SubcircuitTemplate,
     cap_footprint,
-    crystal_load_caps,
     format_capacitance,
     format_resistance,
-    snap_cap,
     snap_to_e96,
 )
 
@@ -128,12 +128,25 @@ class CrystalOscillatorTemplate(SubcircuitTemplate):
 
         # ---- Calculate passive values ----
 
-        # Convert cl_spec from pF to farads for the calculation
-        cl_spec_f = cl_spec * 1e-12
+        # The public template contract is pF.  Older programmatic callers
+        # supplied the same value in farads, so normalize that legacy form
+        # rather than treating it as an impossible sub-attofarad crystal.
+        cl_spec_f = cl_spec if 0 < cl_spec < 1e-9 else cl_spec * 1e-12
+        cl_spec_pf = cl_spec_f / 1e-12
 
-        # Load caps: CL_ext = 2 * CL_spec - C_stray (per side)
-        cl_raw = crystal_load_caps(cl_spec_f, c_stray)
-        cl_val = snap_cap(cl_raw)
+        # Load caps: Cext = 2 * (CL - Cstray), selected upward so the
+        # specified load is not under-sized by E-series rounding.  The shared
+        # calculation record is retained on the generated component and its
+        # emitted evidence is carried by each physical load capacitor.
+        load_calculation = calc.apply_capacitor_selection(
+            calc.crystal_external_load_cap(
+                target=f"param:{ref}.crystal.external_load",
+                load_capacitance_f=cl_spec_f,
+                stray_capacitance_f=c_stray,
+            ),
+            series="E24",
+        )
+        cl_val = load_calculation.chosen_value.value
 
         # Feedback resistor: 1M between xtal_in and xtal_out (startup bias)
         r_fb = snap_to_e96(1e6)
@@ -196,7 +209,7 @@ class CrystalOscillatorTemplate(SubcircuitTemplate):
         xtal_value = f"{freq_mhz:g}MHz"
 
         annotations = [
-            f"Crystal {freq_mhz:g}MHz, CL={cl_spec:g}pF",
+            f"Crystal {freq_mhz:g}MHz, CL={cl_spec_pf:g}pF",
             f"Load caps: 2x {format_capacitance(cl_val)}",
             f"Feedback R: {format_resistance(r_fb)}",
             f"Optional series R for drive-level limiting: ~{format_resistance(r_series_note)} on XTAL_OUT",
@@ -217,6 +230,41 @@ class CrystalOscillatorTemplate(SubcircuitTemplate):
             annotations=annotations,
         )
         xtal_comp.source_ref = ref
+        load_calculation = emit_and_retain_passive_synthesis(xtal_comp, load_calculation)
+        for capacitor in xtal_comp.bypass_caps:
+            if capacitor.role == "load_cap":
+                capacitor.selection_policy = load_calculation.policy
+                capacitor.confidence = load_calculation.confidence
+                capacitor.calculation_id = load_calculation.id
+                capacitor.evidence_ids = (load_calculation.emits_evidence,)
+        feedback_decision = calc.bounded_fallback_scalar(
+            target=f"param:{ref}.crystal.feedback_bias",
+            value=1e6,
+            minimum=100e3,
+            maximum=10e6,
+            unit="ohm",
+            series="E96",
+        )
+        feedback_calculation = emit_and_retain_passive_synthesis(
+            xtal_comp,
+            feedback_decision.calculation,
+            finding=feedback_decision.finding,
+        )
+        assert isinstance(feedback_calculation, calc.CalculationRecord)
+        if calc.is_selection_eligible(feedback_calculation):
+            xtal_comp.straps = [
+                replace(
+                    strap,
+                    value=format_resistance(calc.require_selection(feedback_calculation).value),
+                    selection_policy=feedback_calculation.policy,
+                    confidence=feedback_calculation.confidence,
+                    calculation_id=feedback_calculation.id,
+                    evidence_ids=(feedback_calculation.emits_evidence,),
+                )
+                if strap.role == "feedback"
+                else strap
+                for strap in xtal_comp.straps
+            ]
 
         # ---- Boundary ports ----
         ports = [
@@ -230,7 +278,7 @@ class CrystalOscillatorTemplate(SubcircuitTemplate):
             boundary_ports=ports,
             annotations=[
                 f"Crystal oscillator {ic_name}: {freq_mhz:g}MHz, "
-                f"CL={cl_spec:g}pF, load caps 2x {format_capacitance(cl_val)}",
+                f"CL={cl_spec_pf:g}pF, load caps 2x {format_capacitance(cl_val)}",
             ],
             primary_category="clock",
         )

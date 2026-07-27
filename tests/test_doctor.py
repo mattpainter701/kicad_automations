@@ -5,6 +5,7 @@ import subprocess
 import sys
 from unittest.mock import patch
 
+from circuit_weaver.capabilities import get_capability_registry
 from circuit_weaver.doctor import (
     CheckResult,
     DoctorReport,
@@ -51,6 +52,7 @@ class TestDoctorReport:
         d = report.to_dict()
         assert d["python_version"] == "3.11.0"
         assert d["all_required_ok"] is True
+        assert d["capabilities"] == get_capability_registry()
         assert len(d["checks"]) == 1
 
     def test_to_terminal(self):
@@ -70,6 +72,7 @@ class TestDoctorReport:
         assert "[OK]" in text
         assert "ngspice" in text
         assert "sudo apt install" in text
+        assert "Capabilities:" in text
 
 
 class TestRunDoctor:
@@ -128,5 +131,6 @@ class TestDoctorCLI:
         data = json.loads(result.stdout)
         assert "python_version" in data
         assert "checks" in data
+        assert data["capabilities"] == get_capability_registry()
         assert isinstance(data["checks"], list)
         assert data["ok_count"] >= 1  # at least Python should be OK

@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skip_category("optional-tool")
+
 _SAMPLE_SPEC = Path(__file__).resolve().parent.parent / "samples" / "iot_sensor_node" / "iot_sensor_node.yaml"
 _EXAMPLE_SPEC = Path(__file__).resolve().parent.parent / "src" / "circuit_weaver" / "examples" / "iot_sensor.yaml"
 
@@ -300,7 +302,7 @@ def test_erc_json_failed_exit_code(tmp_path):
 def test_cost_bom_sample():
     """cost-bom should run on sample spec (may fail network lookups)."""
     if not _SAMPLE_SPEC.exists():
-        pytest.skip("Sample spec not found")
+        pytest.fail("Checked-in sample spec not found")
     result = _run(["cost-bom", str(_SAMPLE_SPEC), "--qty", "1,10", "--json"], timeout=120)
     # Network lookups may fail, but it shouldn't crash
     assert result.returncode in (0, 1)
@@ -312,7 +314,7 @@ def test_cost_bom_sample():
 def test_export_jlcpcb_sample(tmp_path):
     """Without a physical PCB, export-jlcpcb is truthful BOM-only output."""
     if not _SAMPLE_SPEC.exists():
-        pytest.skip("Sample spec not found")
+        pytest.fail("Checked-in sample spec not found")
     out = tmp_path / "jlcpcb"
     result = _run(["export-jlcpcb", str(_SAMPLE_SPEC), "--output", str(out)])
     assert result.returncode == 0, f"export-jlcpcb failed: {result.stderr[:500]}"

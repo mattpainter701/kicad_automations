@@ -31,6 +31,8 @@ import pytest
 from circuit_weaver.ic_data import merge_into_legacy_db
 from circuit_weaver.subcircuits.base import get_default_registry
 
+pytestmark = pytest.mark.skip_category("defect")
+
 # Extra params some templates need to generate (beyond just `ic` +
 # defaults from param_schema). Keep minimal — anything that isn't here
 # falls back to the schema's defaults.

@@ -67,21 +67,20 @@ def test_generate_artifacts_does_not_triple_generate(tmp_path):
 
     spec = _load_spec("led_power_indicator")
 
-    # Wrap the inner pipeline call to count invocations across both
-    # validate_design (1 call expected with our flag) and generate's write
-    # (another 1 call).
-    with patch(
-        "circuit_weaver.dispatcher._generate_compiled_artifacts",
-        wraps=__import__(
-            "circuit_weaver.dispatcher",
-            fromlist=["_generate_compiled_artifacts"],
-        )._generate_compiled_artifacts,
-    ) as wrapped:
-        try:
-            generate_artifacts(spec, output_dir=tmp_path)
-        except Exception:
-            # Even if generation fails downstream, count what ran
-            pass
+    # This test measures generation scheduling, not the sample's SVG bounds.
+    # Keep the production presentation gate intact while isolating this test
+    # from the separate svg-left-overflow regression covered elsewhere.
+    with (
+        patch("circuit_weaver.dispatcher._presentation_issues", return_value=[]),
+        patch(
+            "circuit_weaver.dispatcher._generate_compiled_artifacts",
+            wraps=__import__(
+                "circuit_weaver.dispatcher",
+                fromlist=["_generate_compiled_artifacts"],
+            )._generate_compiled_artifacts,
+        ) as wrapped,
+    ):
+        generate_artifacts(spec, output_dir=tmp_path)
 
     # Pre-fix: 3 calls (validate run-A, validate run-B, real generate).
     # Post-fix: 2 calls (validate smoke, real generate).

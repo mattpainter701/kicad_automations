@@ -1,0 +1,15 @@
+{
+  "project": "benchmark_power_positive",
+  "misc": [
+    {
+      "ic": "PINHDR-1x08-2.54",
+      "ref": "J1",
+      "description": "neutral connector control fixture"
+    }
+  ],
+  "benchmark_intent": {
+    "domain": "power",
+    "polarity": "positive",
+    "scenario": "The same resolved component makes no regulator or converter claim and must not trigger the power-budget rule."
+  }
+}

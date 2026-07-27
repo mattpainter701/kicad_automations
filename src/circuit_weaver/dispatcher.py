@@ -13,6 +13,7 @@ import copy
 import io
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -237,6 +238,7 @@ def _print_validation_report(report: ValidationReport, *, use_color: bool, verbo
         use_color: Whether to use ANSI color codes
         verbose: Whether to include category and code in output
     """
+
     def _supports_stdout_text(text: str) -> bool:
         encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
         try:
@@ -289,6 +291,21 @@ class ValidationMessage:
     subject: str
     message: str
     suggestion: str = ""
+    evidence_ids: list[str] = field(default_factory=list)
+    # Structured calculation payloads are deliberately optional: most legacy
+    # validator findings are qualitative.  Power-envelope findings use this
+    # field so downstream surfaces can show the observed value, allowed range,
+    # equation and available provenance without parsing prose.
+    calculation: dict[str, Any] | None = None
+    # T248 finding contract.  Only messages originating in validator.py set
+    # this flag; legacy structural/presentation diagnostics migrate separately.
+    is_validator_finding: bool = False
+    rule_id: str | None = None
+    observed_value: str | None = None
+    expected_constraint: str | None = None
+    safest_next_action: str | None = None
+    detection_confidence: str | None = None
+    severity: str | None = None
 
 
 @dataclass
@@ -298,14 +315,22 @@ class ValidationReport:
     categories: dict[str, list[ValidationMessage]] = field(default_factory=dict)
     summary: dict[str, int] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    evidence_ids: list[str] = field(default_factory=list)
+    evidence_manifest: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        evidence_ids = {evidence_id for evidence_id in self.evidence_ids if isinstance(evidence_id, str)}
+        for messages in self.categories.values():
+            for message in messages:
+                evidence_ids.update(evidence_id for evidence_id in message.evidence_ids if isinstance(evidence_id, str))
         return {
             "profile": self.profile,
             "valid": self.valid,
             "categories": {key: [asdict(item) for item in values] for key, values in self.categories.items()},
             "summary": dict(self.summary),
             "metadata": copy.deepcopy(self.metadata),
+            "evidence_ids": sorted(evidence_ids),
+            "evidence_manifest": self.evidence_manifest,
         }
 
 
@@ -323,8 +348,6 @@ class ConstraintFeedbackReport:
             "rejected": copy.deepcopy(self.rejected),
             "updated_spec": copy.deepcopy(self.updated_spec),
         }
-
-
 
 
 def _ensure_profile(profile: str) -> str:
@@ -525,11 +548,10 @@ def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) ->
         metadata=copy.deepcopy(ir.metadata),
         blocks=hydrated_blocks,
         interfaces=all_interfaces,
+        power_domains=copy.deepcopy(ir.power_domains),
         approved_overrides=copy.deepcopy(ir.approved_overrides),
         pcb_constraints=copy.deepcopy(ir.pcb_constraints),
     )
-
-
 
 
 def _validate_block_definitions(ir: DesignIR) -> tuple[list[ValidationMessage], list[ValidationMessage]]:
@@ -862,6 +884,414 @@ def _validate_power_domains(compiled: CompiledDesign) -> list[ValidationMessage]
     return issues
 
 
+_POWER_DIRECTIONS = frozenset({"source", "load", "bidirectional"})
+_EVIDENCE_ID_RE = re.compile(r"^EV-[A-Z_]+-[0-9a-f]{12}$", re.IGNORECASE)
+
+
+def _power_value(item: Any, *names: str) -> Any:
+    """Read a power-envelope field from a dataclass or mapping.
+
+    T245 deliberately accepts partially populated envelopes.  This accessor
+    lets validation remain compatible with old cached component records while
+    refusing to manufacture a value where a producer did not supply one.
+    """
+
+    for name in names:
+        value = item.get(name) if isinstance(item, Mapping) else getattr(item, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _power_number(item: Any, *names: str) -> float | None:
+    value = _power_value(item, *names)
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _power_direction(item: Any) -> str | None:
+    value = _power_value(item, "direction", "flow_direction")
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in _POWER_DIRECTIONS else None
+
+
+def _power_provenance(item: Any) -> list[str]:
+    raw = _power_value(item, "provenance", "evidence_ids", "evidence_id")
+    if isinstance(raw, str):
+        return [raw] if _EVIDENCE_ID_RE.fullmatch(raw) else []
+    if isinstance(raw, Mapping):
+        raw = raw.get("evidence_ids", raw.get("evidence_id", ()))
+    if isinstance(raw, (list, tuple, set)):
+        return sorted({value for value in raw if isinstance(value, str) and _EVIDENCE_ID_RE.fullmatch(value)})
+    return []
+
+
+def _power_domains(compiled: CompiledDesign) -> dict[str, Any]:
+    raw = getattr(getattr(compiled, "ir", None), "power_domains", ()) or ()
+    if isinstance(raw, Mapping):
+        candidates = [
+            dict(value, net=key) if isinstance(value, Mapping) and "net" not in value else value
+            for key, value in raw.items()
+        ]
+    else:
+        candidates = raw
+    result: dict[str, Any] = {}
+    for domain in candidates:
+        net = str(_power_value(domain, "net", "name", "rail") or "").strip()
+        if net:
+            result[net] = domain
+    return result
+
+
+def _power_calc(
+    rule_id: str,
+    *,
+    observed: Any,
+    expected: Any,
+    inputs: dict[str, Any],
+    margin: dict[str, Any] | None = None,
+    provenance_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Return a stable, unit-labelled calculation payload for a finding."""
+
+    payload: dict[str, Any] = {
+        "rule_id": rule_id,
+        "equation": "power-envelope-comparison/v1",
+        "inputs": _omit_missing_power_inputs(inputs),
+        "observed": observed,
+        "expected": expected,
+        "provenance_ids": sorted(set(provenance_ids or [])),
+    }
+    if margin is not None:
+        payload["margin"] = margin
+    return payload
+
+
+def _omit_missing_power_inputs(value: Any) -> Any:
+    """Remove unknown measurements from calculation inputs.
+
+    A unit without a value is not a measurement.  Omitting it makes absence
+    explicit and prevents downstream evidence consumers from treating an
+    encoded ``null`` as a measured zero or an asserted precision.
+    """
+
+    if isinstance(value, Mapping):
+        if "value" in value and value["value"] is None:
+            return None
+        result = {key: _omit_missing_power_inputs(item) for key, item in value.items()}
+        return {key: item for key, item in result.items() if item is not None}
+    if isinstance(value, list):
+        return [item for item in (_omit_missing_power_inputs(item) for item in value) if item is not None]
+    return value
+
+
+def _power_message(
+    *,
+    code: str,
+    rule_id: str,
+    level: str,
+    subject: str,
+    message: str,
+    suggestion: str,
+    observed: Any,
+    expected: Any,
+    inputs: dict[str, Any],
+    margin: dict[str, Any] | None = None,
+    provenance_ids: list[str] | None = None,
+) -> ValidationMessage:
+    return ValidationMessage(
+        category="electrical",
+        code=code,
+        level=level,
+        subject=subject,
+        message=message,
+        suggestion=suggestion,
+        evidence_ids=sorted(set(provenance_ids or [])),
+        calculation=_power_calc(
+            rule_id,
+            observed=observed,
+            expected=expected,
+            inputs=inputs,
+            margin=margin,
+            provenance_ids=provenance_ids,
+        ),
+    )
+
+
+def _validate_typed_power_envelopes(compiled: CompiledDesign) -> list[ValidationMessage]:
+    """Validate explicitly supplied power envelopes without guessing values.
+
+    The checks only run when both sides of an equation are present.  A bare
+    ``voltage`` in a legacy PowerReq is nominal information, not an operating
+    range, and is therefore intentionally insufficient for an over/under
+    voltage conclusion.
+    """
+
+    domains = _power_domains(compiled)
+    if not domains:
+        return []
+    issues: list[ValidationMessage] = []
+    requirements: dict[str, list[tuple[ComponentDef, Any]]] = {}
+    for component in compiled.components:
+        for req in getattr(component, "power_reqs", ()) or ():
+            net = str(_power_value(req, "net", "name", "rail") or "").strip()
+            if net and net in domains:
+                requirements.setdefault(net, []).append((component, req))
+
+    for net, domain in sorted(domains.items()):
+        domain_min = _power_number(domain, "v_min", "voltage_min")
+        domain_max = _power_number(domain, "v_max", "voltage_max")
+        domain_direction = _power_direction(domain)
+        domain_evidence = _power_provenance(domain)
+        entries = requirements.get(net, [])
+
+        for component, req in entries:
+            subject = component.source_ref or component.mpn or net
+            req_min = _power_number(req, "v_min", "voltage_min")
+            req_max = _power_number(req, "v_max", "voltage_max")
+            evidence_ids = sorted(set(domain_evidence + _power_provenance(req)))
+            common_inputs = {
+                "rail": net,
+                "rail_v_min": {"value": domain_min, "unit": "V"},
+                "rail_v_max": {"value": domain_max, "unit": "V"},
+                "component_v_min": {"value": req_min, "unit": "V"},
+                "component_v_max": {"value": req_max, "unit": "V"},
+            }
+            if domain_max is not None and req_max is not None and domain_max > req_max:
+                issues.append(
+                    _power_message(
+                        code="power-over-voltage",
+                        rule_id="CW-PWR-001",
+                        level="error",
+                        subject=subject,
+                        message=(
+                            f"{net}: observed rail maximum {domain_max:g} V exceeds {subject}'s maximum "
+                            f"operating voltage {req_max:g} V"
+                        ),
+                        suggestion=f"Limit {net} to <= {req_max:g} V or select a component rated for {domain_max:g} V.",
+                        observed={"value": domain_max, "unit": "V"},
+                        expected={"maximum": {"value": req_max, "unit": "V"}},
+                        inputs=common_inputs,
+                        margin={"value": req_max - domain_max, "unit": "V"},
+                        provenance_ids=evidence_ids,
+                    )
+                )
+            if domain_min is not None and req_min is not None and domain_min < req_min:
+                issues.append(
+                    _power_message(
+                        code="power-under-voltage",
+                        rule_id="CW-PWR-002",
+                        level="error",
+                        subject=subject,
+                        message=(
+                            f"{net}: observed rail minimum {domain_min:g} V is below {subject}'s minimum "
+                            f"operating voltage {req_min:g} V"
+                        ),
+                        suggestion=(
+                            f"Raise {net} minimum to >= {req_min:g} V or select a component with lower input limit."
+                        ),
+                        observed={"value": domain_min, "unit": "V"},
+                        expected={"minimum": {"value": req_min, "unit": "V"}},
+                        inputs=common_inputs,
+                        margin={"value": domain_min - req_min, "unit": "V"},
+                        provenance_ids=evidence_ids,
+                    )
+                )
+
+        explicit_sources = [(comp, req) for comp, req in entries if _power_direction(req) == "source"]
+        explicit_loads = [(comp, req) for comp, req in entries if _power_direction(req) == "load"]
+        if len(explicit_sources) > 1:
+            names = [comp.source_ref or comp.mpn or "source" for comp, _req in explicit_sources]
+            source_evidence = {
+                evidence_id
+                for _component, requirement in explicit_sources
+                for evidence_id in _power_provenance(requirement)
+            }
+            evidence_ids = sorted(source_evidence | set(domain_evidence))
+            issues.append(
+                _power_message(
+                    code="power-source-contention",
+                    rule_id="CW-PWR-004",
+                    level="error",
+                    subject=net,
+                    message=f"{net}: {len(names)} declared sources ({', '.join(names)}) can contend on one rail",
+                    suggestion=(
+                        "Use an explicit power mux/ideal-diode controller or declare a verified sharing arrangement."
+                    ),
+                    observed={"sources": names},
+                    expected={"maximum_sources": 1},
+                    inputs={"rail": net, "source_count": {"value": len(names), "unit": "count"}},
+                    margin={"value": 1 - len(names), "unit": "count"},
+                    provenance_ids=evidence_ids,
+                )
+            )
+        if domain_direction == "load" and explicit_sources:
+            for component, req in explicit_sources:
+                subject = component.source_ref or component.mpn or net
+                evidence_ids = sorted(set(domain_evidence + _power_provenance(req)))
+                issues.append(
+                    _power_message(
+                        code="power-reverse-flow",
+                        rule_id="CW-PWR-003",
+                        level="error",
+                        subject=subject,
+                        message=f"{net}: {subject} is declared as a source onto a load-only power domain",
+                        suggestion="Add reverse-current blocking or correct the domain/component flow direction.",
+                        observed={"direction": "source"},
+                        expected={"direction": "load or bidirectional"},
+                        inputs={"rail": net, "domain_direction": domain_direction, "component_direction": "source"},
+                        provenance_ids=evidence_ids,
+                    )
+                )
+
+        for current_kind, fields in (("steady", ("i_steady_ma",)), ("peak", ("i_peak_ma", "max_current_ma"))):
+            source_current = [(_power_number(req, *fields), comp, req) for comp, req in explicit_sources]
+            load_current = [(_power_number(req, *fields), comp, req) for comp, req in explicit_loads]
+            complete_current_data = source_current + load_current
+            if (
+                not source_current
+                or not load_current
+                or not all(value is not None for value, *_ in complete_current_data)
+            ):
+                continue
+            capacity = sum(value for value, *_ in source_current if value is not None)
+            demand = sum(value for value, *_ in load_current if value is not None)
+            if demand > capacity:
+                current_evidence = {
+                    evidence_id
+                    for _value, _component, requirement in complete_current_data
+                    for evidence_id in _power_provenance(requirement)
+                }
+                evidence_ids = sorted(current_evidence | set(domain_evidence))
+                issues.append(
+                    _power_message(
+                        code="power-current-budget",
+                        rule_id="CW-PWR-006",
+                        level="error",
+                        subject=net,
+                        message=(
+                            f"{net}: observed {current_kind} load {demand:g} mA exceeds declared source "
+                            f"capacity {capacity:g} mA"
+                        ),
+                        suggestion="Increase source capacity, reduce the declared load, or split the rail.",
+                        observed={"value": demand, "unit": "mA", "kind": current_kind},
+                        expected={"maximum": {"value": capacity, "unit": "mA", "kind": current_kind}},
+                        inputs={
+                            "rail": net,
+                            "load_sum": {"value": demand, "unit": "mA", "kind": current_kind},
+                            "source_sum": {"value": capacity, "unit": "mA", "kind": current_kind},
+                        },
+                        margin={"value": capacity - demand, "unit": "mA"},
+                        provenance_ids=evidence_ids,
+                    )
+                )
+
+        sequence = _power_value(domain, "sequencing", "sequence")
+        if isinstance(sequence, Mapping):
+            order = _power_number(sequence, "order")
+            dependencies = sequence.get("dependency", sequence.get("dependencies", ()))
+        else:
+            order = _power_number(domain, "sequence_order")
+            dependencies = _power_value(domain, "sequence_dependency")
+        if order is not None:
+            if isinstance(dependencies, str):
+                dependencies = [dependencies]
+            if order is not None and isinstance(dependencies, (list, tuple, set)):
+                for dependency in sorted(str(item) for item in dependencies if str(item) in domains):
+                    prerequisite = domains[dependency]
+                    prerequisite_sequence = _power_value(prerequisite, "sequencing", "sequence")
+                    prerequisite_order = (
+                        _power_number(prerequisite_sequence, "order")
+                        if isinstance(prerequisite_sequence, Mapping)
+                        else _power_number(prerequisite, "sequence_order")
+                    )
+                    if prerequisite_order is not None and order <= prerequisite_order:
+                        evidence_ids = sorted(set(domain_evidence + _power_provenance(prerequisite)))
+                        issues.append(
+                            _power_message(
+                                code="power-sequencing",
+                                rule_id="CW-PWR-007",
+                                level="error",
+                                subject=net,
+                                message=(
+                                    f"{net}: sequence order {order:g} must be later than dependency {dependency} "
+                                    f"at order {prerequisite_order:g}"
+                                ),
+                                suggestion=(
+                                    f"Set {net} sequencing order greater than {dependency}, or remove the dependency."
+                                ),
+                                observed={"value": order, "unit": "sequence-order"},
+                                expected={"minimum_exclusive": {"value": prerequisite_order, "unit": "sequence-order"}},
+                                inputs={
+                                    "rail": net,
+                                    "dependency": dependency,
+                                    "rail_order": order,
+                                    "dependency_order": prerequisite_order,
+                                },
+                                margin={"value": order - prerequisite_order, "unit": "sequence-order"},
+                                provenance_ids=evidence_ids,
+                            )
+                        )
+
+    # Dropout is a component-local equation: Vin(min) >= Vout(max) + Vdrop.
+    for component in compiled.components:
+        dropout = _power_number(component, "dropout_voltage", "dropout_v", "dropout")
+        if dropout is None:
+            dropout_mv = _power_number(component, "dropout_mv")
+            dropout = dropout_mv / 1000 if dropout_mv is not None else None
+        if dropout is None:
+            continue
+        inputs = []
+        outputs = []
+        for req in getattr(component, "power_reqs", ()) or ():
+            net = str(_power_value(req, "net", "name", "rail") or "").strip()
+            if net not in domains:
+                continue
+            direction = _power_direction(req)
+            if direction == "load":
+                inputs.append(net)
+            elif direction == "source":
+                outputs.append(net)
+        if len(inputs) != 1 or len(outputs) != 1:
+            continue
+        vin_min = _power_number(domains[inputs[0]], "v_min", "voltage_min")
+        vout_max = _power_number(domains[outputs[0]], "v_max", "voltage_max")
+        if vin_min is None or vout_max is None:
+            continue
+        required_vin = vout_max + dropout
+        if vin_min < required_vin:
+            subject = component.source_ref or component.mpn or outputs[0]
+            evidence_ids = sorted(set(_power_provenance(domains[inputs[0]]) + _power_provenance(domains[outputs[0]])))
+            issues.append(
+                _power_message(
+                    code="power-regulator-dropout",
+                    rule_id="CW-PWR-005",
+                    level="error",
+                    subject=subject,
+                    message=(
+                        f"{subject}: Vin minimum {vin_min:g} V is below required {required_vin:g} V "
+                        f"for {vout_max:g} V output plus {dropout:g} V dropout"
+                    ),
+                    suggestion="Increase input minimum, reduce output maximum, or select a lower-dropout regulator.",
+                    observed={"value": vin_min, "unit": "V"},
+                    expected={"minimum": {"value": required_vin, "unit": "V"}},
+                    inputs={
+                        "vin_min": {"value": vin_min, "unit": "V"},
+                        "vout_max": {"value": vout_max, "unit": "V"},
+                        "dropout": {"value": dropout, "unit": "V"},
+                    },
+                    margin={"value": vin_min - required_vin, "unit": "V"},
+                    provenance_ids=evidence_ids,
+                )
+            )
+    return issues
+
+
 _NC_PIN_NAME_RE = re.compile(r"^(~|NC|DNC|N\.?C\.?|NO.?CONNECT|RESERVED)$", re.IGNORECASE)
 
 
@@ -988,8 +1418,9 @@ def _validate_power_domain_consistency(compiled: CompiledDesign) -> list[Validat
     for comp in compiled.components:
         subject = comp.source_ref or comp.mpn
         for req in comp.power_reqs:
-            if req.net and req.voltage > 0:
-                net_voltages.setdefault(req.net, []).append((subject, req.voltage))
+            voltage = _power_number(req, "v_nominal", "voltage")
+            if req.net and voltage is not None and voltage > 0:
+                net_voltages.setdefault(req.net, []).append((subject, voltage))
 
     # Check for conflicting voltage expectations on the same net
     for net, sources in net_voltages.items():
@@ -1010,19 +1441,18 @@ def _validate_power_domain_consistency(compiled: CompiledDesign) -> list[Validat
     for comp in compiled.components:
         subject = comp.source_ref or comp.mpn
         for req in comp.power_reqs:
-            if not req.net or req.voltage <= 0:
+            voltage = _power_number(req, "v_nominal", "voltage")
+            if not req.net or voltage is None or voltage <= 0:
                 continue
             implied_v = _infer_rail_voltage(req.net)
-            if implied_v is not None and abs(implied_v - req.voltage) / max(req.voltage, 0.1) > 0.10:
+            if implied_v is not None and abs(implied_v - voltage) / max(voltage, 0.1) > 0.10:
                 issues.append(
                     ValidationMessage(
                         category="electrical",
                         code="power-domain-voltage-mismatch",
                         level="warning",
                         subject=subject,
-                        message=(
-                            f"Component requires {req.voltage}V on '{req.net}', but rail name implies {implied_v}V"
-                        ),
+                        message=(f"Component requires {voltage}V on '{req.net}', but rail name implies {implied_v}V"),
                     )
                 )
 
@@ -1033,6 +1463,7 @@ def _validate_power_domain_consistency(compiled: CompiledDesign) -> list[Validat
         subject = comp.source_ref or comp.mpn
         cap_nets = {bc.net for bc in comp.bypass_caps}
         for req in comp.power_reqs:
+            voltage = _power_number(req, "v_nominal", "voltage")
             if req.net and not any(n.upper().startswith("GND") for n in [req.net]):
                 if req.net not in cap_nets:
                     issues.append(
@@ -1041,7 +1472,10 @@ def _validate_power_domain_consistency(compiled: CompiledDesign) -> list[Validat
                             code="missing-bypass-cap-for-rail",
                             level="warning",
                             subject=subject,
-                            message=f"Power rail '{req.net}' ({req.voltage}V) has no bypass cap declared",
+                            message=(
+                                f"Power rail '{req.net}'"
+                                f"{f' ({voltage}V)' if voltage is not None else ''} has no bypass cap declared"
+                            ),
                         )
                     )
 
@@ -1074,6 +1508,8 @@ def _generate_compiled_artifacts(
     export_svg: bool,
     score: bool = False,
     readiness_gate: bool = True,
+    evidence_manifest: str | None = None,
+    evidence_ids: Iterable[str] | None = None,
 ) -> tuple[list[str], Path | None]:
     output_dir.mkdir(parents=True, exist_ok=True)
     profile = compiled.metadata.get("presentation_profile", "default")
@@ -1099,6 +1535,8 @@ def _generate_compiled_artifacts(
         score=score,
         compiled_ir=compiled.ir,
         readiness_gate=readiness_gate,
+        evidence_manifest=evidence_manifest,
+        evidence_ids=evidence_ids,
     )
     root = _find_root_schematic(files, compiled.metadata.get("project", "project"))
     if export_svg and root is not None:
@@ -1275,6 +1713,7 @@ def validate_design(
     categories["structural"].extend(_validate_shared_net_interfaces(compiled))
     categories["electrical"].extend(_validate_required_support(compiled))
     categories["electrical"].extend(_validate_power_domains(compiled))
+    categories["electrical"].extend(_validate_typed_power_envelopes(compiled))
     categories["electrical"].extend(_validate_pin_coverage(compiled))
     categories["electrical"].extend(_validate_power_domain_consistency(compiled))
 
@@ -1288,6 +1727,14 @@ def validate_design(
                     level=issue.level,
                     subject=issue.ref or issue.mpn,
                     message=issue.message,
+                    suggestion=issue.suggestion,
+                    is_validator_finding=True,
+                    rule_id=issue.rule_id,
+                    observed_value=issue.observed_value,
+                    expected_constraint=issue.expected_constraint,
+                    safest_next_action=issue.safest_next_action,
+                    detection_confidence=issue.detection_confidence,
+                    severity=issue.severity,
                 )
             )
 
@@ -1340,9 +1787,7 @@ def validate_design(
                 # direct ``validate`` callers still get full coverage.
                 if check_determinism:
                     with tempfile.TemporaryDirectory(prefix="schematic_mvp_validate_b_") as tmp_b:
-                        _files_b, _root_b = _generate_compiled_artifacts(
-                            compiled, Path(tmp_b), export_svg=False
-                        )
+                        _files_b, _root_b = _generate_compiled_artifacts(compiled, Path(tmp_b), export_svg=False)
                         if _kicad_text_map(Path(tmp_a)) != _kicad_text_map(Path(tmp_b)):
                             categories["implementation"].append(
                                 ValidationMessage(
@@ -1351,8 +1796,7 @@ def validate_design(
                                     level="error",
                                     subject=compiled.metadata.get("project", "project"),
                                     message=(
-                                        "Repeated stable-UUID generation produced different "
-                                        "KiCad schematic text"
+                                        "Repeated stable-UUID generation produced different " "KiCad schematic text"
                                     ),
                                 )
                             )
@@ -1387,7 +1831,7 @@ def validate_design(
         valid = (error_count + warning_count) == 0
     else:
         valid = error_count == 0
-    return ValidationReport(
+    report = ValidationReport(
         profile=profile,
         valid=valid,
         categories=categories,
@@ -1398,6 +1842,24 @@ def validate_design(
             "block_count": len(compiled.ir.blocks),
         },
     )
+    from .evidence import build_validation_evidence
+
+    evidence_ledger, evidence_by_ref = build_validation_evidence(
+        compiled.components,
+        report,
+        getattr(compiled.ir, "power_domains", ()),
+    )
+    report.metadata["evidence_manifest"] = evidence_ledger.to_manifest()
+    report.metadata["evidence_ids_by_reference"] = evidence_by_ref
+    from .finding_contract import require_finding_contract
+
+    validator_messages = [
+        message for messages in report.categories.values() for message in messages if message.is_validator_finding
+    ]
+    manifest_ids = {str(record["id"]) for record in evidence_ledger.to_manifest()["records"]}
+    require_finding_contract(validator_messages, known_evidence_ids=manifest_ids)
+    report.metadata["validator_finding_contract"] = "passed"
+    return report
 
 
 def generate_design_checklist(report: ValidationReport, components=None) -> str:
@@ -1707,9 +2169,7 @@ def _persist_generation_failure(func):
 
                     record_generation_state(
                         output_dir,
-                        project_name=str(
-                            spec.get("project") or spec.get("name") or Path(output_dir).name or "project"
-                        ),
+                        project_name=str(spec.get("project") or spec.get("name") or Path(output_dir).name or "project"),
                         spec_path=kwargs.get("spec_path"),
                         output_dir=output_dir,
                         phase="failed",
@@ -1906,9 +2366,7 @@ def _invalidate_artifact_manifest(output_path: Path) -> Path:
     if not (manifest_path.exists() or manifest_path.is_symlink()):
         return manifest_path
     if manifest_path.is_dir() and not manifest_path.is_symlink():
-        raise ValueError(
-            f"Reserved artifact manifest path is a directory and cannot be replaced: {manifest_path}"
-        )
+        raise ValueError(f"Reserved artifact manifest path is a directory and cannot be replaced: {manifest_path}")
     try:
         manifest_path.unlink()
     except OSError as exc:
@@ -1928,6 +2386,8 @@ def _write_artifact_manifest(
     kicad_verified: bool | None = None,
     verification_status: str | None = None,
     erc: Mapping[str, Any] | None = None,
+    evidence_manifest: str = "",
+    evidence_ids: Iterable[str] = (),
 ) -> Path:
     """Write a portable machine-readable inventory for this generation run."""
     manifest_path = _contained_output_path(output_path, "artifact_manifest.json")
@@ -1974,6 +2434,8 @@ def _write_artifact_manifest(
         "kicad_verified": kicad_verified,
         "verification_status": verification_status,
         "erc": erc_payload,
+        "evidence_manifest": evidence_manifest,
+        "evidence_ids": sorted(set(str(value) for value in evidence_ids)),
         "artifacts": artifacts,
     }
     serialized = json.dumps(payload, indent=2)
@@ -2042,6 +2504,7 @@ def _generate_artifacts_in_place(
     # transaction also performs this check against the final destination; this
     # repeat protects direct/private callers and the staging directory.
     _contained_output_path(output_path, "artifact_manifest.json")
+    _contained_output_path(output_path, "evidence_manifest.json")
     circuit_log_path = _contained_output_path(output_path, "circuit-weaver.log")
     _contained_output_path(output_path, "design.log")
     previous_assembly_manifest = output_path / "assembly_manifest.json"
@@ -2149,6 +2612,8 @@ def _generate_artifacts_in_place(
             export_svg=export_svg,
             score=score,
             readiness_gate=readiness_gate,
+            evidence_manifest="evidence_manifest.json",
+            evidence_ids=report.evidence_ids,
         )
     except Exception as exc:
         _logger.exception("Artifact generation failed for output directory %s", output_path)
@@ -2179,7 +2644,26 @@ def _generate_artifacts_in_place(
     canonical_spec_path = _contained_output_path(output_path, "canonical_spec.yaml")
     ir_path = _contained_output_path(output_path, "design_ir.json")
     report_path = _contained_output_path(output_path, "validation_report.json")
+    evidence_manifest_path = _contained_output_path(output_path, "evidence_manifest.json")
     placement_ready_path = _contained_output_path(output_path, "placement_readiness.json")
+    from .evidence import EvidenceLedger, build_validation_evidence
+
+    embedded_evidence = report.metadata.get("evidence_manifest")
+    if isinstance(embedded_evidence, Mapping):
+        evidence_ledger = EvidenceLedger.from_manifest(embedded_evidence)
+        evidence_by_ref = report.metadata.get("evidence_ids_by_reference", {})
+    else:
+        evidence_ledger, evidence_by_ref = build_validation_evidence(
+            compiled.components,
+            report,
+            getattr(compiled.ir, "power_domains", ()),
+        )
+        report.metadata["evidence_manifest"] = evidence_ledger.to_manifest()
+        report.metadata["evidence_ids_by_reference"] = evidence_by_ref
+    if not isinstance(evidence_by_ref, Mapping):
+        evidence_by_ref = {}
+    report.evidence_manifest = evidence_manifest_path.name
+    evidence_ledger.write(output_path)
     canonical_spec_path.write_text(spec_to_yaml_text(compiled.ir.to_dict()), encoding="utf-8", newline="")
     ir_path.write_text(json.dumps(compiled.ir.to_dict(), indent=2), encoding="utf-8", newline="")
     report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="")
@@ -2192,10 +2676,14 @@ def _generate_artifacts_in_place(
     assembly_manifest = build_assembly_manifest(
         compiled.components,
         previous_manifest=previous_assembly_manifest,
+        evidence_ids_by_reference=evidence_by_ref,
+        evidence_ids=report.evidence_ids,
+        evidence_manifest=evidence_manifest_path.name,
     )
     assembly_manifest_path = output_path / "assembly_manifest.json"
     assembly_manifest.write_json(assembly_manifest_path)
     files.append(str(assembly_manifest_path))
+    files.append(str(evidence_manifest_path))
 
     # Sprint 41 — placement readiness report. Shape is stable; consumed
     # by the placement pipeline and downstream agents to decide whether
@@ -2209,13 +2697,11 @@ def _generate_artifacts_in_place(
     }
     placement_ready_payload = {
         "ready": pr_summary["errors"] == 0,
-        "blocking": [asdict(m) for m in pr_category if m.level == "error"],
+        "blocking": [m.to_dict() for m in pr_category if m.level == "error"],
         "auto_repaired": repair_actions,
         "summary": pr_summary,
     }
-    placement_ready_path.write_text(
-        json.dumps(placement_ready_payload, indent=2), encoding="utf-8", newline=""
-    )
+    placement_ready_path.write_text(json.dumps(placement_ready_payload, indent=2), encoding="utf-8", newline="")
 
     project_name = _validate_project_name(compiled.metadata.get("project", "project"))
     result = {
@@ -2227,6 +2713,7 @@ def _generate_artifacts_in_place(
         "design_ir": str(ir_path),
         "canonical_spec": str(canonical_spec_path),
         "assembly_manifest": str(assembly_manifest_path),
+        "evidence_manifest": str(evidence_manifest_path),
         "placement_readiness": str(placement_ready_path),
         "valid": report.valid,
     }
@@ -2345,9 +2832,7 @@ def _generate_artifacts_in_place(
             result["verification_status"] = "verified"
         elif erc_result.status == "skipped":
             if require_kicad:
-                raise ValueError(
-                    f"KiCad verification was required but skipped: {erc_result.skip_reason}"
-                )
+                raise ValueError(f"KiCad verification was required but skipped: {erc_result.skip_reason}")
         elif erc_result.status == "failed":
             result["valid"] = False
             result["verification_status"] = "failed"
@@ -2356,6 +2841,27 @@ def _generate_artifacts_in_place(
             result["valid"] = False
             result["verification_status"] = "failed"
             raise ValueError(f"Final KiCad ERC found {erc_result.errors} error(s)")
+
+    from .evidence import EvidenceSource
+
+    erc_payload = result["erc"]
+    verification_evidence_id = evidence_ledger.record(
+        subject_ref="tool:kicad-erc",
+        claim=(
+            f"KiCad ERC status={erc_payload.get('status', 'unknown')} "
+            f"errors={erc_payload.get('errors', 0)} warnings={erc_payload.get('warnings', 0)}"
+        ),
+        kind="tool_result",
+        source=EvidenceSource(doc_id="kicad-cli", extraction_method="sch erc"),
+        confidence="verified" if erc_payload.get("status") == "ok" else "single_source",
+        freshness="current",
+    )
+    report.evidence_ids = sorted(set(report.evidence_ids) | {verification_evidence_id})
+    report.metadata["evidence_manifest"] = evidence_ledger.to_manifest()
+    evidence_ledger.write(output_path)
+    report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="")
+    assembly_manifest.evidence_ids = tuple(report.evidence_ids)
+    assembly_manifest.write_json(assembly_manifest_path)
 
     manifest_path = _write_artifact_manifest(
         output_path,
@@ -2366,6 +2872,8 @@ def _generate_artifacts_in_place(
         kicad_verified=result["kicad_verified"],
         verification_status=result["verification_status"],
         erc=result["erc"],
+        evidence_manifest=evidence_manifest_path.name,
+        evidence_ids=report.evidence_ids,
     )
     generated_artifacts.append(manifest_path)
     generated_artifacts.sort(key=lambda path: path.as_posix().casefold())
@@ -2445,8 +2953,7 @@ def _staged_generation_paths(staging_dir: Path) -> dict[str, Path]:
         key = relative.as_posix().casefold()
         if key in paths and paths[key] != relative:
             raise RuntimeError(
-                "Generated artifact paths collide under case-insensitive filesystems: "
-                f"{paths[key]} and {relative}"
+                "Generated artifact paths collide under case-insensitive filesystems: " f"{paths[key]} and {relative}"
             )
         paths[key] = relative
     return paths
@@ -2460,12 +2967,7 @@ def _contained_publication_target(output_dir: Path, relative: Path) -> Path:
     in the live output tree.  Re-check every publication destination against
     the live tree before collision handling or backup mutation.
     """
-    if (
-        not relative.parts
-        or relative.is_absolute()
-        or ".." in relative.parts
-        or PureWindowsPath(str(relative)).drive
-    ):
+    if not relative.parts or relative.is_absolute() or ".." in relative.parts or PureWindowsPath(str(relative)).drive:
         raise ValueError(f"Generated artifact path must be relative to the output directory: {relative}")
 
     output_root = output_dir.resolve(strict=False)
@@ -2474,9 +2976,7 @@ def _contained_publication_target(output_dir: Path, relative: Path) -> Path:
         resolved_target = target.resolve(strict=False)
         resolved_target.relative_to(output_root)
     except (OSError, RuntimeError, ValueError) as exc:
-        raise ValueError(
-            f"Refusing to write output outside '{output_root}': {target}"
-        ) from exc
+        raise ValueError(f"Refusing to write output outside '{output_root}': {target}") from exc
     return target
 
 
@@ -2521,9 +3021,7 @@ def _merge_append_only_log(staged: Path, live: Path) -> None:
     if staged_bytes in live_tail:
         return
     with live.open("ab") as handle:
-        if live_size and not live_tail.endswith((b"\n", b"\r")) and not staged_bytes.startswith(
-            (b"\n", b"\r")
-        ):
+        if live_size and not live_tail.endswith((b"\n", b"\r")) and not staged_bytes.startswith((b"\n", b"\r")):
             handle.write(b"\n")
         handle.write(staged_bytes)
         handle.flush()
@@ -2569,8 +3067,7 @@ def _publish_staged_generation(
         if staged_source.is_symlink():
             raise ValueError(f"Refusing to publish a generated symbolic link: {relative}")
     publication_targets = {
-        key: _contained_publication_target(output_dir, relative)
-        for key, relative in touched.items()
+        key: _contained_publication_target(output_dir, relative) for key, relative in touched.items()
     }
     output_root = output_dir.resolve(strict=False)
     # The CLI logging bridge opens these in the final output before dispatch
@@ -2580,8 +3077,7 @@ def _publish_staged_generation(
     live_log_keys = {
         key
         for key, relative in current.items()
-        if relative.name.casefold() in {"circuit-weaver.log", "design.log"}
-        and (output_dir / relative).is_file()
+        if relative.name.casefold() in {"circuit-weaver.log", "design.log"} and (output_dir / relative).is_file()
     }
     backup_dir = Path(
         tempfile.mkdtemp(
@@ -2604,8 +3100,7 @@ def _publish_staged_generation(
             preview = ", ".join(str(path) for path in unowned_collisions[:12])
             suffix = f" and {len(unowned_collisions) - 12} more" if len(unowned_collisions) > 12 else ""
             raise FileExistsError(
-                "Generation would overwrite files not recorded as Circuit Weaver-owned: "
-                f"{preview}{suffix}"
+                "Generation would overwrite files not recorded as Circuit Weaver-owned: " f"{preview}{suffix}"
             )
         # Move only recorded-owned or newly generated destination paths aside.
         # No arbitrary file from the live output tree is copied or relocated.
@@ -2699,9 +3194,7 @@ def generate_artifacts(
     _contained_output_path(requested_output_path, "circuit-weaver.log")
     _contained_output_path(requested_output_path, "design.log")
     if manifest_path.is_dir() and not manifest_path.is_symlink():
-        raise ValueError(
-            f"Reserved artifact manifest path is a directory and cannot be replaced: {manifest_path}"
-        )
+        raise ValueError(f"Reserved artifact manifest path is a directory and cannot be replaced: {manifest_path}")
 
     with _GENERATION_PROCESS_LOCK, _generation_output_lock(requested_output_path):
         return _generate_artifacts_transaction_locked(
@@ -2822,9 +3315,7 @@ def _generate_artifacts_transaction_locked(
             previous_owned,
             finalize,
         )
-        result["files"] = [
-            str(requested_output_path / path.relative_to(output_path)) for path in current_paths
-        ]
+        result["files"] = [str(requested_output_path / path.relative_to(output_path)) for path in current_paths]
         result["project_state"] = project_state_manifest
         return result
     except BaseException:
@@ -3957,17 +4448,47 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         kicad_pcb_path = getattr(args, "kicad_pcb", None)
         schematic_path = getattr(args, "schematic", None)
         erc_result = run_erc(schematic_path) if schematic_path else None
+        validation_report = _run_with_stderr_capture(
+            lambda: validate_design(spec, enrich_parts=args.enrich_parts, check_determinism=False)
+        )
+        from .evidence import EvidenceLedger, EvidenceSource
+
+        evidence_ledger = EvidenceLedger.from_manifest(validation_report.metadata["evidence_manifest"])
+        if erc_result is not None:
+            erc_evidence_id = evidence_ledger.record(
+                subject_ref="tool:kicad-erc",
+                claim=(
+                    f"KiCad ERC status={erc_result.status} errors={erc_result.errors} "
+                    f"warnings={erc_result.warnings}"
+                ),
+                kind="tool_result",
+                source=EvidenceSource(doc_id="kicad-cli", extraction_method="sch erc"),
+                confidence="verified" if erc_result.status == "ok" else "single_source",
+                freshness="current",
+            )
+            validation_report.evidence_ids = sorted(set(validation_report.evidence_ids) | {erc_evidence_id})
+        report_output = Path(args.output)
+        evidence_manifest_path = evidence_ledger.write(report_output.parent)
 
         report_path = _run_with_stderr_capture(
             lambda: generate_review_report_html(
                 compiled.ir,
-                args.output,
+                report_output,
                 kicad_pcb_path=kicad_pcb_path,
                 erc_result=erc_result,
+                evidence_manifest=evidence_manifest_path.name,
+                evidence_ids=validation_report.evidence_ids,
             )
         )
         print(f"Design review report generated: {report_path}", file=sys.stderr)
-        _print_json({"report": str(report_path), "status": "success"})
+        _print_json(
+            {
+                "report": str(report_path),
+                "status": "success",
+                "evidence_manifest": str(evidence_manifest_path),
+                "evidence_ids": validation_report.evidence_ids,
+            }
+        )
         raise SystemExit(0)
 
     if args.command == "diff":
@@ -4250,13 +4771,27 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
     if args.command == "export-jlcpcb":
         from .jlcpcb_export import export_jlcpcb
 
+        export_spec = _load_spec_file(args.spec)
+        validation_report = _run_with_stderr_capture(lambda: validate_design(export_spec, check_determinism=False))
+        from .evidence import EvidenceLedger
+
+        evidence_ledger = EvidenceLedger.from_manifest(validation_report.metadata["evidence_manifest"])
+        evidence_by_ref = validation_report.metadata.get("evidence_ids_by_reference", {})
         result = _run_with_stderr_capture(
             lambda: export_jlcpcb(
-                _load_spec_file(args.spec),
+                export_spec,
                 args.output,
                 pcb_path=args.pcb,
+                evidence_ids_by_reference=evidence_by_ref,
+                evidence_ids=validation_report.evidence_ids,
+                evidence_manifest="evidence_manifest.json",
             )
         )
+        if result["status"] in {"ok", "bom_only"}:
+            evidence_path = evidence_ledger.write(args.output)
+            result["evidence_manifest"] = str(evidence_path)
+            if str(evidence_path) not in result["files"]:
+                result["files"].append(str(evidence_path))
         _print_json(result)
         # BOM-only is a complete, truthful delivery mode. A supplied PCB that
         # cannot be reconciled remains blocking and returns non-zero.
@@ -4376,8 +4911,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                     file=sys.stderr,
                 )
             print(
-                "    Resolve the conflicts or re-run with --force "
-                "(add --backup to preserve replaced files).",
+                "    Resolve the conflicts or re-run with --force " "(add --backup to preserve replaced files).",
                 file=sys.stderr,
             )
 
@@ -4430,9 +4964,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             )
             _print_json(result)
             analysis_status = (
-                result.get("analysis", {}).get("status")
-                if isinstance(result.get("analysis"), dict)
-                else None
+                result.get("analysis", {}).get("status") if isinstance(result.get("analysis"), dict) else None
             )
             raise SystemExit(2 if analysis_status == "analysis_failed" else 0)
         except SystemExit:
@@ -4463,9 +4995,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             from .project_state import format_project_state, get_project_state_summary, resume_project
 
             result = (
-                resume_project(args.project)
-                if args.command == "resume"
-                else get_project_state_summary(args.project)
+                resume_project(args.project) if args.command == "resume" else get_project_state_summary(args.project)
             )
             if getattr(args, "json_output", False):
                 _print_json(result)
@@ -5449,6 +5979,7 @@ def _handle_design_workflow(
     1. Create a new circuit (captures name, creates folder, runs wizard)
     2. Open an existing circuit (lists available, loads and shows status)
     """
+
     def _absolute_path(value: str | Path) -> Path:
         candidate = Path(value).expanduser()
         if not candidate.is_absolute():
@@ -5502,8 +6033,8 @@ def _handle_design_workflow(
         logger.print_summary()
 
         print("\nWorkflow commands:")
-        print(f"  circuit-weaver log-view \"{logger.project_dir}\"     # View log entries")
-        print(f"  circuit-weaver log-status \"{logger.project_dir}\"   # Show workflow summary\n")
+        print(f'  circuit-weaver log-view "{logger.project_dir}"     # View log entries')
+        print(f'  circuit-weaver log-status "{logger.project_dir}"   # Show workflow summary\n')
         print("Next steps:")
         print(f"  1. Review the spec: {output_file}")
         print(f'  2. Validate: circuit-weaver validate "{output_file}"')
@@ -5703,8 +6234,10 @@ def _run_design_wizard(
     else:
         metadata = existing_spec.get("metadata") if isinstance(existing_spec, dict) else None
         default_name = (
-            existing_spec.get("project") if isinstance(existing_spec, dict) else None
-        ) or (metadata.get("title") if isinstance(metadata, dict) else None) or "MyDesign_v1"
+            (existing_spec.get("project") if isinstance(existing_spec, dict) else None)
+            or (metadata.get("title") if isinstance(metadata, dict) else None)
+            or "MyDesign_v1"
+        )
         project_name = _wizard_input(
             "Project name [MyDesign_v1]: ",
             dry_run=dry_run,

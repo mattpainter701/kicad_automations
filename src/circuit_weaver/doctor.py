@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .capabilities import capability_maturity_summary, get_capability_registry
 from .parts_lookup import _get_credential
 
 
@@ -52,6 +53,7 @@ class DoctorReport:
     platform: str = ""
     circuit_weaver_version: str = ""
     research_backend: dict[str, Any] = field(default_factory=dict)
+    capabilities: list[dict[str, Any]] = field(default_factory=get_capability_registry)
 
     @property
     def ok_count(self) -> int:
@@ -75,6 +77,7 @@ class DoctorReport:
             "platform": self.platform,
             "circuit_weaver_version": self.circuit_weaver_version,
             "research_backend": self.research_backend,
+            "capabilities": self.capabilities,
             "checks": [c.to_dict() for c in self.checks],
             "ok_count": self.ok_count,
             "missing_count": self.missing_count,
@@ -91,6 +94,11 @@ class DoctorReport:
         lines.append(f"Python:          {self.python_version}")
         lines.append(f"Platform:        {self.platform}")
         lines.append(f"Circuit Weaver:  {self.circuit_weaver_version}")
+        maturity_summary = capability_maturity_summary()
+        maturity_counts = ", ".join(
+            f"{state}={count}" for state, count in maturity_summary.items() if count
+        )
+        lines.append(f"Capabilities:    {len(self.capabilities)} registered ({maturity_counts})")
         lines.append("")
 
         for check in self.checks:

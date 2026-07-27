@@ -15,6 +15,7 @@ from circuit_weaver.design_docs import (
     generate_ordering_checklist,
     generate_power_budget_csv,
 )
+from circuit_weaver.design_ir import DesignIR, PowerDomain
 
 
 @dataclass
@@ -101,6 +102,27 @@ class TestGeneratePowerBudget:
         if budget:
             assert "rail" in budget[0]
             assert "voltage" in budget[0]
+
+    def test_typed_power_domains_preserve_unknowns_and_declared_provenance(self):
+        design = DesignIR(
+            power_domains=[
+                PowerDomain(
+                    net="VBAT", v_min=3.0, v_nominal=3.7, v_max=4.2,
+                    direction="source", i_peak_ma=800, evidence_id="EV-DATASHEET-123456789abc",
+                )
+            ]
+        )
+
+        budget = _generate_power_budget(design)
+
+        assert budget == [
+            {
+                "rail": "VBAT", "voltage": 3.7, "current_ma": None, "power_w": None,
+                "v_min": 3.0, "v_nominal": 3.7, "v_max": 4.2, "direction": "source",
+                "i_steady_ma": None, "i_peak_ma": 800, "sequence_order": None,
+                "sequence_dependency": None, "tolerance": None, "evidence_id": "EV-DATASHEET-123456789abc",
+            }
+        ]
 
 
 class TestAssemblyGuideCSV:

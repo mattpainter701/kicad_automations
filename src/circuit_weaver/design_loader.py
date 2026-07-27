@@ -255,6 +255,7 @@ def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) ->
         metadata=copy.deepcopy(ir.metadata),
         blocks=hydrated_blocks,
         interfaces=all_interfaces,
+        power_domains=copy.deepcopy(ir.power_domains),
         approved_overrides=copy.deepcopy(ir.approved_overrides),
         pcb_constraints=copy.deepcopy(ir.pcb_constraints),
     )

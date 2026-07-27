@@ -22,6 +22,7 @@ class ConfidenceSection:
     status: str  # "complete", "partial", "skipped"
     issues: list[dict[str, Any]] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -31,6 +32,7 @@ class ConfidenceSection:
             "status": self.status,
             "issue_count": len(self.issues),
             "recommendations": self.recommendations,
+            "evidence_ids": sorted(set(self.evidence_ids)),
         }
 
 
@@ -46,6 +48,8 @@ class DesignConfidenceReport:
     sections: dict[str, ConfidenceSection] = field(default_factory=dict)
     blockers: list[str] = field(default_factory=list)
     action_items: list[dict[str, str]] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
+    evidence_manifest: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,6 +61,8 @@ class DesignConfidenceReport:
             "sections": {k: v.to_dict() for k, v in self.sections.items()},
             "blockers": self.blockers,
             "action_items": self.action_items,
+            "evidence_ids": sorted(set(self.evidence_ids)),
+            "evidence_manifest": self.evidence_manifest,
         }
 
     def to_terminal(self) -> str:
@@ -205,6 +211,20 @@ def _score_from_issues(
     return max(0.0, min(100.0, 100.0 - penalty))
 
 
+def _evidence_ids(report: dict[str, Any]) -> list[str]:
+    """Collect report- and finding-level evidence IDs without inventing any."""
+
+    raw_ids = report.get("evidence_ids", [])
+    ids = {value for value in raw_ids if isinstance(value, str)} if isinstance(raw_ids, list) else set()
+    for findings in report.get("categories", {}).values():
+        if not isinstance(findings, list):
+            continue
+        for finding in findings:
+            if isinstance(finding, dict) and isinstance(finding.get("evidence_ids"), list):
+                ids.update(value for value in finding["evidence_ids"] if isinstance(value, str))
+    return sorted(value for value in ids if isinstance(value, str))
+
+
 def generate_confidence_report(
     components: list | None = None,
     *,
@@ -225,10 +245,15 @@ def generate_confidence_report(
     sections: dict[str, ConfidenceSection] = {}
     blockers: list[str] = []
     action_items: list[dict[str, str]] = []
+    evidence_ids: list[str] = []
+    evidence_manifest: str | None = None
 
     # 1. Electrical Validation
     if validation_report is not None:
         report_dict = validation_report.to_dict() if hasattr(validation_report, "to_dict") else {}
+        evidence_ids = _evidence_ids(report_dict)
+        manifest_value = report_dict.get("evidence_manifest")
+        evidence_manifest = manifest_value if isinstance(manifest_value, str) else None
         errors = sum(
             1 for cat in report_dict.get("categories", {}).values()
             for msg in cat
@@ -247,6 +272,7 @@ def generate_confidence_report(
             grade=_grade(score),
             status="complete",
             issues=[{"level": "error", "count": errors}, {"level": "warning", "count": warnings}],
+            evidence_ids=evidence_ids,
         )
         if errors:
             blockers.append(f"Electrical validation: {errors} error(s)")
@@ -418,6 +444,8 @@ def generate_confidence_report(
         sections=sections,
         blockers=blockers,
         action_items=action_items,
+        evidence_ids=evidence_ids,
+        evidence_manifest=evidence_manifest,
     )
 
     # Log

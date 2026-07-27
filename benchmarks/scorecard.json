@@ -1,0 +1,617 @@
+{
+  "aggregate": {
+    "fn": 0,
+    "fp": 0,
+    "minimum_precision": 0.95,
+    "minimum_recall": 0.9,
+    "precision": 1.0,
+    "recall": 1.0,
+    "scored_rule_count": 14,
+    "status": "pass",
+    "tp": 18,
+    "unsupported_rule_count": 19
+  },
+  "coverage": {
+    "CW-ANALOG-001": {
+      "code": "signal-integrity",
+      "domain": "analog",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ANALOG-002": {
+      "code": "rc-filter",
+      "domain": "analog",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ANALOG-003": {
+      "code": "lc-filter",
+      "domain": "analog",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-CLK-001": {
+      "code": "crystal-load",
+      "domain": "clock",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ERC-001": {
+      "code": "single-pin-net",
+      "domain": "erc",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ERC-002": {
+      "code": "undriven-net",
+      "domain": "erc",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ERC-003": {
+      "code": "vdd-to-gnd-short",
+      "domain": "erc",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ERC-004": {
+      "code": "output-conflict",
+      "domain": "erc",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-I2C-001": {
+      "code": "i2c-missing-pullup",
+      "domain": "i2c",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ID-001": {
+      "code": "identity-selected-mismatch",
+      "domain": "identity",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-ID-002": {
+      "code": "identity-incomplete-map",
+      "domain": "identity",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-ID-003": {
+      "code": "identity-unapproved-conflict",
+      "domain": "identity",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-ID-004": {
+      "code": "identity-insufficient-sources",
+      "domain": "identity",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-ID-005": {
+      "code": "pin-mapping-integrity",
+      "domain": "identity",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-ID-006": {
+      "code": "unverified-pinout",
+      "domain": "identity",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-PSV-001": {
+      "code": "passive-missing-basis",
+      "domain": "passives",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PSV-002": {
+      "code": "passive-out-of-range",
+      "domain": "passives",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PSV-003": {
+      "code": "passive-incompatible-network",
+      "domain": "passives",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-001": {
+      "code": "power-over-voltage",
+      "domain": "power",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-002": {
+      "code": "power-under-voltage",
+      "domain": "power",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-003": {
+      "code": "power-reverse-flow",
+      "domain": "power",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-004": {
+      "code": "power-source-contention",
+      "domain": "power",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-005": {
+      "code": "power-regulator-dropout",
+      "domain": "power",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-006": {
+      "code": "power-budget",
+      "domain": "power",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-007": {
+      "code": "power-sequencing",
+      "domain": "power",
+      "reason": null,
+      "status": "scored"
+    },
+    "CW-PWR-008": {
+      "code": "thermal-limits",
+      "domain": "power",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-PWR-009": {
+      "code": "feedback-divider",
+      "domain": "power",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-PWR-010": {
+      "code": "decoupling",
+      "domain": "power",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-PWR-011": {
+      "code": "inductor-value",
+      "domain": "power",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-PWR-012": {
+      "code": "cap-voltage-rating",
+      "domain": "power",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-PWR-013": {
+      "code": "floating-enable",
+      "domain": "power",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-SPI-001": {
+      "code": "spi-floating-cs",
+      "domain": "spi",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    },
+    "CW-UART-001": {
+      "code": "uart-unpaired",
+      "domain": "uart",
+      "reason": "no complete labelled executable population",
+      "status": "unsupported"
+    }
+  },
+  "domains": {
+    "analog": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 3
+    },
+    "clock": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 3
+    },
+    "i2c": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 5
+    },
+    "identity": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 7,
+      "unsupported": 0
+    },
+    "manufacturing": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 3
+    },
+    "passives": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 3,
+      "unsupported": 0
+    },
+    "power": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 8,
+      "unsupported": 0
+    },
+    "protection": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 3
+    },
+    "spi": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 3
+    },
+    "uart": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 3
+    },
+    "usb": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    }
+  },
+  "fixture_count": 40,
+  "rules": {
+    "CW-ANALOG-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    },
+    "CW-CLOCK-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    },
+    "CW-I2C-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    },
+    "CW-ID-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-ID-002": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-ID-003": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 4,
+      "unsupported": 0
+    },
+    "CW-ID-004": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-MANUFACTURING-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    },
+    "CW-PROTECTION-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    },
+    "CW-PSV-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PSV-002": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PSV-003": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PWR-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PWR-002": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PWR-003": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PWR-004": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PWR-005": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-PWR-006": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 2,
+      "unsupported": 0
+    },
+    "CW-PWR-007": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
+    "CW-SPI-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    },
+    "CW-UART-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    },
+    "CW-USB-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": null,
+      "precision_status": "undefined_no_predictions",
+      "recall": null,
+      "recall_status": "undefined_no_expected",
+      "tp": 0,
+      "unsupported": 1
+    }
+  },
+  "schema_version": 1,
+  "suppression_count": 0,
+  "unsupported_actual": [
+    {
+      "code": "unresolved-component",
+      "fixture_id": "analog-rc-conflicting-cutoff"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "analog-rc-consistent-cutoff"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "clock-matched-load"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "clock-missing-load-capacitors"
+    },
+    {
+      "code": "net-connectivity",
+      "fixture_id": "i2c-missing-pullups"
+    },
+    {
+      "code": "single-pin-net",
+      "fixture_id": "i2c-missing-pullups"
+    },
+    {
+      "code": "net-connectivity",
+      "fixture_id": "i2c-pulled-up"
+    },
+    {
+      "code": "single-pin-net",
+      "fixture_id": "i2c-pulled-up"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "manufacturing-missing-footprint"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "manufacturing-resolved-footprint"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "protection-compatible-tvs"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "protection-underrated-tvs"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "spi-chip-select-connected"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "spi-floating-chip-select"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "uart-paired"
+    },
+    {
+      "code": "unresolved-component",
+      "fixture_id": "uart-unpaired-tx"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"project":"benchmark_i2c_positive","spec_version":"mvp_ir_v1","blocks":[{"id":"sensors:U1","section":"sensors","kind":"component","ref":"U1","ic":"BME280","params":{"scl_net":"I2C_SCL","sda_net":"I2C_SDA","pullups_to":"VDD_3P3"}}],"benchmark_intent":{"domain":"i2c","polarity":"positive","scenario":"An I2C sensor declares SCL/SDA pull-ups to its logic rail."}}

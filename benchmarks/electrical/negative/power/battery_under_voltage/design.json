@@ -1,0 +1,7 @@
+{
+  "project": "benchmark_power_battery_under_voltage",
+  "spec_version": "mvp_ir_v1",
+  "power_domains": [{"net": "VBAT", "v_min": 2.99, "v_nominal": 3.7, "v_max": 4.2, "direction": "source", "evidence_id": "EV-DATASHEET-999999999999"}],
+  "blocks": [{"id": "power:U1", "section": "power", "kind": "component", "ref": "U1", "ic": "PINHDR-1x08-2.54", "params": {"power_reqs": [{"net": "VBAT", "v_min": 3.0, "v_nominal": 3.7, "v_max": 4.3, "direction": "load", "i_steady_ma": 240, "i_peak_ma": 500, "evidence_id": "EV-DATASHEET-aaaaaaaaaaaa"}]}}],
+  "benchmark_intent": {"domain": "power", "polarity": "negative", "scenario": "A battery-powered load is 10 mV below its declared brownout operating limit."}
+}

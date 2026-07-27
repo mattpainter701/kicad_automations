@@ -31,6 +31,8 @@ from typing import Any
 import pytest
 import yaml
 
+pytestmark = pytest.mark.skip_category("optional-tool")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_schematic_invariants import assert_schematic_invariants  # noqa: E402
 
@@ -67,7 +69,7 @@ def test_corpus_generates_and_satisfies_invariants(sample_dir: str, yaml_name: s
 
     spec_path = SAMPLES_DIR / sample_dir / yaml_name
     if not spec_path.exists():
-        pytest.skip(f"Sample spec not available: {spec_path}")
+        pytest.fail(f"Checked-in sample spec is missing: {spec_path}")
 
     spec = _load_spec(spec_path)
     output_dir = tmp_path / sample_dir
@@ -210,7 +212,7 @@ def test_corpus_validate_no_hard_errors(sample_dir: str, yaml_name: str) -> None
 
     spec_path = SAMPLES_DIR / sample_dir / yaml_name
     if not spec_path.exists():
-        pytest.skip(f"Sample spec not available: {spec_path}")
+        pytest.fail(f"Checked-in sample spec is missing: {spec_path}")
 
     spec = _load_spec(spec_path)
     report = validate_design(spec)

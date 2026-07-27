@@ -2,24 +2,13 @@
 
 from __future__ import annotations
 
-import math
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+from hashlib import sha256
+from typing import Final
 
+from . import calc
 from .component_db import ComponentDef
-
-_FEEDBACK_VREF = {
-    # Buck converters
-    "AP62300": 0.8,
-    "AP62300TWU": 0.8,
-    "TPS62088": 0.6,
-    # Boost converters
-    "TPS61230A": 0.5,
-    "MT3608": 0.6,
-    # Buck-boost converters
-    "TPS63020": 0.5,
-    "TPS63000": 0.5,
-}
 
 _KNOWN_RAIL_VOLTAGES = {
     "VCCAUX": 1.8,
@@ -35,14 +24,223 @@ _KNOWN_RAIL_VOLTAGES = {
 _GROUND_PREFIXES = ("GND", "AGND", "DGND", "PGND")
 
 
-@dataclass(frozen=True)
+_DETECTION_CONFIDENCES: Final = frozenset(
+    {"verified", "corroborated", "single_source", "heuristic", "stub", "conflicting"}
+)
+_ISSUE_SEVERITIES: Final = frozenset({"blocker", "major", "minor", "info"})
+_CONFIRMED_BLOCKER_CONFIDENCES: Final = frozenset({"verified", "corroborated"})
+
+# Every in-process validator finding has a frozen benchmark-facing rule ID.
+# Check names remain compatibility labels; finding codes are the producer key.
+_RULE_ID_BY_FINDING_CODE: Final = {
+    "pin-mapping-integrity": "CW-ID-005",
+    "unverified-pinout": "CW-ID-006",
+    "feedback-divider": "CW-PWR-009",
+    "rc-filter": "CW-ANALOG-002",
+    "lc-filter": "CW-ANALOG-003",
+    "crystal-load": "CW-CLK-001",
+    "decoupling": "CW-PWR-010",
+    "inductor-value": "CW-PWR-011",
+    "cap-voltage-rating": "CW-PWR-012",
+    "single-pin-net": "CW-ERC-001",
+    "undriven-net": "CW-ERC-002",
+    "vdd-to-gnd-short": "CW-ERC-003",
+    "floating-enable": "CW-PWR-013",
+    "i2c-missing-pullup": "CW-I2C-001",
+    "spi-floating-cs": "CW-SPI-001",
+    "uart-unpaired": "CW-UART-001",
+    "output-conflict": "CW-ERC-004",
+    "power-budget": "CW-PWR-006",
+    "thermal-limits": "CW-PWR-008",
+    "signal-integrity": "CW-ANALOG-001",
+}
+_EXPECTED_CONSTRAINT_BY_FINDING_CODE: Final = {
+    "pin-mapping-integrity": "0 count malformed, duplicate, or ambiguous pin mappings",
+    "unverified-pinout": "1 count verified or explicit pinout source",
+    "feedback-divider": "output voltage within ±5 percent of the target rail",
+    "rc-filter": "cutoff frequency within the declared Hz range",
+    "lc-filter": "cutoff frequency within the declared Hz range",
+    "crystal-load": "crystal load capacitance within ±15 percent of the datasheet target",
+    "decoupling": "1 count matching bypass capacitor per required supply",
+    "inductor-value": "inductance from 0.1 uH through 100 uH",
+    "cap-voltage-rating": "rail voltage no greater than 80 percent of capacitor rating",
+    "single-pin-net": "at least 2 count connected endpoints",
+    "undriven-net": "at least 1 count output, bidirectional, or passive driver",
+    "vdd-to-gnd-short": "0 count power-to-ground shorts",
+    "floating-enable": "1 count explicit enable connection or no-connect declaration",
+    "i2c-missing-pullup": "1 count pull-up resistor per I2C signal",
+    "spi-floating-cs": "1 count explicit chip-select connection or no-connect declaration",
+    "uart-unpaired": "1 count matching RX net per UART TX net",
+    "output-conflict": "at most 1 count output driver per signal net",
+    "power-budget": "at least 1 count power pin or power requirement",
+    "thermal-limits": "junction temperature below the declared maximum with adequate margin",
+    "signal-integrity": "1 count applicable termination or impedance-matching network",
+}
+# T248 keeps non-executable legacy checks visible rather than pretending they
+# are benchmarked.  A release benchmark must either name an adverse fixture or
+# carry this explicit unsupported classification; no check silently disappears.
+_VALIDATION_CHECK_CONTRACT_COVERAGE: Final = {
+    "pin-mapping-integrity": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "pinout-source": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "feedback-divider": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "rc-lc-filter": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "crystal-load": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "decoupling": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "inductor-selection": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "cap-voltage": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "net-connectivity": {
+        "status": "adverse_fixture",
+        "fixture": "negative/i2c",
+    },
+    "enable-pins": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "bus-completeness": {
+        "status": "adverse_fixture",
+        "fixture": "negative/i2c",
+    },
+    "pin-type-conflicts": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "power-budget": {"status": "adverse_fixture", "fixture": "negative/power"},
+    "thermal-limits": {"status": "unsupported", "reason": "no complete labelled executable population"},
+    "signal-integrity": {"status": "unsupported", "reason": "no complete labelled executable population"},
+}
+
+
+@dataclass(frozen=True, init=False)
 class ValidationIssue:
+    """A validation finding with independent impact and evidence axes.
+
+    ``level`` was the pre-T248, overloaded rendering field.  It remains a
+    read-only compatibility property.  New code must specify ``severity`` and
+    ``detection_confidence``; a weakly evidenced blocker deliberately renders
+    as a review warning rather than a confirmed error.
+    """
+
     code: str
-    level: str
     ref: str
     mpn: str
     message: str
     suggestion: str = ""
+    detection_confidence: str = "single_source"
+    severity: str = "major"
+    rule_id: str | None = None
+    observed_value: str | None = None
+    expected_constraint: str | None = None
+    evidence_ids: tuple[str, ...] = ()
+    safest_next_action: str | None = None
+    suppressed: bool = False
+    suppression_id: str | None = None
+    net: str = ""
+
+    def __init__(
+        self,
+        code: str,
+        level: str | None = None,
+        ref: str = "",
+        mpn: str = "",
+        message: str = "",
+        suggestion: str = "",
+        *,
+        detection_confidence: str | None = None,
+        severity: str | None = None,
+        rule_id: str | None = None,
+        observed_value: str | None = None,
+        expected_constraint: str | None = None,
+        evidence_ids: tuple[str, ...] | list[str] = (),
+        safest_next_action: str | None = None,
+        suppressed: bool = False,
+        suppression_id: str | None = None,
+        net: str = "",
+    ) -> None:
+        """Construct an issue, accepting the legacy positional ``level``.
+
+        ``level`` is intentionally input-only for migration compatibility. It
+        maps ``error`` to a verified blocker and ``warning`` to a
+        single-source major finding. New producers must use the two explicit
+        keyword fields instead.
+        """
+        legacy_level = (level or "").lower()
+        if severity is None:
+            severity = {"error": "blocker", "warning": "major", "info": "info"}.get(legacy_level, "major")
+        if detection_confidence is None:
+            detection_confidence = "verified" if legacy_level == "error" else "single_source"
+        severity = severity.lower()
+        detection_confidence = detection_confidence.lower()
+        if severity not in _ISSUE_SEVERITIES:
+            raise ValueError(f"Unsupported ValidationIssue severity: {severity!r}")
+        if detection_confidence not in _DETECTION_CONFIDENCES:
+            raise ValueError(f"Unsupported detection confidence: {detection_confidence!r}")
+        if rule_id is not None and not re.fullmatch(r"CW-[A-Z0-9]+-[0-9]{3}", rule_id):
+            raise ValueError(f"ValidationIssue rule_id must be CW-<DOMAIN>-<NNN>: {rule_id!r}")
+        if not isinstance(evidence_ids, (tuple, list)) or any(
+            not isinstance(item, str) or not item for item in evidence_ids
+        ):
+            raise ValueError("ValidationIssue evidence_ids must be a sequence of non-empty strings")
+        if suppressed and not suppression_id:
+            raise ValueError("suppressed ValidationIssue requires suppression_id")
+        if suppression_id is not None and not isinstance(suppression_id, str):
+            raise ValueError("suppression_id must be a string or None")
+        object.__setattr__(self, "code", code)
+        object.__setattr__(self, "ref", ref)
+        object.__setattr__(self, "mpn", mpn)
+        object.__setattr__(self, "message", message)
+        object.__setattr__(self, "suggestion", suggestion)
+        object.__setattr__(self, "detection_confidence", detection_confidence)
+        object.__setattr__(self, "severity", severity)
+        object.__setattr__(self, "rule_id", rule_id or (code if re.fullmatch(r"CW-[A-Z0-9]+-[0-9]{3}", code) else None))
+        object.__setattr__(self, "observed_value", observed_value)
+        object.__setattr__(self, "expected_constraint", expected_constraint)
+        object.__setattr__(self, "evidence_ids", tuple(sorted(set(evidence_ids))))
+        object.__setattr__(self, "safest_next_action", safest_next_action or suggestion or None)
+        object.__setattr__(self, "suppressed", bool(suppressed))
+        object.__setattr__(self, "suppression_id", suppression_id)
+        object.__setattr__(self, "net", net)
+
+    @property
+    def is_confirmed_blocker(self) -> bool:
+        """Whether this finding may be presented as a confirmed hard defect."""
+        return self.severity == "blocker" and self.detection_confidence in _CONFIRMED_BLOCKER_CONFIDENCES
+
+    @property
+    def level(self) -> str:
+        """Deprecated compatibility rendering level derived from the two axes."""
+        if self.is_confirmed_blocker:
+            return "error"
+        if self.severity == "info":
+            return "info"
+        return "warning"
+
+    def to_dict(self) -> dict[str, object]:
+        """Stable JSON-ready representation, including the legacy level."""
+        return {
+            "code": self.code,
+            "severity": self.severity,
+            "detection_confidence": self.detection_confidence,
+            "level": self.level,
+            "confirmed_blocker": self.is_confirmed_blocker,
+            "ref": self.ref,
+            "mpn": self.mpn,
+            "message": self.message,
+            "suggestion": self.suggestion,
+            "rule_id": self.rule_id,
+            "observed_value": self.observed_value,
+            "expected_constraint": self.expected_constraint,
+            "evidence_ids": list(self.evidence_ids),
+            "safest_next_action": self.safest_next_action,
+            "suppressed": self.suppressed,
+            "suppression_id": self.suppression_id,
+            "net": self.net,
+        }
+
+    def contract_violations(self, *, known_evidence_ids: tuple[str, ...] | list[str] = ()) -> tuple[str, ...]:
+        """Return release-blocking omissions without hiding this finding."""
+
+        from .finding_contract import finding_contract_violations
+
+        return finding_contract_violations(self, known_evidence_ids=known_evidence_ids)
+
+    def marked_suppressed(self, suppression_id: str) -> "ValidationIssue":
+        """Mark a finding as suppressed while retaining it for all metrics."""
+
+        return replace(self, suppressed=True, suppression_id=suppression_id)
 
 
 @dataclass(frozen=True)
@@ -51,22 +249,40 @@ class ValidationCheckResult:
     label: str
     status: str
     issues: tuple[ValidationIssue, ...]
+    # Raw validation callers do not have a report-level ledger.  Keep the
+    # exact records required to resolve each issue's evidence IDs here.
+    evidence_records: tuple[object, ...] = ()
 
 
 def _issue(
     comp: ComponentDef,
     code: str,
     message: str,
-    level: str = "warning",
+    severity: str = "major",
+    detection_confidence: str = "verified",
     suggestion: str = "",
+    observed_value: str = "1 count",
+    net: str = "",
 ) -> ValidationIssue:
+    try:
+        rule_id = _RULE_ID_BY_FINDING_CODE[code]
+        expected_constraint = _EXPECTED_CONSTRAINT_BY_FINDING_CODE[code]
+    except KeyError as exc:  # Do not silently emit a non-contract finding.
+        raise ValueError(f"missing T248 finding contract for validator code {code!r}") from exc
+    safest_next_action = suggestion or f"Review {code} on the referenced component and correct the stated constraint."
     return ValidationIssue(
         code=code,
-        level=level,
+        severity=severity,
+        detection_confidence=detection_confidence,
         ref=comp.source_ref or comp.ref_prefix,
         mpn=comp.source_mpn or comp.mpn,
         message=message,
         suggestion=suggestion,
+        rule_id=rule_id,
+        observed_value=observed_value,
+        expected_constraint=expected_constraint,
+        safest_next_action=safest_next_action,
+        net=net,
     )
 
 
@@ -160,6 +376,17 @@ def _format_value(value: float, scale: float, suffix: str) -> str:
     return f"{value / scale:.2f}{suffix}"
 
 
+def _calculation_target(comp: ComponentDef, domain: str, field: str) -> str:
+    """Return the frozen ``param:<REF>.<domain>.<field>`` calculation target."""
+    ref = comp.source_ref or comp.ref_prefix or "unknown"
+    normalized_ref = re.sub(r"[^A-Za-z0-9_]+", "_", ref).strip("_") or "unknown"
+    if not normalized_ref[0].isalpha():
+        normalized_ref = f"X_{normalized_ref}"
+    normalized_domain = re.sub(r"[^A-Za-z0-9_-]+", "_", domain).strip("_") or "unknown"
+    normalized_field = re.sub(r"[^A-Za-z0-9_-]+", "_", field).strip("_") or "value"
+    return f"param:{normalized_ref}.{normalized_domain}.{normalized_field}"
+
+
 def _filter_range(comp: ComponentDef, net: str) -> tuple[float, float, str] | None:
     text = " ".join(
         filter(
@@ -182,7 +409,7 @@ def _filter_range(comp: ComponentDef, net: str) -> tuple[float, float, str] | No
 def _validate_feedback_dividers(components: list[ComponentDef]) -> list[ValidationIssue]:
     issues = []
     for comp in components:
-        vref = _FEEDBACK_VREF.get(comp.mpn)
+        vref = comp.feedback_vref_voltage
         if vref is None:
             continue
 
@@ -204,7 +431,12 @@ def _validate_feedback_dividers(components: list[ComponentDef]) -> list[Validati
             if not r_bottom or not r_top or not target:
                 continue
 
-            vout = vref * (1.0 + r_top / r_bottom)
+            vout = calc.feedback_divider_vout(
+                target=_calculation_target(comp, "feedback", f"vout_{net}"),
+                r_top_ohm=r_top,
+                r_bottom_ohm=r_bottom,
+                vref_v=vref,
+            ).raw_result.value
             if abs(vout - target) / target > 0.05:
                 issues.append(
                     _issue(
@@ -245,7 +477,11 @@ def _validate_filter_cutoffs(components: list[ComponentDef]) -> list[ValidationI
                 continue
             r_val = min(resistors)
             c_val = min(caps)
-            fc = 1.0 / (2 * math.pi * r_val * c_val)
+            fc = calc.rc_cutoff(
+                target=_calculation_target(comp, "filter", f"rc_cutoff_{net}"),
+                resistance_ohm=r_val,
+                capacitance_f=c_val,
+            ).raw_result.value
             low, high, label = expected
             if fc < low or fc > high:
                 issues.append(
@@ -266,7 +502,11 @@ def _validate_filter_cutoffs(components: list[ComponentDef]) -> list[ValidationI
                 continue
             l_val = min(inductors)
             c_val = min(caps)
-            fc = 1.0 / (2 * math.pi * math.sqrt(l_val * c_val))
+            fc = calc.lc_cutoff(
+                target=_calculation_target(comp, "filter", f"lc_cutoff_{net}"),
+                inductance_h=l_val,
+                capacitance_f=c_val,
+            ).raw_result.value
             low, high, label = expected
             if fc < low or fc > high:
                 issues.append(
@@ -321,7 +561,12 @@ def _validate_crystal_caps(components: list[ComponentDef]) -> list[ValidationIss
             continue
         c1 = min(caps_xi)
         c2 = min(caps_xo)
-        effective_cl = (c1 * c2) / (c1 + c2) + 2e-12
+        effective_cl = calc.crystal_effective_load(
+            target=_calculation_target(comp, "crystal", "effective_load"),
+            capacitance_1_f=c1,
+            capacitance_2_f=c2,
+            stray_capacitance_f=2e-12,
+        ).raw_result.value
         if abs(effective_cl - target_cl) / target_cl > 0.15:
             issues.append(
                 _issue(
@@ -547,7 +792,7 @@ def _validate_enable_pins(components: list[ComponentDef]) -> list[ValidationIssu
                     comp,
                     "floating-enable",
                     f"Enable pin {pin.number} ({pin.name}) is floating — regulator may not start",
-                    level="warning",
+                    severity="major",
                     suggestion=(
                         f"Tie pin {pin.number} ({pin.name}) to VIN via 100k pull-up, or add to explicit_no_connects"
                     ),
@@ -589,7 +834,7 @@ def _validate_bus_completeness(components: list[ComponentDef]) -> list[Validatio
                         _find_comp(components, comp_ref),
                         "i2c-missing-pullup",
                         f"I2C signal '{net}' has no pull-up resistor",
-                        level="warning",
+                        severity="major",
                     )
                 )
 
@@ -607,7 +852,7 @@ def _validate_bus_completeness(components: list[ComponentDef]) -> list[Validatio
                         comp,
                         "spi-floating-cs",
                         f"SPI chip select pin {pin.number} ({pin.name}) is floating",
-                        level="warning",
+                        severity="major",
                     )
                 )
 
@@ -627,7 +872,7 @@ def _validate_bus_completeness(components: list[ComponentDef]) -> list[Validatio
                     _find_comp(components, comp_ref),
                     "uart-unpaired",
                     f"UART TX net '{tx_net}' has no matching RX net",
-                    level="warning",
+                    severity="major",
                 )
             )
 
@@ -683,7 +928,7 @@ def _validate_cap_voltage_ratings(components: list[ComponentDef]) -> list[Valida
                             "cap-voltage-rating",
                             f"Cap {bc.value} on {bc.net} ({rail_v}V rail) — "
                             f"rated {rated_v}V, derate to 80% = {rated_v * 0.8:.1f}V",
-                            level="warning",
+                            severity="major",
                         )
                     )
     return issues
@@ -716,7 +961,7 @@ def _validate_pin_type_conflicts(components: list[ComponentDef]) -> list[Validat
                     _find_comp(components, outputs[0][0]),
                     "output-conflict",
                     f"Net '{net}' has multiple output drivers: {detail} — potential bus contention",
-                    level="warning",
+                    severity="major",
                 )
             )
     return issues
@@ -751,7 +996,11 @@ def _validate_pinout_sources(components: list[ComponentDef]) -> list[ValidationI
                         f"{comp.source_ref or comp.ref_prefix} ({comp.mpn}): pinout not verified — "
                         "add explicit pin_map or set pinout_verified: true"
                     ),
-                    level="error",
+                    severity="blocker",
+                    # The pin map itself is stub-quality, but the finding is a
+                    # verified observation of that explicit local state.  Do
+                    # not downgrade the long-standing generation safety gate.
+                    detection_confidence="verified",
                     suggestion=(
                         "Either supply a pin_map in your YAML spec mapping pin numbers to net names, "
                         "or add 'pinout_verified: true' after manually confirming the pinout against "
@@ -785,13 +1034,12 @@ def _validate_power_budget(components: list[ComponentDef]) -> list[ValidationIss
         # Check: power components should have power_reqs or power_pins defined
         if not comp.power_pins and not comp.power_reqs:
             issues.append(
-                ValidationIssue(
-                    code="power-budget",
-                    level="warning",
-                    ref=ref,
-                    mpn=mpn,
+                _issue(
+                    comp,
+                    "power-budget",
                     message=f"{ref} ({mpn}): Power IC has no power_pins or power_reqs defined",
                     suggestion="Add power pin definitions to enable power budget analysis",
+                    observed_value="0 count",
                 )
             )
 
@@ -815,26 +1063,27 @@ def _validate_thermal_limits(components: list[ComponentDef]) -> list[ValidationI
                 tj = comp_result.get("tj_calculated", 0)
                 tj_max = comp_result.get("tj_max", 0)
                 issues.append(
-                    ValidationIssue(
-                        code="thermal-limits",
-                        level="error",
-                        ref=ref,
-                        mpn="",
+                    _issue(
+                        _find_comp(components, ref),
+                        "thermal-limits",
+                        severity="blocker",
+                        detection_confidence="single_source",
                         message=f"{ref}: Calculated Tj={tj:.0f}C exceeds Tj_max={tj_max:.0f}C",
                         suggestion=comp_result.get("suggestion", "Add heatsink or increase copper area"),
+                        observed_value=f"{float(tj):.1f} C",
                     )
                 )
             elif comp_result.get("status") == "warning":
                 ref = comp_result.get("ref", "")
                 margin = comp_result.get("margin_c", 0)
                 issues.append(
-                    ValidationIssue(
-                        code="thermal-limits",
-                        level="warning",
-                        ref=ref,
-                        mpn="",
+                    _issue(
+                        _find_comp(components, ref),
+                        "thermal-limits",
+                        severity="major",
                         message=f"{ref}: Thermal margin only {margin:.0f}C",
                         suggestion=comp_result.get("suggestion", "Consider additional copper area"),
+                        observed_value=f"{float(margin):.1f} C",
                     )
                 )
     except Exception:
@@ -858,13 +1107,12 @@ def _validate_signal_integrity(components: list[ComponentDef]) -> list[Validatio
             bus_type = constraint.get("bus_type", "")
             if constraint.get("status") == "missing_termination":
                 issues.append(
-                    ValidationIssue(
-                        code="signal-integrity",
-                        level="warning",
-                        ref=constraint.get("ref", ""),
-                        mpn="",
+                    _issue(
+                        _find_comp(components, str(constraint.get("ref", ""))),
+                        "signal-integrity",
                         message=f"{bus_type}: Missing termination or impedance matching",
                         suggestion=f"Add appropriate termination for {bus_type}",
+                        observed_value="0 count",
                     )
                 )
     except Exception:
@@ -878,37 +1126,29 @@ def _validate_pin_mapping_integrity(components: list[ComponentDef]) -> list[Vali
     issues: list[ValidationIssue] = []
     for comp in components:
         pin_numbers = [pin.number for pin in comp.pins]
-        valid_pin_numbers = {
-            number for number in pin_numbers if isinstance(number, str) and number.strip()
-        }
+        valid_pin_numbers = {number for number in pin_numbers if isinstance(number, str) and number.strip()}
 
         malformed_defs = sorted(
-            repr(number)
-            for number in pin_numbers
-            if not isinstance(number, str) or not number.strip()
+            repr(number) for number in pin_numbers if not isinstance(number, str) or not number.strip()
         )
         if malformed_defs:
             issues.append(
                 _issue(
                     comp,
                     "pin-mapping-integrity",
-                    "Pin definitions contain empty or non-string identifiers: "
-                    + ", ".join(malformed_defs),
-                    level="error",
+                    "Pin definitions contain empty or non-string identifiers: " + ", ".join(malformed_defs),
+                    severity="blocker",
                 )
             )
 
-        duplicate_defs = sorted(
-            {number for number in valid_pin_numbers if pin_numbers.count(number) > 1}
-        )
+        duplicate_defs = sorted({number for number in valid_pin_numbers if pin_numbers.count(number) > 1})
         if duplicate_defs:
             issues.append(
                 _issue(
                     comp,
                     "pin-mapping-integrity",
-                    "Pin definitions contain duplicate identifiers: "
-                    + ", ".join(duplicate_defs),
-                    level="error",
+                    "Pin definitions contain duplicate identifiers: " + ", ".join(duplicate_defs),
+                    severity="blocker",
                 )
             )
 
@@ -917,40 +1157,30 @@ def _validate_pin_mapping_integrity(components: list[ComponentDef]) -> list[Vali
         nc_keys = set(comp.explicit_no_connects)
         all_mapping_keys = signal_keys | power_keys | nc_keys
 
-        malformed_keys = sorted(
-            repr(pin)
-            for pin in all_mapping_keys
-            if not isinstance(pin, str) or not pin.strip()
-        )
+        malformed_keys = sorted(repr(pin) for pin in all_mapping_keys if not isinstance(pin, str) or not pin.strip())
         if malformed_keys:
             issues.append(
                 _issue(
                     comp,
                     "pin-mapping-integrity",
-                    "Mappings contain empty or non-string pin identifiers: "
-                    + ", ".join(malformed_keys),
-                    level="error",
+                    "Mappings contain empty or non-string pin identifiers: " + ", ".join(malformed_keys),
+                    severity="blocker",
                 )
             )
 
         empty_signal_nets = sorted(
-            str(pin)
-            for pin, net in comp.pin_nets.items()
-            if not isinstance(net, str) or not net.strip()
+            str(pin) for pin, net in comp.pin_nets.items() if not isinstance(net, str) or not net.strip()
         )
         empty_power_nets = sorted(
-            str(pin)
-            for pin, net in comp.power_pins.items()
-            if not isinstance(net, str) or not net.strip()
+            str(pin) for pin, net in comp.power_pins.items() if not isinstance(net, str) or not net.strip()
         )
         if empty_signal_nets:
             issues.append(
                 _issue(
                     comp,
                     "pin-mapping-integrity",
-                    "Signal mappings have empty net names on pins: "
-                    + ", ".join(empty_signal_nets),
-                    level="error",
+                    "Signal mappings have empty net names on pins: " + ", ".join(empty_signal_nets),
+                    severity="blocker",
                 )
             )
         if empty_power_nets:
@@ -958,9 +1188,8 @@ def _validate_pin_mapping_integrity(components: list[ComponentDef]) -> list[Vali
                 _issue(
                     comp,
                     "pin-mapping-integrity",
-                    "Power mappings have empty net names on pins: "
-                    + ", ".join(empty_power_nets),
-                    level="error",
+                    "Power mappings have empty net names on pins: " + ", ".join(empty_power_nets),
+                    severity="blocker",
                 )
             )
 
@@ -970,9 +1199,8 @@ def _validate_pin_mapping_integrity(components: list[ComponentDef]) -> list[Vali
                 _issue(
                     comp,
                     "pin-mapping-integrity",
-                    "Pins are mapped as both signal and power: "
-                    + ", ".join(signal_and_power),
-                    level="error",
+                    "Pins are mapped as both signal and power: " + ", ".join(signal_and_power),
+                    severity="blocker",
                 )
             )
 
@@ -982,9 +1210,8 @@ def _validate_pin_mapping_integrity(components: list[ComponentDef]) -> list[Vali
                 _issue(
                     comp,
                     "pin-mapping-integrity",
-                    "Pins are both mapped and explicitly no-connect: "
-                    + ", ".join(mapped_and_nc),
-                    level="error",
+                    "Pins are both mapped and explicitly no-connect: " + ", ".join(mapped_and_nc),
+                    severity="blocker",
                 )
             )
 
@@ -999,9 +1226,8 @@ def _validate_pin_mapping_integrity(components: list[ComponentDef]) -> list[Vali
                     _issue(
                         comp,
                         "pin-mapping-integrity",
-                        "Mapped pins are absent from the component pin definitions: "
-                        + ", ".join(missing),
-                        level="error",
+                        "Mapped pins are absent from the component pin definitions: " + ", ".join(missing),
+                        severity="blocker",
                     )
                 )
 
@@ -1034,11 +1260,13 @@ def run_validation_checks(components: list[ComponentDef]) -> list[ValidationChec
         issues = tuple(check(components))
         if not issues:
             status = "PASS"
-        elif any(issue.level.lower() == "error" for issue in issues):
+        elif any(issue.is_confirmed_blocker for issue in issues):
             status = "FAIL"
         else:
             status = "WARN"
         results.append(ValidationCheckResult(code=code, label=label, status=status, issues=issues))
+
+    results = _attach_raw_validation_evidence(results)
 
     # Log aggregate results to design.log
     from .logging_bridge import get_design_logger
@@ -1050,7 +1278,7 @@ def run_validation_checks(components: list[ComponentDef]) -> list[ValidationChec
         warning_msgs = []
         for r in results:
             for issue in r.issues:
-                if issue.level.lower() == "error":
+                if issue.is_confirmed_blocker:
                     error_msgs.append(f"[{r.code}] {issue.message}")
                 else:
                     warning_msgs.append(f"[{r.code}] {issue.message}")
@@ -1065,6 +1293,47 @@ def run_validation_checks(components: list[ComponentDef]) -> list[ValidationChec
         )
 
     return results
+
+
+def _attach_raw_validation_evidence(results: list[ValidationCheckResult]) -> list[ValidationCheckResult]:
+    """Attach deterministic, resolvable tool-result evidence to raw findings.
+
+    ``validate_design`` emits an aggregate ledger later; this companion ledger
+    keeps ``run_validation_checks`` and ``validate_circuit`` equally safe for
+    direct library users without inventing any datasheet fact.
+    """
+
+    from .evidence import EvidenceLedger, EvidenceSource
+
+    ledger = EvidenceLedger()
+    source = EvidenceSource(doc_id="circuit-weaver-validator", extraction_method="raw-validation")
+    materialized: list[ValidationCheckResult] = []
+    for result in results:
+        issues: list[ValidationIssue] = []
+        records: list[object] = []
+        for issue in result.issues:
+            subject = issue.ref or issue.mpn
+            if issue.rule_id and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", subject):
+                subject_ref = f"calc:{issue.rule_id}@{subject}"
+            else:
+                subject_ref = "tool:circuit-weaver-validator"
+            evidence_id = ledger.record(
+                subject_ref=subject_ref,
+                claim=(
+                    f"{issue.rule_id or issue.code}:{issue.code}:{issue.severity}:{issue.detection_confidence}:"
+                    f"message_sha256={sha256(issue.message.encode('utf-8')).hexdigest()}"
+                ),
+                kind="tool_result",
+                source=EvidenceSource(**{**asdict(source), "extraction_method": result.code}),
+                confidence="single_source",
+                freshness="current",
+            )
+            issues.append(replace(issue, evidence_ids=tuple(sorted(set(issue.evidence_ids) | {evidence_id}))))
+            record = ledger.get(evidence_id)
+            if record is not None:
+                records.append(record)
+        materialized.append(replace(result, issues=tuple(issues), evidence_records=tuple(records)))
+    return materialized
 
 
 def validate_circuit(components: list[ComponentDef]) -> list[ValidationIssue]:

@@ -1,0 +1,1 @@
+{"benchmark_intent":{"domain":"passives","polarity":"negative"},"passive_synthesis":{"operation":"bounded_fallback","target":"param:U1.passive.cap","inputs":{"value":1.05e-7,"minimum":1e-7,"maximum":1.05e-7,"unit":"F","series":"E24","direction":"up"}}}

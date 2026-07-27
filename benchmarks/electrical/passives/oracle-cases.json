@@ -1,0 +1,96 @@
+{
+  "schema_version": "circuit-weaver-passive-oracle/v1",
+  "authoring_source": "independent_reference",
+  "cases": [
+    {
+      "id": "buck-feedback-3v3",
+      "family": "buck",
+      "operation": "feedback_divider",
+      "provenance": {"source_type": "hand-reviewed-first-principles", "source_ref": "Vout=Vref*(1+Rtop/Rbottom)", "license": "CC0-1.0", "rationale": "3.3 V output from 0.8 V reference with nominal 10 kohm bottom; fixed E96 pair reviewed independently."},
+      "inputs": {"target_vout_v": 3.3, "vref_v": 0.8, "bottom_ohm": 10000.0, "series": "E96", "max_scale_factor": 2.0},
+      "expected": {"raw_top_ohm": 31250.0, "chosen_top_ohm": 35700.0, "chosen_bottom_ohm": 11500.0, "realized_vout_v": 3.2834782608695656, "absolute_tolerance_v": 1e-12},
+      "producer_integration": {"status": "verified", "reason": "The AP62300 producer emits this joint E96 pair with retained calculation evidence and zero feedback-validator findings."}
+    },
+    {
+      "id": "boost-feedback-5v0",
+      "family": "boost",
+      "operation": "feedback_divider",
+      "provenance": {"source_type": "hand-reviewed-first-principles", "source_ref": "Vout=Vref*(1+Rtop/Rbottom)", "license": "CC0-1.0", "rationale": "5.0 V output from 1.2 V reference with 10 kohm bottom; 47.5 kohm/15.0 kohm is an exact E96 ratio."},
+      "inputs": {"target_vout_v": 5.0, "vref_v": 1.2, "bottom_ohm": 10000.0, "series": "E96", "max_scale_factor": 2.0},
+      "expected": {"raw_top_ohm": 31666.666666666668, "chosen_top_ohm": 47500.0, "chosen_bottom_ohm": 15000.0, "realized_vout_v": 5.0, "absolute_tolerance_v": 1e-12},
+      "producer_integration": {"status": "verified", "reason": "The boost producer emits this joint E96 pair from the reviewed inputs with retained evidence and zero feedback-validator findings."}
+    },
+    {
+      "id": "buck-output-cap-22uf",
+      "family": "buck",
+      "operation": "datasheet_scalar",
+      "provenance": {"source_type": "hand-reviewed-datasheet-example", "source_ref": "generic buck reference design output-cap recommendation", "license": "CC0-1.0", "rationale": "The oracle fixes the reviewed recommendation at 22 uF and does not infer a universal default."},
+      "inputs": {"value": 0.000022, "unit": "F", "evidence_id": "EV-DATASHEET-aaaaaaaaaaaa"},
+      "expected": {"chosen_value": 0.000022, "policy": "datasheet", "confidence": "single_source", "absolute_tolerance": 1e-18},
+      "producer_integration": {"status": "verified", "reason": "The normalized datasheet recommendation producer retains exact 22 uF bulk selections with datasheet and calculation evidence."}
+    },
+    {
+      "id": "ldo-minimum-cap-1p04uf",
+      "family": "ldo",
+      "operation": "ldo_minimum_capacitor",
+      "provenance": {"source_type": "hand-reviewed-datasheet-limit", "source_ref": "generic LDO stable-output minimum capacitance", "license": "CC0-1.0", "rationale": "A 1.04 uF minimum rounds upward to 1.1 uF in E24, leaving 60 nF headroom."},
+      "inputs": {"minimum_capacitance_f": 0.00000104, "series": "E24", "evidence_id": "EV-DATASHEET-aaaaaaaaaaaa"},
+      "expected": {"chosen_capacitance_f": 0.0000011, "headroom_f": 0.00000006, "absolute_tolerance_f": 1e-18},
+      "producer_integration": {"status": "verified", "reason": "The LDO producer consumes datasheet minimum capacitance, rounds upward to E24, and retains the calculation and source evidence."}
+    },
+    {
+      "id": "crystal-load-12pf",
+      "family": "crystal",
+      "operation": "crystal_load",
+      "provenance": {"source_type": "hand-reviewed-first-principles", "source_ref": "Cext=2*(CL-Cstray)", "license": "CC0-1.0", "rationale": "12 pF specified load and 4 pF stray require two 16 pF external capacitors; effective load returns 12 pF."},
+      "inputs": {"load_capacitance_f": 1.2e-11, "stray_capacitance_f": 4e-12, "series": "E24", "direction": "up"},
+      "expected": {"raw_external_cap_f": 1.6e-11, "chosen_external_cap_f": 1.8e-11, "effective_load_f": 1.3e-11, "absolute_tolerance_f": 1e-22},
+      "producer_integration": {"status": "verified", "reason": "The crystal producer applies the same equation, safe-up E24 policy, retained evidence, and zero crystal-validator findings."}
+    },
+    {
+      "id": "usb-c-rd-5k1",
+      "family": "usb",
+      "operation": "termination",
+      "provenance": {"source_type": "hand-reviewed-interface-target", "source_ref": "USB Type-C sink Rd nominal example", "license": "CC0-1.0", "rationale": "A USB-C sink advertises the default-current attachment with a nominal 5.1 kohm CC pull-down, which is exact in E24."},
+      "inputs": {"impedance_ohm": 5100.0, "series": "E24"},
+      "expected": {"chosen_ohm": 5100.0, "absolute_tolerance_ohm": 1e-9},
+      "producer_integration": {"status": "verified", "reason": "The USB-C producer emits both Rd legs as bounded 5.1 kohm E24 selections with retained heuristic calculation evidence."}
+    },
+    {
+      "id": "can-termination-120ohm",
+      "family": "can",
+      "operation": "termination",
+      "provenance": {"source_type": "hand-reviewed-interface-target", "source_ref": "ISO 11898 nominal termination example", "license": "CC0-1.0", "rationale": "The nominal 120 ohm CAN termination is an exact E24 value."},
+      "inputs": {"impedance_ohm": 120.0, "series": "E24"},
+      "expected": {"chosen_ohm": 120.0, "absolute_tolerance_ohm": 1e-12},
+      "producer_integration": {"status": "verified", "reason": "The CAN producer emits a traced split-termination pair whose realized total remains within one percent of the reviewed 120 ohm target."}
+    },
+    {
+      "id": "rs485-termination-120ohm",
+      "family": "rs485",
+      "operation": "termination",
+      "provenance": {"source_type": "hand-reviewed-interface-target", "source_ref": "TIA/EIA-485 nominal termination example", "license": "CC0-1.0", "rationale": "The nominal 120 ohm RS-485 termination is retained exactly in E24."},
+      "inputs": {"impedance_ohm": 120.0, "series": "E24"},
+      "expected": {"chosen_ohm": 120.0, "absolute_tolerance_ohm": 1e-12},
+      "producer_integration": {"status": "verified", "reason": "The RS-485 producer emits the exact E24 120 ohm termination with retained equation evidence."}
+    },
+    {
+      "id": "analog-rc-1k-100nf",
+      "family": "analog",
+      "operation": "rc_cutoff",
+      "provenance": {"source_type": "hand-reviewed-first-principles", "source_ref": "fc=1/(2*pi*R*C)", "license": "CC0-1.0", "rationale": "1 kohm and 100 nF yield a fixed independently reviewed cutoff of 1591.5494309189535 Hz."},
+      "inputs": {"resistance_ohm": 1000.0, "capacitance_f": 1e-7},
+      "expected": {"cutoff_hz": 1591.5494309189535, "absolute_tolerance_hz": 1e-9},
+      "producer_integration": {"status": "verified", "reason": "The ADC analog-front-end producer emits the reviewed 1 kohm/100 nF filter network with retained evidence and zero cutoff-validator findings."}
+    },
+    {
+      "id": "ldo-fallback-snaps-out-of-range",
+      "family": "ldo",
+      "operation": "bounded_fallback_adverse",
+      "provenance": {"source_type": "hand-reviewed-boundary-case", "source_ref": "E24 upward rounding boundary", "license": "CC0-1.0", "rationale": "105 nF rounded upward becomes 110 nF, exceeding the declared 105 nF maximum and requiring pre-emission withholding."},
+      "inputs": {"value": 1.05e-7, "minimum": 1e-7, "maximum": 1.05e-7, "unit": "F", "series": "E24", "direction": "up"},
+      "expected": {"finding_rule_id": "CW-PSV-002", "selection_eligible": false},
+      "producer_integration": {"status": "verified", "reason": "The LDO producer applies the same bounded fallback gate and refuses an out-of-range capacitance before constructing the passive network."}
+    }
+  ]
+}

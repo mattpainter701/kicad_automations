@@ -183,6 +183,21 @@ class TestGenerateConfidenceReport:
         import json
         json.dumps(d)
 
+    def test_collects_validation_evidence_for_electrical_section_and_report(self):
+        class EvidenceValidationReport:
+            def to_dict(self):
+                return {
+                    "categories": {"electrical": [{"level": "warning", "evidence_ids": ["EV-USER-1"]}]},
+                    "evidence_ids": ["EV-CALC-2"],
+                    "evidence_manifest": "evidence_manifest.json",
+                }
+
+        report = generate_confidence_report(validation_report=EvidenceValidationReport())
+
+        assert report.evidence_ids == ["EV-CALC-2", "EV-USER-1"]
+        assert report.evidence_manifest == "evidence_manifest.json"
+        assert report.sections["electrical"].evidence_ids == ["EV-CALC-2", "EV-USER-1"]
+
     def test_to_terminal(self):
         report = generate_confidence_report(
             project="TestProject",

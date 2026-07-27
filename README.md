@@ -31,6 +31,62 @@ Every path through Circuit Weaver follows the same contract: **describe the desi
 
 ---
 
+<!-- capability-registry:start -->
+## Capability Contract
+
+This table is generated from the checked-in capability registry. Regenerate it with `python scripts/gen_capability_docs.py`; do not edit it by hand.
+
+Verification is conservative: a capability only claims the evidence level its public path actually verifies. **not applicable** means an operational capability makes no design-artifact verification claim; it is not a lower verification level.
+
+| CLI capability | Maturity | Public surfaces | Verification contract | Evidence | Since |
+|---|---|---|---|---|---|
+| `validate` | beta | CLI: `validate`; Python: `circuit_weaver.dispatcher:validate_design`; HTTP: `POST /validate; POST /mvp/validate`; MCP: `validate_design`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `apply-patch` | beta | CLI: `apply-patch`; Python: `circuit_weaver.dispatcher:apply_design_patch`; HTTP: `POST /mvp/apply-patch` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `generate` | experimental | CLI: `generate`; Python: `circuit_weaver.dispatcher:generate_artifacts`; HTTP: `POST /generate; POST /mvp/generate`; MCP: `generate_artifacts`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse`, `kicad-load`, `erc` | 0.32.1 |
+| `review-report` | experimental | CLI: `review-report`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `diff` | beta | CLI: `diff`; Python: `circuit_weaver.dispatcher:diff_designs`; HTTP: `POST /mvp/diff` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `ingest-pcb-feedback` | beta | CLI: `ingest-pcb-feedback`; Python: `circuit_weaver.dispatcher:ingest_pcb_feedback`; HTTP: `POST /mvp/pcb-feedback` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `import-placement` | review_only | CLI: `import-placement`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `list-templates` | beta | CLI: `list-templates`; HTTP: `GET /templates` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `scaffold` | beta | CLI: `scaffold`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `register-ic` | experimental | CLI: `register-ic` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `export-jlcpcb` | review_only | CLI: `export-jlcpcb`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `export-gerbers` | review_only | CLI: `export-gerbers`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `cost-bom` | experimental | CLI: `cost-bom`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `import-design` | experimental | CLI: `import-design`; Python: `circuit_weaver.design_import:import_design`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `analyze-design` | experimental | CLI: `analyze-design`; Python: `circuit_weaver.design_import:analyze_design`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `status` | beta | CLI: `status`; Python: `circuit_weaver.project_state:get_project_state_summary`; Skill: `circuit-weaver` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `resume` | experimental | CLI: `resume`; Python: `circuit_weaver.project_state:resume_project`; Skill: `circuit-weaver` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `design-wizard` | experimental | CLI: `design-wizard`; Skill: `design-wizard` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `log-status` | beta | CLI: `log-status` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `log-view` | beta | CLI: `log-view` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `autoroute` | review_only | CLI: `autoroute`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `external-tool`, `user-supplied` | 0.32.1 |
+| `install-skills` | experimental | CLI: `install-skills` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `schema` | beta | CLI: `schema` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `harvest-specs` | experimental | CLI: `harvest-specs` | `static-parse` → `static-parse` | `command-contract`, `external-tool` | 0.32.1 |
+| `extract-specs` | experimental | CLI: `extract-specs` | `static-parse` → `static-parse` | `command-contract`, `user-supplied` | 0.32.1 |
+| `fetch-spice` | experimental | CLI: `fetch-spice` | `static-parse` → `static-parse` | `command-contract`, `external-tool` | 0.32.1 |
+| `cache` | beta | CLI: `cache` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `cache stats` | beta | CLI: `cache stats` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `cache clear` | review_only | CLI: `cache clear` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `optimize-placement` | review_only | CLI: `optimize-placement`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `placement-viewer` | review_only | CLI: `placement-viewer`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `si-constraints` | experimental | CLI: `si-constraints` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `thermal-analysis` | experimental | CLI: `thermal-analysis` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `export-dual-cpl` | review_only | CLI: `export-dual-cpl` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `panelize` | experimental | CLI: `panelize` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `design-enclosure` | experimental | CLI: `design-enclosure` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `check-dfm` | review_only | CLI: `check-dfm` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `generate-docs` | experimental | CLI: `generate-docs` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `erc` | review_only | CLI: `erc` | `kicad-load` → `erc` | `command-contract`, `kicad-load`, `erc` | 0.32.1 |
+| `doctor` | beta | CLI: `doctor` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `confidence` | review_only | CLI: `confidence`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `simulate` | experimental | CLI: `simulate`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `discover` | beta | CLI: `discover`; MCP: `discover_projects`; Skill: `circuit-weaver` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `save-research` | experimental | CLI: `save-research`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `log-event` | beta | CLI: `log-event` | not applicable (operational) | `command-contract` | 0.32.1 |
+<!-- capability-registry:end -->
+
 ## Quick Start
 
 **Step 1 — Install**
@@ -128,6 +184,7 @@ A successful default `generate` run produces a complete artifact bundle
 | Markdown design report | `{project}_report.md` | Validation results, component summary, and design notes |
 | Placement review | `placement_result.json`, `placement_review_context.json`, `placement.svg`, `placement_editor.html` | Exhaustive, reference-reconciled heuristic proposal with review blockers and official-reference context; never fabrication data |
 | Assembly inventory | `assembly_manifest.json` | Stable physical-part references, including generated support passives |
+| Evidence ledger | `evidence_manifest.json` | Stable component, pinout, footprint, parameter, finding, tool, and verification provenance IDs |
 | Canonical spec and IR | `canonical_spec.yaml`, `design_ir.json` | Normalized source of truth and generated design IR |
 | Validation evidence | `validation_report.json`, `placement_readiness.json` | Machine-readable release/readiness checks |
 | Artifact inventory | `artifact_manifest.json` | Portable relative paths, verification state, kinds, and sizes for every generated artifact |
@@ -384,6 +441,7 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 | Endpoint | Method | Description |
 |-|-|-|
 | `/health` | GET | Service health |
+| `/capabilities` | GET | Machine-readable capability maturity and verification contract |
 | `/templates` | GET | Available subcircuit templates |
 | `/generate` | POST | YAML spec → ZIP of `.kicad_sch` + report |
 | `/validate` | POST | YAML spec → validation JSON |
@@ -394,7 +452,20 @@ uvicorn circuit_weaver.api:app --host 0.0.0.0 --port 5000
 
 ---
 
-## What's New in v0.32.0
+## What's New in v0.33.0
+
+Circuit Weaver `v0.33.0` makes electrical recommendations measurable and traceable instead of relying on silent universal defaults.
+
+| Area | Improvement |
+|-|-|
+| Evidence-backed passives | Shared versioned equations, explicit datasheet/equation/bounded-fallback precedence, declared E-series policy, and retained `CALC-*` evidence for critical support networks. |
+| Fail-closed synthesis | Invalid or unsupported regulator, crystal, reset, USB-C, CAN/RS-485, and analog support values are withheld under `CW-PSV-*` findings before emission. |
+| Typed power accuracy | Rail limits, direction, current envelopes, sequencing, tolerance, and provenance flow through ingest, validation, reports, placement context, and repair. |
+| Identity safety | Exact MPN/package, symbol pin, footprint pad, and two-source reconciliation block physical CPL handoff when identity or pin-to-pad coverage is ambiguous. |
+| Calibrated validation | Severity is separate from detection confidence; actionable findings name the constraint, observation, evidence, and safest next action. |
+| Published scorecard | A 40-fixture benchmark covers 33 emitted/contract rule IDs—14 scored and 19 explicitly unsupported—with supported precision/recall at 1.000/1.000. |
+
+<details><summary>v0.32.0</summary>
 
 Circuit Weaver `v0.32.0` is an integrity and compatibility release for agent workflows and programmatic users.
 
@@ -409,6 +480,8 @@ Circuit Weaver `v0.32.0` is an integrity and compatibility release for agent wor
 | Agent workflows | Portable kebab-case skills, narrower triggers, provenance-aware upgrades, and aligned Codex, Claude, and OpenCode installation paths. |
 | Programmatic compatibility | Restored legacy imports and deprecated aliases, strict YAML parsing, exhaustive artifact inventory, and real placement SVG data. |
 | Release reliability | Python 3.10-3.14, blocking Windows coverage, exact-wheel tests, live MCP tests, and KiCad 8/9/10 generation and ERC gates before PyPI publication. |
+
+</details>
 
 <details><summary>v0.31.0</summary>
 

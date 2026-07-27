@@ -1,0 +1,1 @@
+{"project":"benchmark_usb_positive","spec_version":"mvp_ir_v1","blocks":[{"id":"usb:J1","section":"connectors","kind":"component","ref":"J1","ic":"USB-C-PWR","params":{"vbus_net":"VBUS_5V","cc1_pull_down_ohms":5100,"cc2_pull_down_ohms":5100}}],"benchmark_intent":{"domain":"usb","polarity":"positive","scenario":"A USB-C sink declares both CC pull-downs and a VBUS net."}}

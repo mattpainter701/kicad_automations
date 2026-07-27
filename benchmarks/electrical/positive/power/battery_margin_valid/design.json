@@ -1,0 +1,7 @@
+{
+  "project": "benchmark_power_battery_margin_valid",
+  "spec_version": "mvp_ir_v1",
+  "power_domains": [{"net": "VBAT", "v_min": 3.01, "v_nominal": 3.7, "v_max": 4.2, "direction": "source", "i_steady_ma": 400, "i_peak_ma": 700, "sequence_order": 1, "evidence_id": "EV-DATASHEET-777777777777"}],
+  "blocks": [{"id": "power:U1", "section": "power", "kind": "component", "ref": "U1", "ic": "PINHDR-1x08-2.54", "params": {"power_reqs": [{"net": "VBAT", "v_min": 3.0, "v_nominal": 3.7, "v_max": 4.3, "direction": "load", "i_steady_ma": 240, "i_peak_ma": 500, "sequence_order": 2, "sequence_dependency": "VBAT", "tolerance": 0.05, "evidence_id": "EV-DATASHEET-888888888888"}]}}],
+  "benchmark_intent": {"domain": "power", "polarity": "positive", "scenario": "A battery-powered load retains a 10 mV brownout margin at the minimum battery voltage."}
+}

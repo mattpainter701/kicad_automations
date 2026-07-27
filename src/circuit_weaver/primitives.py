@@ -1423,10 +1423,13 @@ def _extract_wire_start(wire_str: str) -> str:
 
 
 def sheet_title_text(title, description="", x=20, y=15):
-    """Generate title banner text above sheet content."""
-    x = max(snap(ANNOTATION_MARGIN_X), snap(x))
-    y = snap(y)
+    """Generate a title banner that keeps centered text inside the left margin."""
     title, description = sexpr_safe(title), sexpr_safe(description)
+    # KiCad centers bare text on its ``at`` coordinate.  Keep half the
+    # estimated title width to the left of that coordinate so a long project
+    # name cannot protrude past the page boundary.
+    x = max(snap(x), snap(ANNOTATION_MARGIN_X + text_width_mm(title, 3.0) / 2.0))
+    y = snap(y)
     lines = []
     lines.append(f'  (text "{title}" (at {x:.2f} {y:.2f} 0)')
     lines.append("    (effects (font (size 3.0 3.0) bold))")

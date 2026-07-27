@@ -1,0 +1,1 @@
+{"project":"benchmark_uart_positive","spec_version":"mvp_ir_v1","blocks":[{"id":"interfaces:J1","section":"interfaces","kind":"component","ref":"J1","ic":"UART_HEADER","params":{"tx_net":"UART_TX","rx_net":"UART_RX"}}],"benchmark_intent":{"domain":"uart","polarity":"positive","scenario":"A UART interface declares paired TX and RX nets."}}

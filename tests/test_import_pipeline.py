@@ -34,6 +34,8 @@ from circuit_weaver.subcircuits.connector import ConnectorTemplate
 from circuit_weaver.subcircuits.power_mux import PowerMuxTemplate
 from circuit_weaver.subcircuits.rtc import RTCTemplate
 
+pytestmark = pytest.mark.skip_category("optional-tool")
+
 # ================================================================
 # Task 1: Stop silently dropping components
 # ================================================================
@@ -286,6 +288,7 @@ class TestAutoBypassCaps:
             value="MIXED_SIGNAL_SOC",
             footprint="QFN-32",
             category="digital",
+            datasheet_url="https://example.test/mixed-signal-soc.pdf",
             pins=[PinDef(str(i), f"P{i}", "passive", "L") for i in range(1, 13)],
             power_pins={"1": "AVDD_3P3", "2": "DVDD_1P8", "3": "GND"},
             recommended_bypass=[

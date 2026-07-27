@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .design_docs import _generate_bom_table, _generate_power_budget
 from .design_ir import DesignBlock, DesignIR
@@ -50,6 +50,8 @@ def generate_review_report_html(
     kicad_pcb_path: str | Path | None = None,
     erc_result: Any = None,
     log_entries: list[dict] | None = None,
+    evidence_manifest: str | Path | None = None,
+    evidence_ids: Iterable[str] | None = None,
 ) -> Path:
     """Generate comprehensive HTML design review report.
 
@@ -57,6 +59,8 @@ def generate_review_report_html(
         design_ir: Compiled DesignIR object
         output_path: Path to write HTML report
         kicad_pcb_path: Optional path to .kicad_pcb file for DFM analysis
+        evidence_manifest: output-relative path to the evidence ledger, if available
+        evidence_ids: evidence IDs referenced by the report, if available
 
     Returns:
         Path to generated HTML file
@@ -112,6 +116,7 @@ def generate_review_report_html(
         _generate_checklist(),
         _generate_scoring_breakdown(score_result),
         _generate_erc_section(erc_result),
+        _generate_evidence_traceability_section(evidence_manifest, evidence_ids),
         _generate_rationale_section(design_ir, log_entries),
         _generate_dfm_section(dfm_violations),
         _generate_bom_section(bom_table),
@@ -127,6 +132,32 @@ def generate_review_report_html(
     output_path.write_text(html_content, encoding="utf-8")
 
     return output_path
+
+
+def _generate_evidence_traceability_section(
+    evidence_manifest: str | Path | None,
+    evidence_ids: Iterable[str] | None,
+) -> str:
+    """Render only portable evidence links and IDs; do not infer provenance."""
+
+    manifest_reference = ""
+    if evidence_manifest is not None:
+        manifest_path = Path(evidence_manifest)
+        if manifest_path.is_absolute() or ".." in manifest_path.parts:
+            raise ValueError("evidence_manifest must be an output-relative path")
+        manifest_reference = manifest_path.as_posix()
+    ids = sorted({evidence_id for evidence_id in (evidence_ids or []) if isinstance(evidence_id, str)})
+    if not manifest_reference and not ids:
+        return ""
+    rows = ['<section class="report-section"><h2>Evidence Traceability</h2>']
+    if manifest_reference:
+        escaped = _html_escape(manifest_reference)
+        rows.append(f'<p>Evidence manifest: <a href="{escaped}">{escaped}</a></p>')
+    if ids:
+        rendered_ids = ", ".join(f"<code>{_html_escape(evidence_id)}</code>" for evidence_id in ids)
+        rows.append("<p>Referenced evidence IDs: " + rendered_ids + "</p>")
+    rows.append("</section>")
+    return "\n".join(rows)
 
 
 def _generate_css() -> str:
@@ -657,6 +688,9 @@ def _generate_power_tree_section(power_budget: list) -> str:
           <th>Voltage (V)</th>
           <th>Current (mA)</th>
           <th>Power (W)</th>
+          <th>Direction</th>
+          <th>Operating envelope</th>
+          <th>Evidence</th>
         </tr>
       </thead>
       <tbody>
@@ -665,9 +699,12 @@ def _generate_power_tree_section(power_budget: list) -> str:
     for rail in power_budget:
         html += f"""        <tr>
           <td><strong>{_html_escape(rail.get("rail", ""))}</strong></td>
-          <td>{rail.get("voltage", 0):.2f}</td>
-          <td>{rail.get("current_ma", 0):.1f}</td>
-          <td>{rail.get("power_w", 0):.3f}</td>
+          <td>{_html_escape(_power_value(rail.get("voltage"), 2))}</td>
+          <td>{_html_escape(_power_value(rail.get("current_ma"), 1))}</td>
+          <td>{_html_escape(_power_value(rail.get("power_w"), 3))}</td>
+          <td>{_html_escape(str(rail.get("direction") or "—"))}</td>
+          <td>{_html_escape(_power_envelope_text(rail))}</td>
+          <td>{_html_escape(str(rail.get("evidence_id") or "—"))}</td>
         </tr>
 """
 
@@ -676,6 +713,31 @@ def _generate_power_tree_section(power_budget: list) -> str:
   </section>"""
 
     return html
+
+
+def _power_value(value: Any, decimals: int) -> str:
+    """Format a declared budget value without presenting unknown as zero."""
+    if isinstance(value, (int, float)):
+        return f"{value:.{decimals}f}"
+    return "—"
+
+
+def _power_envelope_text(rail: dict[str, Any]) -> str:
+    """Render typed limits compactly while leaving every absent value explicit."""
+    parts = [
+        f"Vmin={_power_value(rail.get('v_min'), 3)}",
+        f"Vnom={_power_value(rail.get('v_nominal'), 3)}",
+        f"Vmax={_power_value(rail.get('v_max'), 3)}",
+        f"Isteady={_power_value(rail.get('i_steady_ma'), 1)}",
+        f"Ipeak={_power_value(rail.get('i_peak_ma'), 1)}",
+    ]
+    if rail.get("sequence_order") is not None:
+        parts.append(f"order={rail['sequence_order']}")
+    if rail.get("sequence_dependency"):
+        parts.append(f"depends={rail['sequence_dependency']}")
+    if rail.get("tolerance") is not None:
+        parts.append(f"tolerance={rail['tolerance']}")
+    return "; ".join(parts)
 
 
 def _generate_recommendations(score_result: Any, dfm_violations: list) -> str:

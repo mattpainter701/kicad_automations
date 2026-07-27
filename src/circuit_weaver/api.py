@@ -6,6 +6,7 @@ Endpoints:
     POST /generate             — YAML project spec -> ZIP of .kicad_sch files + report
     POST /generate/from-bom    — CSV BOM upload -> ZIP of schematics
     GET  /templates            — available subcircuit template list
+    GET  /capabilities         — capability maturity and verification contract
     POST /validate             — YAML project spec -> validation results JSON
     POST /mvp/validate         — canonical/legacy design spec -> strict grouped validation
     POST /mvp/generate         — canonical/legacy design spec -> strict derived artifact ZIP
@@ -22,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import shutil
 import tempfile
@@ -172,7 +174,7 @@ def _generate_to_zip(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _validation_results_to_json(results: list[Any]) -> list[dict]:
+def _validation_results_to_json(results: list[Any], *, evidence_ledger: Any = None) -> list[dict]:
     """Convert ValidationCheckResult list to JSON-serializable dicts."""
     out = []
     for r in results:
@@ -183,11 +185,31 @@ def _validation_results_to_json(results: list[Any]) -> list[dict]:
                 "status": r.status,
                 "issues": [
                     {
-                        "code": issue.code,
-                        "level": issue.level,
-                        "ref": issue.ref,
-                        "mpn": issue.mpn,
-                        "message": issue.message,
+                        **issue.to_dict(),
+                        "evidence_ids": (
+                            sorted(
+                                {evidence_id for evidence_id in issue.evidence_ids if evidence_ledger.get(evidence_id)}
+                                | {
+                                    evidence_ledger.record(
+                                        subject_ref="tool:circuit-weaver-validator",
+                                        claim=(
+                                            f"{r.code}:{issue.code}:{issue.level}:"
+                                            f"{issue.ref or issue.mpn}:message_sha256="
+                                            f"{hashlib.sha256(str(issue.message).encode('utf-8')).hexdigest()}"
+                                        ),
+                                        kind="tool_result",
+                                        source={
+                                            "doc_id": "circuit-weaver-validator",
+                                            "extraction_method": r.code,
+                                        },
+                                        confidence="single_source",
+                                        freshness="current",
+                                    )
+                                }
+                            )
+                            if evidence_ledger is not None
+                            else list(issue.evidence_ids)
+                        ),
                     }
                     for issue in r.issues
                 ],
@@ -304,6 +326,13 @@ def create_app() -> Any:
     @app.get("/templates")
     async def templates():
         return _get_template_info()
+
+    @app.get("/capabilities")
+    async def capabilities():
+        """Return the capability contract shared with ``doctor --json``."""
+        from .capabilities import get_capability_registry
+
+        return get_capability_registry()
 
     @app.post("/generate")
     async def generate(
@@ -432,10 +461,40 @@ def create_app() -> Any:
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Failed to resolve project spec: {exc}")
 
+        from . import __version__
+        from .evidence import EvidenceLedger, collect_component_evidence
+
+        evidence_ledger = EvidenceLedger()
+        evidence_by_ref = collect_component_evidence(evidence_ledger, components)
+        validation_payload = _validation_results_to_json(
+            validation_results,
+            evidence_ledger=evidence_ledger,
+        )
+        tool_id = evidence_ledger.record(
+            subject_ref="tool:circuit-weaver",
+            claim=f"Circuit Weaver version is {__version__}",
+            kind="tool_result",
+            source={"doc_id": "circuit-weaver", "extraction_method": "package-version"},
+            confidence="verified",
+            freshness="current",
+        )
+        evidence_manifest = evidence_ledger.to_manifest()
+
         return {
             "project": metadata.get("project", "project"),
             "component_count": len(components),
-            "validation": _validation_results_to_json(validation_results),
+            "validation": validation_payload,
+            "evidence_ids": sorted(
+                {tool_id}
+                | {value for values in evidence_by_ref.values() for value in values}
+                | {
+                    evidence_id
+                    for result in validation_payload
+                    for issue in result["issues"]
+                    for evidence_id in issue["evidence_ids"]
+                }
+            ),
+            "evidence_manifest": evidence_manifest,
         }
 
     @app.post("/mvp/validate")

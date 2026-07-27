@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Circuit Weaver finding suppressions v1",
+  "type": "object",
+  "required": ["schema_version", "suppressions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "circuit-weaver-suppressions/v1"},
+    "suppressions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "rule_id", "scope", "owner", "reason", "created_at", "expires_at", "approved_by"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^SUP-[a-z0-9][a-z0-9-]{2,63}$"},
+          "rule_id": {"type": "string", "pattern": "^CW-[A-Z0-9]+-[0-9]{3}$"},
+          "scope": {"type": "object", "minProperties": 1, "maxProperties": 1, "additionalProperties": false, "properties": {"ref": {"type": "string", "minLength": 1, "pattern": "^[^*?\\[\\]]+$"}, "net": {"type": "string", "minLength": 1, "pattern": "^[^*?\\[\\]]+$"}, "design": {"type": "string", "minLength": 1, "pattern": "^[^*?\\[\\]]+$"}}},
+          "owner": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string", "format": "date-time"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "approved_by": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

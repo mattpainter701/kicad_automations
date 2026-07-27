@@ -11,7 +11,6 @@ Supports MCP4725A0T (default, I2C 12-bit) and DAC8552IDGK (SPI dual 16-bit).
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 from ..component_db import BypassCap, ComponentDef, StrapConfig
@@ -25,6 +24,7 @@ from .base import (
     cap_footprint,
     format_capacitance,
     format_resistance,
+    rc_capacitance_for_cutoff,
     rc_filter_cutoff,
     snap_cap,
     snap_to_e96,
@@ -181,7 +181,7 @@ class DACTemplate(SubcircuitTemplate):
         # fc = update_rate / 10 (one decade below update rate)
         fc_target = update_rate / 10.0
         r_filter = snap_to_e96(1000.0)  # 1k standard output series resistor
-        c_filter_raw = 1.0 / (2.0 * math.pi * r_filter * fc_target)
+        c_filter_raw = rc_capacitance_for_cutoff(r_filter, fc_target)
         c_filter = snap_cap(c_filter_raw)
         actual_fc = rc_filter_cutoff(r_filter, c_filter)
 
@@ -311,7 +311,7 @@ class DACTemplate(SubcircuitTemplate):
         # ---- Output RC filter calculation ----
         fc_target = update_rate / 10.0
         r_filter = snap_to_e96(1000.0)
-        c_filter_raw = 1.0 / (2.0 * math.pi * r_filter * fc_target)
+        c_filter_raw = rc_capacitance_for_cutoff(r_filter, fc_target)
         c_filter = snap_cap(c_filter_raw)
         actual_fc = rc_filter_cutoff(r_filter, c_filter)
 

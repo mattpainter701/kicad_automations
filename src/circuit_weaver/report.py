@@ -12,8 +12,30 @@ from __future__ import annotations
 
 import datetime
 from pathlib import Path
+from typing import Iterable
 
 from .component_db import ComponentDef
+
+
+def _evidence_traceability_section(evidence_manifest: str | Path | None, evidence_ids: Iterable[str] | None) -> str:
+    """Render portable evidence references without claiming missing provenance."""
+
+    manifest_reference = ""
+    if evidence_manifest is not None:
+        manifest_path = Path(evidence_manifest)
+        if manifest_path.is_absolute() or ".." in manifest_path.parts:
+            raise ValueError("evidence_manifest must be an output-relative path")
+        manifest_reference = manifest_path.as_posix()
+    ids = sorted({evidence_id for evidence_id in (evidence_ids or []) if isinstance(evidence_id, str)})
+    if not manifest_reference and not ids:
+        return ""
+    lines = ["## Evidence Traceability", ""]
+    if manifest_reference:
+        lines.append(f"- Evidence manifest: [`{manifest_reference}`]({manifest_reference})")
+    if ids:
+        lines.append("- Referenced evidence IDs: " + ", ".join(f"`{evidence_id}`" for evidence_id in ids))
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _power_tree_section(components: list[ComponentDef]) -> str:
@@ -29,11 +51,30 @@ def _power_tree_section(components: list[ComponentDef]) -> str:
     rail_sources: dict[str, list[str]] = {}  # rail -> source refs
     rail_sinks: dict[str, list[str]] = {}  # rail -> consumer refs
     power_rail_nets: set[str] = set()  # nets that qualify as rails
+    envelopes: dict[str, list[tuple[str, object]]] = {}
 
     def _add(bucket: dict[str, list[str]], net: str, ref: str) -> None:
         refs = bucket.setdefault(net, [])
         if ref not in refs:
             refs.append(ref)
+
+    def _field(item: object, *names: str) -> object | None:
+        for name in names:
+            value = getattr(item, name, None)
+            if value is not None:
+                return value
+        return None
+
+    def _text(value: object | None) -> str:
+        if value is None or value == "":
+            return "—"
+        if isinstance(value, float):
+            return f"{value:g}"
+        if isinstance(value, (tuple, list)):
+            return ", ".join(str(part) for part in value) or "—"
+        if isinstance(value, dict):
+            return ", ".join(f"{key}={value[key]}" for key in sorted(value)) or "—"
+        return str(value)
 
     for comp in components:
         ref = comp.source_ref or comp.mpn
@@ -66,6 +107,20 @@ def _power_tree_section(components: list[ComponentDef]) -> str:
             power_rail_nets.add(net)
             _add(rail_sources, net, ref)
 
+        # Typed requirements are additive to pin metadata. Missing envelope
+        # values remain unknown instead of being converted to nominal guesses.
+        for requirement in getattr(comp, "power_reqs", []) or []:
+            net = _field(requirement, "net", "rail", "name")
+            if not isinstance(net, str) or not net or net in ground_nets:
+                continue
+            power_rail_nets.add(net)
+            direction = str(_field(requirement, "direction") or "").lower()
+            if direction in {"source", "bidirectional"}:
+                _add(rail_sources, net, ref)
+            if direction in {"load", "bidirectional"}:
+                _add(rail_sinks, net, ref)
+            envelopes.setdefault(net, []).append((ref, requirement))
+
         # Decoupling on a rail marks the component as one of its consumers.
         for bc in comp.bypass_caps:
             if bc.net not in ground_nets and bc.net not in output_nets:
@@ -91,6 +146,47 @@ def _power_tree_section(components: list[ComponentDef]) -> str:
             sink_str = "(no consumers)"
         lines.append(f"  {src_str} -> [{rail}] -> {sink_str}")
     lines.append("```\n")
+    if envelopes:
+        lines.extend(
+            [
+                "### Operating Envelopes\n",
+                (
+                    "| Rail | Ref | Direction | Vmin (V) | Vnom (V) | Vmax (V) | Steady (mA) | "
+                    "Peak (mA) | Sequencing | Tolerance | Provenance |"
+                ),
+                "|-|-|-|-|-|-|-|-|-|-|-|",
+            ]
+        )
+        for rail in sorted(envelopes):
+            for ref, requirement in sorted(envelopes[rail], key=lambda item: item[0]):
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        [
+                            rail,
+                            ref,
+                            _text(_field(requirement, "direction")),
+                            _text(_field(requirement, "v_min", "voltage_min_v")),
+                            _text(_field(requirement, "v_nominal", "voltage", "voltage_nominal_v")),
+                            _text(_field(requirement, "v_max", "voltage_max_v")),
+                            _text(_field(requirement, "i_steady_ma", "steady_current_ma")),
+                            _text(_field(requirement, "i_peak_ma", "peak_current_ma", "max_current_ma")),
+                            _text(
+                                _field(
+                                    requirement,
+                                    "sequencing",
+                                    "sequence",
+                                    "sequence_order",
+                                    "sequence_dependency",
+                                )
+                            ),
+                            _text(_field(requirement, "tolerance")),
+                            _text(_field(requirement, "provenance", "evidence_id")),
+                        ]
+                    )
+                    + " |"
+                )
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -341,6 +437,8 @@ def generate_report(
     validation_results=None,
     output_path: str | Path = "design_report.md",
     metadata: dict | None = None,
+    evidence_manifest: str | Path | None = None,
+    evidence_ids: Iterable[str] | None = None,
 ) -> Path:
     """Generate a markdown design report.
 
@@ -349,6 +447,8 @@ def generate_report(
         validation_results: list of ValidationCheckResult from validator.py (optional)
         output_path: where to write the report
         metadata: dict with project/company/spec_path keys
+        evidence_manifest: output-relative path to the evidence ledger, if available
+        evidence_ids: evidence IDs referenced by the report, if available
 
     Returns: Path to the generated report file.
     """
@@ -378,6 +478,7 @@ def generate_report(
         sections.append(_validation_section(validation_results))
     if metadata.get("layout_quality"):
         sections.append(_layout_quality_section(metadata["layout_quality"]))
+    sections.append(_evidence_traceability_section(evidence_manifest, evidence_ids))
 
     try:
         from . import __version__ as _cw_version

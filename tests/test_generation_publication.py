@@ -14,6 +14,8 @@ from circuit_weaver.project_state import (
     record_generation_state,
 )
 
+pytestmark = pytest.mark.skip_category("platform")
+
 
 def _seed_owned_output(project: Path) -> tuple[Path, Path, Path, Path]:
     project.mkdir()
