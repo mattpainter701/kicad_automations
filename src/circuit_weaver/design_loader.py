@@ -33,9 +33,19 @@ _logger = logging.getLogger(__name__)
 
 _STANDARD_PROFILE = "standard"
 _POWER_NET_PREFIXES = (
-    "GND", "AGND", "DGND", "PGND",
-    "VDD", "VCC", "VBAT", "VBUS", "VIN", "VDDA",
-    "VSS", "MGT", "VCCO",
+    "GND",
+    "AGND",
+    "DGND",
+    "PGND",
+    "VDD",
+    "VCC",
+    "VBAT",
+    "VBUS",
+    "VIN",
+    "VDDA",
+    "VSS",
+    "MGT",
+    "VCCO",
 )
 
 
@@ -119,9 +129,7 @@ def _apply_block_attributes(ir: DesignIR, components: list[ComponentDef]) -> Non
             comp.block_id = block.id
         primary = group[0]
         if block.interfaces:
-            primary.template_boundary_ports = [
-                BoundaryPort(iface.name, iface.direction) for iface in block.interfaces
-            ]
+            primary.template_boundary_ports = [BoundaryPort(iface.name, iface.direction) for iface in block.interfaces]
         if block.presentation_group:
             for comp in group:
                 comp.presentation_group = block.presentation_group
@@ -157,8 +165,13 @@ def _apply_approved_overrides(ir: DesignIR, components: list[ComponentDef]) -> N
             for comp in group:
                 comp.presentation_group = str(value)
         elif kind == "part_binding" and isinstance(value, dict):
-            for attr, key in [("footprint", "footprint"), ("source_mpn", "mpn"),
-                              ("mpn", "mpn"), ("value", "value"), ("source_value", "value")]:
+            for attr, key in [
+                ("footprint", "footprint"),
+                ("source_mpn", "mpn"),
+                ("mpn", "mpn"),
+                ("value", "value"),
+                ("source_value", "value"),
+            ]:
                 v = str(value.get(key, "")).strip()
                 if v:
                     setattr(primary, attr, v)
@@ -187,9 +200,12 @@ def _synthesize_shared_net_interfaces(ir: DesignIR, components: list[ComponentDe
                     continue
                 etype = pin_type_by_num.get(pin_num, "bidirectional")
                 direction = (
-                    "output" if etype == "output"
-                    else "input" if etype == "input"
-                    else "passive" if etype in ("power_in", "power_out")
+                    "output"
+                    if etype == "output"
+                    else "input"
+                    if etype == "input"
+                    else "passive"
+                    if etype in ("power_in", "power_out")
                     else "bidirectional"
                 )
                 existing = net_contributors.setdefault(net, {}).get(block_key)
@@ -208,9 +224,7 @@ def _synthesize_shared_net_interfaces(ir: DesignIR, components: list[ComponentDe
                 continue
             if any(iface.name == net for iface in block.interfaces):
                 continue
-            block.interfaces.append(
-                DesignInterface(block_id=block.id, name=net, direction=direction).normalized()
-            )
+            block.interfaces.append(DesignInterface(block_id=block.id, name=net, direction=direction).normalized())
 
 
 def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) -> DesignIR:
@@ -238,12 +252,20 @@ def _hydrate_ir_from_components(ir: DesignIR, components: list[ComponentDef]) ->
                 part_bindings = _derive_part_bindings(primary)
         hydrated_blocks.append(
             DesignBlock(
-                id=block.id, section=block.section, kind=block.kind,
-                ref=block.ref, template_type=block.template_type, ic=block.ic,
-                params=copy.deepcopy(block.params), value=block.value,
-                description=block.description, mpn=block.mpn,
-                required_support=required_support, part_bindings=part_bindings,
-                presentation_group=block.presentation_group, interfaces=interfaces,
+                id=block.id,
+                section=block.section,
+                kind=block.kind,
+                ref=block.ref,
+                template_type=block.template_type,
+                ic=block.ic,
+                params=copy.deepcopy(block.params),
+                value=block.value,
+                description=block.description,
+                mpn=block.mpn,
+                required_support=required_support,
+                part_bindings=part_bindings,
+                presentation_group=block.presentation_group,
+                interfaces=interfaces,
             ).normalized()
         )
 
@@ -265,6 +287,7 @@ def compile_design_ir(
     spec: dict[str, Any],
     *,
     enrich_parts: bool = False,
+    use_kicad: bool = True,
 ) -> CompiledDesign:
     """Compile a design spec into normalized IR + resolved engine components.
 
@@ -280,7 +303,7 @@ def compile_design_ir(
     ir = normalize_design_spec(spec)
     original_block_count = len(ir.blocks)
     engine_spec = design_ir_to_engine_spec(ir)
-    components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
+    components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts, use_kicad=use_kicad)
     components = copy.deepcopy(components)
 
     repair_enabled = bool(spec.get("auto_repair", True))
@@ -290,7 +313,7 @@ def compile_design_ir(
         ir = repaired_ir
         engine_spec = design_ir_to_engine_spec(ir)
         if len(repaired_ir.blocks) != original_block_count:
-            components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts)
+            components, metadata = resolve_project_spec(engine_spec, enrich_parts=enrich_parts, use_kicad=use_kicad)
             components = copy.deepcopy(components)
         apply_component_repairs(components, component_repairs)
 

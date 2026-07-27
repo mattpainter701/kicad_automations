@@ -908,6 +908,7 @@ def resolve_project_spec(
     kicad_lib: KiCadLibrary | None = None,
     parts_lookup=None,
     enrich_parts: bool = False,
+    use_kicad: bool = True,
 ) -> tuple[list[ComponentDef], dict]:
     """Resolve a parsed project spec dict into component instances + metadata."""
     if subcircuit_reg is None:
@@ -935,7 +936,7 @@ def resolve_project_spec(
         elif p.is_dir():
             n = component_reg.load_json_dir(str(p))
             print(f"  Loaded {n} components from {p}/")
-    if kicad_lib is None:
+    if kicad_lib is None and use_kicad:
         kicad_lib = KiCadLibrary()
     if enrich_parts and parts_lookup is None:
         from .parts_lookup import PartsLookup

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import circuit_weaver.benchmark_runner as benchmark_runner
 from circuit_weaver.benchmark_runner import (
     LEGACY_RULE_ID_ALIASES,
     REGISTERED_RULES,
@@ -18,6 +19,20 @@ from circuit_weaver.benchmark_runner import (
 )
 from circuit_weaver.dispatcher import ValidationMessage, ValidationReport
 from circuit_weaver.validator import _RULE_ID_BY_FINDING_CODE
+
+
+def test_default_benchmark_validation_disables_machine_local_kicad(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+    sentinel = object()
+
+    def fake_validate(spec, **kwargs):
+        seen.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(benchmark_runner, "validate_design", fake_validate)
+
+    assert benchmark_runner._benchmark_validate({}) is sentinel
+    assert seen == {"check_determinism": False, "use_kicad": False}
 
 
 def _fixture(

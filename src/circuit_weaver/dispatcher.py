@@ -1679,6 +1679,7 @@ def validate_design(
     enrich_parts: bool = False,
     strict: bool = False,
     check_determinism: bool = True,
+    use_kicad: bool = True,
 ) -> ValidationReport:
     """Validate a design spec against the strict MVP profile.
 
@@ -1693,7 +1694,7 @@ def validate_design(
     overhead (Sprint 45 Bug 3 — was 3 generations per CLI invocation).
     """
     profile = _ensure_profile(profile)
-    compiled = compile_design_ir(spec, enrich_parts=enrich_parts)
+    compiled = compile_design_ir(spec, enrich_parts=enrich_parts, use_kicad=use_kicad)
 
     categories: dict[str, list[ValidationMessage]] = {
         "structural": [],

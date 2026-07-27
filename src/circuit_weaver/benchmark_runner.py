@@ -45,6 +45,13 @@ from .identity import (
 )
 from .validator import _RULE_ID_BY_FINDING_CODE
 
+
+def _benchmark_validate(spec: dict[str, Any], *, check_determinism: bool = False) -> ValidationReport:
+    """Validate without machine-local symbol discovery affecting the corpus."""
+
+    return validate_design(spec, check_determinism=check_determinism, use_kicad=False)
+
+
 RULE_ID_PATTERN = re.compile(r"^CW-[A-Z0-9]+-[0-9]{3}$")
 SCHEMA_VERSION = "circuit-weaver-electrical-benchmark/v1"
 """Frozen benchmark rule-ID namespace."""
@@ -413,7 +420,7 @@ def _empty_counts() -> dict[str, int]:
 def run_benchmarks(
     root: str | Path,
     *,
-    validator: Callable[..., ValidationReport] = validate_design,
+    validator: Callable[..., ValidationReport] = _benchmark_validate,
     clock: Callable[[], float] = time.perf_counter,
 ) -> dict[str, Any]:
     """Run supported fixtures and return deterministic, JSON-ready benchmark metrics.
