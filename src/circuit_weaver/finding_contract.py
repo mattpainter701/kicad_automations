@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +64,7 @@ def _timestamp(value: str, field: str) -> datetime:
         raise FindingContractError(f"suppression {field} must be ISO-8601") from exc
     if parsed.tzinfo is None:
         raise FindingContractError(f"suppression {field} must include a timezone")
-    return parsed.astimezone(UTC)
+    return parsed.astimezone(timezone.utc)
 
 
 def validate_suppression(suppression: Suppression, *, now: datetime | None = None) -> None:
@@ -91,7 +91,7 @@ def validate_suppression(suppression: Suppression, *, now: datetime | None = Non
     expires = _timestamp(suppression.expires_at, "expires_at")
     if expires <= created:
         raise FindingContractError("suppression expires_at must be after created_at")
-    current = (now or datetime.now(UTC)).astimezone(UTC)
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     if expires <= current:
         raise FindingContractError("suppression has expired")
 

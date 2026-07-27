@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -21,7 +21,7 @@ from circuit_weaver.finding_contract import (
 from circuit_weaver.validator import ValidationIssue
 
 EVIDENCE_ID = "EV-TOOL_RESULT-0123456789ab"
-NOW = datetime(2026, 7, 27, tzinfo=UTC)
+NOW = datetime(2026, 7, 27, tzinfo=timezone.utc)
 
 
 def _complete_issue(**overrides: object) -> ValidationIssue:
