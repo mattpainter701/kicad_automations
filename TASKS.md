@@ -46,7 +46,7 @@ Every sprint below must preserve these cross-cutting rules:
 
 ### T242. Publish a machine-readable capability and maturity registry (P1, MEDIUM) ✅ DONE
 
-- [x] Inventory every CLI command and corresponding Python/HTTP/MCP/skill path; assign one state: `supported`, `beta`, `experimental`, `review_only`, or `deprecated`. The registry covers all 43 top-level commands plus both `cache` child operations and advertises Python surfaces only when a real public function exists.
+- [x] Inventory every CLI command and corresponding Python/HTTP/MCP/skill path; assign one state: `supported`, `beta`, `experimental`, `review_only`, or `deprecated`. The registry covers all 44 top-level commands plus both `cache` child operations and advertises Python surfaces only when a real public function exists.
 - [x] Define verification prerequisites and output guarantees on the ordered design ladder, with a paired non-ordered `not_applicable` state for operational commands that make no design claim. Variable/tool-dependent commands publish conservative default guarantees and may claim more only with matching returned evidence.
 - [x] Generate the README capability table from the registry and surface the same copy-safe JSON through `doctor --json`, terminal doctor summaries, the public Python accessor, and HTTP `GET /capabilities`; CI rejects generated-doc drift.
 - [x] Add contract tests that reject missing CLI registrations, malformed schemas/vocabularies, mixed `not_applicable` states, and runtime claims stronger than their returned evidence supports.

@@ -50,6 +50,7 @@ Verification is conservative: a capability only claims the evidence level its pu
 | `list-templates` | beta | CLI: `list-templates`; HTTP: `GET /templates` | not applicable (operational) | `command-contract` | 0.32.1 |
 | `scaffold` | beta | CLI: `scaffold`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
 | `register-ic` | experimental | CLI: `register-ic` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `resolve-symbol` | experimental | CLI: `resolve-symbol` | not applicable (operational) | `command-contract` | 0.33.0 |
 | `export-jlcpcb` | review_only | CLI: `export-jlcpcb`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
 | `export-gerbers` | review_only | CLI: `export-gerbers`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
 | `cost-bom` | experimental | CLI: `cost-bom`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |

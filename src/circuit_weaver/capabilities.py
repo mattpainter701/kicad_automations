@@ -86,6 +86,7 @@ def _record(
     evidence_kinds: tuple[str, ...] = ("command-contract", "static-parse"),
     verification_prereq: str = "static-parse",
     output_guarantee: str = "static-parse",
+    since_version: str = "0.32.1",
 ) -> CapabilityRecord:
     """Build a conservative v0.32.1 registry record.
 
@@ -109,7 +110,7 @@ def _record(
         "verification_prereq": verification_prereq,
         "output_guarantee": output_guarantee,
         "evidence_kinds": list(evidence_kinds),
-        "since_version": "0.32.1",
+        "since_version": since_version,
     }
 
 
@@ -160,6 +161,7 @@ CAPABILITIES: Final[tuple[CapabilityRecord, ...]] = (
     _record("list-templates", "list-templates", http="GET /templates", **_NON_DESIGN),
     _record("scaffold", "scaffold", skill="circuit-weaver"),
     _record("register-ic", "register-ic", maturity="experimental"),
+    _record("resolve-symbol", "resolve-symbol", maturity="experimental", since_version="0.33.0", **_NON_DESIGN),
     _record("export-jlcpcb", "export-jlcpcb", maturity="review_only", skill="circuit-weaver"),
     _record("export-gerbers", "export-gerbers", maturity="review_only", skill="circuit-weaver"),
     _record("cost-bom", "cost-bom", maturity="experimental", skill="circuit-weaver"),

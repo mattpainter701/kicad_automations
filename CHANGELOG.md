@@ -18,7 +18,7 @@
 
 ### Sprint 55 execution — T242 capability truth contract
 
-- Add a single checked-in registry for all 43 top-level CLI commands and the two `cache` child operations, with fixed maturity, surface, evidence, and verification vocabularies. Python entrypoints are listed only where a public function actually exists.
+- Add a single checked-in registry for all 44 top-level CLI commands and the two `cache` child operations, with fixed maturity, surface, evidence, and verification vocabularies. Python entrypoints are listed only where a public function actually exists.
 - Keep the ordered design-verification ladder separate from the paired `not_applicable` state used by operational commands such as `doctor`, cache, logs, and skill installation. Default guarantees are conservative; stronger runtime claims require matching returned evidence.
 - Expose copy-safe registry JSON through the Python API, `doctor --json`, and HTTP `GET /capabilities`; terminal doctor output summarizes maturity counts.
 - Generate the README capability table deterministically from the registry and fail CI when the generated section drifts. Contract tests cover every dispatcher command, registry shape/vocabularies, and runtime verification overclaims.
