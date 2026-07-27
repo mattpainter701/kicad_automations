@@ -30,17 +30,15 @@ Every sprint below must preserve these cross-cutting rules:
 
 ---
 
-## Sprint 55 — Release Truth, Regression Recovery, and Product Benchmarks (v0.32.1) — IN PROGRESS
+## Sprint 55 — Release Truth, Regression Recovery, and Product Benchmarks (v0.32.1) — ✅ DONE
 
 **Goal:** Restore a trustworthy green baseline and make product maturity measurable before adding more surface area. This is the immediate sprint.
 
-### T241. Restore the source-tree and installed-wheel release gates (P0, HIGH) — IN PROGRESS
+### T241. Restore the source-tree and installed-wheel release gates (P0, HIGH) ✅ DONE
 
 - [x] Fix the current source-selected baseline (`1431 passed, 16 skipped, 7 failed, 6 errors` on Windows/Python 3.13): the three sample `svg-left-overflow` regressions, their layout-quality fixture errors, and the generation-call determinism regression. Long centered root-sheet titles now reserve their estimated left half-width; the determinism test is isolated from presentation validation without weakening production gates.
 - [x] Make a plain developer `python -m pytest` test the checkout instead of accidentally collecting/importing an already-installed `circuit_weaver`; add a regression or documented runner that proves import origin and version. Source and wheel modes now verify the resolved package path/version and propagate the selected interpreter/package to subprocesses.
-- [ ] Run the same required gates against the source tree and the exact built wheel on Linux and Windows, with subprocess tests inheriting the intended package under test. Local Windows/Python 3.13 is green for both (`1766 passed, 16 classified skips` each against the `0.33.0` candidate); CI builds once and runs the full exact-wheel matrix beside the source matrix.
-  - **Issue (open):** the only remaining item — hosted Linux (3.10–3.14) + Windows (3.12/3.13) matrix has not been observed green; it cannot be confirmed from this machine.
-  - **Solution / status:** work is code-complete locally; closing this box requires a push that triggers the CI workflow and an observed green run. External dependency, not a code blocker — does **not** block starting T243/T244.
+- [x] Run the same required gates against the source tree and the exact built wheel on Linux and Windows, with subprocess tests inheriting the intended package under test. Local Windows/Python 3.13 is green for both (`1766 passed, 16 classified skips` each against the `0.33.0` candidate); hosted PR CI run `30286803276` passed all 19 jobs, including the source and exact-wheel matrices on Linux/Python 3.10–3.14 and Windows/Python 3.12/3.13 plus real KiCad 8/9/10 final-artifact validation.
 - [x] Classify every skip as platform-required, optional-tool-required, network, or defect; fail CI on unknown/unclassified skips. Missing checked-in fixtures now fail instead of skipping, and runtime as well as collection/setup skips are enforced.
 - [x] Record the local source/wheel counts and exact commands in `CHANGELOG.md`; update CI/release workflows to select source or exact-wheel mode explicitly. Hosted matrix counts remain part of the preceding exit item.
 
