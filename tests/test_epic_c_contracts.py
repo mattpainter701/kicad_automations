@@ -128,4 +128,3 @@ def test_manufacturing_readiness_is_ordered_and_fabrication_ready_is_evidence_ga
 
     with pytest.raises(ReadinessContractError, match="T244.4"):
         transition_manufacturing_readiness(current, ManufacturingReadinessState.FABRICATION_READY)
-

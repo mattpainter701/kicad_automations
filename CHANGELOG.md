@@ -26,6 +26,16 @@
 - Local Windows/Python 3.13 source suite: **1814 passed, 18 classified skips**. Ruff and diff checks pass; local KiCad 10 two-layer and four-layer load/DRC goldens pass.
 - KiCad 8 and KiCad 9 authoritative round-trip results are **pending CI** and must not be treated as proven until the Epic C branch is pushed after review clearance.
 
+## [0.33.1] - 2026-07-28
+
+### Security
+
+- Close evidence-safety redaction bypasses where a machine-local POSIX path is glued to a preceding dot or hyphen, or follows a bracketed remote URL. Remote HTTP(S) URLs and ordinary slash notation remain accepted.
+
+### Validation
+
+- Windows/Python 3.13 source suite: **1771 passed, 16 classified skips**. The isolated exact-wheel evidence/release suite passes **51 tests**; Ruff, `twine check`, and diff checks pass. One pre-existing Starlette deprecation warning remains.
+
 ## [0.33.0] - 2026-07-27
 
 ### Planning

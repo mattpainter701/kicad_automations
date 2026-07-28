@@ -26,12 +26,12 @@ _SECRET_PATTERN = re.compile(
 # POSIX-slash scanning so their ordinary slash-delimited paths do not become
 # local-path false positives.  Windows/UNC/home patterns are still checked on
 # the original value because they can leak inside a URL query or fragment.
-_HTTP_URL = re.compile(r"https?://[^\s]+", re.IGNORECASE)
+_HTTP_URL = re.compile(r"https?://[^\s\"'()<>]+", re.IGNORECASE)
 _FILE_URL = re.compile(r"file://", re.IGNORECASE)
 _WINDOWS_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/]+")
 _UNC_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_])[\\]{2,}")
 _HOME_ABSOLUTE = re.compile(r"~[\\/]+")
-_POSIX_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_.-])/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
+_POSIX_ABSOLUTE = re.compile(r"(?<![A-Za-z0-9_])/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
 
 
 class EvidencePolicyError(ValueError):
