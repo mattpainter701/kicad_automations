@@ -17,7 +17,7 @@ from circuit_weaver.component_db import ComponentDef, PinDef
 from circuit_weaver.design_ir import DesignIR
 from circuit_weaver.drc_runner import DrcResult
 from circuit_weaver.evidence import EvidenceLedger, EvidenceSource
-from circuit_weaver.footprint_lib import KiCadFootprintLibrary
+from circuit_weaver.footprint_lib import FootprintGeometry, KiCadFootprintLibrary
 from circuit_weaver.identity import (
     IdentityHandoffBlocked,
     IdentityHandoffBundle,
@@ -34,7 +34,7 @@ from circuit_weaver.pcb_contracts import (
     drc_validation_issue,
     inspect_pcb_artifact,
 )
-from circuit_weaver.pcb_handoff import approve_placements, generate_authoritative_board
+from circuit_weaver.pcb_handoff import PcbHandoffError, approve_placements, generate_authoritative_board
 
 FOOTPRINT = """(footprint "TEST_2PAD"
   (version 20240108)
@@ -345,6 +345,40 @@ def test_forged_single_source_agreement_is_recomputed_before_any_pad_render(
             placement_approval=_approval(placements, "PLA-forged"),
             board_constraints=_constraints(),
             footprint_library=_library(tmp_path / "libs"),
+        )
+
+    assert not output.exists()
+
+
+def test_authoritative_handoff_refuses_heuristic_geometry_before_board_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    library = _library(tmp_path / "libs")
+    monkeypatch.setattr(
+        library,
+        "geometry",
+        lambda _footprint: FootprintGeometry(
+            5.0,
+            5.0,
+            "heuristic",
+            "0" * 64,
+            evidence_kind="heuristic",
+            confidence="heuristic",
+        ),
+    )
+    output = tmp_path / "out"
+    placements = {"U1": (20, 15, 0, "top")}
+
+    with pytest.raises(PcbHandoffError, match="refuses heuristic or placeholder"):
+        generate_authoritative_board(
+            [_component()],
+            placements,
+            {"U1": _bundle()},
+            output,
+            project_name="PlaceholderGeometryBoard",
+            placement_approval=_approval(placements, "PLA-placeholder"),
+            board_constraints=_constraints(),
+            footprint_library=library,
         )
 
     assert not output.exists()

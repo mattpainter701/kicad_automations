@@ -52,7 +52,7 @@ class KiCadFootprintLibrary:
 
     def __init__(self, root: str | Path | None = None) -> None:
         self._roots = self._default_roots(root)
-        self._geometry_cache: dict[str, FootprintGeometry] = {}
+        self._geometry_cache: dict[tuple[str, str, str], FootprintGeometry] = {}
 
     @staticmethod
     def _default_roots(root: str | Path | None) -> list[Path]:
@@ -110,18 +110,23 @@ class KiCadFootprintLibrary:
         }
 
     def geometry(self, footprint: str) -> FootprintGeometry:
-        """Measure and cache geometry; mark unresolved-name estimates as heuristic."""
+        """Measure geometry cached by resolution state, resolved path, and content hash."""
 
-        cached = self._geometry_cache.get(footprint)
-        if cached is not None:
-            return cached
         path = self.resolve(footprint)
         if path is None:
             geometry = _heuristic_geometry(footprint)
-            self._geometry_cache[footprint] = geometry
+            cache_key = (footprint, "<unresolved>", geometry.content_hash)
+            cached = self._geometry_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            self._geometry_cache[cache_key] = geometry
             return geometry
         text = path.read_text(encoding="utf-8")
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        cache_key = (footprint, str(path.resolve()), digest)
+        cached = self._geometry_cache.get(cache_key)
+        if cached is not None:
+            return cached
         courtyard_points: list[tuple[float, float]] = []
         for block in _iter_blocks(text, ("fp_line", "fp_rect", "fp_arc", "fp_poly")):
             if "F.CrtYd" not in block and "B.CrtYd" not in block:
@@ -130,7 +135,7 @@ class KiCadFootprintLibrary:
         if courtyard_points:
             width, height = _bounds(courtyard_points)
             geometry = FootprintGeometry(width, height, "courtyard", digest)
-            self._geometry_cache[footprint] = geometry
+            self._geometry_cache[cache_key] = geometry
             return geometry
 
         pad_points: list[tuple[float, float]] = []
@@ -146,7 +151,7 @@ class KiCadFootprintLibrary:
             raise ValueError(f"footprint {footprint} has neither courtyard geometry nor measurable pads")
         width, height = _bounds(pad_points)
         geometry = FootprintGeometry(width, height, "pads", digest)
-        self._geometry_cache[footprint] = geometry
+        self._geometry_cache[cache_key] = geometry
         return geometry
 
     def find(self, query: str) -> list[str]:

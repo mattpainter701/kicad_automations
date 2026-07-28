@@ -357,6 +357,10 @@ def _preflight_component(
             f"{reference}: authoritative connectivity is missing symbol pins {missing_connectivity!r}"
         )
     geometry = footprint_library.geometry(component.footprint)
+    if geometry.source == "heuristic" or geometry.confidence == "heuristic":
+        raise PcbHandoffError(
+            f"{reference}: authoritative handoff refuses heuristic or placeholder footprint geometry"
+        )
     library_hash = hashlib.sha256(library_text.encode("utf-8")).hexdigest()
     footprint_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"circuit-weaver:{project_name}:{reference}"))
     return _PreparedFootprint(
