@@ -460,9 +460,9 @@ Epic B).
 
 ### Current state (grounded)
 - **F19:** `pcb_export._footprint_sexpr` deliberately emits **zero pads**
-  (`pcb_export.py:260-277`); the artifact is a preview hint, forward-annotation is
-  authoritative. Gap-close = a *separate, opt-in, real-pad* path — never relabel the
-  preview.
+  (`pcb_export.py:251`, docstring lines 265-272); the artifact is a preview hint,
+  forward-annotation is authoritative. Gap-close = a *separate, opt-in, real-pad* path —
+  never relabel the preview.
 - **F17:** `_footprint_size_mm` (`pcb_export.py:171-199`) is regex + hardcoded
   fallbacks (BGA→25×25, small IC→5×5). No real `.kicad_mod` bbox read.
   `footprint_lib.KiCadFootprintLibrary` exists but only resolves URLs/alternatives.
@@ -473,7 +473,12 @@ Epic B).
   DSN pipeline present — ready to consume a real pad-bearing board.
 - `placement_pipeline.py` already does staged/transactional writes with an output
   lock and last-known-good preservation — reuse this pattern for the real board.
-- `erc_runner.py` parses ERC JSON into a typed result — mirror it for DRC.
+- `erc_runner.py` parses ERC JSON into a typed result — mirror it for DRC (no DRC
+  runner exists yet; T251.1 is net-new).
+- **T252 target grounding:** `confidence_dashboard.py:47` already carries an informal
+  `readiness` string (`ready_for_fab | needs_review | not_ready`, hardcoded to
+  `ready_for_fab` at line 423). That is one of the scattered readiness booleans T252's
+  single state machine subsumes — it must read the state machine, not set its own.
 
 ### Work breakdown
 
@@ -531,10 +536,69 @@ Epic B).
 - **T252.4** Gate two golden designs end to end: generate → reviewed placement → real
   PCB → DRC → verified BOM/CPL/Gerbers.
 
+> **Frozen contract 1 — Authoritative-board vs preview separation (T249.1, closes
+> F19; freeze before any pad-emitting code).** The one rule that prevents re-opening
+> F19: the two artifacts must be **impossible to confuse**, structurally not by label.
+> - Distinct filenames: preview stays `*.pcb_preview.kicad_pcb` (or current name) with
+>   its zero-pad banner; the authoritative board is `*.kicad_pcb` produced **only** by
+>   the new path. A file may carry pads **or** the preview banner, never both — a
+>   contract test asserts the preview path emits zero `(pad …)` s-exprs and the
+>   authoritative path emits ≥1 per placed component with a real footprint.
+> - Every authoritative board records `board_provenance` evidence
+>   (`subject_ref=tool:pcb_handoff`, `kind=tool_result`) naming the source placement
+>   approval id, fp-lib snapshot, and the T247 identity-guard result it passed.
+> - No code path may *upgrade* a preview file in place to authoritative — it is always a
+>   fresh emit from resolved footprints. Relabeling is a fail-closed error.
+>
+> **Frozen contract 2 — `PcbConstraint` record (T250; extends the evidence schema, same
+> shape discipline as `CalculationRecord`).**
+> ```
+> PcbConstraint {
+>   id:          "PCBC-<CLASS>-<12-hex>"   # sha256(target | class | normalized-params) — deterministic
+>   klass:       "net_class" | "diff_pair" | "width" | "clearance" | "via" |
+>                "impedance" | "length" | "keepout" | "placement"
+>   target:      subject_ref               # net:<NAME> | comp:<REF> | net_class:<NAME> (frozen grammar)
+>   params:      { … class-specific, unit-labelled … }
+>   origin:      "calculated" | "user" | "manufacturer" | "fab_profile"   # T250.2
+>   evidence_ids:[ … ]                     # what proves it (power domain, calc record, fab profile)
+>   conflicts:   [ constraint_id … ]       # flagged BEFORE board mutation (T250.2), not after
+> }
+> ```
+> Constraints compile from Epic B's frozen power-domain + interface schema; a constraint
+> with `origin=calculated` must cite the `CalculationRecord`/power evidence it derives
+> from. Conflicts fail closed before the board is touched.
+>
+> **Frozen contract 3 — DRC findings reuse the T248 finding model (T251.1; do NOT fork).**
+> DRC violations parse into the **same** `ValidationIssue` schema T248 froze —
+> `severity` + `detection_confidence` + `rule_id` (`CW-DRC-<NNN>`) + `evidence_ids` +
+> object refs — not a parallel DRC-only struct. `kicad-cli pcb drc` output is a
+> `kind=tool_result` evidence source; a DRC error is `detection_confidence=verified`
+> (the tool observed it). This is the shared finding model Epic D also consumes — freeze
+> it here so D doesn't inherit a second shape.
+>
+> **Frozen contract 4 — `ManufacturingReadiness` state machine (T252; one vocabulary,
+> all surfaces).** One ordered state enum, single source of truth, subsumes
+> `confidence_dashboard.readiness` and every scattered boolean:
+> `not_ready → needs_review → drc_pending → drc_clean → fabrication_ready`, plus a
+> terminal `blocked{reason}`. Transitions are gated by evidence (e.g. `drc_clean`
+> requires a passing `CW-DRC` run's tool_result evidence; `fabrication_ready` requires
+> the T244.4 `require_fabrication_evidence` gate to pass over identity/pads/DRC). CLI,
+> API, MCP, HTML, and manifests all **read** this one state — none computes its own.
+> Export/publish paths query it and refuse on any state below `fabrication_ready` (or an
+> explicit, expiring T248.4 override).
+
+**Sequencing.** Freeze contracts 1–4 first (they are what D and the export surfaces
+join on). Then: **T249 before T250 before T251** (can't constrain or DRC a board that
+doesn't exist yet); T252's state machine can be scaffolded in parallel but only reaches
+`drc_clean`/`fabrication_ready` once T251 lands. T249.5 reuses the **T247 identity guard
+verbatim** — it must not re-implement the check. The pad-less preview path is touched
+**only** to keep it separate, never to extend it.
+
 **Epic C exit gate.** ≥2 representative designs complete a transactional,
 evidence-linked KiCad PCB handoff and pass the configured KiCad DRC /
 manufacturing-readiness gate. F17/F18/F19 closed; the pad-less preview contract is
-still explicit and separate.
+still explicit and separate. The four contracts above are frozen (Epic D consumes the
+finding model + readiness state).
 
 ---
 

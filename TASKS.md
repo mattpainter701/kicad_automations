@@ -132,6 +132,8 @@ Every sprint below must preserve these cross-cutting rules:
 
 **Goal:** Convert an approved placement review into a real, pad-bearing KiCad PCB with authoritative connectivity and verification, while preserving the review-only placement-preview contract.
 
+> **Planner spec:** see `EPICS.md` Epic C — T249.1–.6, T250.1–.4, T251.1–.4, T252.1–.4, plus **four frozen contracts** to land before producer code: (1) authoritative-board vs preview separation (distinct filenames, pads XOR banner, `board_provenance` evidence, no in-place upgrade — closes F19); (2) `PcbConstraint` record `PCBC-<CLASS>-<12hex>` with `origin` + evidence_ids, conflicts flagged pre-mutation; (3) DRC findings reuse the **T248 `ValidationIssue`** schema (`CW-DRC-<NNN>`, `kind=tool_result`) — do NOT fork; (4) one `ManufacturingReadiness` state machine (`not_ready → needs_review → drc_pending → drc_clean → fabrication_ready`, `blocked{reason}`) that all surfaces *read* — subsumes `confidence_dashboard.readiness`. **Sequence: T249 → T250 → T251**; T249.5 reuses the T247 identity guard verbatim; `fabrication_ready` requires the T244.4 fabrication-evidence gate.
+
 ### T249. Create an authoritative schematic-to-PCB handoff (P0, HIGH)
 
 - [ ] Generate or update a real `.kicad_pcb` using resolved library footprints, pad numbers, net assignments, board outline, stack-up, and the approved placement state; never relabel the existing preview as authoritative.
