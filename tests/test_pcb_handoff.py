@@ -21,6 +21,7 @@ from circuit_weaver.footprint_lib import KiCadFootprintLibrary
 from circuit_weaver.identity import (
     IdentityHandoffBlocked,
     IdentityHandoffBundle,
+    IdentityReconciliation,
     PinPadMap,
     build_identity_record,
     build_identity_source_assertion,
@@ -138,6 +139,38 @@ def _bundle(*, independent: bool = True) -> IdentityHandoffBundle:
     return IdentityHandoffBundle(
         assertions=tuple(assertions),
         reconciliation=reconcile_identity_assertions(assertions),
+        manufacturer="Acme",
+        mpn="ACME-2P",
+        package_suffix="2P",
+        symbol_ref="Acme:ACME-2P",
+        footprint_ref="Test:TEST_2PAD",
+    )
+
+
+def _forged_single_source_bundle() -> IdentityHandoffBundle:
+    identity = _identity()
+    assertions = (_assertion(identity, "manufacturer", "datasheet"),)
+    evidence_ids = tuple(sorted({value for item in assertions for value in item.evidence_ids}))
+    payload = {
+        "state": "agree",
+        "source_state": "agree",
+        "assertion_ids": [item.id for item in assertions],
+        "evidence_ids": list(evidence_ids),
+        "missing_coverage": [],
+        "disagreements": [],
+        "approval_id": None,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    forged = IdentityReconciliation(
+        id=f"IRC-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:12]}",
+        state="agree",
+        source_state="agree",
+        assertion_ids=tuple(payload["assertion_ids"]),
+        evidence_ids=evidence_ids,
+    )
+    return IdentityHandoffBundle(
+        assertions=assertions,
+        reconciliation=forged,
         manufacturer="Acme",
         mpn="ACME-2P",
         package_suffix="2P",
@@ -285,6 +318,31 @@ def test_t247_guard_blocks_before_any_authoritative_pad_render_or_file_write(
             output,
             project_name="BlockedBoard",
             placement_approval=_approval(placements, "PLA-blocked"),
+            board_constraints=_constraints(),
+            footprint_library=_library(tmp_path / "libs"),
+        )
+
+    assert not output.exists()
+
+
+def test_forged_single_source_agreement_is_recomputed_before_any_pad_render(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden_render(*_args, **_kwargs):
+        pytest.fail("pad renderer must not run before corroboration is recomputed")
+
+    monkeypatch.setattr(pcb_handoff, "_render_authoritative_footprint", forbidden_render)
+    output = tmp_path / "out"
+    placements = {"U1": (20, 15, 0, "top")}
+
+    with pytest.raises(ValueError, match="does not match its source assertions"):
+        generate_authoritative_board(
+            [_component()],
+            placements,
+            {"U1": _forged_single_source_bundle()},
+            output,
+            project_name="ForgedIdentityBoard",
+            placement_approval=_approval(placements, "PLA-forged"),
             board_constraints=_constraints(),
             footprint_library=_library(tmp_path / "libs"),
         )

@@ -795,6 +795,9 @@ def evaluate_identity_handoff(
         validate_identity_source_assertion(assertion)
     if tuple(sorted(item.id for item in records)) != reconciliation.assertion_ids:
         raise ValueError("identity handoff assertions do not match the reconciliation")
+    recomputed = reconcile_identity_assertions(records, approval=reconciliation.approval)
+    if recomputed != reconciliation:
+        raise ValueError("identity reconciliation does not match its source assertions")
     codes: list[str] = []
     selected = [
         item.identity
