@@ -8,9 +8,12 @@ as fabrication-ready.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
+import re
+from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 from urllib.parse import quote
@@ -32,11 +35,24 @@ _KICAD_FOOTPRINT_PATHS = {
 }
 
 
+@dataclass(frozen=True)
+class FootprintGeometry:
+    """Real library geometry used by authoritative placement/handoff."""
+
+    width_mm: float
+    height_mm: float
+    source: str
+    content_hash: str
+    evidence_kind: str = "footprint_lib"
+    confidence: str = "verified"
+
+
 class KiCadFootprintLibrary:
     """Resolve KiCad footprint references against local `.pretty` libraries."""
 
     def __init__(self, root: str | Path | None = None) -> None:
         self._roots = self._default_roots(root)
+        self._geometry_cache: dict[str, FootprintGeometry] = {}
 
     @staticmethod
     def _default_roots(root: str | Path | None) -> list[Path]:
@@ -60,8 +76,78 @@ class KiCadFootprintLibrary:
         lib, name = footprint.split(":", 1)
         if not lib or not name:
             return False
+        return self.resolve(footprint) is not None
+
+    def resolve(self, footprint: str) -> Path | None:
+        """Return the exact local `.kicad_mod` path for ``Lib:Footprint``."""
+
+        if not footprint or ":" not in footprint:
+            return None
+        lib, name = footprint.split(":", 1)
+        if not lib or not name or any(token in lib + name for token in ("/", "\\", "..")):
+            return None
         rel = Path(f"{lib}.pretty") / f"{name}.kicad_mod"
-        return any((root / rel).is_file() for root in self._roots)
+        for root in self._roots:
+            candidate = root / rel
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def read(self, footprint: str) -> str:
+        """Read a resolved footprint or fail closed instead of using a placeholder."""
+
+        path = self.resolve(footprint)
+        if path is None:
+            raise FileNotFoundError(f"unresolved KiCad footprint: {footprint}")
+        return path.read_text(encoding="utf-8")
+
+    def snapshot(self, footprints: list[str] | tuple[str, ...]) -> dict[str, str]:
+        """Return deterministic content hashes without leaking machine-local paths."""
+
+        return {
+            footprint: hashlib.sha256(self.read(footprint).encode("utf-8")).hexdigest()
+            for footprint in sorted(set(footprints))
+        }
+
+    def geometry(self, footprint: str) -> FootprintGeometry:
+        """Measure and cache geometry; mark unresolved-name estimates as heuristic."""
+
+        cached = self._geometry_cache.get(footprint)
+        if cached is not None:
+            return cached
+        path = self.resolve(footprint)
+        if path is None:
+            geometry = _heuristic_geometry(footprint)
+            self._geometry_cache[footprint] = geometry
+            return geometry
+        text = path.read_text(encoding="utf-8")
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        courtyard_points: list[tuple[float, float]] = []
+        for block in _iter_blocks(text, ("fp_line", "fp_rect", "fp_arc", "fp_poly")):
+            if "F.CrtYd" not in block and "B.CrtYd" not in block:
+                continue
+            courtyard_points.extend(_coordinate_pairs(block))
+        if courtyard_points:
+            width, height = _bounds(courtyard_points)
+            geometry = FootprintGeometry(width, height, "courtyard", digest)
+            self._geometry_cache[footprint] = geometry
+            return geometry
+
+        pad_points: list[tuple[float, float]] = []
+        for block in _iter_blocks(text, ("pad",)):
+            at = re.search(r"\(at\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)", block)
+            size = re.search(r"\(size\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)", block)
+            if not at or not size:
+                continue
+            x, y = float(at.group(1)), float(at.group(2))
+            half_w, half_h = float(size.group(1)) / 2.0, float(size.group(2)) / 2.0
+            pad_points.extend(((x - half_w, y - half_h), (x + half_w, y + half_h)))
+        if not pad_points:
+            raise ValueError(f"footprint {footprint} has neither courtyard geometry nor measurable pads")
+        width, height = _bounds(pad_points)
+        geometry = FootprintGeometry(width, height, "pads", digest)
+        self._geometry_cache[footprint] = geometry
+        return geometry
 
     def find(self, query: str) -> list[str]:
         """Find local footprint refs whose name contains ``query``."""
@@ -75,6 +161,81 @@ class KiCadFootprintLibrary:
                     if q in mod.stem.lower():
                         matches.append(f"{pretty.stem}:{mod.stem}")
         return matches
+
+
+def _iter_blocks(text: str, keywords: tuple[str, ...]):
+    token = re.compile(r"\((?:" + "|".join(re.escape(item) for item in keywords) + r")(?=[\s(])")
+    for match in token.finditer(text):
+        depth = 0
+        quoted = False
+        escaped = False
+        for index in range(match.start(), len(text)):
+            char = text[index]
+            if quoted:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    quoted = False
+                continue
+            if char == '"':
+                quoted = True
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    yield text[match.start() : index + 1]
+                    break
+
+
+def _coordinate_pairs(block: str) -> list[tuple[float, float]]:
+    return [
+        (float(match.group(1)), float(match.group(2)))
+        for match in re.finditer(
+            r"\((?:start|end|center|mid|xy)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)",
+            block,
+        )
+    ]
+
+
+def _bounds(points: list[tuple[float, float]]) -> tuple[float, float]:
+    xs = [item[0] for item in points]
+    ys = [item[1] for item in points]
+    return max(xs) - min(xs), max(ys) - min(ys)
+
+
+def _heuristic_geometry(footprint: str) -> FootprintGeometry:
+    """Return an explicitly low-confidence estimate when no library file exists."""
+
+    normalized = str(footprint or "").upper().replace("_", "-")
+    dimensions = [
+        (float(match.group(1)), float(match.group(2)))
+        for match in re.finditer(
+            r"(?<![A-Z0-9.])(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)MM\b",
+            normalized,
+        )
+    ]
+    if dimensions:
+        width, height = max(dimensions, key=lambda item: item[0] * item[1])
+    else:
+        metric = re.search(r"(?<!\d)(\d{4})METRIC\b", normalized)
+        if metric:
+            code = metric.group(1)
+            width = max(int(code[:2]) / 10.0 + 1.0, 2.0)
+            height = max(int(code[2:]) / 10.0 + 1.0, 2.0)
+        else:
+            width, height = 5.0, 5.0
+    digest = hashlib.sha256(f"heuristic:{footprint}:{width}:{height}".encode()).hexdigest()
+    return FootprintGeometry(
+        width,
+        height,
+        "heuristic",
+        digest,
+        evidence_kind="heuristic",
+        confidence="heuristic",
+    )
 
 
 def official_kicad_footprint_url(footprint: str) -> str:

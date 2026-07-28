@@ -202,7 +202,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install Circuit Weaver
-        run: python -m pip install .
+        run: python -m pip install . pytest
 
       - name: Install official KiCad stable PPA
         run: |
@@ -226,3 +226,6 @@ jobs:
           kicad-cli sch erc --exit-code-violations --format json --output .ci-kicad/fpga/erc.json .ci-kicad/fpga/FPGA_Power_Carrier.kicad_sch
           test -s .ci-kicad/iot/erc.json
           test -s .ci-kicad/fpga/erc.json
+
+      - name: Round-trip authoritative 2-layer and 4-layer PCB goldens
+        run: python -m pytest tests/test_pcb_handoff.py -q -k golden_round_trip
