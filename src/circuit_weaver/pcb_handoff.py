@@ -29,6 +29,11 @@ from .identity import (
     IdentityRecord,
     require_identity_handoff,
 )
+from .pcb_constraints import (
+    ConstraintCompilation,
+    PcbConstraintConflictError,
+    render_kicad_dru,
+)
 from .pcb_contracts import (
     AUTHORITATIVE_GENERATOR,
     PcbArtifactKind,
@@ -49,6 +54,7 @@ class PcbHandoffError(ValueError):
 @dataclass(frozen=True)
 class AuthoritativeHandoffResult:
     board_path: str
+    board_rules_path: str
     board_manifest_path: str
     evidence_manifest_path: str
     board_provenance_evidence_id: str
@@ -141,6 +147,30 @@ class _PreparedFootprint:
     guard: IdentityHandoffResult
     placement: tuple[float, float, float, str]
     footprint_uuid: str
+
+
+def _require_compiled_constraints(
+    compiled: Iterable[PcbConstraint] | ConstraintCompilation,
+) -> ConstraintCompilation:
+    """Reject missing/invalid/conflicting constraints before physical rendering."""
+
+    if isinstance(compiled, ConstraintCompilation):
+        constraints = compiled.require_ready()
+    else:
+        constraints = tuple(compiled)
+    if not constraints:
+        raise PcbHandoffError("authoritative handoff requires compiled board constraints")
+    conflict_ids: set[str] = set()
+    for constraint in constraints:
+        validate_pcb_constraint(constraint)
+        if constraint.conflicts:
+            conflict_ids.add(constraint.id)
+    if conflict_ids:
+        rendered = ", ".join(sorted(conflict_ids))
+        raise PcbConstraintConflictError(
+            f"PCB constraint conflicts must be resolved before mutation: {rendered}"
+        )
+    return ConstraintCompilation(tuple(constraints))
 
 
 def _placement_tuple(raw: Any) -> tuple[float, float, float, str]:
@@ -433,7 +463,7 @@ def generate_authoritative_board(
     *,
     project_name: str,
     placement_approval: PlacementApproval,
-    board_constraints: Iterable[PcbConstraint],
+    board_constraints: Iterable[PcbConstraint] | ConstraintCompilation,
     footprint_library: KiCadFootprintLibrary | None = None,
     evidence_ledger: EvidenceLedger | None = None,
     preview_path: str | Path | None = None,
@@ -453,6 +483,7 @@ def generate_authoritative_board(
     safe_name = _safe_project_filename(project_name)
     target = require_fresh_authoritative_target(preview_path, output / f"{safe_name}.kicad_pcb")
     manifest_target = output / f"{safe_name}_board_manifest.json"
+    rules_target = output / f"{safe_name}.kicad_dru"
     evidence_target = output / "evidence_manifest.json"
     references = [str(component.source_ref or "").strip() for component in materialized]
     if any(not item for item in references) or len(references) != len(set(references)):
@@ -462,13 +493,8 @@ def generate_authoritative_board(
     if set(identity_handoffs) != set(references):
         raise PcbHandoffError("identity handoff references must exactly match authoritative components")
     _require_current_placement_approval(placement_approval, approved_placements)
-    constraints = tuple(board_constraints)
-    if not constraints:
-        raise PcbHandoffError("authoritative handoff requires compiled board constraints")
-    for constraint in constraints:
-        validate_pcb_constraint(constraint)
-        if constraint.conflicts:
-            raise PcbHandoffError(f"board constraint {constraint.id} has unresolved conflicts")
+    compilation = _require_compiled_constraints(board_constraints)
+    constraints = compilation.constraints
 
     library = footprint_library or KiCadFootprintLibrary()
     prepared = tuple(
@@ -505,6 +531,7 @@ def generate_authoritative_board(
         ")",
     ]
     board_text = "\n".join(board_parts)
+    rules_text = render_kicad_dru(compilation)
     inspection = inspect_pcb_artifact(target, board_text)
     if inspection.kind is not PcbArtifactKind.AUTHORITATIVE:
         raise PcbHandoffError("authoritative board failed the frozen artifact contract")
@@ -563,12 +590,15 @@ def generate_authoritative_board(
         except json.JSONDecodeError:
             previous = None
     board_hash = hashlib.sha256(board_text.encode("utf-8")).hexdigest()
+    rules_hash = hashlib.sha256(rules_text.encode("utf-8")).hexdigest()
     manifest = {
         "schema_version": BOARD_MANIFEST_SCHEMA,
         "artifact_kind": "authoritative_board",
         "project": safe_name,
         "board": target.name,
         "board_sha256": board_hash,
+        "board_rules": rules_target.name,
+        "board_rules_sha256": rules_hash,
         "board_provenance_evidence_id": provenance_id,
         "placement_approval_id": placement_approval.id,
         "placement_approval_sha256": placement_approval.placement_sha256,
@@ -586,7 +616,9 @@ def generate_authoritative_board(
     try:
         staged_board = staging / target.name
         staged_manifest = staging / manifest_target.name
+        staged_rules = staging / rules_target.name
         staged_board.write_text(board_text, encoding="utf-8", newline="")
+        staged_rules.write_text(rules_text, encoding="utf-8", newline="")
         staged_manifest.write_text(
             json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
             encoding="utf-8",
@@ -595,12 +627,14 @@ def generate_authoritative_board(
         staged_evidence = ledger.write(staging)
         staged_evidence.replace(evidence_target)
         staged_manifest.replace(manifest_target)
+        staged_rules.replace(rules_target)
         staged_board.replace(target)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
     return AuthoritativeHandoffResult(
         board_path=str(target),
+        board_rules_path=str(rules_target),
         board_manifest_path=str(manifest_target),
         evidence_manifest_path=str(evidence_target),
         board_provenance_evidence_id=provenance_id,

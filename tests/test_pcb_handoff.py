@@ -12,6 +12,7 @@ import pytest
 
 import circuit_weaver.pcb_handoff as pcb_handoff
 from circuit_weaver.component_db import ComponentDef, PinDef
+from circuit_weaver.design_ir import DesignIR
 from circuit_weaver.footprint_lib import KiCadFootprintLibrary
 from circuit_weaver.identity import (
     IdentityHandoffBlocked,
@@ -21,6 +22,7 @@ from circuit_weaver.identity import (
     build_identity_source_assertion,
     reconcile_identity_assertions,
 )
+from circuit_weaver.pcb_constraints import PcbConstraintConflictError, compile_pcb_constraints
 from circuit_weaver.pcb_contracts import PcbArtifactKind, PcbConstraint, inspect_pcb_artifact
 from circuit_weaver.pcb_handoff import approve_placements, generate_authoritative_board
 
@@ -117,6 +119,28 @@ def _constraints():
     )
 
 
+def _golden_constraints():
+    return compile_pcb_constraints(
+        DesignIR(),
+        fab_profile="jlcpcb",
+        fab_profile_evidence_id="EV-DATASHEET-abcdef012345",
+        user_constraints=[
+            {
+                "klass": "length",
+                "target": "net:SIG",
+                "params": {"maximum": {"value": 20, "unit": "mm"}},
+                "evidence_ids": ["EV-CALCULATION-0123456789ab"],
+            },
+            {
+                "klass": "keepout",
+                "target": "net:SIG",
+                "params": {"copper_exclusion": {"value": 1, "unit": "mm"}},
+                "evidence_ids": ["EV-CALCULATION-0123456789ab"],
+            },
+        ],
+    )
+
+
 def test_authoritative_handoff_emits_real_pads_nets_geometry_and_provenance(tmp_path: Path) -> None:
     output = tmp_path / "out"
     placements = {"U1": {"x_mm": 20, "y_mm": 15, "rotation_deg": 90, "layer": "F.Cu"}}
@@ -136,6 +160,7 @@ def test_authoritative_handoff_emits_real_pads_nets_geometry_and_provenance(tmp_
     inspection = inspect_pcb_artifact(board_path)
     manifest = json.loads(Path(result.board_manifest_path).read_text(encoding="utf-8"))
     evidence = json.loads(Path(result.evidence_manifest_path).read_text(encoding="utf-8"))
+    rules = Path(result.board_rules_path).read_text(encoding="utf-8")
 
     assert inspection.kind is PcbArtifactKind.AUTHORITATIVE
     assert result.pad_count == 2
@@ -154,6 +179,8 @@ def test_authoritative_handoff_emits_real_pads_nets_geometry_and_provenance(tmp_
     assert provenance["kind"] == "tool_result"
     assert "PLA-0123456789ab" in provenance["claim"]
     assert result.identity_guard_ids[0] in provenance["claim"]
+    assert manifest["board_constraint_ids"] == [_constraints()[0].id]
+    assert _constraints()[0].id in rules
 
 
 def test_authoritative_rerun_preserves_uuid_and_reports_semantic_change(tmp_path: Path) -> None:
@@ -266,6 +293,46 @@ def test_stale_or_mismatched_placement_approval_and_missing_constraints_fail_clo
     assert not (tmp_path / "out").exists()
 
 
+def test_constraint_conflict_blocks_before_footprint_preflight_or_board_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compilation = compile_pcb_constraints(
+        DesignIR(),
+        fab_profile="jlcpcb",
+        fab_profile_evidence_id="EV-DATASHEET-abcdef012345",
+        user_constraints=[
+            {
+                "klass": "clearance",
+                "target": "net_class:Default",
+                "params": {"minimum": {"value": 0.05, "unit": "mm"}},
+                "evidence_ids": ["EV-CALCULATION-0123456789ab"],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        pcb_handoff,
+        "_preflight_component",
+        lambda *_args, **_kwargs: pytest.fail("footprint preflight must follow the conflict gate"),
+    )
+    placements = {"U1": (20, 15, 0, "top")}
+    output = tmp_path / "out"
+
+    with pytest.raises(PcbConstraintConflictError):
+        generate_authoritative_board(
+            [_component()],
+            placements,
+            {"U1": _bundle()},
+            output,
+            project_name="Conflict",
+            placement_approval=_approval(placements),
+            board_constraints=compilation,
+            footprint_library=_library(tmp_path / "libs"),
+        )
+
+    assert not output.exists()
+
+
 @pytest.mark.parametrize("copper_layers", [2, 4])
 @pytest.mark.skip_category("optional-tool")
 def test_authoritative_golden_round_trips_through_kicad_cli(
@@ -283,7 +350,7 @@ def test_authoritative_golden_round_trips_through_kicad_cli(
         tmp_path / "out",
         project_name=f"Golden{copper_layers}Layer",
         placement_approval=_approval(placements, f"PLA-golden-{copper_layers}"),
-        board_constraints=_constraints(),
+        board_constraints=_golden_constraints(),
         footprint_library=_library(tmp_path / "libs"),
         copper_layers=copper_layers,
     )
@@ -300,3 +367,13 @@ def test_authoritative_golden_round_trips_through_kicad_cli(
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert load_target.stat().st_size > 0
+    drc_report = tmp_path / f"drc-{copper_layers}.json"
+    drc = subprocess.run(
+        [cli, "pcb", "drc", "--format", "json", "--output", str(drc_report), result.board_path],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert drc.returncode == 0, drc.stdout + drc.stderr
+    assert drc_report.stat().st_size > 0
