@@ -44,6 +44,9 @@ def _record(**overrides):
         {"source": {"nested": [{"location": "prefix /tmp/cw/evidence.json"}]}},
         {"source": {"nested": ("path is file:///C:/Users/matt/part.pdf",)}},
         {"source": {"uri": r"https://example.test/?local=C:\Users\matt\secret.pdf"}},
+        {"claim": "build-artifact-/home/ci/secret"},
+        {"claim": "cache.v2./home/ci/id_rsa"},
+        {"claim": "(https://x.com/ds.pdf)/home/ci/secret"},
     ],
 )
 def test_embedded_machine_local_paths_are_rejected_recursively(overrides):
@@ -67,6 +70,8 @@ def test_http_userinfo_is_rejected_as_a_credential_leak(uri):
     "claim",
     [
         "datasheet at https://example.test/products/usb-c/connector.pdf",
+        "datasheet at (https://example.test/products/usb-c/connector.pdf)",
+        'datasheet at "https://example.test/products/usb-c/connector.pdf"',
         "datasheet at https://example.test/?contact=alice@example.test",
         "route / power / enable are checked",
         "pin A/B is differential",
