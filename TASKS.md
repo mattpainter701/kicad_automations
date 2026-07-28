@@ -137,6 +137,23 @@ Every sprint below must preserve these cross-cutting rules:
 
 > **Planner spec:** see `EPICS.md` Epic C — T249.1–.6, T250.1–.4, T251.1–.4, T252.1–.4, plus **four frozen contracts** to land before producer code: (1) authoritative-board vs preview separation (distinct filenames, pads XOR banner, `board_provenance` evidence, no in-place upgrade — closes F19); (2) `PcbConstraint` record `PCBC-<CLASS>-<12hex>` with `origin` + evidence_ids, conflicts flagged pre-mutation; (3) DRC findings reuse the **T248 `ValidationIssue`** schema (`CW-DRC-<NNN>`, `kind=tool_result`) — do NOT fork; (4) one `ManufacturingReadiness` state machine (`not_ready → needs_review → drc_pending → drc_clean → fabrication_ready`, `blocked{reason}`) that all surfaces *read* — subsumes `confidence_dashboard.readiness`. **Sequence: T249 → T250 → T251**; T249.5 reuses the T247 identity guard verbatim; `fabrication_ready` requires the T244.4 fabrication-evidence gate.
 
+> **▶ EXECUTION SEQUENCE (planner-defined, 2026-07-28).** Two threads. Each step has an **exit gate** the planner verifies on-disk before it counts as done; do not advance while the frozen contracts are unfrozen or forked.
+>
+> **Thread A — T244.R4 hotfix (parallel, ship FIRST).** Branch off `origin/main` (89cdf87), **not** the v0.34 branch — it releases as **v0.33.1** independently of Epic C.
+> - A1: `evidence_policy.py` — drop `.`/`-` from `_POSIX_ABSOLUTE` lookbehind (match the Windows `(?<![A-Za-z0-9_])` stance); make URL strip non-greedy, stop at brackets/quotes (`[^\s"'()<>]+`).
+> - A2: add the evaded shapes to `test_evidence_embedded_paths.py` — glued-to-`.`/`-` (`build-artifact-/home/ci/secret`, `cache.v2./home/ci/id_rsa`) and URL-adjacent (`(https://x.com/ds.pdf)/home/ci/secret`); assert rejected.
+> - A3: confirm ordinary remote URLs + slash notation still pass (no over-block regression).
+> - *Exit gate:* the two inputs now fail `validate_evidence_safety`; source + exact-wheel evidence-safety suites green; no new false-positives; tag v0.33.1.
+>
+> **Thread B — Epic C on `agent/circuit-weaver-0.34.0`, in dependency order. Freeze contracts in code BEFORE any handoff logic.**
+> - **B1 = T249.1** — land the four frozen contracts as code + contract tests proving **preview padless ⊕ authoritative board carries real footprints+pads** (the XOR is the test). *Gate:* pads-XOR-banner proven; no in-place preview→authoritative upgrade path exists.
+> - **B2 = T249 (remainder)** — authoritative schematic→PCB handoff as a **separate path**, emitting `board_provenance` evidence (`subject_ref=tool:pcb_handoff`). **T249.5 reuses the T247 identity guard verbatim** (first surface emitting real pads). *Gate:* authoritative board has real pads + provenance; a mis-identified part is blocked before any pad is emitted.
+> - **B3 = T250** — `PcbConstraint` population + conflict detection **before** board mutation. *Gate:* conflicting constraints flagged pre-mutation, not after.
+> - **B4 = T251** — transactional DRC emitting `CW-DRC-<NNN>` as T248 `ValidationIssue` (`kind=tool_result`); mirror `erc_runner` (no DRC runner exists yet). *Gate:* DRC uses the T248 model (no forked struct); a failing DRC leaves no partial board (last-known-good preserved).
+> - **B5 = T252** — scaffold from B1 onward, finalize last; `ManufacturingReadiness` subsumes `confidence_dashboard.readiness`. *Gate:* all surfaces read one state; `fabrication_ready` unreachable without the T244.4 gate.
+>
+> **Order:** A ‖ (B1 → B2 → B3 → B4), B5 scaffolded from B1. **Planner review checkpoints:** targeted review agent on **B2** (pad-emitting path) and **B4** (DRC transactional rollback) — the two highest-risk-for-real-defect surfaces.
+
 ### T249. Create an authoritative schematic-to-PCB handoff (P0, HIGH)
 
 - [ ] Generate or update a real `.kicad_pcb` using resolved library footprints, pad numbers, net assignments, board outline, stack-up, and the approved placement state; never relabel the existing preview as authoritative.
