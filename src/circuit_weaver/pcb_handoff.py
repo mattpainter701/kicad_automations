@@ -19,7 +19,7 @@ import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -207,7 +207,7 @@ def _parse_utc(value: str, field: str) -> datetime:
         raise PcbHandoffError(f"placement approval {field} must be ISO-8601") from exc
     if parsed.tzinfo is None:
         raise PcbHandoffError(f"placement approval {field} must carry a UTC offset")
-    return parsed.astimezone(UTC)
+    return parsed.astimezone(timezone.utc)
 
 
 def _require_current_placement_approval(
@@ -220,7 +220,7 @@ def _require_current_placement_approval(
         raise PcbHandoffError("authoritative handoff requires a placement approval ID")
     approved = _parse_utc(approval.approved_at, "approved_at")
     expires = _parse_utc(approval.expires_at, "expires_at")
-    current = (now or datetime.now(UTC)).astimezone(UTC)
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     if expires <= approved or current < approved or current >= expires:
         raise PcbHandoffError("placement approval is stale or outside its validity window")
     if approval.placement_sha256 != _placement_digest(placements):

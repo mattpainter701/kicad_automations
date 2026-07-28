@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -131,7 +131,11 @@ def test_export_requires_ready_or_explicit_unexpired_override() -> None:
         expires_at="2025-01-01T00:00:00Z",
     )
     with pytest.raises(ReadinessContractError, match="expired"):
-        require_export_authorized(readiness, override=expired, now=datetime(2026, 1, 1, tzinfo=UTC))
+        require_export_authorized(
+            readiness,
+            override=expired,
+            now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
     malformed_expiry = ManufacturingReadinessOverride(
         id="OVR-BAD",
         reason="engineering disposition",
@@ -144,7 +148,11 @@ def test_export_requires_ready_or_explicit_unexpired_override() -> None:
         reason="engineering disposition",
         expires_at="2027-01-01T00:00:00Z",
     )
-    require_export_authorized(readiness, override=current, now=datetime(2026, 1, 1, tzinfo=UTC))
+    require_export_authorized(
+        readiness,
+        override=current,
+        now=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
 
 
 def test_read_back_fabrication_ready_revalidates_linked_evidence() -> None:

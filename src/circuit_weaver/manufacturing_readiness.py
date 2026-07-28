@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -335,7 +335,9 @@ def require_export_authorized(
         expires = datetime.fromisoformat(override.expires_at.replace("Z", "+00:00"))
     except ValueError as exc:
         raise ReadinessContractError("manufacturing override expiry must be ISO-8601") from exc
-    if expires.tzinfo is None or expires.astimezone(UTC) <= (now or datetime.now(UTC)).astimezone(UTC):
+    if expires.tzinfo is None or expires.astimezone(timezone.utc) <= (
+        now or datetime.now(timezone.utc)
+    ).astimezone(timezone.utc):
         raise ReadinessContractError("manufacturing override is expired")
 
 
