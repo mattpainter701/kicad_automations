@@ -641,20 +641,51 @@ def test_authoritative_golden_round_trips_through_kicad_cli(
         copper_layers=copper_layers,
     )
     load_target = tmp_path / f"load-{copper_layers}.kicad_pcb"
-    shutil.copy2(result.board_path, load_target)
-
-    completed = subprocess.run(
-        [cli, "pcb", "upgrade", "--force", str(load_target)],
+    upgrade_probe = subprocess.run(
+        [cli, "pcb", "upgrade", "--help"],
         capture_output=True,
         text=True,
         timeout=60,
         check=False,
     )
+    if upgrade_probe.returncode == 0:
+        shutil.copy2(result.board_path, load_target)
+        completed = subprocess.run(
+            [cli, "pcb", "upgrade", "--force", str(load_target)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    else:
+        kicad_python = os.environ.get("KICAD_PYTHON") or shutil.which(
+            "python3",
+            path=os.defpath,
+        )
+        assert kicad_python, "KiCad lacks pcb upgrade and no system Python is available"
+        completed = subprocess.run(
+            [
+                kicad_python,
+                "-c",
+                (
+                    "import pcbnew, sys; "
+                    "board = pcbnew.LoadBoard(sys.argv[1]); "
+                    "assert board is not None; "
+                    "pcbnew.SaveBoard(sys.argv[2], board)"
+                ),
+                str(result.board_path),
+                str(load_target),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert load_target.stat().st_size > 0
     actual_drc = drc_runner.run_drc(
-        result.board_path,
+        load_target,
         evidence_ledger=EvidenceLedger(),
         constraints=_golden_constraints().constraints,
     )
