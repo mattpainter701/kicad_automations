@@ -10,17 +10,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .component_db import ComponentDef
+from .drc_runner import DrcResult, run_drc
 from .evidence import EvidenceLedger, EvidenceSource
 from .footprint_lib import FootprintGeometry, KiCadFootprintLibrary
 from .identity import (
@@ -51,16 +55,98 @@ class PcbHandoffError(ValueError):
     """The authoritative board cannot be emitted without weakening a gate."""
 
 
+class PcbDrcBlocked(PcbHandoffError):
+    """Exact staged board bytes failed the authoritative DRC gate."""
+
+
+class PcbHandoffTransactionError(PcbHandoffError):
+    """Transactional publication failed and prior artifacts were restored."""
+
+
 @dataclass(frozen=True)
 class AuthoritativeHandoffResult:
     board_path: str
     board_rules_path: str
     board_manifest_path: str
     evidence_manifest_path: str
+    drc_report_path: str
+    drc_findings_path: str
+    drc_evidence_id: str
     board_provenance_evidence_id: str
     identity_guard_ids: tuple[str, ...]
     footprint_snapshot: Mapping[str, str]
     pad_count: int
+
+
+@contextmanager
+def _pcb_output_lock(output_dir: Path, *, timeout: float = 30.0):
+    """Serialize one board's staged DRC and multi-artifact commit."""
+
+    resolved = output_dir.resolve(strict=False)
+    lock_path = resolved.parent / f".{resolved.name or 'pcb'}.pcb-handoff.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    with lock_path.open("a+b") as handle:
+        if handle.seek(0, os.SEEK_END) == 0:
+            handle.write(b"\0")
+            handle.flush()
+        acquired = False
+        while not acquired:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"timed out waiting for PCB handoff lock: {lock_path}") from exc
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _publish_staged_transaction(
+    staging: Path,
+    publications: Sequence[tuple[Path, Path]],
+) -> None:
+    """Replace a coherent artifact set and restore every prior byte on failure."""
+
+    backup = staging / ".rollback"
+    backup.mkdir()
+    prior: dict[Path, Path | None] = {}
+    for _source, destination in publications:
+        if destination.is_file():
+            saved = backup / destination.name
+            shutil.copy2(destination, saved)
+            prior[destination] = saved
+        else:
+            prior[destination] = None
+    try:
+        for source, destination in publications:
+            source.replace(destination)
+    except OSError as exc:
+        for destination, saved in prior.items():
+            if saved is None:
+                destination.unlink(missing_ok=True)
+            else:
+                shutil.copy2(saved, destination)
+        raise PcbHandoffTransactionError("PCB handoff publication failed; prior artifacts restored") from exc
 
 
 @dataclass(frozen=True)
@@ -470,6 +556,7 @@ def generate_authoritative_board(
     board_width_mm: float = 100.0,
     board_height_mm: float = 80.0,
     copper_layers: int = 2,
+    approved_drc_overrides: Mapping[str, str] | None = None,
 ) -> AuthoritativeHandoffResult:
     """Freshly emit a real pad-bearing board after all fail-closed preflight gates."""
 
@@ -485,6 +572,8 @@ def generate_authoritative_board(
     manifest_target = output / f"{safe_name}_board_manifest.json"
     rules_target = output / f"{safe_name}.kicad_dru"
     evidence_target = output / "evidence_manifest.json"
+    drc_report_target = output / f"{safe_name}_drc.json"
+    drc_findings_target = output / f"{safe_name}_drc_findings.json"
     references = [str(component.source_ref or "").strip() for component in materialized]
     if any(not item for item in references) or len(references) != len(set(references)):
         raise PcbHandoffError("authoritative handoff references must be non-empty and unique")
@@ -582,13 +671,6 @@ def generate_authoritative_board(
         }
         for item in prepared
     ]
-    previous: Mapping[str, Any] | None = None
-    if manifest_target.is_file():
-        try:
-            loaded = json.loads(manifest_target.read_text(encoding="utf-8"))
-            previous = loaded if isinstance(loaded, Mapping) else None
-        except json.JSONDecodeError:
-            previous = None
     board_hash = hashlib.sha256(board_text.encode("utf-8")).hexdigest()
     rules_hash = hashlib.sha256(rules_text.encode("utf-8")).hexdigest()
     manifest = {
@@ -607,36 +689,102 @@ def generate_authoritative_board(
         "identity_guard_ids": list(guard_ids),
         "board_constraint_ids": [item.id for item in constraints],
         "components": component_rows,
-        "semantic_changes": _semantic_changes(previous, component_rows),
         "copper_layers": copper_layers,
     }
 
     output.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=f".{safe_name}.pcb-handoff-", dir=output.parent))
-    try:
-        staged_board = staging / target.name
-        staged_manifest = staging / manifest_target.name
-        staged_rules = staging / rules_target.name
-        staged_board.write_text(board_text, encoding="utf-8", newline="")
-        staged_rules.write_text(rules_text, encoding="utf-8", newline="")
-        staged_manifest.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
-            encoding="utf-8",
-            newline="",
-        )
-        staged_evidence = ledger.write(staging)
-        staged_evidence.replace(evidence_target)
-        staged_manifest.replace(manifest_target)
-        staged_rules.replace(rules_target)
-        staged_board.replace(target)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+    drc_result: DrcResult | None = None
+    with _pcb_output_lock(output):
+        staging = Path(tempfile.mkdtemp(prefix=f".{safe_name}.pcb-handoff-", dir=output.parent))
+        try:
+            staged_board = staging / target.name
+            staged_manifest = staging / manifest_target.name
+            staged_rules = staging / rules_target.name
+            staged_drc_report = staging / drc_report_target.name
+            staged_drc_findings = staging / drc_findings_target.name
+            staged_board.write_text(board_text, encoding="utf-8", newline="")
+            staged_rules.write_text(rules_text, encoding="utf-8", newline="")
+
+            drc_result = run_drc(
+                staged_board,
+                evidence_ledger=ledger,
+                constraints=constraints,
+                approved_overrides=approved_drc_overrides,
+            )
+            if drc_result.status != "ok":
+                raise PcbDrcBlocked(f"authoritative DRC could not complete: {drc_result.failure_reason}")
+            if drc_result.blocker_count:
+                raise PcbDrcBlocked(
+                    f"authoritative DRC found {drc_result.blocker_count} unapproved blocker(s)"
+                )
+            if drc_result.board_sha256 != board_hash:
+                raise PcbDrcBlocked("DRC result does not name the exact staged board bytes")
+
+            previous: Mapping[str, Any] | None = None
+            if manifest_target.is_file():
+                try:
+                    loaded = json.loads(manifest_target.read_text(encoding="utf-8"))
+                    previous = loaded if isinstance(loaded, Mapping) else None
+                except json.JSONDecodeError:
+                    previous = None
+            manifest["semantic_changes"] = _semantic_changes(previous, component_rows)
+            manifest["drc"] = {
+                "status": drc_result.status,
+                "passed": drc_result.passed,
+                "blocker_count": drc_result.blocker_count,
+                "tool_version": drc_result.tool_version,
+                "evidence_id": drc_result.evidence_id,
+                "board_sha256": drc_result.board_sha256,
+                "report": drc_report_target.name,
+                "findings": drc_findings_target.name,
+            }
+            staged_drc_report.write_text(
+                json.dumps(drc_result.raw_report, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+                encoding="utf-8",
+                newline="",
+            )
+            staged_drc_findings.write_text(
+                json.dumps(
+                    [finding.to_dict() for finding in drc_result.findings],
+                    indent=2,
+                    sort_keys=True,
+                    ensure_ascii=True,
+                )
+                + "\n",
+                encoding="utf-8",
+                newline="",
+            )
+            staged_manifest.write_text(
+                json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+                encoding="utf-8",
+                newline="",
+            )
+            staged_evidence = ledger.write(staging)
+            _publish_staged_transaction(
+                staging,
+                (
+                    (staged_evidence, evidence_target),
+                    (staged_drc_report, drc_report_target),
+                    (staged_drc_findings, drc_findings_target),
+                    (staged_rules, rules_target),
+                    (staged_manifest, manifest_target),
+                    (staged_board, target),
+                ),
+            )
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+    if drc_result is None:
+        raise PcbHandoffTransactionError("DRC transaction completed without a result")
 
     return AuthoritativeHandoffResult(
         board_path=str(target),
         board_rules_path=str(rules_target),
         board_manifest_path=str(manifest_target),
         evidence_manifest_path=str(evidence_target),
+        drc_report_path=str(drc_report_target),
+        drc_findings_path=str(drc_findings_target),
+        drc_evidence_id=drc_result.evidence_id,
         board_provenance_evidence_id=provenance_id,
         identity_guard_ids=guard_ids,
         footprint_snapshot=dict(snapshot),

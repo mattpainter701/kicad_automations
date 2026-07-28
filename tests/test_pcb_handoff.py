@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -10,9 +11,12 @@ from pathlib import Path
 
 import pytest
 
+import circuit_weaver.drc_runner as drc_runner
 import circuit_weaver.pcb_handoff as pcb_handoff
 from circuit_weaver.component_db import ComponentDef, PinDef
 from circuit_weaver.design_ir import DesignIR
+from circuit_weaver.drc_runner import DrcResult
+from circuit_weaver.evidence import EvidenceLedger, EvidenceSource
 from circuit_weaver.footprint_lib import KiCadFootprintLibrary
 from circuit_weaver.identity import (
     IdentityHandoffBlocked,
@@ -23,7 +27,12 @@ from circuit_weaver.identity import (
     reconcile_identity_assertions,
 )
 from circuit_weaver.pcb_constraints import PcbConstraintConflictError, compile_pcb_constraints
-from circuit_weaver.pcb_contracts import PcbArtifactKind, PcbConstraint, inspect_pcb_artifact
+from circuit_weaver.pcb_contracts import (
+    PcbArtifactKind,
+    PcbConstraint,
+    drc_validation_issue,
+    inspect_pcb_artifact,
+)
 from circuit_weaver.pcb_handoff import approve_placements, generate_authoritative_board
 
 FOOTPRINT = """(footprint "TEST_2PAD"
@@ -34,6 +43,45 @@ FOOTPRINT = """(footprint "TEST_2PAD"
   (pad "1" smd rect (at -1 0) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask"))
   (pad "2" smd rect (at 1 0) (size 1 1) (layers "F.Cu" "F.Paste" "F.Mask"))
 )"""
+
+
+@pytest.fixture(autouse=True)
+def _clean_staged_drc(monkeypatch: pytest.MonkeyPatch):
+    def clean(board, *, evidence_ledger, constraints=(), approved_overrides=None, timeout=120):
+        del constraints, approved_overrides, timeout
+        payload = Path(board).read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        evidence_id = evidence_ledger.record(
+            subject_ref="tool:drc",
+            claim=json.dumps(
+                {"board_sha256": digest, "kicad_version": "test", "observed_findings": 0},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            kind="tool_result",
+            source=EvidenceSource(
+                doc_id="kicad-cli-test",
+                content_hash=digest,
+                extraction_method="test-clean-drc",
+            ),
+            confidence="verified",
+            freshness="current",
+        )
+        return DrcResult(
+            status="ok",
+            board=str(board),
+            board_sha256=digest,
+            tool_version="test",
+            evidence_id=evidence_id,
+            raw_report={
+                "kicad_version": "test",
+                "violations": [],
+                "unconnected_items": [],
+                "schematic_parity": [],
+            },
+        )
+
+    monkeypatch.setattr(pcb_handoff, "run_drc", clean)
 
 
 def _library(tmp_path: Path) -> KiCadFootprintLibrary:
@@ -175,10 +223,13 @@ def test_authoritative_handoff_emits_real_pads_nets_geometry_and_provenance(tmp_
     }
     assert manifest["board_provenance_evidence_id"] == result.board_provenance_evidence_id
     provenance = next(item for item in evidence["records"] if item["id"] == result.board_provenance_evidence_id)
+    drc_evidence = next(item for item in evidence["records"] if item["id"] == result.drc_evidence_id)
     assert provenance["subject_ref"] == "tool:pcb_handoff"
     assert provenance["kind"] == "tool_result"
     assert "PLA-0123456789ab" in provenance["claim"]
     assert result.identity_guard_ids[0] in provenance["claim"]
+    assert drc_evidence["subject_ref"] == "tool:drc" and drc_evidence["kind"] == "tool_result"
+    assert manifest["drc"]["passed"] is True
     assert manifest["board_constraint_ids"] == [_constraints()[0].id]
     assert _constraints()[0].id in rules
 
@@ -333,6 +384,144 @@ def test_constraint_conflict_blocks_before_footprint_preflight_or_board_mutation
     assert not output.exists()
 
 
+def test_failing_drc_preserves_every_last_known_good_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "out"
+    placements = {"U1": (20, 15, 0, "top")}
+    first = generate_authoritative_board(
+        [_component()],
+        placements,
+        {"U1": _bundle()},
+        output,
+        project_name="Transactional",
+        placement_approval=_approval(placements, "PLA-first"),
+        board_constraints=_constraints(),
+        footprint_library=_library(tmp_path / "libs"),
+    )
+    artifact_paths = [
+        Path(first.board_path),
+        Path(first.board_rules_path),
+        Path(first.board_manifest_path),
+        Path(first.evidence_manifest_path),
+        Path(first.drc_report_path),
+        Path(first.drc_findings_path),
+    ]
+    before = {path: path.read_bytes() for path in artifact_paths}
+
+    def blocked(board, *, evidence_ledger, **_kwargs):
+        digest = hashlib.sha256(Path(board).read_bytes()).hexdigest()
+        evidence_id = evidence_ledger.record(
+            subject_ref="tool:drc",
+            claim=json.dumps({"board_sha256": digest, "observed_findings": 1}, sort_keys=True),
+            kind="tool_result",
+            source=EvidenceSource(content_hash=digest, extraction_method="test-blocked-drc"),
+            confidence="verified",
+            freshness="current",
+        )
+        finding = drc_validation_issue(
+            rule_number=1,
+            message="clearance violation",
+            severity="blocker",
+            evidence_ids=(evidence_id,),
+            observed_value="0.1 mm",
+            expected_constraint="0.2 mm",
+            safest_next_action="increase clearance",
+        )
+        return DrcResult(
+            status="ok",
+            board=str(board),
+            board_sha256=digest,
+            tool_version="test",
+            evidence_id=evidence_id,
+            findings=(finding,),
+            raw_report={"violations": [{}]},
+        )
+
+    monkeypatch.setattr(pcb_handoff, "run_drc", blocked)
+    moved = {"U1": (21, 15, 0, "top")}
+    with pytest.raises(pcb_handoff.PcbDrcBlocked, match="unapproved blocker"):
+        generate_authoritative_board(
+            [_component()],
+            moved,
+            {"U1": _bundle()},
+            output,
+            project_name="Transactional",
+            placement_approval=_approval(moved, "PLA-second"),
+            board_constraints=_constraints(),
+            footprint_library=_library(tmp_path / "libs2"),
+        )
+
+    assert {path: path.read_bytes() for path in artifact_paths} == before
+
+
+def test_drc_operational_failure_or_stale_hash_publishes_no_partial_board(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    placements = {"U1": (20, 15, 0, "top")}
+    base = {
+        "components": [_component()],
+        "approved_placements": placements,
+        "identity_handoffs": {"U1": _bundle()},
+        "project_name": "NoPartial",
+        "placement_approval": _approval(placements),
+        "board_constraints": _constraints(),
+        "footprint_library": _library(tmp_path / "libs"),
+    }
+    for name, result in (
+        ("failed", DrcResult(status="failed", board="staged", failure_reason="parser drift")),
+        (
+            "stale",
+            DrcResult(
+                status="ok",
+                board="staged",
+                board_sha256="0" * 64,
+                evidence_id="EV-TOOL_RESULT-0123456789ab",
+                raw_report={},
+            ),
+        ),
+    ):
+        output = tmp_path / name
+        monkeypatch.setattr(pcb_handoff, "run_drc", lambda *_args, _result=result, **_kwargs: _result)
+        with pytest.raises(pcb_handoff.PcbDrcBlocked):
+            generate_authoritative_board(output_dir=output, **base)
+        assert not (output / "NoPartial.kicad_pcb").exists()
+        assert not (output / "NoPartial_board_manifest.json").exists()
+
+
+def test_interrupted_multi_file_publish_restores_prior_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staging = tmp_path / "staging"
+    output = tmp_path / "output"
+    staging.mkdir()
+    output.mkdir()
+    sources = [staging / "one", staging / "two", staging / "three"]
+    destinations = [output / "one", output / "two", output / "three"]
+    for index, (source, destination) in enumerate(zip(sources, destinations), start=1):
+        source.write_text(f"new-{index}", encoding="utf-8")
+        destination.write_text(f"old-{index}", encoding="utf-8")
+    real_replace = Path.replace
+
+    def interrupted(source: Path, destination: Path):
+        if Path(destination).name == "two":
+            raise OSError("injected interruption")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", interrupted)
+    with pytest.raises(pcb_handoff.PcbHandoffTransactionError):
+        pcb_handoff._publish_staged_transaction(staging, tuple(zip(sources, destinations)))
+
+    assert [path.read_text(encoding="utf-8") for path in destinations] == [
+        "old-1",
+        "old-2",
+        "old-3",
+    ]
+
+
 @pytest.mark.parametrize("copper_layers", [2, 4])
 @pytest.mark.skip_category("optional-tool")
 def test_authoritative_golden_round_trips_through_kicad_cli(
@@ -367,13 +556,11 @@ def test_authoritative_golden_round_trips_through_kicad_cli(
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert load_target.stat().st_size > 0
-    drc_report = tmp_path / f"drc-{copper_layers}.json"
-    drc = subprocess.run(
-        [cli, "pcb", "drc", "--format", "json", "--output", str(drc_report), result.board_path],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
+    actual_drc = drc_runner.run_drc(
+        result.board_path,
+        evidence_ledger=EvidenceLedger(),
+        constraints=_golden_constraints().constraints,
     )
-    assert drc.returncode == 0, drc.stdout + drc.stderr
-    assert drc_report.stat().st_size > 0
+    assert actual_drc.status == "ok"
+    assert actual_drc.passed
+    assert all(type(finding).__name__ == "ValidationIssue" for finding in actual_drc.findings)
