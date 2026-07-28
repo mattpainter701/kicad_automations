@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.33.1] - 2026-07-28
+
+### Security
+
+- Close evidence-safety redaction bypasses where a machine-local POSIX path is glued to a preceding dot or hyphen, or follows a bracketed remote URL. Remote HTTP(S) URLs and ordinary slash notation remain accepted.
+
+### Validation
+
+- Windows/Python 3.13 source suite: **1771 passed, 16 classified skips**. The isolated exact-wheel evidence/release suite passes **51 tests**; Ruff, `twine check`, and diff checks pass. One pre-existing Starlette deprecation warning remains.
+
 ## [0.33.0] - 2026-07-27
 
 ### Planning
