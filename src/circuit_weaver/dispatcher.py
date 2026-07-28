@@ -3772,6 +3772,11 @@ def main() -> None:
         default=None,
         help="Canonical readiness JSON (default: manufacturing_readiness.json beside the PCB)",
     )
+    gerber_p.add_argument(
+        "--evidence-manifest",
+        default=None,
+        help="Validated evidence manifest (default: evidence_manifest.json beside the PCB)",
+    )
     gerber_p.add_argument("--override-id", default=None, help="Explicit manufacturing-export override ID")
     gerber_p.add_argument("--override-reason", default=None, help="Justification for the explicit override")
     gerber_p.add_argument(
@@ -4831,14 +4836,22 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         import zipfile
 
         from .manufacturing_readiness import (
+            EVIDENCE_MANIFEST_FILENAME,
             READINESS_FILENAME,
             ManufacturingReadinessOverride,
+            ManufacturingReadinessState,
             ReadinessContractError,
+            read_manufacturing_evidence,
             read_manufacturing_readiness,
             require_export_authorized,
         )
 
         readiness_path = Path(args.readiness) if args.readiness else Path(args.kicad_pcb).parent / READINESS_FILENAME
+        evidence_path = (
+            Path(args.evidence_manifest)
+            if args.evidence_manifest
+            else Path(args.kicad_pcb).parent / EVIDENCE_MANIFEST_FILENAME
+        )
         override_values = (args.override_id, args.override_reason, args.override_expires_at)
         try:
             if any(value is not None for value in override_values) and not all(
@@ -4857,13 +4870,25 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 if all(override_values)
                 else None
             )
-            require_export_authorized(readiness, override=override)
+            evidence_records: tuple[dict[str, Any], ...] = ()
+            if readiness.state is ManufacturingReadinessState.FABRICATION_READY:
+                try:
+                    evidence_records = read_manufacturing_evidence(evidence_path)
+                except ReadinessContractError:
+                    if override is None:
+                        raise
+            require_export_authorized(
+                readiness,
+                evidence_records=evidence_records,
+                override=override,
+            )
         except ReadinessContractError as exc:
             _print_json(
                 {
                     "status": "blocked",
                     "message": str(exc),
                     "manufacturing_readiness": str(readiness_path),
+                    "evidence_manifest": str(evidence_path),
                 }
             )
             raise SystemExit(1) from exc
@@ -4926,6 +4951,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 "zip": str(zip_path),
                 "file_count": len(gerber_files),
                 "manufacturing_readiness": readiness.to_dict(),
+                "evidence_manifest": str(evidence_path),
                 "override_id": override.id if override else None,
             }
         )

@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .evidence_policy import EvidencePolicyError, require_fabrication_evidence
+from .evidence_policy import EvidencePolicyError, require_backing, require_fabrication_evidence
 
 
 class ReadinessContractError(ValueError):
@@ -18,7 +18,9 @@ class ReadinessContractError(ValueError):
 
 
 READINESS_FILENAME = "manufacturing_readiness.json"
+EVIDENCE_MANIFEST_FILENAME = "evidence_manifest.json"
 _FABRICATION_GATE_TOKEN = object()
+_READBACK_TOKEN = object()
 
 
 class ManufacturingReadinessState(str, Enum):
@@ -58,7 +60,7 @@ class ManufacturingReadiness:
             raise ReadinessContractError("blocked_reason is valid only for blocked readiness")
         if (
             self.state is ManufacturingReadinessState.FABRICATION_READY
-            and self._gate_token is not _FABRICATION_GATE_TOKEN
+            and self._gate_token not in {_FABRICATION_GATE_TOKEN, _READBACK_TOKEN}
         ):
             raise ReadinessContractError("fabrication_ready can only be produced by the evidence gate")
         for field_name in ("blockers", "evidence_ids", "next_actions"):
@@ -101,7 +103,7 @@ class ManufacturingReadiness:
             next_actions=string_tuple("next_actions"),
             blocked_reason=blocked_reason,
             _gate_token=(
-                _FABRICATION_GATE_TOKEN
+                _READBACK_TOKEN
                 if state is ManufacturingReadinessState.FABRICATION_READY
                 else None
             ),
@@ -155,6 +157,27 @@ def read_manufacturing_readiness(path: str | Path) -> ManufacturingReadiness:
     return ManufacturingReadiness.from_dict(raw)
 
 
+def read_manufacturing_evidence(path: str | Path) -> tuple[dict[str, Any], ...]:
+    """Load a fully validated evidence manifest for an export authorization gate."""
+
+    from .evidence import EvidenceLedger
+
+    source = Path(path)
+    if source.is_dir():
+        source = source / EVIDENCE_MANIFEST_FILENAME
+    try:
+        raw = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReadinessContractError(f"cannot read manufacturing evidence: {exc}") from exc
+    if not isinstance(raw, Mapping):
+        raise ReadinessContractError("manufacturing evidence manifest must be an object")
+    try:
+        records = EvidenceLedger.from_manifest(raw).to_manifest()["records"]
+    except (TypeError, ValueError) as exc:
+        raise ReadinessContractError(f"invalid manufacturing evidence manifest: {exc}") from exc
+    return tuple(dict(record) for record in records if isinstance(record, Mapping))
+
+
 def _records(records: Iterable[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
     return tuple(record for record in records if isinstance(record, dict))
 
@@ -163,7 +186,7 @@ def require_manufacturing_evidence(
     records: Iterable[dict[str, Any]],
     *,
     acknowledged_heuristic_ids: Iterable[str] = (),
-) -> None:
+) -> dict[str, Mapping[str, Any]]:
     """Require identity, real-pad handoff, DRC, then the unchanged T244.4 gate."""
 
     materialized = _records(records)
@@ -174,10 +197,21 @@ def require_manufacturing_evidence(
         raise EvidencePolicyError("manufacturing readiness requires pad-bearing board provenance")
     if "tool:drc" not in subjects:
         raise EvidencePolicyError("manufacturing readiness requires DRC tool evidence")
-    require_fabrication_evidence(
+    backing = require_fabrication_evidence(
         materialized,
         acknowledged_heuristic_ids=acknowledged_heuristic_ids,
     )
+    backing["tool:pcb_handoff"] = require_backing(
+        "tool:pcb_handoff",
+        materialized,
+        acknowledged_heuristic_ids=acknowledged_heuristic_ids,
+    )
+    backing["tool:drc"] = require_backing(
+        "tool:drc",
+        materialized,
+        acknowledged_heuristic_ids=acknowledged_heuristic_ids,
+    )
+    return backing
 
 
 def assess_manufacturing_readiness(
@@ -254,13 +288,49 @@ def assess_manufacturing_readiness(
 def require_export_authorized(
     readiness: ManufacturingReadiness,
     *,
+    evidence_records: Iterable[dict[str, Any]] = (),
     override: ManufacturingReadinessOverride | None = None,
     now: datetime | None = None,
 ) -> None:
     if readiness.state is ManufacturingReadinessState.FABRICATION_READY:
-        return
-    if override is None or not override.id.strip() or not override.reason.strip():
+        records = _records(evidence_records)
+        try:
+            backing = require_manufacturing_evidence(records)
+            manifest_ids = {
+                str(record["id"])
+                for record in records
+                if isinstance(record.get("id"), str)
+            }
+            readiness_ids = set(readiness.evidence_ids)
+            backing_ids = {
+                str(record["id"])
+                for record in backing.values()
+                if isinstance(record.get("id"), str)
+            }
+            if not readiness_ids or readiness_ids - manifest_ids:
+                raise EvidencePolicyError(
+                    "fabrication_ready evidence IDs must resolve in the evidence manifest"
+                )
+            if backing_ids - readiness_ids:
+                raise EvidencePolicyError(
+                    "fabrication_ready evidence IDs do not cover the T244.4 gate results"
+                )
+            return
+        except EvidencePolicyError as exc:
+            if override is None:
+                raise ReadinessContractError(
+                    f"fabrication_ready evidence revalidation failed: {exc}"
+                ) from exc
+    if (
+        override is None
+        or not isinstance(override.id, str)
+        or not override.id.strip()
+        or not isinstance(override.reason, str)
+        or not override.reason.strip()
+    ):
         raise ReadinessContractError("manufacturing export requires fabrication_ready or an explicit override")
+    if not isinstance(override.expires_at, str) or not override.expires_at.strip():
+        raise ReadinessContractError("manufacturing override expiry must be ISO-8601")
     try:
         expires = datetime.fromisoformat(override.expires_at.replace("Z", "+00:00"))
     except ValueError as exc:

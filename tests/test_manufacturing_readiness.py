@@ -132,12 +132,44 @@ def test_export_requires_ready_or_explicit_unexpired_override() -> None:
     )
     with pytest.raises(ReadinessContractError, match="expired"):
         require_export_authorized(readiness, override=expired, now=datetime(2026, 1, 1, tzinfo=UTC))
+    malformed_expiry = ManufacturingReadinessOverride(
+        id="OVR-BAD",
+        reason="engineering disposition",
+        expires_at=None,  # type: ignore[arg-type] - runtime boundary regression
+    )
+    with pytest.raises(ReadinessContractError, match="ISO-8601"):
+        require_export_authorized(readiness, override=malformed_expiry)
     current = ManufacturingReadinessOverride(
         id="OVR-2",
         reason="engineering disposition",
         expires_at="2027-01-01T00:00:00Z",
     )
     require_export_authorized(readiness, override=current, now=datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_read_back_fabrication_ready_revalidates_linked_evidence() -> None:
+    records = _fabrication_evidence()
+    ready = assess_manufacturing_readiness(
+        ManufacturingReadinessInputs(
+            identity_complete=True,
+            placement_approved=True,
+            routing_complete=True,
+            erc_passed=True,
+            drc_completed=True,
+            drc_passed=True,
+            bom_cpl_reconciled=True,
+            fabrication_artifacts_valid=True,
+        ),
+        evidence_records=records,
+    )
+    loaded = ManufacturingReadiness.from_dict(ready.to_dict())
+
+    require_export_authorized(loaded, evidence_records=records)
+    with pytest.raises(ReadinessContractError, match="evidence IDs"):
+        require_export_authorized(
+            ManufacturingReadiness.from_dict({**ready.to_dict(), "evidence_ids": []}),
+            evidence_records=records,
+        )
 
 
 def test_failed_drc_is_terminal_blocked_with_reason() -> None:

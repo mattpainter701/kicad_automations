@@ -21,6 +21,7 @@ from circuit_weaver.dispatcher import (
     ValidationReport,
     _print_validation_report,
 )
+from circuit_weaver.evidence import EvidenceLedger, EvidenceSource
 
 _PYTHON = sys.executable
 _MINIMAL_SPEC = "project: CLITest\nblocks: []\n"
@@ -85,6 +86,43 @@ def test_gerber_export_fails_closed_before_creating_output_without_readiness(tmp
 
     assert result.returncode == 1
     assert json.loads(result.stdout)["status"] == "blocked"
+    assert not output.exists()
+
+
+def test_gerber_export_rejects_forged_ready_state_with_empty_evidence_ids(tmp_path):
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("(kicad_pcb (version 20240108) (generator pcbnew))", encoding="utf-8")
+    readiness = {
+        "state": "fabrication_ready",
+        "blockers": [],
+        "evidence_ids": [],
+        "next_actions": [],
+        "blocked_reason": None,
+    }
+    (tmp_path / "manufacturing_readiness.json").write_text(json.dumps(readiness), encoding="utf-8")
+    ledger = EvidenceLedger()
+    for subject, kind in (
+        ("comp:U1", "datasheet"),
+        ("tool:pcb_handoff", "tool_result"),
+        ("tool:drc", "tool_result"),
+    ):
+        ledger.record(
+            subject_ref=subject,
+            claim=f"verified evidence for {subject}",
+            kind=kind,
+            source=EvidenceSource(doc_id=subject, extraction_method="test"),
+            confidence="verified",
+            freshness="current",
+        )
+    ledger.write(tmp_path)
+    output = tmp_path / "gerbers"
+
+    result = _run(["export-gerbers", str(board), "--output", str(output)])
+
+    assert result.returncode == 1
+    response = json.loads(result.stdout)
+    assert response["status"] == "blocked"
+    assert "evidence IDs" in response["message"]
     assert not output.exists()
 
 
