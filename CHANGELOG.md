@@ -6,7 +6,7 @@
 
 - Freeze the placement-preview and authoritative-board contracts in code: previews remain padless and carry the review-only banner, while a separate fresh-emission path produces real library footprints, pads, authoritative nets, stable UUIDs, semantic change manifests, and `tool:pcb_handoff` provenance.
 - Reuse the T247 identity handoff at the first pad-emitting boundary. Unresolved footprints, pin/pad mismatches, stale placement approvals, missing constraints, fewer than two independent identity sources, and self-reported reconciliation states fail before pad rendering or board publication.
-- Exercise two-layer and four-layer authoritative boards through the KiCad load/DRC golden contract. Local verification currently proves KiCad 10; KiCad 8 and 9 remain explicitly pending the unpushed CI matrix.
+- Exercise two-layer and four-layer authoritative boards through the KiCad load/save/DRC golden contract. Local verification proves KiCad 10, and hosted CI proves KiCad 8, 9, and 10.
 
 ### PCB constraints and transactional DRC
 
@@ -24,7 +24,7 @@
 ### Verification status
 
 - Local Windows/Python 3.13 source suite: **1814 passed, 18 classified skips**. Ruff and diff checks pass; local KiCad 10 two-layer and four-layer load/DRC goldens pass.
-- KiCad 8 and KiCad 9 authoritative round-trip results are **pending CI** and must not be treated as proven until the Epic C branch is pushed after review clearance.
+- Hosted CI proves the two-layer and four-layer authoritative round trip on **KiCad 8, KiCad 9, and KiCad 10**.
 
 ## [0.33.1] - 2026-07-28
 
