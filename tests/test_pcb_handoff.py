@@ -641,14 +641,18 @@ def test_authoritative_golden_round_trips_through_kicad_cli(
         copper_layers=copper_layers,
     )
     load_target = tmp_path / f"load-{copper_layers}.kicad_pcb"
-    upgrade_probe = subprocess.run(
-        [cli, "pcb", "upgrade", "--help"],
+    pcb_help = subprocess.run(
+        [cli, "pcb", "--help"],
         capture_output=True,
         text=True,
         timeout=60,
         check=False,
     )
-    if upgrade_probe.returncode == 0:
+    upgrade_available = any(
+        line.strip().startswith("upgrade ")
+        for line in (pcb_help.stdout + pcb_help.stderr).splitlines()
+    )
+    if upgrade_available:
         shutil.copy2(result.board_path, load_target)
         completed = subprocess.run(
             [cli, "pcb", "upgrade", "--force", str(load_target)],
