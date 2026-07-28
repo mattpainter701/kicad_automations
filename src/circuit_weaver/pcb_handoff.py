@@ -33,6 +33,11 @@ from .identity import (
     IdentityRecord,
     require_identity_handoff,
 )
+from .manufacturing_readiness import (
+    READINESS_FILENAME,
+    ManufacturingReadinessInputs,
+    assess_manufacturing_readiness,
+)
 from .pcb_constraints import (
     ConstraintCompilation,
     PcbConstraintConflictError,
@@ -72,6 +77,7 @@ class AuthoritativeHandoffResult:
     drc_report_path: str
     drc_findings_path: str
     drc_evidence_id: str
+    manufacturing_readiness_path: str
     board_provenance_evidence_id: str
     identity_guard_ids: tuple[str, ...]
     footprint_snapshot: Mapping[str, str]
@@ -574,6 +580,7 @@ def generate_authoritative_board(
     evidence_target = output / "evidence_manifest.json"
     drc_report_target = output / f"{safe_name}_drc.json"
     drc_findings_target = output / f"{safe_name}_drc_findings.json"
+    readiness_target = output / READINESS_FILENAME
     references = [str(component.source_ref or "").strip() for component in materialized]
     if any(not item for item in references) or len(references) != len(set(references)):
         raise PcbHandoffError("authoritative handoff references must be non-empty and unique")
@@ -702,6 +709,7 @@ def generate_authoritative_board(
             staged_rules = staging / rules_target.name
             staged_drc_report = staging / drc_report_target.name
             staged_drc_findings = staging / drc_findings_target.name
+            staged_readiness = staging / readiness_target.name
             staged_board.write_text(board_text, encoding="utf-8", newline="")
             staged_rules.write_text(rules_text, encoding="utf-8", newline="")
 
@@ -738,6 +746,25 @@ def generate_authoritative_board(
                 "report": drc_report_target.name,
                 "findings": drc_findings_target.name,
             }
+            readiness = assess_manufacturing_readiness(
+                ManufacturingReadinessInputs(
+                    identity_complete=True,
+                    placement_approved=True,
+                    routing_complete=False,
+                    erc_passed=False,
+                    drc_completed=True,
+                    drc_passed=True,
+                    bom_cpl_reconciled=False,
+                    fabrication_artifacts_valid=False,
+                ),
+                evidence_records=ledger.to_manifest()["records"],
+            )
+            manifest["manufacturing_readiness"] = readiness.to_dict()
+            staged_readiness.write_text(
+                json.dumps(readiness.to_dict(), indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+                encoding="utf-8",
+                newline="",
+            )
             staged_drc_report.write_text(
                 json.dumps(drc_result.raw_report, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
                 encoding="utf-8",
@@ -766,6 +793,7 @@ def generate_authoritative_board(
                     (staged_evidence, evidence_target),
                     (staged_drc_report, drc_report_target),
                     (staged_drc_findings, drc_findings_target),
+                    (staged_readiness, readiness_target),
                     (staged_rules, rules_target),
                     (staged_manifest, manifest_target),
                     (staged_board, target),
@@ -785,6 +813,7 @@ def generate_authoritative_board(
         drc_report_path=str(drc_report_target),
         drc_findings_path=str(drc_findings_target),
         drc_evidence_id=drc_result.evidence_id,
+        manufacturing_readiness_path=str(readiness_target),
         board_provenance_evidence_id=provenance_id,
         identity_guard_ids=guard_ids,
         footprint_snapshot=dict(snapshot),

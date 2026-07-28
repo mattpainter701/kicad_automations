@@ -3767,6 +3767,18 @@ def main() -> None:
     gerber_p = subparsers.add_parser("export-gerbers", help="Export Gerber and drill files from KiCad PCB")
     gerber_p.add_argument("kicad_pcb", help="KiCad PCB file (.kicad_pcb)")
     gerber_p.add_argument("--output", "-o", required=True, help="Output directory for Gerber/drill files")
+    gerber_p.add_argument(
+        "--readiness",
+        default=None,
+        help="Canonical readiness JSON (default: manufacturing_readiness.json beside the PCB)",
+    )
+    gerber_p.add_argument("--override-id", default=None, help="Explicit manufacturing-export override ID")
+    gerber_p.add_argument("--override-reason", default=None, help="Justification for the explicit override")
+    gerber_p.add_argument(
+        "--override-expires-at",
+        default=None,
+        help="ISO-8601 expiry for the explicit override",
+    )
 
     cost_bom_p = subparsers.add_parser("cost-bom", help="Show costed BOM with LCSC pricing at volume breaks")
     cost_bom_p.add_argument("spec", help="Design spec YAML file")
@@ -4181,6 +4193,23 @@ def main() -> None:
     )
     conf_p.add_argument("--json", dest="json_output", action="store_true", help="Output as JSON")
     conf_p.add_argument("--enrich-parts", action="store_true", default=False)
+    conf_p.add_argument(
+        "--readiness",
+        default=None,
+        help="Path to canonical manufacturing_readiness.json (auto-discovers output/ when omitted)",
+    )
+
+    readiness_p = subparsers.add_parser(
+        "manufacturing-readiness",
+        help="Read the canonical manufacturing-readiness state without recomputing it",
+    )
+    readiness_p.add_argument(
+        "path",
+        nargs="?",
+        default=".",
+        help="Readiness JSON or project/output directory (default: current directory)",
+    )
+    readiness_p.add_argument("--json", dest="json_output", action="store_true", help="Output raw JSON")
 
     simulate_p = subparsers.add_parser("simulate", help="Run SPICE simulations on a design")
     simulate_p.add_argument("spec", help="Path to YAML/JSON design spec")
@@ -4801,6 +4830,44 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
     if args.command == "export-gerbers":
         import zipfile
 
+        from .manufacturing_readiness import (
+            READINESS_FILENAME,
+            ManufacturingReadinessOverride,
+            ReadinessContractError,
+            read_manufacturing_readiness,
+            require_export_authorized,
+        )
+
+        readiness_path = Path(args.readiness) if args.readiness else Path(args.kicad_pcb).parent / READINESS_FILENAME
+        override_values = (args.override_id, args.override_reason, args.override_expires_at)
+        try:
+            if any(value is not None for value in override_values) and not all(
+                isinstance(value, str) and value.strip() for value in override_values
+            ):
+                raise ReadinessContractError(
+                    "override requires --override-id, --override-reason, and --override-expires-at"
+                )
+            readiness = read_manufacturing_readiness(readiness_path)
+            override = (
+                ManufacturingReadinessOverride(
+                    id=args.override_id,
+                    reason=args.override_reason,
+                    expires_at=args.override_expires_at,
+                )
+                if all(override_values)
+                else None
+            )
+            require_export_authorized(readiness, override=override)
+        except ReadinessContractError as exc:
+            _print_json(
+                {
+                    "status": "blocked",
+                    "message": str(exc),
+                    "manufacturing_readiness": str(readiness_path),
+                }
+            )
+            raise SystemExit(1) from exc
+
         cli = _kicad_cli_path()
         if not cli:
             _print_json(
@@ -4858,6 +4925,8 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 "message": f"Exported Gerbers and drills to {zip_path}",
                 "zip": str(zip_path),
                 "file_count": len(gerber_files),
+                "manufacturing_readiness": readiness.to_dict(),
+                "override_id": override.id if override else None,
             }
         )
         raise SystemExit(0)
@@ -5591,6 +5660,20 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             print(report.to_terminal())
         raise SystemExit(0 if report.all_ok else 1)
 
+    if args.command == "manufacturing-readiness":
+        from .manufacturing_readiness import read_manufacturing_readiness
+
+        readiness = read_manufacturing_readiness(args.path)
+        if getattr(args, "json_output", False):
+            _print_json(readiness.to_dict())
+        else:
+            print(readiness.state.value)
+            for blocker in readiness.blockers:
+                print(f"  blocker: {blocker}")
+            for action in readiness.next_actions:
+                print(f"  next: {action}")
+        raise SystemExit(0)
+
     if args.command == "confidence":
         try:
             from .confidence_dashboard import generate_confidence_report
@@ -5637,6 +5720,11 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
 
                 erc_result = run_erc(sch_files[0])
 
+            readiness_path = getattr(args, "readiness", None)
+            if readiness_path is None:
+                discovered_readiness = output_dir / "manufacturing_readiness.json"
+                readiness_path = discovered_readiness if discovered_readiness.is_file() else None
+
             # Optional: thermal
             thermal_result = None
             try:
@@ -5656,6 +5744,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 erc_result=erc_result,
                 xref_results=xref_results,
                 spec=spec,
+                manufacturing_readiness=readiness_path,
             )
 
             if getattr(args, "json_output", False):

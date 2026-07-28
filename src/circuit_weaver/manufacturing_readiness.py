@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from .evidence_policy import EvidencePolicyError, require_fabrication_evidence
@@ -12,6 +15,10 @@ from .evidence_policy import EvidencePolicyError, require_fabrication_evidence
 
 class ReadinessContractError(ValueError):
     """A readiness transition is unsupported or lacks required evidence."""
+
+
+READINESS_FILENAME = "manufacturing_readiness.json"
+_FABRICATION_GATE_TOKEN = object()
 
 
 class ManufacturingReadinessState(str, Enum):
@@ -41,6 +48,7 @@ class ManufacturingReadiness:
     evidence_ids: tuple[str, ...] = ()
     next_actions: tuple[str, ...] = ()
     blocked_reason: str | None = None
+    _gate_token: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.state is ManufacturingReadinessState.BLOCKED:
@@ -48,6 +56,11 @@ class ManufacturingReadiness:
                 raise ReadinessContractError("blocked readiness requires a reason")
         elif self.blocked_reason is not None:
             raise ReadinessContractError("blocked_reason is valid only for blocked readiness")
+        if (
+            self.state is ManufacturingReadinessState.FABRICATION_READY
+            and self._gate_token is not _FABRICATION_GATE_TOKEN
+        ):
+            raise ReadinessContractError("fabrication_ready can only be produced by the evidence gate")
         for field_name in ("blockers", "evidence_ids", "next_actions"):
             values = getattr(self, field_name)
             if tuple(sorted(set(values))) != values:
@@ -61,6 +74,199 @@ class ManufacturingReadiness:
             "next_actions": list(self.next_actions),
             "blocked_reason": self.blocked_reason,
         }
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> "ManufacturingReadiness":
+        if not isinstance(raw, dict):
+            raise ReadinessContractError("manufacturing readiness must be an object")
+        try:
+            state = ManufacturingReadinessState(str(raw.get("state", "")))
+        except ValueError as exc:
+            raise ReadinessContractError("manufacturing readiness has an unknown state") from exc
+
+        def string_tuple(field_name: str) -> tuple[str, ...]:
+            value = raw.get(field_name, [])
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                raise ReadinessContractError(f"{field_name} must be an array of strings")
+            return tuple(value)
+
+        blocked_reason = raw.get("blocked_reason")
+        if blocked_reason is not None and not isinstance(blocked_reason, str):
+            raise ReadinessContractError("blocked_reason must be a string or null")
+
+        return cls(
+            state=state,
+            blockers=string_tuple("blockers"),
+            evidence_ids=string_tuple("evidence_ids"),
+            next_actions=string_tuple("next_actions"),
+            blocked_reason=blocked_reason,
+            _gate_token=(
+                _FABRICATION_GATE_TOKEN
+                if state is ManufacturingReadinessState.FABRICATION_READY
+                else None
+            ),
+        )
+
+    def write(self, output: str | Path) -> Path:
+        target = Path(output)
+        if target.suffix.lower() != ".json":
+            target = target / READINESS_FILENAME
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True, ensure_ascii=True) + "\n",
+            encoding="utf-8",
+            newline="",
+        )
+        return target
+
+
+@dataclass(frozen=True)
+class ManufacturingReadinessInputs:
+    """Gate observations consumed only by the central readiness assessor."""
+
+    identity_complete: bool = False
+    placement_approved: bool = False
+    routing_complete: bool = False
+    erc_passed: bool = False
+    drc_completed: bool = False
+    drc_passed: bool = False
+    bom_cpl_reconciled: bool = False
+    fabrication_artifacts_valid: bool = False
+
+
+@dataclass(frozen=True)
+class ManufacturingReadinessOverride:
+    """Explicit, expiring export authorization without changing readiness state."""
+
+    id: str
+    reason: str
+    expires_at: str
+
+
+def read_manufacturing_readiness(path: str | Path) -> ManufacturingReadiness:
+    source = Path(path)
+    if source.is_dir():
+        direct = source / READINESS_FILENAME
+        source = direct if direct.is_file() else source / "output" / READINESS_FILENAME
+    try:
+        raw = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReadinessContractError(f"cannot read manufacturing readiness: {exc}") from exc
+    return ManufacturingReadiness.from_dict(raw)
+
+
+def _records(records: Iterable[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+    return tuple(record for record in records if isinstance(record, dict))
+
+
+def require_manufacturing_evidence(
+    records: Iterable[dict[str, Any]],
+    *,
+    acknowledged_heuristic_ids: Iterable[str] = (),
+) -> None:
+    """Require identity, real-pad handoff, DRC, then the unchanged T244.4 gate."""
+
+    materialized = _records(records)
+    subjects = {str(record.get("subject_ref") or "") for record in materialized}
+    if not any(subject.startswith(("comp:", "footprint:")) for subject in subjects):
+        raise EvidencePolicyError("manufacturing readiness requires component/footprint identity evidence")
+    if "tool:pcb_handoff" not in subjects:
+        raise EvidencePolicyError("manufacturing readiness requires pad-bearing board provenance")
+    if "tool:drc" not in subjects:
+        raise EvidencePolicyError("manufacturing readiness requires DRC tool evidence")
+    require_fabrication_evidence(
+        materialized,
+        acknowledged_heuristic_ids=acknowledged_heuristic_ids,
+    )
+
+
+def assess_manufacturing_readiness(
+    inputs: ManufacturingReadinessInputs,
+    *,
+    evidence_records: Iterable[dict[str, Any]] = (),
+) -> ManufacturingReadiness:
+    """The single producer of readiness state used by every presentation surface."""
+
+    records = _records(evidence_records)
+    evidence_ids = tuple(
+        sorted({str(record["id"]) for record in records if isinstance(record.get("id"), str)})
+    )
+    if inputs.drc_completed and not inputs.drc_passed:
+        return block_manufacturing_readiness(
+            "KiCad DRC reported unapproved blockers",
+            blockers=("drc_failed",),
+            evidence_ids=evidence_ids,
+            next_actions=("Resolve DRC findings and rerun the exact-board transaction.",),
+        )
+    early_blockers: list[str] = []
+    if not inputs.identity_complete:
+        early_blockers.append("identity_incomplete")
+    if not inputs.placement_approved:
+        early_blockers.append("placement_not_approved")
+    if early_blockers:
+        return ManufacturingReadiness(
+            state=ManufacturingReadinessState.NOT_READY,
+            blockers=tuple(sorted(early_blockers)),
+            evidence_ids=evidence_ids,
+            next_actions=("Resolve identity and approve the exact placement state.",),
+        )
+    if not inputs.routing_complete:
+        return ManufacturingReadiness(
+            state=ManufacturingReadinessState.NEEDS_REVIEW,
+            blockers=("routing_incomplete",),
+            evidence_ids=evidence_ids,
+            next_actions=("Complete routing and connectivity closure.",),
+        )
+    if not inputs.drc_completed:
+        return ManufacturingReadiness(
+            state=ManufacturingReadinessState.DRC_PENDING,
+            blockers=("drc_not_run",),
+            evidence_ids=evidence_ids,
+            next_actions=("Run KiCad DRC on the exact staged board bytes.",),
+        )
+    remaining: list[str] = []
+    if not inputs.erc_passed:
+        remaining.append("erc_not_verified")
+    if not inputs.bom_cpl_reconciled:
+        remaining.append("bom_cpl_not_reconciled")
+    if not inputs.fabrication_artifacts_valid:
+        remaining.append("fabrication_artifacts_not_validated")
+    if remaining:
+        return ManufacturingReadiness(
+            state=ManufacturingReadinessState.DRC_CLEAN,
+            blockers=tuple(sorted(remaining)),
+            evidence_ids=evidence_ids,
+            next_actions=("Verify ERC, BOM/CPL reconciliation, and Gerber/drill outputs.",),
+        )
+    try:
+        require_manufacturing_evidence(records)
+    except EvidencePolicyError as exc:
+        raise ReadinessContractError(
+            "fabrication_ready requires identity/pads/DRC evidence and the T244.4 gate"
+        ) from exc
+    return ManufacturingReadiness(
+        state=ManufacturingReadinessState.FABRICATION_READY,
+        evidence_ids=evidence_ids,
+        _gate_token=_FABRICATION_GATE_TOKEN,
+    )
+
+
+def require_export_authorized(
+    readiness: ManufacturingReadiness,
+    *,
+    override: ManufacturingReadinessOverride | None = None,
+    now: datetime | None = None,
+) -> None:
+    if readiness.state is ManufacturingReadinessState.FABRICATION_READY:
+        return
+    if override is None or not override.id.strip() or not override.reason.strip():
+        raise ReadinessContractError("manufacturing export requires fabrication_ready or an explicit override")
+    try:
+        expires = datetime.fromisoformat(override.expires_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ReadinessContractError("manufacturing override expiry must be ISO-8601") from exc
+    if expires.tzinfo is None or expires.astimezone(UTC) <= (now or datetime.now(UTC)).astimezone(UTC):
+        raise ReadinessContractError("manufacturing override is expired")
 
 
 def block_manufacturing_readiness(
@@ -108,9 +314,11 @@ def transition_manufacturing_readiness(
             raise ReadinessContractError("drc_clean requires passing verified tool:drc evidence")
     if target is ManufacturingReadinessState.FABRICATION_READY:
         try:
-            require_fabrication_evidence(records)
+            require_manufacturing_evidence(records)
         except EvidencePolicyError as exc:
-            raise ReadinessContractError("fabrication_ready requires the T244.4 fabrication-evidence gate") from exc
+            raise ReadinessContractError(
+                "fabrication_ready requires identity/pads/DRC evidence and the T244.4 fabrication-evidence gate"
+            ) from exc
 
     evidence_ids = tuple(
         sorted(
@@ -123,5 +331,9 @@ def transition_manufacturing_readiness(
         blockers=tuple(sorted(set(blockers))),
         evidence_ids=evidence_ids,
         next_actions=tuple(sorted(set(next_actions))),
+        _gate_token=(
+            _FABRICATION_GATE_TOKEN
+            if target is ManufacturingReadinessState.FABRICATION_READY
+            else None
+        ),
     )
-

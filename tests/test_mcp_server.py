@@ -15,6 +15,7 @@ from circuit_weaver.mcp_server import (
     _call_without_stdout,
     _discover_projects_tool,
     _generate_artifacts_tool,
+    _manufacturing_readiness_tool,
     _parse_port,
     _validate_design_tool,
     main,
@@ -127,6 +128,22 @@ def test_discover_projects_uses_max_depth_and_serializes_dataclass(tmp_path: Pat
     assert result["projects"][0]["project_type"] == "circuit_weaver"
 
 
+def test_manufacturing_readiness_tool_reads_exact_artifact(tmp_path: Path) -> None:
+    path = tmp_path / "manufacturing_readiness.json"
+    payload = {
+        "state": "drc_pending",
+        "blockers": ["drc_not_run"],
+        "evidence_ids": [],
+        "next_actions": ["Run DRC."],
+        "blocked_reason": None,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = json.loads(_manufacturing_readiness_tool(str(path)))
+
+    assert result == {"status": "ok", **payload}
+
+
 @pytest.mark.parametrize("raw_port, expected", [("0", 0), ("5000", 5000), ("65535", 65535)])
 def test_parse_port_accepts_valid_values(raw_port: str, expected: int) -> None:
     assert _parse_port(raw_port) == expected
@@ -201,6 +218,7 @@ def test_stdio_server_handshake_and_tool_call(tmp_path: Path) -> None:
                     "generate_artifacts",
                     "discover_projects",
                     "research_component",
+                    "manufacturing_readiness",
                 }
 
                 response = await session.call_tool(

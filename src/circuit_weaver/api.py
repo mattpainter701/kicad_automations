@@ -334,6 +334,18 @@ def create_app() -> Any:
 
         return get_capability_registry()
 
+    @app.post("/manufacturing-readiness")
+    async def manufacturing_readiness(request: Request):
+        """Validate and echo the canonical readiness payload; never recompute it."""
+
+        from .manufacturing_readiness import ManufacturingReadiness
+
+        try:
+            raw = await request.json()
+            return ManufacturingReadiness.from_dict(raw).to_dict()
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid manufacturing readiness: {exc}") from exc
+
     @app.post("/generate")
     async def generate(
         request: Request,

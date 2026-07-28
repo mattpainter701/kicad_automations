@@ -209,6 +209,7 @@ def test_authoritative_handoff_emits_real_pads_nets_geometry_and_provenance(tmp_
     manifest = json.loads(Path(result.board_manifest_path).read_text(encoding="utf-8"))
     evidence = json.loads(Path(result.evidence_manifest_path).read_text(encoding="utf-8"))
     rules = Path(result.board_rules_path).read_text(encoding="utf-8")
+    readiness = json.loads(Path(result.manufacturing_readiness_path).read_text(encoding="utf-8"))
 
     assert inspection.kind is PcbArtifactKind.AUTHORITATIVE
     assert result.pad_count == 2
@@ -230,6 +231,9 @@ def test_authoritative_handoff_emits_real_pads_nets_geometry_and_provenance(tmp_
     assert result.identity_guard_ids[0] in provenance["claim"]
     assert drc_evidence["subject_ref"] == "tool:drc" and drc_evidence["kind"] == "tool_result"
     assert manifest["drc"]["passed"] is True
+    assert readiness == manifest["manufacturing_readiness"]
+    assert readiness["state"] == "needs_review"
+    assert readiness["blockers"] == ["routing_incomplete"]
     assert manifest["board_constraint_ids"] == [_constraints()[0].id]
     assert _constraints()[0].id in rules
 
@@ -407,6 +411,7 @@ def test_failing_drc_preserves_every_last_known_good_artifact(
         Path(first.evidence_manifest_path),
         Path(first.drc_report_path),
         Path(first.drc_findings_path),
+        Path(first.manufacturing_readiness_path),
     ]
     before = {path: path.read_bytes() for path in artifact_paths}
 

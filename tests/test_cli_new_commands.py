@@ -59,6 +59,35 @@ def workspace(tmp_path):
     return tmp_path
 
 
+def test_manufacturing_readiness_cli_reads_canonical_json(tmp_path):
+    payload = {
+        "state": "needs_review",
+        "blockers": ["routing_incomplete"],
+        "evidence_ids": [],
+        "next_actions": ["Complete routing."],
+        "blocked_reason": None,
+    }
+    path = tmp_path / "manufacturing_readiness.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = _run(["manufacturing-readiness", str(path), "--json"])
+
+    assert result.returncode == 0
+    assert json.loads(result.stdout) == payload
+
+
+def test_gerber_export_fails_closed_before_creating_output_without_readiness(tmp_path):
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("(kicad_pcb (version 20240108) (generator pcbnew))", encoding="utf-8")
+    output = tmp_path / "gerbers"
+
+    result = _run(["export-gerbers", str(board), "--output", str(output)])
+
+    assert result.returncode == 1
+    assert json.loads(result.stdout)["status"] == "blocked"
+    assert not output.exists()
+
+
 # ── discover ──────────────────────────────────────────────────────────────
 
 class TestDiscoverCLI:

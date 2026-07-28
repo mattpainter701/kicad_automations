@@ -9,7 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+from .manufacturing_readiness import (
+    ManufacturingReadiness,
+    ManufacturingReadinessState,
+    read_manufacturing_readiness,
+)
 
 
 @dataclass
@@ -44,12 +51,18 @@ class DesignConfidenceReport:
     timestamp: str = ""
     overall_score: float = 0.0
     overall_grade: str = "F"
-    readiness: str = "not_ready"  # ready_for_fab, needs_review, not_ready
+    manufacturing_readiness: ManufacturingReadiness = field(default_factory=ManufacturingReadiness)
     sections: dict[str, ConfidenceSection] = field(default_factory=dict)
     blockers: list[str] = field(default_factory=list)
     action_items: list[dict[str, str]] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
     evidence_manifest: str | None = None
+
+    @property
+    def readiness(self) -> str:
+        """Compatibility view of the canonical manufacturing-readiness state."""
+
+        return self.manufacturing_readiness.state.value
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,7 +70,7 @@ class DesignConfidenceReport:
             "timestamp": self.timestamp,
             "overall_score": round(self.overall_score, 1),
             "overall_grade": self.overall_grade,
-            "readiness": self.readiness,
+            "readiness": self.manufacturing_readiness.to_dict(),
             "sections": {k: v.to_dict() for k, v in self.sections.items()},
             "blockers": self.blockers,
             "action_items": self.action_items,
@@ -147,9 +160,12 @@ class DesignConfidenceReport:
             actions_html = f"<h3>Action Items</h3><ul>{items}</ul>"
 
         readiness_color = {
-            "ready_for_fab": "#22c55e",
+            "fabrication_ready": "#22c55e",
+            "drc_clean": "#3b82f6",
+            "drc_pending": "#eab308",
             "needs_review": "#eab308",
             "not_ready": "#ef4444",
+            "blocked": "#7f1d1d",
         }.get(self.readiness, "#666")
 
         return f"""<!DOCTYPE html>
@@ -236,6 +252,7 @@ def generate_confidence_report(
     erc_result: Any = None,
     xref_results: list | None = None,
     spec: dict | None = None,
+    manufacturing_readiness: ManufacturingReadiness | dict[str, Any] | str | Path | None = None,
 ) -> DesignConfidenceReport:
     """Aggregate all available data sources into a unified confidence report.
 
@@ -418,13 +435,26 @@ def generate_confidence_report(
 
     overall_grade = _grade(overall)
 
-    # Readiness
-    if overall >= 80 and not blockers:
-        readiness = "ready_for_fab"
-    elif overall >= 60 or (not blockers and overall >= 50):
-        readiness = "needs_review"
+    if isinstance(manufacturing_readiness, ManufacturingReadiness):
+        readiness = manufacturing_readiness
+    elif isinstance(manufacturing_readiness, dict):
+        readiness = ManufacturingReadiness.from_dict(manufacturing_readiness)
+    elif isinstance(manufacturing_readiness, (str, Path)):
+        readiness = read_manufacturing_readiness(manufacturing_readiness)
+    elif manufacturing_readiness is None:
+        readiness = ManufacturingReadiness(
+            state=ManufacturingReadinessState.NOT_READY,
+            blockers=("manufacturing_readiness_not_supplied",),
+            next_actions=("Generate or supply manufacturing_readiness.json.",),
+        )
     else:
-        readiness = "not_ready"
+        raise TypeError("manufacturing_readiness must be a readiness payload or artifact path")
+    blockers.extend(
+        f"Manufacturing readiness: {blocker}"
+        for blocker in readiness.blockers
+        if f"Manufacturing readiness: {blocker}" not in blockers
+    )
+    evidence_ids = sorted(set(evidence_ids) | set(readiness.evidence_ids))
 
     # Action items from sections
     for section in sections.values():
@@ -434,13 +464,17 @@ def generate_confidence_report(
                 "description": rec,
                 "section": section.name,
             })
+    action_items.extend(
+        {"priority": "high", "description": action, "section": "Manufacturing Readiness"}
+        for action in readiness.next_actions
+    )
 
     report = DesignConfidenceReport(
         project=project,
         timestamp=datetime.now(timezone.utc).isoformat(),
         overall_score=overall,
         overall_grade=overall_grade,
-        readiness=readiness,
+        manufacturing_readiness=readiness,
         sections=sections,
         blockers=blockers,
         action_items=action_items,

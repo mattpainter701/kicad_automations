@@ -275,6 +275,16 @@ CAPABILITIES: Final[tuple[CapabilityRecord, ...]] = (
         output_guarantee=NOT_APPLICABLE,
     ),
     _record("confidence", "confidence", maturity="review_only", skill="circuit-weaver"),
+    _record(
+        "manufacturing-readiness",
+        "manufacturing-readiness",
+        python="circuit_weaver.manufacturing_readiness:read_manufacturing_readiness",
+        http="POST /manufacturing-readiness",
+        mcp="manufacturing_readiness",
+        skill="circuit-weaver",
+        evidence_kinds=("command-contract", "fabrication-ready"),
+        since_version="0.34.0",
+    ),
     _record("simulate", "simulate", maturity="experimental", skill="circuit-weaver"),
     _record(
         "discover",

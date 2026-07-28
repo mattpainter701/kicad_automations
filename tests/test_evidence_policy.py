@@ -12,6 +12,7 @@ from circuit_weaver.evidence_policy import (
     require_fabrication_evidence,
     validate_evidence_safety,
 )
+from circuit_weaver.manufacturing_readiness import ManufacturingReadiness
 
 
 def _record(**overrides):
@@ -138,6 +139,15 @@ def test_fabrication_gate_rejects_missing_or_stub_only_critical_evidence():
 
 
 def test_delivery_manifest_cannot_claim_fabrication_ready_without_trusted_evidence():
+    ready = ManufacturingReadiness.from_dict(
+        {
+            "state": "fabrication_ready",
+            "blockers": [],
+            "evidence_ids": [],
+            "next_actions": [],
+            "blocked_reason": None,
+        }
+    )
     with pytest.raises(EvidencePolicyError):
         DeliveryManifest(
             status="ok",
@@ -145,13 +155,28 @@ def test_delivery_manifest_cannot_claim_fabrication_ready_without_trusted_eviden
             fabrication_ready=True,
             assembly_item_count=1,
             evidence_records=(_record(kind="stub", confidence="stub"),),
+            manufacturing_readiness=ready,
         )
 
+    records = (
+        _record(),
+        _record(
+            id="EV-tool_result-0123456789ac",
+            subject_ref="tool:pcb_handoff",
+            kind="tool_result",
+        ),
+        _record(
+            id="EV-tool_result-0123456789ad",
+            subject_ref="tool:drc",
+            kind="tool_result",
+        ),
+    )
     delivery = DeliveryManifest(
         status="ok",
         assembly_ready=True,
         fabrication_ready=True,
         assembly_item_count=1,
-        evidence_records=(_record(),),
+        evidence_records=records,
+        manufacturing_readiness=ready,
     )
     assert delivery.to_dict()["fabrication_ready"] is True

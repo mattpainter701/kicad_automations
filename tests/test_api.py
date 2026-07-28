@@ -104,6 +104,22 @@ class TestCapabilities:
         assert response.json() == get_capability_registry()
 
 
+class TestManufacturingReadiness:
+    def test_api_reads_exact_canonical_payload(self, client):
+        payload = {
+            "state": "drc_clean",
+            "blockers": ["bom_cpl_not_reconciled"],
+            "evidence_ids": ["EV-TOOL_RESULT-0123456789ab"],
+            "next_actions": ["Verify manufacturing outputs."],
+            "blocked_reason": None,
+        }
+
+        response = client.post("/manufacturing-readiness", json=payload)
+
+        assert response.status_code == 200
+        assert response.json() == payload
+
+
 # ================================================================
 # /validate
 # ================================================================
