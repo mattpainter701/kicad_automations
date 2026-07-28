@@ -10,6 +10,10 @@ from circuit_weaver.confidence_dashboard import (
     generate_confidence_report,
 )
 from circuit_weaver.cross_reference_validator import CrossReferenceResult
+from circuit_weaver.manufacturing_readiness import (
+    ManufacturingReadinessInputs,
+    assess_manufacturing_readiness,
+)
 
 # Mock objects for testing
 
@@ -116,7 +120,7 @@ class TestGenerateConfidenceReport:
         )
         assert report.overall_score > 0
         assert report.overall_grade in ("A", "B", "C", "D", "F")
-        assert report.readiness in ("ready_for_fab", "needs_review", "not_ready")
+        assert report.readiness == "not_ready"
         assert len(report.sections) == 7
 
     def test_validation_only(self):
@@ -142,7 +146,7 @@ class TestGenerateConfidenceReport:
         assert len(report.blockers) >= 1
         assert any("ERC" in b for b in report.blockers)
 
-    def test_ready_for_fab_high_score(self):
+    def test_high_score_does_not_compute_fabrication_readiness(self):
         report = generate_confidence_report(
             validation_report=MockValidationReport(valid=True),
             sim_report=MockSimReport(confidence_score=95),
@@ -151,7 +155,50 @@ class TestGenerateConfidenceReport:
             erc_result=MockErcResult(errors=0),
             xref_results=[CrossReferenceResult("test", "pass", [], 5)],
         )
-        assert report.readiness == "ready_for_fab"
+        assert report.readiness == "not_ready"
+
+    def test_confidence_reads_supplied_fabrication_ready_state(self):
+        records = (
+            {
+                "id": "EV-DATASHEET-000000000001",
+                "subject_ref": "comp:U1",
+                "kind": "datasheet",
+                "confidence": "verified",
+                "conflicts": [],
+            },
+            {
+                "id": "EV-TOOL_RESULT-000000000002",
+                "subject_ref": "tool:pcb_handoff",
+                "kind": "tool_result",
+                "confidence": "verified",
+                "conflicts": [],
+            },
+            {
+                "id": "EV-TOOL_RESULT-000000000003",
+                "subject_ref": "tool:drc",
+                "kind": "tool_result",
+                "confidence": "verified",
+                "conflicts": [],
+            },
+        )
+        readiness = assess_manufacturing_readiness(
+            ManufacturingReadinessInputs(
+                identity_complete=True,
+                placement_approved=True,
+                routing_complete=True,
+                erc_passed=True,
+                drc_completed=True,
+                drc_passed=True,
+                bom_cpl_reconciled=True,
+                fabrication_artifacts_valid=True,
+            ),
+            evidence_records=records,
+        )
+
+        report = generate_confidence_report(manufacturing_readiness=readiness)
+
+        assert report.readiness == "fabrication_ready"
+        assert report.to_dict()["readiness"] == readiness.to_dict()
 
     def test_weight_redistribution(self):
         # Only electrical available -- should still produce a meaningful score

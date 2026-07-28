@@ -7,7 +7,12 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from .evidence_policy import require_fabrication_evidence, validate_output_relative_evidence_manifest
+from .evidence_policy import validate_output_relative_evidence_manifest
+from .manufacturing_readiness import (
+    ManufacturingReadiness,
+    ManufacturingReadinessState,
+    require_manufacturing_evidence,
+)
 
 
 @dataclass(frozen=True)
@@ -33,11 +38,15 @@ class DeliveryManifest:
     evidence_manifest: str = ""
     evidence_records: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, repr=False)
     acknowledged_heuristic_ids: tuple[str, ...] = field(default_factory=tuple, repr=False)
+    manufacturing_readiness: ManufacturingReadiness = field(default_factory=ManufacturingReadiness)
     schema_version: int = 1
 
     def __post_init__(self) -> None:
+        state_ready = self.manufacturing_readiness.state is ManufacturingReadinessState.FABRICATION_READY
+        if self.fabrication_ready != state_ready:
+            raise ValueError("delivery fabrication_ready must read the canonical ManufacturingReadiness state")
         if self.fabrication_ready:
-            require_fabrication_evidence(
+            require_manufacturing_evidence(
                 self.evidence_records,
                 acknowledged_heuristic_ids=self.acknowledged_heuristic_ids,
             )
@@ -48,6 +57,7 @@ class DeliveryManifest:
             "status": self.status,
             "assembly_ready": self.assembly_ready,
             "fabrication_ready": self.fabrication_ready,
+            "manufacturing_readiness": self.manufacturing_readiness.to_dict(),
             "assembly_item_count": self.assembly_item_count,
             "blocked_reasons": list(self.blocked_reasons),
             "warnings": list(self.warnings),

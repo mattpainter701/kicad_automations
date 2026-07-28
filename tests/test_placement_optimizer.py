@@ -6,6 +6,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from circuit_weaver.component_db import ComponentDef, PinDef
 
 
@@ -218,6 +220,33 @@ def test_rf_and_usb_categories_have_explicit_edge_zones():
     assert rf["x"] > result["board_width_mm"] * 0.75
     assert rf["y"] < result["board_height_mm"] * 0.3
     assert usb["y"] > result["board_height_mm"] * 0.75
+
+
+def test_category_zones_are_absolute_edge_relative_and_aspect_aware():
+    from circuit_weaver.placement_optimizer import PlacementConfig, optimize_placement
+
+    components = [
+        _make_comp("U1", category="rf"),
+        _make_comp("U2", category="motor"),
+        _make_comp("U3", category="audio"),
+        _make_comp("U4", category="power_management"),
+        _make_comp("U5", category="unrecognized_category"),
+    ]
+    wide = optimize_placement(
+        components,
+        config=PlacementConfig(board_width_mm=160, board_height_mm=80, strategy="simple"),
+    )
+    tall = optimize_placement(
+        components,
+        config=PlacementConfig(board_width_mm=80, board_height_mm=160, strategy="simple"),
+    )
+
+    assert wide["board_width_mm"] - wide["placements"]["U1"]["x"] == pytest.approx(18.0)
+    assert tall["board_width_mm"] - tall["placements"]["U1"]["x"] == pytest.approx(18.0)
+    assert wide["board_height_mm"] - wide["placements"]["U2"]["y"] == pytest.approx(18.0)
+    assert tall["placements"]["U2"]["y"] == pytest.approx(140.0)
+    assert wide["placements"]["U3"]["x"] != wide["placements"]["U5"]["x"]
+    assert wide["placements"]["U4"]["x"] == pytest.approx(20.0)
 
 
 def test_machine_constraints_override_board_and_drive_fixed_edge_and_keepout_placement():

@@ -172,6 +172,19 @@ def _research_component_tool(query: str) -> str:
         return _error_json("lookup_failed", str(exc) or type(exc).__name__)
 
 
+def _manufacturing_readiness_tool(readiness_path: str) -> str:
+    """Read the canonical readiness artifact without deriving a new state."""
+
+    try:
+        from circuit_weaver.manufacturing_readiness import read_manufacturing_readiness
+
+        readiness = read_manufacturing_readiness(readiness_path)
+        return json.dumps({"status": "ok", **readiness.to_dict()})
+    except Exception as exc:
+        _logger.exception("MCP manufacturing_readiness failed")
+        return _error_json("readiness_failed", str(exc) or type(exc).__name__)
+
+
 def _create_app() -> Any:
     """Create and return the MCP server application."""
     try:
@@ -200,6 +213,12 @@ def _create_app() -> Any:
     def research_component(query: str) -> str:
         """Look up a component by MPN, description, or keyword."""
         return _as_mcp_tool_result(_research_component_tool(query))
+
+    @mcp.tool()
+    def manufacturing_readiness(readiness_path: str) -> str:
+        """Read a manufacturing_readiness.json artifact and return its exact state."""
+
+        return _as_mcp_tool_result(_manufacturing_readiness_tool(readiness_path))
 
     return mcp
 

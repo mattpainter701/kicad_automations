@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 
 from circuit_weaver.identity import (
     DistributorAlias,
     IdentityHandoffBlocked,
     IdentityHandoffBundle,
+    IdentityReconciliation,
     PinPadMap,
     build_human_identity_approval,
     build_identity_record,
@@ -220,6 +224,28 @@ def _guard(assertions, reconciliation, identity):
     )
 
 
+def _forged_agree_reconciliation(assertions) -> IdentityReconciliation:
+    ordered = tuple(sorted(assertions, key=lambda item: item.id))
+    evidence_ids = tuple(sorted({value for item in ordered for value in item.evidence_ids}))
+    payload = {
+        "state": "agree",
+        "source_state": "agree",
+        "assertion_ids": [item.id for item in ordered],
+        "evidence_ids": list(evidence_ids),
+        "missing_coverage": [],
+        "disagreements": [],
+        "approval_id": None,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return IdentityReconciliation(
+        id=f"IRC-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:12]}",
+        state="agree",
+        source_state="agree",
+        assertion_ids=tuple(payload["assertion_ids"]),
+        evidence_ids=evidence_ids,
+    )
+
+
 def test_handoff_guard_agreed_pass_and_roundtrip_tamper():
     identity = _resolved()
     assertions, reconciliation = _handoff(identity, _assertion(identity, "distributor", "listing"))
@@ -240,6 +266,15 @@ def test_handoff_guard_agreed_pass_and_roundtrip_tamper():
         footprint_ref=identity.footprint_ref,
     )
     assert identity_handoff_bundle_from_dict(identity_handoff_bundle_to_dict(bundle)).evaluate().ready
+
+
+def test_handoff_recomputes_reconciliation_instead_of_trusting_self_reported_agreement():
+    identity = _resolved()
+    assertions = [_assertion(identity, "manufacturer", "ds")]
+    forged = _forged_agree_reconciliation(assertions)
+
+    with pytest.raises(ValueError, match="does not match its source assertions"):
+        _guard(assertions, forged, identity)
 
 
 def test_handoff_guard_blocks_missing_wrong_selection_and_partial_exposed_pad():

@@ -56,29 +56,60 @@ _FOOTPRINT_SIZES: dict[str, tuple[float, float]] = {
     "USB-C": (9.0, 7.5),
 }
 
-# Category placement priority zones (x_pct, y_pct of board)
-_ZONE_CENTERS: dict[str, tuple[float, float]] = {
-    "power": (0.22, 0.35),
-    "regulator": (0.22, 0.35),
-    "poe": (0.22, 0.5),
-    "digital": (0.48, 0.45),
-    "mcu": (0.48, 0.45),
-    "fpga": (0.5, 0.45),
-    "analog": (0.5, 0.65),
-    "comms": (0.72, 0.45),
-    "communication": (0.72, 0.45),
-    "ethernet": (0.78, 0.45),
-    "usb": (0.5, 0.9),
-    "rf": (0.82, 0.2),
-    "transceiver": (0.72, 0.3),
-    "clock": (0.5, 0.3),
-    "connector": (0.5, 0.92),
-    "debug": (0.25, 0.9),
-    "sensor": (0.7, 0.65),
-    "sensors": (0.7, 0.65),
-    "storage": (0.65, 0.52),
-    "passive": (0.5, 0.5),
+# Category placement anchors are absolute millimetres from named board edges.
+# ``center`` is deliberately explicit; unknown categories use the general anchor
+# and never silently acquire digital placement semantics.
+_ZONE_ANCHORS: dict[str, tuple[str, float, str, float]] = {
+    "power": ("left", 20.0, "top", 22.0),
+    "regulator": ("left", 20.0, "top", 22.0),
+    "power_management": ("left", 20.0, "top", 22.0),
+    "poe": ("left", 20.0, "center", 0.0),
+    "motor": ("left", 20.0, "bottom", 20.0),
+    "motor_driver": ("left", 20.0, "bottom", 20.0),
+    "digital": ("center", 0.0, "center", 0.0),
+    "mcu": ("center", 0.0, "center", 0.0),
+    "fpga": ("center", 0.0, "center", 0.0),
+    "analog": ("center", 0.0, "bottom", 25.0),
+    "audio": ("right", 30.0, "bottom", 24.0),
+    "audio_amplifier": ("right", 30.0, "bottom", 24.0),
+    "comms": ("right", 28.0, "center", 0.0),
+    "communication": ("right", 28.0, "center", 0.0),
+    "ethernet": ("right", 20.0, "center", 0.0),
+    "usb": ("center", 0.0, "bottom", 8.0),
+    "rf": ("right", 18.0, "top", 15.0),
+    "transceiver": ("right", 28.0, "top", 22.0),
+    "clock": ("center", 0.0, "top", 22.0),
+    "connector": ("center", 0.0, "bottom", 7.0),
+    "debug": ("left", 22.0, "bottom", 8.0),
+    "sensor": ("right", 24.0, "bottom", 24.0),
+    "sensors": ("right", 24.0, "bottom", 24.0),
+    "storage": ("right", 34.0, "center", 0.0),
+    "protection": ("left", 9.0, "center", 0.0),
+    "passive": ("center", 0.0, "bottom", 18.0),
+    "other": ("center", 0.0, "center", 0.0),
 }
+
+
+def _axis_anchor_mm(edge: str, offset_mm: float, extent_mm: float) -> float:
+    # Very small auto-sized boards cannot sustain the nominal edge distance.
+    # Saturate at 22.5% of the axis while retaining the absolute distance
+    # on ordinary boards.
+    effective_offset = min(offset_mm, extent_mm * 0.225)
+    if edge == "left" or edge == "top":
+        return effective_offset
+    if edge == "right" or edge == "bottom":
+        return extent_mm - effective_offset
+    if edge == "center":
+        return extent_mm / 2.0
+    raise ValueError(f"unknown placement edge {edge!r}")
+
+
+def _zone_center_mm(category: str, config: PlacementConfig) -> tuple[float, float]:
+    anchor = _ZONE_ANCHORS.get(category, _ZONE_ANCHORS["other"])
+    return (
+        _axis_anchor_mm(anchor[0], anchor[1], config.board_width_mm),
+        _axis_anchor_mm(anchor[2], anchor[3], config.board_height_mm),
+    )
 
 _PLACEMENT_CONSTRAINT_KINDS = {"placement", "keepout"}
 _BOARD_TARGETS = {"board", "board_outline", "pcb", "outline"}
@@ -574,8 +605,8 @@ def _init_placements(
 
         w, h = estimate_component_size(comp)
         cat = (comp.category or "other").lower()
-        if cat not in _ZONE_CENTERS:
-            cat = "passive" if comp.source_ref[0] in "RCL" else "digital"
+        if cat not in _ZONE_ANCHORS:
+            cat = "passive" if comp.source_ref[0] in "RCL" else "other"
         parent_ref = str(getattr(comp, "placement_parent_ref", "") or "")
         placement_role = str(getattr(comp, "placement_role", "") or "")
         parent = placement_by_ref.get(parent_ref)
@@ -594,8 +625,7 @@ def _init_placements(
             x = parent.x + ox * radius_x
             y = parent.y + oy * radius_y
         else:
-            zone_cx = _ZONE_CENTERS.get(cat, (0.5, 0.5))[0] * config.board_width_mm
-            zone_cy = _ZONE_CENTERS.get(cat, (0.5, 0.5))[1] * config.board_height_mm
+            zone_cx, zone_cy = _zone_center_mm(cat, config)
 
             idx = zone_counters.get(cat, 0)
             zone_counters[cat] = idx + 1
@@ -796,9 +826,7 @@ def _cost_zone(placements: list[ComponentPlacement], config: PlacementConfig) ->
     """Penalty for components far from their preferred zone."""
     total = 0.0
     for p in placements:
-        zone = _ZONE_CENTERS.get(p.category, (0.5, 0.5))
-        ideal_x = zone[0] * config.board_width_mm
-        ideal_y = zone[1] * config.board_height_mm
+        ideal_x, ideal_y = _zone_center_mm(p.category, config)
         dist = math.hypot(p.x - ideal_x, p.y - ideal_y)
         total += dist * 0.1
     return total

@@ -209,6 +209,11 @@ jobs:
           test -s .release-kicad/iot/erc.json
           test -s .release-kicad/fpga/erc.json
 
+      - name: Round-trip authoritative 2-layer and 4-layer PCB goldens
+        run: |
+          python -m pip install pytest
+          python -m pytest tests/test_pcb_handoff.py -q -k golden_round_trip
+
   publish:
     name: Publish exact tested distributions
     needs: [build, test-wheel, kicad-validation]

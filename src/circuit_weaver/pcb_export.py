@@ -136,7 +136,10 @@ _SETUP = """\
 _ZONE_MAP = {
     "power": "power",
     "regulator": "power",
+    "power_management": "power",
     "poe": "power",
+    "motor": "power",
+    "motor_driver": "power",
     "digital": "digital",
     "mcu": "digital",
     "fpga": "digital",
@@ -145,6 +148,10 @@ _ZONE_MAP = {
     "clock": "digital",
     "connector": "connector",
     "sensor": "sensor",
+    "sensors": "sensor",
+    "analog": "sensor",
+    "audio": "sensor",
+    "audio_amplifier": "sensor",
     "storage": "digital",
     "debug": "connector",
     "communication": "digital",
@@ -152,6 +159,7 @@ _ZONE_MAP = {
     "usb": "connector",
     "protection": "rf",
     "passive": "passive",
+    "other": "general",
 }
 
 
@@ -345,6 +353,7 @@ def generate_pcb_placement(
         "connector": [],
         "sensor": [],
         "passive": [],
+        "general": [],
     }
     ref_counter: dict[str, int] = {}
     reserved_refs: set[str] = set()
@@ -372,9 +381,7 @@ def generate_pcb_placement(
                 return ref
 
     for comp in components:
-        zone = _ZONE_MAP.get(comp.category, "digital")
-        if zone not in zones:
-            zone = "digital"
+        zone = _ZONE_MAP.get((comp.category or "other").lower(), "general")
         zones[zone].append(comp)
         if comp.source_ref:
             _reserve_ref(comp.source_ref)
@@ -389,6 +396,7 @@ def generate_pcb_placement(
         "connector": (10.0, 60.0),
         "sensor": (90.0, 60.0),
         "passive": (50.0, 70.0),
+        "general": (50.0, 50.0),
     }
 
     # Place footprints within each zone

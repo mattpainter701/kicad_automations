@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.34.0] - Unreleased
+
+### Authoritative PCB handoff
+
+- Freeze the placement-preview and authoritative-board contracts in code: previews remain padless and carry the review-only banner, while a separate fresh-emission path produces real library footprints, pads, authoritative nets, stable UUIDs, semantic change manifests, and `tool:pcb_handoff` provenance.
+- Reuse the T247 identity handoff at the first pad-emitting boundary. Unresolved footprints, pin/pad mismatches, stale placement approvals, missing constraints, fewer than two independent identity sources, and self-reported reconciliation states fail before pad rendering or board publication.
+- Exercise two-layer and four-layer authoritative boards through the KiCad load/save/DRC golden contract. Local verification proves KiCad 10, and hosted CI proves KiCad 8, 9, and 10.
+
+### PCB constraints and transactional DRC
+
+- Add deterministic `PCBC-<CLASS>-<12hex>` constraints compiled from normalized interfaces, power domains, fabrication profiles, manufacturer data, and user declarations. Conflicts are detected before board mutation, and emitted KiCad rules are hash-linked to the board manifest.
+- Run KiCad DRC against the exact staged board bytes and reuse the shared T248 `ValidationIssue` model with stable `CW-DRC-<NNN>` IDs. Missing tools, parser drift, stale hashes, blocker findings, and interrupted publication preserve the complete last-known-good board and reports.
+
+### Manufacturing readiness and export safety
+
+- Replace scattered readiness booleans with one evidence-linked state machine covering identity, placement, routing, ERC, DRC, BOM/CPL reconciliation, fabrication artifacts, terminal blockers, and explicit expiring overrides. CLI, API, MCP, HTML, board manifests, and delivery manifests read the same canonical payload.
+- Add `manufacturing-readiness --json` and make Gerber/drill export fail closed before output creation unless the canonical state is fabrication-ready or a complete, unexpired override is supplied.
+- Revalidate read-back fabrication claims against a schema-validated evidence manifest and rerun the T244.4 gate; forged or stale readiness JSON cannot authorize export merely by naming `fabrication_ready`.
+- Recompute identity reconciliation from its source assertions at handoff, preventing a canonically hashed but self-reported single-source agreement from reaching copper.
+- Key footprint-geometry caching by resolution state, resolved path, and content hash, and independently reject heuristic geometry at authoritative preflight.
+
+### Verification status
+
+- Local Windows/Python 3.13 source suite: **1814 passed, 18 classified skips**. Ruff and diff checks pass; local KiCad 10 two-layer and four-layer load/DRC goldens pass.
+- Hosted CI proves the two-layer and four-layer authoritative round trip on **KiCad 8, KiCad 9, and KiCad 10**.
+
 ## [0.33.1] - 2026-07-28
 
 ### Security
