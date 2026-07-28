@@ -22,6 +22,14 @@ from importlib import resources
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from .finding_model import (
+    FINDING_SCHEMA_VERSION,
+    deduplicate_findings,
+    finding_from_dict,
+    findings_document,
+    findings_sarif,
+    from_import_analysis,
+)
 from .project_state import (
     STATE_DIR_NAME,
     ensure_project_state,
@@ -495,8 +503,15 @@ def import_design(
                 import_history.append(dict(prior_import))
                 state.workflow["import_history"] = import_history[-100:]
             state.analyses = {}
+            analysis_artifact_kinds = {
+                "analysis_index",
+                "analysis_findings_json",
+                "analysis_findings_sarif",
+            }
             state.artifacts = [
-                artifact for artifact in state.artifacts if artifact.get("kind") != "analysis_index"
+                artifact
+                for artifact in state.artifacts
+                if artifact.get("kind") not in analysis_artifact_kinds
             ]
 
         state.name = project_name
@@ -765,6 +780,42 @@ def _safe_output_stem(path: Path) -> str:
     return stem or "design"
 
 
+def _analysis_artifact_path(job: dict[str, Any], root: Path) -> str:
+    """Return a portable logical path without leaking an external absolute path."""
+
+    path = Path(job["input"]).resolve(strict=False)
+    try:
+        return path.relative_to(root.resolve(strict=False)).as_posix()
+    except ValueError:
+        digest = hashlib.sha256(str(path).casefold().encode("utf-8")).hexdigest()[:12]
+        name = path.name or job["kind"]
+        return f"external-sources/{digest}/{name}"
+
+
+def _attach_normalized_findings(
+    entry: dict[str, Any],
+    job: dict[str, Any],
+    *,
+    root: Path,
+) -> None:
+    """Normalize one trusted analyzer JSON object at the import boundary."""
+
+    output = Path(str(entry["output"]))
+    if not output.is_absolute():
+        output = root / output
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Analyzer JSON output must be an object")
+    findings = from_import_analysis(
+        str(job["kind"]),
+        payload,
+        artifact_path=_analysis_artifact_path(job, root),
+    )
+    entry["finding_schema_version"] = FINDING_SCHEMA_VERSION
+    entry["finding_count"] = len(findings)
+    entry["findings"] = [finding.to_dict() for finding in findings]
+
+
 def _analysis_jobs(state_sources: list[dict[str, Any]], root: Path) -> list[dict[str, Any]]:
     schematic_records = [record for record in state_sources if record.get("kind") == "schematic"]
     roots = [record for record in schematic_records if record.get("role") == "root_schematic"]
@@ -856,17 +907,17 @@ def analyze_design(
                 source_fingerprint=fingerprint,
                 analyzer_fingerprint=analyzer_fingerprint,
             ):
-                results[job["key"]] = {**prior, "cached": True}
-                continue
-
-            entry = _run_analyzer(job["script"], job["input"], output, timeout=timeout)
-            if not isinstance(entry, dict):
-                raise TypeError("Analyzer runner result must be an object")
-            entry["output_sha256"] = _json_object_sha256(output)
-            entry["analyzer_fingerprint"] = analyzer_fingerprint
-            entry["source_fingerprint"] = fingerprint
-            entry["kind"] = job["kind"]
-            entry["cached"] = False
+                entry = {**prior, "cached": True}
+            else:
+                entry = _run_analyzer(job["script"], job["input"], output, timeout=timeout)
+                if not isinstance(entry, dict):
+                    raise TypeError("Analyzer runner result must be an object")
+                entry["output_sha256"] = _json_object_sha256(output)
+                entry["analyzer_fingerprint"] = analyzer_fingerprint
+                entry["source_fingerprint"] = fingerprint
+                entry["kind"] = job["kind"]
+                entry["cached"] = False
+            _attach_normalized_findings(entry, job, root=root)
         except Exception as exc:
             entry = {
                 "status": "error",
@@ -883,6 +934,17 @@ def analyze_design(
         state.analyses[job["key"]] = entry
         results[job["key"]] = entry
         save_project_state(root, state)
+
+    normalized_findings = deduplicate_findings(
+        finding_from_dict(payload)
+        for entry in results.values()
+        if entry.get("status") == "ok"
+        for payload in entry.get("findings", [])
+    )
+    findings_path = analysis_dir / "findings.json"
+    sarif_path = analysis_dir / "findings.sarif"
+    write_json_atomic(findings_path, findings_document(normalized_findings))
+    write_json_atomic(sarif_path, findings_sarif(normalized_findings))
 
     if not jobs:
         capability = _analysis_capability(state.sources)
@@ -914,17 +976,37 @@ def analyze_design(
         "project_root": str(root),
         "status": state.status,
         "generated_at": _now_iso(),
+        "finding_exports": {
+            "schema_version": FINDING_SCHEMA_VERSION,
+            "finding_count": len(normalized_findings),
+            "json": findings_path.relative_to(root).as_posix(),
+            "sarif": sarif_path.relative_to(root).as_posix(),
+        },
         "results": results,
     }
     index_path = analysis_dir / "index.json"
     write_json_atomic(index_path, index_payload)
-    artifact = {
-        "path": index_path.relative_to(root).as_posix(),
-        "kind": "analysis_index",
-        "status": state.status,
-        "sha256": file_sha256(index_path),
+    analysis_artifact_kinds = {
+        "analysis_index",
+        "analysis_findings_json",
+        "analysis_findings_sarif",
     }
-    state.artifacts = [item for item in state.artifacts if item.get("kind") != "analysis_index"] + [artifact]
+    artifacts = [
+        {
+            "path": path.relative_to(root).as_posix(),
+            "kind": kind,
+            "status": state.status,
+            "sha256": file_sha256(path),
+        }
+        for path, kind in (
+            (index_path, "analysis_index"),
+            (findings_path, "analysis_findings_json"),
+            (sarif_path, "analysis_findings_sarif"),
+        )
+    ]
+    state.artifacts = [
+        item for item in state.artifacts if item.get("kind") not in analysis_artifact_kinds
+    ] + artifacts
     save_project_state(root, state)
 
     return {
@@ -932,6 +1014,8 @@ def analyze_design(
         "project_root": str(root),
         "manifest": str(project_state_path(root)),
         "analysis_index": str(index_path),
+        "findings_json": str(findings_path),
+        "findings_sarif": str(sarif_path),
         "results": results,
         "next_actions": state.next_actions,
         "summary": get_project_state_summary(root),
