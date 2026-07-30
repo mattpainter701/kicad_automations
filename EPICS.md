@@ -830,6 +830,12 @@ concrete, load-bearing gaps:
    tables (`_parse_pin_table_text`, `_normalize_pin_schema`) but stamps a wall-clock
    `extracted_timestamp` (`:297`) — which would break the no-timestamp determinism contract the
    moment it feeds an ID — scores no extraction confidence, and emits no `EvidenceRecord`.
+4. **Coverage is hostage to a local KiCad install.** The KiCad-symbol tier (`kicad_lib.py:395-463`,
+   `_find_local_kicad`) discovers symbols only from a locally-installed KiCad (hardcoded
+   `C:/Program Files/KiCad/…`, `/usr/share/kicad/symbols`, `KICAD_SYMBOL_DIR`). Tier 3 is therefore
+   **empty in headless/CI and minimal on a fresh install** — the largest ready pool of open symbols
+   is left on the floor unless the operator happens to have a full KiCad install. The original
+   "discover the local install" design was never broadened to *pull* the libraries themselves.
 
 **Thesis:** make coverage a *measured, provenanced, deterministically-grown* property — mirroring
 how Epic B made electrical accuracy measured — without weakening the fail-closed posture already
@@ -892,6 +898,17 @@ PWR/PSV/SPI/UART/USB/ID).
 - **T267.3** Same deterministic + evidence-emitting treatment for the KiCad-library
   (`kicad_lib.py`) and EasyEDA/LCSC (`easyeda_parser.py`) tiers, so every non-stub resolution can
   state its source and confidence.
+- **T267.4** **Decouple the KiCad-symbol tier from the local install (gap 4).** Vendor the official
+  open KiCad symbol libraries as a deterministic, versioned, bundled source (pinned to a commit,
+  hash-verified) so headless/CI runs get identical coverage to a full desktop install; the local
+  install (`_find_local_kicad`) becomes an *additive override*, not the only source. Evaluate
+  additional pullable symbol sources under **explicit license + provenance discipline** — the
+  official KiCad libraries are permissively licensed and are the clear first pull; catalog any
+  third-party source (SnapEDA, Ultra Librarian, Component Search Engine, vendor EDA exports) with
+  its license posture before ingesting, and never bundle a source whose terms forbid
+  redistribution. Every symbol pulled this way still flows through contract 2 (provenance) and
+  contract 3 (quality ladder) — a bundled library symbol is `single_source` until the T247 join
+  corroborates it.
 
 **T268 — Coverage in readiness + the frequency-weighted growth loop (P1, MEDIUM).**
 - **T268.1** Add symbol-coverage as a first-class dimension in `confidence_dashboard.py` (which has
@@ -912,10 +929,19 @@ identity join is wired.
 
 **Epic G exit gate.** Symbol-resolution coverage is measured by a committed, regression-gated
 scorecard; every catalog pinout carries `kind=symbol_lib`/`datasheet` provenance and a
-confidence-ladder rating; datasheet/library ingestion is deterministic and evidence-emitting;
-`unresolved`/`stub` parts are explicit readiness blockers; and a frequency-weighted coverage-gap
-report exists to steer catalog growth. Fail-closed posture is preserved throughout — nothing here
-lets an unsourced or unverified symbol reach generation unblocked.
+confidence-ladder rating; datasheet/library ingestion is deterministic and evidence-emitting; the
+KiCad-symbol tier no longer depends on a local install (official libraries bundled, hash-verified,
+CI-reproducible); `unresolved`/`stub` parts are explicit readiness blockers; and a
+frequency-weighted coverage-gap report exists to steer catalog growth. Fail-closed posture is
+preserved throughout — nothing here lets an unsourced or unverified symbol reach generation
+unblocked.
+
+**Open planner question (G).** Which additional symbol sources beyond the official KiCad libraries
+do we accept into the bundle, and under what license bar? Official KiCad libs are the clear first
+pull (permissive, redistributable). SnapEDA / Ultra Librarian / Component Search Engine have
+broader coverage but restrictive redistribution terms — likely *fetch-on-demand with attribution*
+rather than *bundled*. Needs the maintainer's license-risk call before T267.4 ingests any
+third-party source. (Related to A/T243.2's externally-sourced-fixture licensing question.)
 
 ---
 

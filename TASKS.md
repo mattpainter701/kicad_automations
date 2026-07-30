@@ -297,6 +297,43 @@ Every sprint below must preserve these cross-cutting rules:
 
 **Sprint exit:** supported simulations have verified models/testbenches and numeric oracle tests; confidence outputs never reward missing evidence; every major product journey has an outcome-level release gate.
 
+---
+
+## Sprint 61 — Symbol Coverage and Provenance (v0.38.0) — PLANNED
+
+**Goal:** Make symbol-source coverage a measured, provenanced, deterministically-grown property — the coverage half of the "symbols with no source/library" problem (the safety half is already closed by the 7-tier resolver + `_validate_pinout_sources` fail-closed gate). Independent of C/D/E/F; needs A (evidence substrate) + B (T247 identity join).
+
+> **Planner spec:** see `EPICS.md` Epic G — T265.1–.3, T266.1–.3, T267.1–.4, T268.1–.3, plus **three frozen contracts** to land before producer code: (1) deterministic committed **symbol-coverage scorecard** (`benchmarks/coverage/`, remote tiers replayed from fixtures, no wall-clock, `--check-baseline` regression gate); (2) **every catalog pinout carries `kind=symbol_lib`/`datasheet` provenance** — `register_ic` rejects an un-provenanced pinout (extends A's evidence taxonomy, does NOT fork); (3) **resolution-quality = A's confidence ladder** (`verified` gated on the B/T247 pin↔pad join). New rule domain **`CW-SYM-*`**. **Sequence: T265 → (T266 ‖ T267) → T268.** Measurement lands first so improvements are provable against a baseline.
+
+> **Key research findings that motivate this sprint (planner, 2026-07-28):** (a) symbol-resolution coverage is **unmeasured** — the codebase's only "coverage" is validation-rule coverage; (b) the curated `ic_data` catalog is ~100 entries with **zero provenance fields**; (c) `datasheet_parser.py:297` stamps a wall-clock `extracted_timestamp` that breaks determinism the moment it feeds an ID; (d) **the KiCad-symbol tier depends on a locally-installed KiCad** (`kicad_lib.py:395-463` hardcodes `C:/Program Files/KiCad/…`, `/usr/share/kicad/symbols`, `KICAD_SYMBOL_DIR`) — so Tier 3 coverage is empty in headless/CI and hostage to the local box. T267.4 addresses (d) by vendoring official open symbol libraries as a deterministic versioned source and evaluating additional pullable sources under explicit license/provenance discipline.
+
+### T265. Symbol-coverage scorecard and baseline (P0, HIGH)
+
+- [ ] Build `benchmarks/coverage/` corpus (per-category MPN sets + a deliberately-unresolvable negative set) and a deterministic `coverage_runner` scoring `resolution_tier` × `resolution_quality`; remote tiers replayed from recorded fixtures, never live.
+- [ ] Emit a committed scorecard JSON + human summary; add a `--check-baseline` gate that fails closed on coverage/quality regression.
+- [ ] Publish the honest v0.38 baseline (current resolution rate + `stub`/`unresolved` counts) with no inflation, as the electrical scorecard declared 14 scored / 19 unsupported.
+
+### T266. Provenance-backed catalog (P0, HIGH)
+
+- [ ] Extend the `ic_data` entry schema with a required provenance block; `register_ic` (`ic_data/__init__.py:215`) rejects a pinout with no `kind=symbol_lib`/`datasheet` evidence.
+- [ ] Retrofit the ~100 existing entries with provenance; mark `single_source` where one library backs the pinout, `verified` only where the T247 join passes — no entry silently `verified`.
+- [ ] Thread `symbol_lib` evidence IDs through the resolver return path into the evidence manifest.
+
+### T267. Deterministic, evidence-emitting ingestion pipeline (P1, HIGH)
+
+- [ ] Remove the wall-clock `extracted_timestamp` (`datasheet_parser.py:297`) from any field feeding an ID/scored output; make datasheet extraction reproducible (same PDF bytes → same `EV-<KIND>-<12hex>`).
+- [ ] Score extraction confidence and emit each extracted pinout as `kind=datasheet` evidence; cross-check against the T247 identity join before catalog admission (fail → `review_only`, never auto-promoted).
+- [ ] Same deterministic + evidence-emitting treatment for the KiCad-library and EasyEDA/LCSC tiers.
+- [ ] Decouple the KiCad-symbol tier from the local install: vendor the official open KiCad symbol libraries as a deterministic, versioned source (so headless/CI get identical coverage), and evaluate additional pullable symbol sources under explicit license + provenance discipline. Local install becomes an *additive override*, not the only source.
+
+### T268. Coverage in readiness and the frequency-weighted growth loop (P1, MEDIUM)
+
+- [ ] Add symbol-coverage as a first-class dimension in `confidence_dashboard.py` (none today) and the unified report/manifest, separate from evidence coverage; never reward missing symbols (monotonicity).
+- [ ] Make `unresolved`/`stub` parts explicit `CW-SYM-*` readiness blockers with concrete remediation, consumed by the C/T252 `ManufacturingReadiness` state machine.
+- [ ] Emit a frequency-weighted coverage-gap report that ranks the highest-impact missing parts so catalog growth is prioritized by real demand.
+
+**Sprint exit:** symbol coverage is measured by a committed regression-gated scorecard; every catalog pinout carries provenance + a confidence-ladder rating; ingestion is deterministic and evidence-emitting; the KiCad-symbol tier no longer depends on a local install; `unresolved`/`stub` parts are explicit readiness blockers; and a coverage-gap report steers growth. Fail-closed posture preserved throughout.
+
 ## Sprint 54 — Layout Quality Zero Gate, Density Strategy, Sheet Splitting, Autorouter Hardening (v0.31.0)
 
 **Goal:** Close the remaining Sprint 53 layout follow-ups (ENDPOINT-INSIDE crossings, F13, F15), give real designs the same geometric scrutiny as the test corpus, and turn the Freerouting wrapper from a placeholder into a fail-closed, pipeline-correct integration.
