@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.34.0] - Unreleased
+## [0.34.0] - 2026-07-29
 
 ### Authoritative PCB handoff
 
@@ -23,7 +23,7 @@
 
 ### Verification status
 
-- Local Windows/Python 3.13 source suite: **1814 passed, 18 classified skips**. Ruff and diff checks pass; local KiCad 10 two-layer and four-layer load/DRC goldens pass.
+- Local Windows/Python 3.13 source suite: **1819 passed, 18 classified skips**. Ruff and diff checks pass; local KiCad 10 two-layer and four-layer load/DRC goldens pass.
 - Hosted CI proves the two-layer and four-layer authoritative round trip on **KiCad 8, KiCad 9, and KiCad 10**.
 
 ## [0.33.1] - 2026-07-28
