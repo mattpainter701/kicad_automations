@@ -14,6 +14,7 @@ import pytest
 from circuit_weaver import design_import
 from circuit_weaver.design_import import ArchiveLimits, analyze_design, import_design, safe_extract_zip
 from circuit_weaver.dispatcher import _handle_design_workflow
+from circuit_weaver.finding_model import FINDING_SCHEMA_VERSION
 from circuit_weaver.logging_bridge import _resolve_log_dir
 from circuit_weaver.project_discovery import detect_project_type, discover_projects, get_project_status
 from circuit_weaver.project_state import (
@@ -269,6 +270,60 @@ def test_analyze_persists_results_and_reuses_matching_cache(tmp_path: Path, monk
     summary = get_project_state_summary(project)
     assert summary["status"] == "analyzed"
     assert Path(first["analysis_index"]).is_file()
+
+
+def test_analyze_exports_normalized_findings_as_json_and_sarif(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "native"
+    project = tmp_path / "project"
+    _write_native_project(source)
+    import_design(source, project_dir=project)
+
+    def fake_run(script_name: str, input_path: Path, output_path: Path, *, timeout: float):
+        payload: dict[str, object] = {"input": str(input_path)}
+        if script_name == "analyze_pcb.py":
+            payload["dfm"] = {
+                "violations": [
+                    {
+                        "parameter": "track_width",
+                        "actual_mm": 0.08,
+                        "tier_required": "challenging",
+                        "message": "Minimum track width is 0.08 mm",
+                    }
+                ]
+            }
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload), encoding="utf-8")
+        return {
+            "status": "ok",
+            "input": str(input_path),
+            "output": str(output_path),
+            "script": script_name,
+        }
+
+    monkeypatch.setattr(design_import, "_run_analyzer", fake_run)
+    result = analyze_design(project)
+
+    findings = json.loads(Path(result["findings_json"]).read_text(encoding="utf-8"))
+    sarif = json.loads(Path(result["findings_sarif"]).read_text(encoding="utf-8"))
+    index = json.loads(Path(result["analysis_index"]).read_text(encoding="utf-8"))
+    assert findings["schema_version"] == FINDING_SCHEMA_VERSION
+    assert findings["finding_count"] == 1
+    finding = findings["findings"][0]
+    assert finding["rule_id"] == "CW-DFM-001"
+    assert finding["location"]["artifact_path"].endswith("/control.kicad_pcb")
+    assert not Path(finding["location"]["artifact_path"]).is_absolute()
+    assert sarif["runs"][0]["results"][0]["partialFingerprints"] == {
+        "circuitWeaverFindingId/v1": finding["id"]
+    }
+    assert index["finding_exports"]["finding_count"] == 1
+    persisted = load_project_state(project)
+    assert persisted is not None
+    assert {item["kind"] for item in persisted.artifacts} >= {
+        "analysis_findings_json",
+        "analysis_findings_sarif",
+    }
 
 
 def test_analysis_cache_rehashes_live_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

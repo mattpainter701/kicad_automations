@@ -26,6 +26,7 @@
 | **D** | Import Review & Safe Repair Loop | 58 | T253–T256 | v0.35.0 | A (B, C reused) |
 | **E** | Sourcing Intelligence & BOM Resilience | 59 | T257–T260 | v0.36.0 | A |
 | **F** | Simulation Evidence & Calibrated Confidence | 60 | T261–T264 | v0.37.0 | A, B |
+| **G** | Symbol Coverage & Provenance | 61 | T265–T268 | v0.38.0 | A, B |
 
 ```
         ┌─────────────────────────── A (substrate) ───────────────────────────┐
@@ -803,6 +804,147 @@ every major product journey has an outcome-level release gate.
 
 ---
 
+## Epic G — Symbol Coverage & Provenance (Sprint 61, T265–T268)
+
+**Release v0.38.0. Depends on A (evidence substrate, confidence ladder, `CW-*` namespace) and
+B (T247 identity cross-check). Independent of C/D/E/F — can run in parallel after B ships.**
+
+**Why this epic exists.** "Symbols with no source/library" was one of the product's biggest
+pains. The *safety* half is already closed: `symbol_resolver.py`'s 7-tier chain fails closed to
+an explicit `unresolved`/`stub`, and `validator.py:973` `_validate_pinout_sources` blocks
+generation on any `pinout_source=="stub"` until the user supplies a `pin_map` or sets
+`pinout_verified`. What is **not** solved is the *coverage* half, and research surfaced three
+concrete, load-bearing gaps:
+
+1. **Coverage is unmeasured.** The only thing the codebase calls "coverage" is *validation-rule*
+   coverage (`benchmark_baseline.py:23`). There is **no metric for symbol-resolution coverage** —
+   we cannot say what fraction of representative parts resolve to a trusted symbol, per tier or
+   per category. You cannot grow what you do not measure; this is the same gap the electrical
+   scorecard closed for Epic B, applied to symbols.
+2. **The catalog is un-provenanced.** The curated `ic_data` store is ~100 entries across 12
+   category files; **every entry has `pins` but ZERO carry a provenance/evidence field** (verified:
+   `with_provenance_field=0`). A symbol resolved from the catalog therefore asserts a pinout with
+   no `kind=symbol_lib` evidence tying it to a datasheet/library and no confidence rating —
+   invisible to the Epic A substrate that every other fact now flows through.
+3. **Ingestion is non-deterministic and evidence-blind.** `datasheet_parser.py` *can* extract pin
+   tables (`_parse_pin_table_text`, `_normalize_pin_schema`) but stamps a wall-clock
+   `extracted_timestamp` (`:297`) — which would break the no-timestamp determinism contract the
+   moment it feeds an ID — scores no extraction confidence, and emits no `EvidenceRecord`.
+4. **Coverage is hostage to a local KiCad install.** The KiCad-symbol tier (`kicad_lib.py:395-463`,
+   `_find_local_kicad`) discovers symbols only from a locally-installed KiCad (hardcoded
+   `C:/Program Files/KiCad/…`, `/usr/share/kicad/symbols`, `KICAD_SYMBOL_DIR`). Tier 3 is therefore
+   **empty in headless/CI and minimal on a fresh install** — the largest ready pool of open symbols
+   is left on the floor unless the operator happens to have a full KiCad install. The original
+   "discover the local install" design was never broadened to *pull* the libraries themselves.
+
+**Thesis:** make coverage a *measured, provenanced, deterministically-grown* property — mirroring
+how Epic B made electrical accuracy measured — without weakening the fail-closed posture already
+in place. New rule domain **`CW-SYM-*`** (free; existing domains are ANALOG/CLK/DRC/ERC/POWER/
+PWR/PSV/SPI/UART/USB/ID).
+
+> **Frozen contract 1 — Symbol-coverage scorecard (deterministic, committed, regression-gated).**
+> Mirror `benchmarks/electrical/` structure under `benchmarks/coverage/`: a versioned corpus of
+> representative MPNs (per category), scored by `resolution_tier` (registry|ic_data|kicad|cache|
+> easyeda|digikey|mouser|unresolved) and `resolution_quality` (see contract 3). Emits a committed
+> scorecard JSON + a baseline gate (`--check-baseline` style) that fails closed on coverage
+> regression. Offline-deterministic: remote tiers (easyeda/digikey/mouser) are replayed from
+> recorded fixtures, never live, so the score is reproducible in CI. **No wall-clock in any scored
+> field or ID.**
+
+> **Frozen contract 2 — Every catalog pinout carries provenance evidence (fail-closed at ingestion).**
+> Each `ic_data` entry MUST carry a `kind=symbol_lib` (or `kind=datasheet`) `EvidenceRecord` per
+> Epic A's frozen shape, with `subject_ref="pin:<MPN>.<num>"` scope and a `source` identifying the
+> library/datasheet. `register_ic` REJECTS an entry whose pinout lacks provenance (mirrors T246's
+> "feedback_vref requires `_provenance`" rule — CLAUDE.md fail-closed). Reuses Epic A's evidence
+> `kind` taxonomy (`symbol_lib` is already in the frozen list — **extend, do not fork**).
+
+> **Frozen contract 3 — Resolution-quality ladder = Epic A confidence ladder, applied to symbols.**
+> A resolved symbol's trust is one of `verified|corroborated|single_source|heuristic|stub`
+> (Epic A's frozen ladder — no new vocabulary). `verified` requires the T247 identity cross-check
+> (symbol pins ↔ footprint pads) to pass; a datasheet-only or single-library pinout is at most
+> `single_source`; a distributor stub with no pin topology is `stub`. **A pinout is never silently
+> promoted to `verified` without the T247 join.** This is the field the scorecard (contract 1) and
+> readiness (T268) both read.
+
+**T265 — Symbol-coverage scorecard & baseline (P0, HIGH). Measurement first.**
+- **T265.1** Build `benchmarks/coverage/` corpus (per-category MPN sets seeded from the existing
+  12 `ic_data` categories + a deliberately-unresolvable negative set), and a `coverage_runner`
+  that scores `resolution_tier` × `resolution_quality` deterministically (remote tiers replayed
+  from recorded fixtures). Freeze contract 1.
+- **T265.2** Emit a committed scorecard JSON + human summary; add a `--check-baseline` regression
+  gate that fails closed on coverage or quality regression (reuse `benchmark_baseline.py` shape).
+- **T265.3** Establish the honest v0.38 baseline — publish the current resolution rate and the
+  `stub`/`unresolved` counts as the declared starting point (no inflation), exactly as the
+  electrical scorecard declared 14 scored / 19 unsupported.
+
+**T266 — Provenance-backed catalog (P0, HIGH).**
+- **T266.1** Extend the `ic_data` entry schema with a required provenance block; make `register_ic`
+  (`ic_data/__init__.py:215`) reject a pinout with no `kind=symbol_lib`/`kind=datasheet` evidence.
+  Freeze contract 2.
+- **T266.2** Retrofit the ~100 existing entries with provenance evidence (from their existing
+  `datasheet_url` where present; mark `single_source` where only one library backs the pinout;
+  mark `verified` only where the T247 join passes). No entry silently `verified`.
+- **T266.3** Thread `symbol_lib` evidence IDs through the resolver return path so a resolved
+  `ComponentDef` carries its provenance into the evidence manifest (like B's power/calc evidence).
+
+**T267 — Deterministic, evidence-emitting ingestion pipeline (P1, HIGH).**
+- **T267.1** Remove the wall-clock `extracted_timestamp` (`datasheet_parser.py:297`) from any field
+  that feeds an ID or scored output; make datasheet extraction reproducible (same PDF bytes → same
+  `EV-<KIND>-<12hex>` id, per Epic A's determinism rule).
+- **T267.2** Score extraction confidence (pin-table completeness, name/number consistency) and emit
+  each extracted pinout as a `kind=datasheet` `EvidenceRecord`; cross-check against the T247
+  identity join before admitting to the catalog — an extracted pinout that fails pin↔pad coverage
+  is `review_only`, never auto-promoted.
+- **T267.3** Same deterministic + evidence-emitting treatment for the KiCad-library
+  (`kicad_lib.py`) and EasyEDA/LCSC (`easyeda_parser.py`) tiers, so every non-stub resolution can
+  state its source and confidence.
+- **T267.4** **Decouple the KiCad-symbol tier from the local install (gap 4).** Vendor the official
+  open KiCad symbol libraries as a deterministic, versioned, bundled source (pinned to a commit,
+  hash-verified) so headless/CI runs get identical coverage to a full desktop install; the local
+  install (`_find_local_kicad`) becomes an *additive override*, not the only source. Evaluate
+  additional pullable symbol sources under **explicit license + provenance discipline** — the
+  official KiCad libraries are permissively licensed and are the clear first pull; catalog any
+  third-party source (SnapEDA, Ultra Librarian, Component Search Engine, vendor EDA exports) with
+  its license posture before ingesting, and never bundle a source whose terms forbid
+  redistribution. Every symbol pulled this way still flows through contract 2 (provenance) and
+  contract 3 (quality ladder) — a bundled library symbol is `single_source` until the T247 join
+  corroborates it.
+
+**T268 — Coverage in readiness + the frequency-weighted growth loop (P1, MEDIUM).**
+- **T268.1** Add symbol-coverage as a first-class dimension in `confidence_dashboard.py` (which has
+  none today) and in the unified report/manifest — separate from evidence coverage, per F/T263's
+  "report separate dimensions" discipline. Never reward missing symbols (monotonicity).
+- **T268.2** A design's `unresolved`/`stub` parts become explicit `CW-SYM-*` readiness blockers
+  with concrete remediation ("supply pin_map / add provenanced catalog entry"), consumed by the
+  C/T252 `ManufacturingReadiness` state machine.
+- **T268.3** Close the loop: emit a **coverage-gap report** that ranks the highest-impact missing
+  parts by frequency across the corpus/real designs, so catalog growth (`TASKS.md:534`'s lever) is
+  prioritized by real demand instead of ad-hoc.
+
+**Sequencing.** Freeze the three contracts first. **T265 → (T266 ‖ T267) → T268.** Measurement
+(T265) must land first so T266/T267 improvements are provable against a baseline; T266 and T267
+both feed the catalog and can run in parallel; T268 consumes all three. T266.2's retrofit and
+T267.2's admission both depend on B/T247 — do not promote any pinout to `verified` before the
+identity join is wired.
+
+**Epic G exit gate.** Symbol-resolution coverage is measured by a committed, regression-gated
+scorecard; every catalog pinout carries `kind=symbol_lib`/`datasheet` provenance and a
+confidence-ladder rating; datasheet/library ingestion is deterministic and evidence-emitting; the
+KiCad-symbol tier no longer depends on a local install (official libraries bundled, hash-verified,
+CI-reproducible); `unresolved`/`stub` parts are explicit readiness blockers; and a
+frequency-weighted coverage-gap report exists to steer catalog growth. Fail-closed posture is
+preserved throughout — nothing here lets an unsourced or unverified symbol reach generation
+unblocked.
+
+**Open planner question (G).** Which additional symbol sources beyond the official KiCad libraries
+do we accept into the bundle, and under what license bar? Official KiCad libs are the clear first
+pull (permissive, redistributable). SnapEDA / Ultra Librarian / Component Search Engine have
+broader coverage but restrictive redistribution terms — likely *fetch-on-demand with attribution*
+rather than *bundled*. Needs the maintainer's license-risk call before T267.4 ingests any
+third-party source. (Related to A/T243.2's externally-sourced-fixture licensing question.)
+
+---
+
 ## Frozen-schema checklist (owned by Epic A, extended by later epics)
 
 These are the contracts that cause the most rework if they drift. Freeze in Sprint 55;
@@ -819,6 +961,11 @@ later epics **extend, never fork**:
    C/T251-T252 enforce).
 6. **Power-domain schema** (B/T245, consumed by C/T250).
 7. **Manufacturing-readiness state machine** (C/T252, consumed by E/T260).
+8. **Symbol-coverage scorecard** — deterministic, committed, regression-gated corpus scored by
+   resolution tier × quality (G/T265). Offline-replayed remote tiers; no wall-clock.
+9. **Symbol provenance + resolution-quality** — every catalog pinout carries `kind=symbol_lib`/
+   `datasheet` evidence; trust uses Epic A's confidence ladder, `verified` gated on the B/T247
+   identity join (G/T266). Reuses A's evidence taxonomy — **extends, never forks**.
 
 ## Open planner questions (for the maintainer)
 

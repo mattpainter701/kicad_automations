@@ -30,7 +30,7 @@ version value to `pyproject.toml`.
 For this release:
 
 ```python
-__version__ = "0.34.0"
+__version__ = "0.35.0"
 ```
 
 The release workflow rejects a tag whose value does not exactly match the
@@ -48,8 +48,8 @@ package version, so a stale tag cannot accidentally republish an older wheel.
    ```bash
    git switch main
    git pull --ff-only
-   git tag -a v0.34.0 -m "circuit-weaver 0.34.0"
-   git push origin v0.34.0
+   git tag -a v0.35.0 -m "circuit-weaver 0.35.0"
+   git push origin v0.35.0
    ```
 
 5. Watch the `Release to PyPI` workflow. It will:
@@ -84,7 +84,7 @@ the editable checkout:
 
 ```bash
 python -m venv .wheel-test
-.wheel-test/bin/python -m pip install "dist/circuit_weaver-0.34.0-py3-none-any.whl[test]"
+.wheel-test/bin/python -m pip install "dist/circuit_weaver-0.35.0-py3-none-any.whl[test]"
 CIRCUIT_WEAVER_TEST_PACKAGE=wheel .wheel-test/bin/python -m pytest tests -q
 ```
 
@@ -99,7 +99,7 @@ PyPI package:
 
 ```bash
 python -m venv .pypi-smoke
-.pypi-smoke/bin/python -m pip install --no-cache-dir "circuit-weaver[mcp]==0.34.0"
+.pypi-smoke/bin/python -m pip install --no-cache-dir "circuit-weaver[mcp]==0.35.0"
 .pypi-smoke/bin/circuit-weaver --version
 .pypi-smoke/bin/python -c "from importlib.metadata import version; print(version('circuit-weaver'))"
 ```

@@ -3580,6 +3580,74 @@ def _log_cli_call(
         raise
 
 
+def _handle_repair_command(args: argparse.Namespace) -> dict[str, Any]:
+    """Execute the bounded repair CLI after argparse has enforced stage inputs."""
+
+    from .repair_service import (
+        RepairRejected,
+        _audit_lock_path,
+        _paths_alias,
+        _source_lock_path,
+        apply_no_connect,
+        preview_no_connect,
+        suggest_no_connect,
+        verify_no_connect,
+    )
+
+    def reject_output_alias(*inputs: str | Path) -> None:
+        if args.output and any(_paths_alias(args.output, candidate) for candidate in inputs):
+            raise RepairRejected("repair --output cannot alias a schematic, plan, metadata, or audit path")
+
+    action = args.repair_action
+    if action in {"suggest", "preview"}:
+        source = Path(args.schematic).resolve()
+        reject_output_alias(source, args.metadata, _source_lock_path(source))
+        metadata = json.loads(Path(args.metadata).read_text(encoding="utf-8"))
+        factory = suggest_no_connect if action == "suggest" else preview_no_connect
+        result = factory(
+            args.schematic,
+            metadata,
+            ref=args.ref,
+            pin=args.pin,
+            finding_id=args.finding_id,
+            evidence_ids=tuple(args.evidence_id),
+        )
+    elif action == "apply":
+        plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+        metadata = json.loads(Path(args.metadata).read_text(encoding="utf-8"))
+        source = Path(str(plan.get("source", ""))).resolve()
+        audit = source.parent / ".circuit-weaver" / "repair-audit.jsonl"
+        reject_output_alias(
+            args.plan,
+            args.metadata,
+            source,
+            _source_lock_path(source),
+            audit,
+            _audit_lock_path(audit),
+        )
+        result = apply_no_connect(
+            plan,
+            metadata,
+            approved_plan_hash=args.approved_plan_hash,
+            reviewer=args.reviewer,
+            finding_id=args.finding_id,
+            evidence_ids=tuple(args.evidence_id),
+        )
+    else:
+        source = Path(args.schematic).resolve()
+        reject_output_alias(source, args.plan, _source_lock_path(source))
+        plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+        result = {"verified": verify_no_connect(args.schematic, plan)}
+
+    rendered = json.dumps(result, indent=2, sort_keys=True)
+    if args.output:
+        Path(args.output).write_text(rendered + "\n", encoding="utf-8")
+    print(rendered)
+    if action == "verify" and not result["verified"]:
+        raise SystemExit(1)
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Transactional MVP workflow for circuit_weaver")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -4276,6 +4344,29 @@ def main() -> None:
     log_event_p.add_argument("--message", required=True, help="Event description")
     log_event_p.add_argument("--data", default=None, help="JSON string with additional event data")
 
+    repair_p = subparsers.add_parser("repair", help="Suggest, preview, apply, or verify a bounded schematic repair")
+    repair_actions = repair_p.add_subparsers(dest="repair_action", required=True)
+    for action in ("suggest", "preview"):
+        action_p = repair_actions.add_parser(action, help=f"{action.title()} an explicit no-connect repair")
+        action_p.add_argument("schematic", help="Imported KiCad schematic")
+        action_p.add_argument("metadata", help="Normalized metadata JSON")
+        action_p.add_argument("--ref", required=True, help="Exact component reference")
+        action_p.add_argument("--pin", required=True, help="Exact component pin number")
+        action_p.add_argument("--finding-id", required=True, help="Stable FND-<12hex> finding ID")
+        action_p.add_argument("--evidence-id", action="append", required=True, help="Evidence ID; repeat as needed")
+        action_p.add_argument("--output", "-o", help="Write the signed repair plan JSON")
+    apply_p = repair_actions.add_parser("apply", help="Apply an explicitly approved repair plan")
+    apply_p.add_argument("plan", help="Signed repair plan JSON")
+    apply_p.add_argument("metadata", help="Normalized metadata JSON")
+    apply_p.add_argument("--approved-plan-hash", required=True, help="Out-of-band approved plan SHA-256")
+    apply_p.add_argument("--reviewer", required=True)
+    apply_p.add_argument("--finding-id", required=True)
+    apply_p.add_argument("--evidence-id", action="append", required=True)
+    apply_p.add_argument("--output", "-o", help="Write the apply result JSON")
+    verify_p = repair_actions.add_parser("verify", help="Verify the exact approved post-image")
+    verify_p.add_argument("schematic", help="Repaired KiCad schematic")
+    verify_p.add_argument("plan", help="Signed repair plan JSON")
+    verify_p.add_argument("--output", "-o", help="Write the verification result JSON")
     args = parser.parse_args()
 
     # Task 159: every CLI subcommand gets a circuit-weaver.log in the
@@ -4325,6 +4416,8 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
     """Original body of main(). Split out so the outer main() can wrap it
     with unified workflow-logging setup/teardown.
     """
+    if args.command == "repair":
+        return _handle_repair_command(args)
     if args.command == "validate":
         strict = getattr(args, "strict", False)
         color = getattr(args, "color", "auto")

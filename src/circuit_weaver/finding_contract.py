@@ -208,11 +208,15 @@ def matching_suppression(
 
 
 def apply_suppressions(
-    issues: Iterable[Any], suppressions: Iterable[Suppression], *, design_id: str | None = None
+    issues: Iterable[Any],
+    suppressions: Iterable[Suppression],
+    *,
+    design_id: str | None = None,
+    now: datetime | None = None,
 ) -> tuple[Any, ...]:
     """Mark matching findings, retaining every item for reports and denominators."""
 
-    checked = validate_suppressions(suppressions)
+    checked = validate_suppressions(suppressions, now=now)
     marked: list[Any] = []
     for issue in issues:
         match = matching_suppression(issue, checked, design_id=design_id)

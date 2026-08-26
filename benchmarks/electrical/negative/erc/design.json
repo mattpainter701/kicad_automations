@@ -1,0 +1,1 @@
+{"project":"benchmark_erc_single_pin","spec_version":"mvp_ir_v1","auto_repair":false,"blocks":[{"id":"interfaces:U1","section":"interfaces","kind":"component","ref":"U1","ic":"W25Q128JVSIQ","params":{"pin_map":{"1":"ERC_DANGLING"}}}],"benchmark_intent":{"domain":"erc","polarity":"negative","scenario":"An executable component exposes a signal net with exactly one endpoint."}}

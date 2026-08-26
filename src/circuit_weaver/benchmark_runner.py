@@ -59,18 +59,9 @@ SCHEMA_VERSION = "circuit-weaver-electrical-benchmark/v1"
 # This mapping is intentionally explicit. Add a stable rule ID here when a
 # validator code graduates into the benchmark contract; do not infer IDs from
 # user-facing messages or category names.
-RULE_ID_BY_VALIDATOR_CODE: dict[str, str] = {
-    "power-budget": "CW-PWR-006",
-    "thermal-limits": "CW-PWR-008",
-    "power-over-voltage": "CW-PWR-001",
-    "power-under-voltage": "CW-PWR-002",
-    "power-reverse-flow": "CW-PWR-003",
-    "power-source-contention": "CW-PWR-004",
-    "power-regulator-dropout": "CW-PWR-005",
-    "power-current-budget": "CW-PWR-006",
-    "power-sequencing": "CW-PWR-007",
-    "signal-integrity": "CW-ANALOG-001",
-}
+# There is one producer-owned bridge.  Keeping a second benchmark map here
+# caused newly emitted validator findings to be reported as unsupported even
+# though the validator had already assigned them a stable rule ID.
 
 
 def _rule_domain(rule_id: str) -> str:
@@ -106,6 +97,15 @@ _EXTRA_CONTRACT_RULES: dict[str, str] = {
     "CW-PSV-001": "passive-missing-basis",
     "CW-PSV-002": "passive-out-of-range",
     "CW-PSV-003": "passive-incompatible-network",
+}
+# One immutable bridge combines producer validator findings with the small
+# set of contract producers that do not pass through validator.py.
+RULE_ID_BY_VALIDATOR_CODE: dict[str, str] = {
+    **_RULE_ID_BY_FINDING_CODE,
+    # Legacy power producers use the more specific code while the stable
+    # contract intentionally groups it with the power-budget rule.
+    "power-current-budget": "CW-PWR-006",
+    **{code: rule_id for rule_id, code in _EXTRA_CONTRACT_RULES.items()},
 }
 REGISTERED_RULES: dict[str, dict[str, str]] = {
     rule_id: {"code": code, "domain": _rule_domain(rule_id)}

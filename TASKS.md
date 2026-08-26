@@ -195,14 +195,28 @@ Every sprint below must preserve these cross-cutting rules:
 
 **Goal:** Turn import analysis from a report-only feature into a high-value, human-reviewable remediation workflow without making uncontrolled edits to customer designs.
 
-### T253. Unify findings across generated and imported artifacts (P1, MEDIUM)
+### T253. Unify findings across generated and imported artifacts (P1, MEDIUM) — REMEDIATION CLOSED; INTEGRATION PARTIAL
 
-- [ ] Normalize schematic, PCB, Gerber, ERC, DRC, DFM, sourcing, and evidence conflicts into one versioned finding model.
-- [ ] Include stable rule/finding IDs, severity, detection confidence, exact object/location, evidence, remediation options, and verification status.
-- [ ] Deduplicate the same root cause across analyzers while retaining every supporting observation.
-- [ ] Add SARIF and JSON export for CI/code-review integration without weakening the native HTML report.
+_Landed in `782e9de` (finding_model.py 814L + tests + design_import wiring). Planner review (2026-07-29) verified deterministic IDs, dedup-retains-observations, SARIF/JSON mapping, part-neutrality/fail-closed, and field completeness all CLEAN — but found the finding model is a frozen cross-epic contract with a trust-boundary hole. **T253 REMEDIATION below must close before T254 is built on this contract and before the PR merges.**_
+
+#### T253 REMEDIATION (blocks T254 + merge)
+
+- [x] **T253.R1 (HIGH) — `finding_from_dict` trusts deserialized trust axes; round-trip test is false-green.** `finding_model.py:293-301` (id = sha256 of rule_id + root_cause_key + location only) + `748-814` (`finding_from_dict`, tamper check `812-813`). The `id` correctly excludes severity/confidence so same-root-cause findings dedup — but that means the `id != finding.id` re-read check gives **zero integrity for severity / detection_confidence / verification_status / message**, the exact axes this model exists to normalize. `analyze_design` runs `finding_from_dict` on every pass (`design_import.py:939-945`), so a hand-edited/version-skewed `findings.json`/SARIF silently accepts blocker→info or failed→verified with a matching id. False-green test `test_unified_finding_model.py:175-187` only mutates `root_cause_key` (which *does* feed the id). **Fix:** (a) bind the DERIVABLE axes to observations on both constructor AND deserialize paths — assert `severity == max(obs.severity)` and `detection_confidence == min(obs.confidence)` in `__post_init__` (same rule `deduplicate_findings` already applies); (b) the NON-derivable axes (`verification_status`, `message`) must NOT be advertised as tamper-evident — either cover all fields with a separate integrity/content hash distinct from the dedup id, or treat `verification_status` as untrusted-on-read and re-derive it from actual verification, never trust the JSON (same shape as the C.R1 fix: re-run the check, don't trust the serialized state string). Add a regression test that mutates each trust axis (and an observation severity) through the deserialize path and asserts rejection or re-derivation.
+- [x] **T253.R2 (MED) — `deduplicate_findings` hard-crashes merging two suppressed same-root-cause findings with different suppression IDs.** `finding_model.py:607-608, 622` vs `288-289`: an all-suppressed group with >1 distinct `suppression_id` sets `suppression_id = None` (the `len==1` guard fails), then `__post_init__` raises `suppressed finding requires suppression_id` on valid input. Because dedup runs over the whole analyzer aggregate (`design_import.py:939`), one such pair takes down the entire findings document + SARIF export. Decide the merge rule (retain both suppression IDs, or keep the group suppressed under a merged/primary ID) and add the multi-suppression-id merge test.
+- [x] **T253.R3 (LOW) — SARIF `uriBaseId: "%SRCROOT%"` has no matching `originalUriBaseIds` on the run.** `finding_model.py:647` sets the id on every physical location but the run object (`715-726`) defines no `originalUriBaseIds` map, so strict SARIF 2.1.0 consumers (GitHub code scanning) can't resolve the base. Add `runs[0].originalUriBaseIds = {"%SRCROOT%": {...}}` or drop the `uriBaseId`.
+
+_Remediation closed on 2026-08-26 with the v2 content-integrity boundary, observation-derived trust axes, deterministic multi-suppression retention (including authoritative `OVR-*` IDs), and a declared SARIF source root._
+
+- [ ] Normalize schematic, PCB, Gerber, ERC, DRC, DFM, sourcing, and evidence conflicts into one versioned finding model. (The v2 boundary and adapters are implemented; production import wiring remains limited to the existing PCB DFM/Gerber paths.)
+- [ ] Include stable rule/finding IDs, severity, detection confidence, exact object/location, evidence, remediation options, and verification status across every producer. (The model enforces the shape; not every production producer is wired yet.)
+- [x] Deduplicate the same root cause across analyzers while retaining every supporting observation. (`deduplicate_findings`, conservative merge.)
+- [x] Add SARIF and JSON export for CI/code-review integration without weakening the native HTML report. (`findings_sarif` 2.1.0 + `findings_sarif_json`.)
 
 ### T254. Generate bounded, transactional repair plans (P0, HIGH)
+
+> **PLANNER REVIEW FOCUS (mandatory before merge):** T254 is the only task in this epic that mutates customer KiCad files. The `approved plan hash` gate must **recompute** the plan hash from the actual staged operations and compare — never trust a self-reported `approved: true` flag or a hash carried on the plan object. This is the same trust-boundary/re-read defect species as R1/R4/C.R1–R3 (producer path tested, re-read path false-green). Build the re-read/deserialize regression test alongside the gate.
+
+_Execution slice (2026-08-26): explicit no-connect repair is available through shared service functions and `repair suggest|preview|apply|verify`. A versioned, content-addressed metadata producer binds exact source/analyzer bytes to a validated finding and evidence manifest. Plans bind component/pin geometry, semantic pre/postconditions, rollback data, and the expected post-image. Apply requires an out-of-band approved hash, holds cooperative source/audit locks, keeps an exact hard-linked preimage, publishes only verified staged bytes, and records recoverable prepared/committed audit events. Other repair kinds, non-cooperating editor locks, visual review, and API/MCP parity remain open._
 
 - [ ] Convert supported findings into explicit operations with prerequisites, affected objects/nets, expected postconditions, risk, and rollback data.
 - [ ] Separate `suggest`, `preview`, `apply`, and `verify`; require an explicit approved plan hash before mutating imported KiCad files.
@@ -296,6 +310,43 @@ Every sprint below must preserve these cross-cutting rules:
 - [ ] Reconcile README claims, capability maturity, sample outputs, agent skills, and changelog against the measured release artifacts.
 
 **Sprint exit:** supported simulations have verified models/testbenches and numeric oracle tests; confidence outputs never reward missing evidence; every major product journey has an outcome-level release gate.
+
+---
+
+## Sprint 61 — Symbol Coverage and Provenance (v0.38.0) — PLANNED
+
+**Goal:** Make symbol-source coverage a measured, provenanced, deterministically-grown property — the coverage half of the "symbols with no source/library" problem (the safety half is already closed by the 7-tier resolver + `_validate_pinout_sources` fail-closed gate). Independent of C/D/E/F; needs A (evidence substrate) + B (T247 identity join).
+
+> **Planner spec:** see `EPICS.md` Epic G — T265.1–.3, T266.1–.3, T267.1–.4, T268.1–.3, plus **three frozen contracts** to land before producer code: (1) deterministic committed **symbol-coverage scorecard** (`benchmarks/coverage/`, remote tiers replayed from fixtures, no wall-clock, `--check-baseline` regression gate); (2) **every catalog pinout carries `kind=symbol_lib`/`datasheet` provenance** — `register_ic` rejects an un-provenanced pinout (extends A's evidence taxonomy, does NOT fork); (3) **resolution-quality = A's confidence ladder** (`verified` gated on the B/T247 pin↔pad join). New rule domain **`CW-SYM-*`**. **Sequence: T265 → (T266 ‖ T267) → T268.** Measurement lands first so improvements are provable against a baseline.
+
+> **Key research findings that motivate this sprint (planner, 2026-07-28):** (a) symbol-resolution coverage is **unmeasured** — the codebase's only "coverage" is validation-rule coverage; (b) the curated `ic_data` catalog is ~100 entries with **zero provenance fields**; (c) `datasheet_parser.py:297` stamps a wall-clock `extracted_timestamp` that breaks determinism the moment it feeds an ID; (d) **the KiCad-symbol tier depends on a locally-installed KiCad** (`kicad_lib.py:395-463` hardcodes `C:/Program Files/KiCad/…`, `/usr/share/kicad/symbols`, `KICAD_SYMBOL_DIR`) — so Tier 3 coverage is empty in headless/CI and hostage to the local box. T267.4 addresses (d) by vendoring official open symbol libraries as a deterministic versioned source and evaluating additional pullable sources under explicit license/provenance discipline.
+
+### T265. Symbol-coverage scorecard and baseline (P0, HIGH)
+
+- [ ] Build `benchmarks/coverage/` corpus (per-category MPN sets + a deliberately-unresolvable negative set) and a deterministic `coverage_runner` scoring `resolution_tier` × `resolution_quality`; remote tiers replayed from recorded fixtures, never live.
+- [ ] Emit a committed scorecard JSON + human summary; add a `--check-baseline` gate that fails closed on coverage/quality regression.
+- [ ] Publish the honest v0.38 baseline (current resolution rate + `stub`/`unresolved` counts) with no inflation, as the electrical scorecard declared 14 scored / 19 unsupported.
+
+### T266. Provenance-backed catalog (P0, HIGH)
+
+- [ ] Extend the `ic_data` entry schema with a required provenance block; `register_ic` (`ic_data/__init__.py:215`) rejects a pinout with no `kind=symbol_lib`/`datasheet` evidence.
+- [ ] Retrofit the ~100 existing entries with provenance; mark `single_source` where one library backs the pinout, `verified` only where the T247 join passes — no entry silently `verified`.
+- [ ] Thread `symbol_lib` evidence IDs through the resolver return path into the evidence manifest.
+
+### T267. Deterministic, evidence-emitting ingestion pipeline (P1, HIGH)
+
+- [ ] Remove the wall-clock `extracted_timestamp` (`datasheet_parser.py:297`) from any field feeding an ID/scored output; make datasheet extraction reproducible (same PDF bytes → same `EV-<KIND>-<12hex>`).
+- [ ] Score extraction confidence and emit each extracted pinout as `kind=datasheet` evidence; cross-check against the T247 identity join before catalog admission (fail → `review_only`, never auto-promoted).
+- [ ] Same deterministic + evidence-emitting treatment for the KiCad-library and EasyEDA/LCSC tiers.
+- [ ] Decouple the KiCad-symbol tier from the local install: vendor the official open KiCad symbol libraries as a deterministic, versioned source (so headless/CI get identical coverage), and evaluate additional pullable symbol sources under explicit license + provenance discipline. Local install becomes an *additive override*, not the only source.
+
+### T268. Coverage in readiness and the frequency-weighted growth loop (P1, MEDIUM)
+
+- [ ] Add symbol-coverage as a first-class dimension in `confidence_dashboard.py` (none today) and the unified report/manifest, separate from evidence coverage; never reward missing symbols (monotonicity).
+- [ ] Make `unresolved`/`stub` parts explicit `CW-SYM-*` readiness blockers with concrete remediation, consumed by the C/T252 `ManufacturingReadiness` state machine.
+- [ ] Emit a frequency-weighted coverage-gap report that ranks the highest-impact missing parts so catalog growth is prioritized by real demand.
+
+**Sprint exit:** symbol coverage is measured by a committed regression-gated scorecard; every catalog pinout carries provenance + a confidence-ladder rating; ingestion is deterministic and evidence-emitting; the KiCad-symbol tier no longer depends on a local install; `unresolved`/`stub` parts are explicit readiness blockers; and a coverage-gap report steers growth. Fail-closed posture preserved throughout.
 
 ## Sprint 54 — Layout Quality Zero Gate, Density Strategy, Sheet Splitting, Autorouter Hardening (v0.31.0)
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.35.0] - 2026-08-26
+
+### Imported-design finding trust
+
+- Version the normalized finding interchange shape as `circuit-weaver-findings/v2`, separating stable root-cause identity from a full-content SHA-256. Deserialization now rejects field coercion and content drift, re-derives severity/confidence from observations, and never carries a serialized `verified` state into a fresh run.
+- Retain every suppression/override ID during deduplication, including mixed actionable/suppressed observations and existing short authoritative IDs such as `OVR-1`, and declare the SARIF `%SRCROOT%` base used by physical locations.
+
+### Electrical accuracy benchmark
+
+- Replace the duplicate benchmark rule bridge with the validator-owned contract plus the legacy `power-current-budget` producer alias. Promote executable adverse/control pairs for I2C pull-ups, SPI chip select, UART pairing, and ERC single-pin nets.
+- Expand the corpus to 42 fixtures and the scored inventory from 14 to 18 of 33 registered rules. The committed scorecard records 22 true positives, zero false positives, zero false negatives, and 1.000 supported precision/recall without reclassifying unsupported diagnostics as expected findings.
+
+### Transactional imported-design repair
+
+- Add an experimental explicit-no-connect repair service and `repair suggest|preview|apply|verify` CLI. A content-addressed `circuit-weaver-repair-metadata/v1` producer binds exact source/analyzer bytes to a validated v2 finding and deterministic evidence manifest; signed plans then bind source/object/post-image hashes, prerequisites, semantic invariants, rollback data, and the low-risk operation.
+- Require an out-of-band approved plan hash and reviewer before mutation; reject path aliases, ambiguous identity, implicit pin/power/junction connectivity, stale plans, malformed evidence, and concurrent source changes. Apply uses source/audit locks, a hard-linked exact preimage, metadata-preserving same-directory publication, post-audit verification, and prepared/committed append-only audit events with interrupted-commit recovery.
+
+### Verification status
+
+- Local Windows/Python 3.13 source and isolated exact-wheel suites: **1892 passed, 18 classified skips** each. The one warning is the existing Starlette/httpx deprecation. CI-scoped Ruff, diff, generated capability docs, benchmark baseline, `twine check`, and wheel-payload checks pass.
+- KiCad 10.0.4 loads and exports the exact-wheel transactionally repaired no-connect fixture. ERC moves from 28 to 27 findings by clearing only the intended `U1.4` pin-not-connected error; the remaining semantic finding multiset is unchanged. Existing local KiCad 10 two-layer and four-layer load/DRC goldens also pass.
+
 ## [0.34.0] - 2026-07-29
 
 ### Authoritative PCB handoff

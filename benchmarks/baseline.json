@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "corpus_schema_version": "circuit-weaver-electrical-benchmark/v1",
-  "fixture_count": 40,
+  "fixture_count": 42,
   "regression_budget": {
     "precision": 0.0,
     "recall": 0.0
@@ -76,6 +76,26 @@
       "precision": 1.0,
       "recall": 1.0,
       "unsupported": 0
+    },
+    "CW-ERC-001": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-I2C-001": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-SPI-001": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
+    },
+    "CW-UART-001": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 0
     }
   },
   "domains": {
@@ -93,6 +113,26 @@
       "precision": 1.0,
       "recall": 1.0,
       "unsupported": 0
+    },
+    "i2c": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 3
+    },
+    "erc": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 8
+    },
+    "spi": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 6
+    },
+    "uart": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "unsupported": 3
     }
   },
   "aggregate": {
@@ -104,11 +144,11 @@
     "CW-ANALOG-002": "unsupported",
     "CW-ANALOG-003": "unsupported",
     "CW-CLK-001": "unsupported",
-    "CW-ERC-001": "unsupported",
+    "CW-ERC-001": "scored",
     "CW-ERC-002": "unsupported",
     "CW-ERC-003": "unsupported",
     "CW-ERC-004": "unsupported",
-    "CW-I2C-001": "unsupported",
+    "CW-I2C-001": "scored",
     "CW-ID-001": "scored",
     "CW-ID-002": "scored",
     "CW-ID-003": "scored",
@@ -131,17 +171,24 @@
     "CW-PWR-011": "unsupported",
     "CW-PWR-012": "unsupported",
     "CW-PWR-013": "unsupported",
-    "CW-SPI-001": "unsupported",
-    "CW-UART-001": "unsupported"
+    "CW-SPI-001": "scored",
+    "CW-UART-001": "scored"
   },
   "unsupported_scope": [
     "CW-ANALOG-001",
-    "CW-CLOCK-001",
-    "CW-I2C-001",
-    "CW-MANUFACTURING-001",
-    "CW-PROTECTION-001",
-    "CW-SPI-001",
-    "CW-UART-001",
-    "CW-USB-001"
+    "CW-ANALOG-002",
+    "CW-ANALOG-003",
+    "CW-CLK-001",
+    "CW-ERC-002",
+    "CW-ERC-003",
+    "CW-ERC-004",
+    "CW-ID-005",
+    "CW-ID-006",
+    "CW-PWR-008",
+    "CW-PWR-009",
+    "CW-PWR-010",
+    "CW-PWR-011",
+    "CW-PWR-012",
+    "CW-PWR-013"
   ]
 }

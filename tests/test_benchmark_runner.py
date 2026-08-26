@@ -21,6 +21,17 @@ from circuit_weaver.dispatcher import ValidationMessage, ValidationReport
 from circuit_weaver.validator import _RULE_ID_BY_FINDING_CODE
 
 
+def test_benchmark_rule_bridge_is_the_validator_contract() -> None:
+    """Benchmark mapping must not drift from producer-owned rule IDs."""
+
+    assert benchmark_runner.RULE_ID_BY_VALIDATOR_CODE.items() >= _RULE_ID_BY_FINDING_CODE.items()
+    assert benchmark_runner.RULE_ID_BY_VALIDATOR_CODE["i2c-missing-pullup"] == "CW-I2C-001"
+    assert benchmark_runner.RULE_ID_BY_VALIDATOR_CODE["spi-floating-cs"] == "CW-SPI-001"
+    assert benchmark_runner.RULE_ID_BY_VALIDATOR_CODE["uart-unpaired"] == "CW-UART-001"
+    assert benchmark_runner.RULE_ID_BY_VALIDATOR_CODE["single-pin-net"] == "CW-ERC-001"
+    assert benchmark_runner.RULE_ID_BY_VALIDATOR_CODE["power-current-budget"] == "CW-PWR-006"
+
+
 def test_default_benchmark_validation_disables_machine_local_kicad(monkeypatch) -> None:
     seen: dict[str, object] = {}
     sentinel = object()
