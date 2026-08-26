@@ -69,9 +69,9 @@ Every sprint below must preserve these cross-cutting rules:
 > - [x] **T244.R1 (HIGH — data leak).** Redaction is now recursive and unanchored for embedded Windows drive, UNC, POSIX/home, and `file://` paths; direct record validation and ledger admission share one detector. The real `collect_component_evidence` absolute-`.kicad_mod` path is rejected before manifest emission. HTTP(S) userinfo and local paths hidden in URL queries are rejected without blocking ordinary remote URLs or slash notation.
 > - [x] **T244.R2 (MEDIUM — frozen-contract fork).** `EvidenceRecord.supersedes` now flows through builder, copy, manifest, and legacy-compatible rehydration; IDs remain independent of supersession metadata. Programmatic links must already resolve, forward manifest links load deterministically, cycles/unresolved links fail, corroborated records round-trip regardless of ID sort order, and superseded records cannot remain fabrication-authoritative.
 > - [x] **T244.R3 (cleanup).** Consolidated emitted rule IDs on `CW-PWR-*`; legacy `CW-POWER-*` values are accepted only at the benchmark input boundary and canonicalized before scoring or result emission. A repository contract test prevents the old namespace from returning outside that explicit alias map.
-> - [ ] **T244.R4 (MEDIUM — data leak, OPEN — planner code-review of shipped v0.33.0, 2026-07-28).** Same redaction family as R1: the R1 fix catches paths at whitespace/quote/`:`/`(` boundaries, but two shapes still pass `validate_evidence_safety` into the manifest. (a) `evidence_policy.py` `_POSIX_ABSOLUTE` negative lookbehind `(?<![A-Za-z0-9_.-])` **includes `.`/`-`**, so an absolute path glued to a preceding `.`/`-` evades — `build-artifact-/home/ci/secret`, `cache.v2./home/ci/id_rsa` are NOT detected — while the Windows pattern's lookbehind `(?<![A-Za-z0-9_])` correctly catches `part.C:\Users\…`. (b) Greedy `https?://[^\s]+` swallows a trailing glued path — `(https://x.com/ds.pdf)/home/ci/secret` is consumed before the POSIX scan runs. **False-green:** `test_evidence_embedded_paths.py` only exercises space/`:`/`(`-preceded leaks, so all 40 policy tests pass with the gap live (same test-blindspot signature as R1). **Fix:** drop `.`/`-` from the POSIX lookbehind (match the Windows stance — require only that `/` not follow an alnum), make the URL strip non-greedy and stop at brackets/quotes (`[^\s"'()<>]+`), and add the glued + URL-adjacent cases to the test. Ship as a v0.33.x patch — do not fold into Epic C.
+> - [x] **T244.R4 (MEDIUM — data leak, CLOSED in v0.33.1 / PR #16).** The POSIX absolute-path detector now catches paths glued to `.`/`-`, URL stripping stops at brackets and quotes, and adversarial regressions preserve ordinary remote URLs and slash notation. The independent patch shipped before Epic C as required.
 >
-> **Remediation verification:** R1/R2 source suite `1601 passed, 16 classified skips`; focused exact-wheel evidence safety/schema suite `60 passed`. R3 focused namespace/benchmark suite `48 passed`, Ruff clean, and the benchmark baseline gate remains green at 1.0 precision/recall for supported power rules. R4 verification pending.
+> **Remediation verification:** R1/R2 source suite `1601 passed, 16 classified skips`; focused exact-wheel evidence safety/schema suite `60 passed`. R3 focused namespace/benchmark suite `48 passed`, Ruff clean, and the benchmark baseline gate remains green at 1.0 precision/recall for supported power rules. R4 shipped in v0.33.1 after `1771 passed, 16 classified skips`, 51 exact-wheel evidence/release tests, Ruff, `twine check`, and diff checks.
 
 ---
 
@@ -131,7 +131,7 @@ Every sprint below must preserve these cross-cutting rules:
 
 ---
 
-## Sprint 57 — Real PCB Handoff and Constraint Closure (v0.34.0) — PLANNED
+## Sprint 57 — Real PCB Handoff and Constraint Closure (v0.34.0) — RELEASED 2026-07-29
 
 **Goal:** Convert an approved placement review into a real, pad-bearing KiCad PCB with authoritative connectivity and verification, while preserving the review-only placement-preview contract.
 
@@ -156,31 +156,31 @@ Every sprint below must preserve these cross-cutting rules:
 
 ### T249. Create an authoritative schematic-to-PCB handoff (P0, HIGH)
 
-- [ ] Generate or update a real `.kicad_pcb` using resolved library footprints, pad numbers, net assignments, board outline, stack-up, and the approved placement state; never relabel the existing preview as authoritative.
-- [ ] Preserve stable references and UUID identity across regenerate/apply cycles, and produce a semantic change manifest for added, removed, moved, or remapped items.
-- [ ] Refuse handoff for placeholder geometry, unresolved footprints, pin/pad mismatches, stale placement approval, or missing board constraints.
-- [ ] Prove round-trip loadability in supported KiCad 8/9/10 gates with golden two-layer and four-layer designs.
+- [x] Generate or update a real `.kicad_pcb` using resolved library footprints, pad numbers, net assignments, board outline, stack-up, and the approved placement state; never relabel the existing preview as authoritative.
+- [x] Preserve stable references and UUID identity across regenerate/apply cycles, and produce a semantic change manifest for added, removed, moved, or remapped items.
+- [x] Refuse handoff for placeholder geometry, unresolved footprints, pin/pad mismatches, stale placement approval, or missing board constraints.
+- [x] Prove round-trip loadability in supported KiCad 8/9/10 gates with golden two-layer and four-layer designs.
 
 ### T250. Compile electrical intent into enforceable PCB constraints (P1, HIGH)
 
-- [ ] Translate normalized interfaces and power domains into net classes, differential pairs, width/clearance/via rules, impedance targets, length constraints, keepouts, and placement constraints.
-- [ ] Record which constraints are calculated, user-specified, manufacturer-specified, or fabrication-profile-derived and flag conflicts before board mutation.
-- [ ] Cover USB 2.0, crystal loops, switch-mode power loops, I2C, CAN/RS-485, analog sense, and high-current rails in the benchmark corpus.
-- [ ] Verify that emitted KiCad project/board rules match the evidence manifest and survive reopen/export.
+- [x] Translate normalized interfaces and power domains into net classes, differential pairs, width/clearance/via rules, impedance targets, length constraints, keepouts, and placement constraints.
+- [x] Record which constraints are calculated, user-specified, manufacturer-specified, or fabrication-profile-derived and flag conflicts before board mutation.
+- [x] Cover USB 2.0, crystal loops, switch-mode power loops, I2C, CAN/RS-485, analog sense, and high-current rails in the benchmark corpus.
+- [x] Verify that emitted KiCad project/board rules match the evidence manifest and survive reopen/export.
 
 ### T251. Add transactional DRC and connectivity closure (P0, HIGH)
 
-- [ ] Run KiCad connectivity checks and DRC on the exact staged board bytes; parse violations into the shared findings schema with stable rule IDs and object references.
-- [ ] Require zero unapproved connectivity errors and zero fabrication-profile blockers before publishing an authoritative board.
-- [ ] Preserve the last known-good board and reports when apply, save, reload, DRC, or manifest reconciliation fails.
-- [ ] Add deterministic rerun and failure-injection tests for interrupted writes, stale board state, KiCad absence, version differences, and DRC parser drift.
+- [x] Run KiCad connectivity checks and DRC on the exact staged board bytes; parse violations into the shared findings schema with stable rule IDs and object references.
+- [x] Require zero unapproved connectivity errors and zero fabrication-profile blockers before publishing an authoritative board.
+- [x] Preserve the last known-good board and reports when apply, save, reload, DRC, or manifest reconciliation fails.
+- [x] Add deterministic rerun and failure-injection tests for interrupted writes, stale board state, KiCad absence, version differences, and DRC parser drift.
 
 ### T252. Define a single manufacturing-readiness contract (P1, MEDIUM)
 
-- [ ] Replace scattered readiness booleans with one state machine spanning identity, placement, routing, ERC, DRC, BOM/CPL reconciliation, Gerber/drill validation, and approved overrides.
-- [ ] Make CLI, API, MCP, HTML reports, and artifact manifests return the same state, blockers, evidence IDs, and next safe actions.
-- [ ] Add a `manufacturing-readiness --json` command and prevent export/publish paths from bypassing its blockers.
-- [ ] Gate two golden designs through schematic generation -> reviewed placement -> real PCB -> DRC -> verified BOM/CPL/Gerbers.
+- [x] Replace scattered readiness booleans with one state machine spanning identity, placement, routing, ERC, DRC, BOM/CPL reconciliation, Gerber/drill validation, and approved overrides.
+- [x] Make CLI, API, MCP, HTML reports, and artifact manifests return the same state, blockers, evidence IDs, and next safe actions.
+- [x] Add a `manufacturing-readiness --json` command and prevent export/publish paths from bypassing its blockers.
+- [x] Gate two golden designs through schematic generation -> reviewed placement -> real PCB -> DRC -> verified BOM/CPL/Gerbers.
 
 **Sprint exit:** at least two representative designs complete a transactional, evidence-linked KiCad PCB handoff and pass the configured KiCad DRC/manufacturing-readiness gate.
 

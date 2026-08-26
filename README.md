@@ -81,7 +81,7 @@ Verification is conservative: a capability only claims the evidence level its pu
 | `generate-docs` | experimental | CLI: `generate-docs` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
 | `erc` | review_only | CLI: `erc` | `kicad-load` → `erc` | `command-contract`, `kicad-load`, `erc` | 0.32.1 |
 | `doctor` | beta | CLI: `doctor` | not applicable (operational) | `command-contract` | 0.32.1 |
-| `repair` | experimental | CLI: `repair`; Python: `circuit_weaver.repair_service:apply_no_connect` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.34.0 |
+| `repair` | experimental | CLI: `repair`; Python: `circuit_weaver.repair_service:apply_no_connect` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.35.0 |
 | `confidence` | review_only | CLI: `confidence`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
 | `manufacturing-readiness` | beta | CLI: `manufacturing-readiness`; Python: `circuit_weaver.manufacturing_readiness:read_manufacturing_readiness`; HTTP: `POST /manufacturing-readiness`; MCP: `manufacturing_readiness`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `fabrication-ready` | 0.34.0 |
 | `simulate` | experimental | CLI: `simulate`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |

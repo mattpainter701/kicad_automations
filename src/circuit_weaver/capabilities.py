@@ -280,7 +280,7 @@ CAPABILITIES: Final[tuple[CapabilityRecord, ...]] = (
         maturity="experimental",
         python="circuit_weaver.repair_service:apply_no_connect",
         evidence_kinds=("command-contract", "static-parse"),
-        since_version="0.34.0",
+        since_version="0.35.0",
     ),
     _record("confidence", "confidence", maturity="review_only", skill="circuit-weaver"),
     _record(
