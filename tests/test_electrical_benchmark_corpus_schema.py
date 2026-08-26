@@ -10,6 +10,7 @@ CORPUS = Path(__file__).parents[1] / "benchmarks" / "electrical"
 DOMAINS = {
     "power",
     "clock",
+    "erc",
     "usb",
     "i2c",
     "spi",

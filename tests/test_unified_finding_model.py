@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 
@@ -172,6 +173,30 @@ def test_validation_issue_adapter_preserves_t248_axes_and_suppression() -> None:
     assert finding.remediation_options[0].summary == "Lower VIN."
 
 
+@pytest.mark.parametrize("override_id", ["OVR-001", "OVR-1"])
+def test_validation_issue_adapter_preserves_authoritative_drc_override_id(override_id: str) -> None:
+    issue = ValidationIssue(
+        code="clearance",
+        ref="U1",
+        message="Clearance is below the approved fabrication constraint.",
+        severity="major",
+        detection_confidence="verified",
+        rule_id="CW-DRC-001",
+        suppressed=True,
+        suppression_id=override_id,
+    )
+
+    finding = from_validation_issue(
+        issue,
+        source="kicad.drc",
+        artifact_kind="drc",
+        artifact_path="reports/main-drc.json",
+    )
+
+    assert finding.suppression_id == override_id
+    assert finding.suppression_ids == (override_id,)
+
+
 def test_json_round_trip_is_strict_and_tamper_evident() -> None:
     finding = _finding()
     document = findings_document((finding, finding))
@@ -183,8 +208,63 @@ def test_json_round_trip_is_strict_and_tamper_evident() -> None:
 
     tampered = dict(document["findings"][0])
     tampered["root_cause_key"] = "different-root-cause"
-    with pytest.raises(FindingModelError, match="id does not match"):
+    with pytest.raises(FindingModelError, match="(id does not match|content_integrity)"):
         finding_from_dict(tampered)
+
+
+def test_pre_integrity_v1_payload_is_rejected_as_an_unsupported_schema() -> None:
+    payload = dict(_finding().to_dict())
+    payload["schema_version"] = "circuit-weaver-findings/v1"
+    payload.pop("content_integrity")
+    payload.pop("suppression_ids")
+
+    with pytest.raises(FindingModelError, match="unsupported finding schema_version"):
+        finding_from_dict(payload)
+
+
+@pytest.mark.parametrize("field", ["severity", "detection_confidence", "message"])
+def test_export_mutation_is_rejected_by_content_integrity(field: str) -> None:
+    payload = dict(_finding().to_dict())
+    payload[field] = {"severity": "blocker", "detection_confidence": "stub", "message": "forged"}[field]
+
+    with pytest.raises(FindingModelError, match="(content_integrity|supporting observations)"):
+        finding_from_dict(payload)
+
+
+def test_serialized_verification_status_is_never_trusted() -> None:
+    payload = dict(_finding(verification_status="verified").to_dict())
+
+    loaded = finding_from_dict(payload)
+
+    assert loaded.verification_status == "unverified"
+
+    tampered = dict(_finding().to_dict())
+    tampered["verification_status"] = "verified"
+    with pytest.raises(FindingModelError, match="content_integrity"):
+        finding_from_dict(tampered)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("severity", "blocker", "severity does not match"),
+        ("detection_confidence", "stub", "detection_confidence does not match"),
+    ],
+)
+def test_recomputed_outer_integrity_cannot_override_observation_axes(field: str, value: str, message: str) -> None:
+    payload = dict(_finding().to_dict())
+    observation = dict(payload["observations"][0])
+    observation[field] = value
+    payload["observations"] = [observation]
+    content = dict(payload)
+    content.pop("id")
+    content.pop("content_integrity")
+    payload["content_integrity"] = hashlib.sha256(
+        json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises(FindingModelError, match=message):
+        finding_from_dict(payload)
 
 
 def test_sarif_retains_finding_identity_trust_axes_and_remediation() -> None:
@@ -193,6 +273,7 @@ def test_sarif_retains_finding_identity_trust_axes_and_remediation() -> None:
     result = sarif["runs"][0]["results"][0]
 
     assert sarif["version"] == "2.1.0"
+    assert sarif["runs"][0]["originalUriBaseIds"] == {"%SRCROOT%": {"uri": "./"}}
     assert result["ruleId"] == "CW-PWR-001"
     assert result["level"] == "error"
     assert result["partialFingerprints"]["circuitWeaverFindingId/v1"] == finding.id
@@ -201,10 +282,59 @@ def test_sarif_retains_finding_identity_trust_axes_and_remediation() -> None:
         "uriBaseId": "%SRCROOT%",
     }
     assert result["properties"]["detection_confidence"] == "corroborated"
+    assert result["properties"]["content_integrity"] == finding.content_integrity
     assert result["properties"]["verification_status"] == "unverified"
     assert result["properties"]["evidence_ids"] == [EVIDENCE_A]
     assert result["properties"]["remediation_options"][0]["id"] == "REM-lower-vin"
     assert json.loads(findings_sarif_json((finding,))) == sarif
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("message", 42), ("suppressed", "false"), ("observations", "not-a-list")],
+)
+def test_deserialize_never_coerces_frozen_field_types(field: str, value: object) -> None:
+    payload = dict(_finding().to_dict())
+    payload[field] = value
+    content = dict(payload)
+    content.pop("id")
+    content.pop("content_integrity")
+    payload["content_integrity"] = hashlib.sha256(
+        json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises(FindingModelError, match="(must not be coerced|boolean|must be a list)"):
+        finding_from_dict(payload)
+
+
+def test_deduplication_retains_all_suppression_audit_ids() -> None:
+    first = _finding()
+    first = replace(first, suppressed=True, suppression_id="SUP-first", suppression_ids=("SUP-first",))
+    second = replace(first, suppression_id="SUP-second", suppression_ids=("SUP-second",))
+
+    merged = deduplicate_findings((first, second))[0]
+
+    assert merged.suppressed is True
+    assert merged.suppression_id == "SUP-first"
+    assert merged.suppression_ids == ("SUP-first", "SUP-second")
+    assert finding_from_dict(merged.to_dict()).suppression_ids == merged.suppression_ids
+
+
+def test_deduplication_keeps_mixed_suppression_ids_without_suppressing_root_cause() -> None:
+    actionable = _finding()
+    suppressed = replace(
+        actionable,
+        suppressed=True,
+        suppression_id="SUP-first",
+        suppression_ids=("SUP-first",),
+    )
+
+    merged = deduplicate_findings((suppressed, actionable))[0]
+
+    assert merged.suppressed is False
+    assert merged.suppression_id is None
+    assert merged.suppression_ids == ("SUP-first",)
+    assert finding_from_dict(merged.to_dict()).suppression_ids == merged.suppression_ids
 
 
 def test_missing_rule_id_never_crosses_normalization_boundary() -> None:

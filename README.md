@@ -81,6 +81,7 @@ Verification is conservative: a capability only claims the evidence level its pu
 | `generate-docs` | experimental | CLI: `generate-docs` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
 | `erc` | review_only | CLI: `erc` | `kicad-load` → `erc` | `command-contract`, `kicad-load`, `erc` | 0.32.1 |
 | `doctor` | beta | CLI: `doctor` | not applicable (operational) | `command-contract` | 0.32.1 |
+| `repair` | experimental | CLI: `repair`; Python: `circuit_weaver.repair_service:apply_no_connect` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.34.0 |
 | `confidence` | review_only | CLI: `confidence`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
 | `manufacturing-readiness` | beta | CLI: `manufacturing-readiness`; Python: `circuit_weaver.manufacturing_readiness:read_manufacturing_readiness`; HTTP: `POST /manufacturing-readiness`; MCP: `manufacturing_readiness`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `fabrication-ready` | 0.34.0 |
 | `simulate` | experimental | CLI: `simulate`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
@@ -218,6 +219,54 @@ source directory. Use `--force` only to intentionally replace a changed import
 source set, ZIP staging tree, or cached analysis. Netlist-only imports are
 inventoried, but analysis is reported as unsupported because a netlist alone
 does not contain schematic or physical-layout evidence.
+
+### Bounded no-connect repair
+
+The first experimental imported-design repair is deliberately narrow: it can
+add one explicit KiCad no-connect marker only when a
+`circuit-weaver-repair-metadata/v1` envelope binds the exact source hash,
+analyzer component/pin identity, a v2 finding, and its validated evidence
+manifest. Build that envelope with
+`circuit_weaver.repair_service.build_no_connect_metadata`; the matching trusted
+finding producer is `no_connect_finding_from_intent`. Both require current,
+verified user evidence whose exact `pin:REF.NUMBER` claim says the pin is
+intentionally unused. Raw analyzer JSON or an unbound boolean is rejected.
+
+The service then independently proves the component UUID/library ID, pin
+coordinate, and absence of a net, wire, label, junction, bus entry,
+hierarchical sheet pin, power symbol, or coincident component pin. The plan is
+reviewable JSON; the apply step will not infer approval from that file.
+
+```bash
+circuit-weaver repair suggest board.kicad_sch repair-metadata.json \
+  --ref U1 --pin 4 \
+  --finding-id FND-0123456789ab \
+  --evidence-id EV-VALIDATION-0123456789ab \
+  --output no-connect-plan.json
+
+# Review the plan and copy its plan_sha256 through the approval channel.
+circuit-weaver repair apply no-connect-plan.json repair-metadata.json \
+  --approved-plan-hash <approved-plan-sha256> \
+  --reviewer <reviewer> \
+  --finding-id FND-0123456789ab \
+  --evidence-id EV-VALIDATION-0123456789ab
+
+circuit-weaver repair verify board.kicad_sch no-connect-plan.json
+```
+
+The public capability guarantee is static parsing. Run KiCad ERC after review;
+unsupported topology, geometry, part replacement, and pin-remapping repairs
+fail closed instead of being improvised. Apply holds cross-process source and
+audit locks, keeps an exact hard-linked preimage through publication, and uses
+prepared/committed append-only audit events so an interrupted successful
+publication can be recovered on retry. Lock hardlinks and reparse aliases are
+rejected before mutation; the default audit sidecar cannot escape through a
+directory junction. On Windows, atomic replacement preserves and verifies the
+target owner, group, and DACL access semantics. Applications that write
+schematics without honoring Circuit Weaver's lock remain outside the
+cooperative locking contract; snapshot, identity, and post-image checks still
+detect ordinary write races and preserve observed user bytes rather than
+rolling over them.
 
 ---
 

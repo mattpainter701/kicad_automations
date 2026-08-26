@@ -6,10 +6,10 @@
     "minimum_recall": 0.9,
     "precision": 1.0,
     "recall": 1.0,
-    "scored_rule_count": 14,
+    "scored_rule_count": 18,
     "status": "pass",
-    "tp": 18,
-    "unsupported_rule_count": 19
+    "tp": 22,
+    "unsupported_rule_count": 15
   },
   "coverage": {
     "CW-ANALOG-001": {
@@ -39,8 +39,8 @@
     "CW-ERC-001": {
       "code": "single-pin-net",
       "domain": "erc",
-      "reason": "no complete labelled executable population",
-      "status": "unsupported"
+      "reason": null,
+      "status": "scored"
     },
     "CW-ERC-002": {
       "code": "undriven-net",
@@ -63,8 +63,8 @@
     "CW-I2C-001": {
       "code": "i2c-missing-pullup",
       "domain": "i2c",
-      "reason": "no complete labelled executable population",
-      "status": "unsupported"
+      "reason": null,
+      "status": "scored"
     },
     "CW-ID-001": {
       "code": "identity-selected-mismatch",
@@ -201,14 +201,14 @@
     "CW-SPI-001": {
       "code": "spi-floating-cs",
       "domain": "spi",
-      "reason": "no complete labelled executable population",
-      "status": "unsupported"
+      "reason": null,
+      "status": "scored"
     },
     "CW-UART-001": {
       "code": "uart-unpaired",
       "domain": "uart",
-      "reason": "no complete labelled executable population",
-      "status": "unsupported"
+      "reason": null,
+      "status": "scored"
     }
   },
   "domains": {
@@ -232,15 +232,25 @@
       "tp": 0,
       "unsupported": 3
     },
+    "erc": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 8
+    },
     "i2c": {
       "fn": 0,
       "fp": 0,
-      "precision": null,
-      "precision_status": "undefined_no_predictions",
-      "recall": null,
-      "recall_status": "undefined_no_expected",
-      "tp": 0,
-      "unsupported": 5
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 3
     },
     "identity": {
       "fn": 0,
@@ -295,21 +305,21 @@
     "spi": {
       "fn": 0,
       "fp": 0,
-      "precision": null,
-      "precision_status": "undefined_no_predictions",
-      "recall": null,
-      "recall_status": "undefined_no_expected",
-      "tp": 0,
-      "unsupported": 3
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 6
     },
     "uart": {
       "fn": 0,
       "fp": 0,
-      "precision": null,
-      "precision_status": "undefined_no_predictions",
-      "recall": null,
-      "recall_status": "undefined_no_expected",
-      "tp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
       "unsupported": 3
     },
     "usb": {
@@ -323,7 +333,7 @@
       "unsupported": 1
     }
   },
-  "fixture_count": 40,
+  "fixture_count": 42,
   "rules": {
     "CW-ANALOG-001": {
       "fn": 0,
@@ -345,15 +355,25 @@
       "tp": 0,
       "unsupported": 1
     },
+    "CW-ERC-001": {
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
+    },
     "CW-I2C-001": {
       "fn": 0,
       "fp": 0,
-      "precision": null,
-      "precision_status": "undefined_no_predictions",
-      "recall": null,
-      "recall_status": "undefined_no_expected",
-      "tp": 0,
-      "unsupported": 1
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
     },
     "CW-ID-001": {
       "fn": 0,
@@ -518,22 +538,22 @@
     "CW-SPI-001": {
       "fn": 0,
       "fp": 0,
-      "precision": null,
-      "precision_status": "undefined_no_predictions",
-      "recall": null,
-      "recall_status": "undefined_no_expected",
-      "tp": 0,
-      "unsupported": 1
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
     },
     "CW-UART-001": {
       "fn": 0,
       "fp": 0,
-      "precision": null,
-      "precision_status": "undefined_no_predictions",
-      "recall": null,
-      "recall_status": "undefined_no_expected",
-      "tp": 0,
-      "unsupported": 1
+      "precision": 1.0,
+      "precision_status": "defined",
+      "recall": 1.0,
+      "recall_status": "defined",
+      "tp": 1,
+      "unsupported": 0
     },
     "CW-USB-001": {
       "fn": 0,
@@ -566,19 +586,47 @@
       "fixture_id": "clock-missing-load-capacitors"
     },
     {
+      "code": "floating-input-pin",
+      "fixture_id": "erc-connected-control"
+    },
+    {
+      "code": "floating-power-pin",
+      "fixture_id": "erc-connected-control"
+    },
+    {
+      "code": "footprint-library-missing",
+      "fixture_id": "erc-connected-control"
+    },
+    {
+      "code": "floating-input-pin",
+      "fixture_id": "erc-single-pin"
+    },
+    {
+      "code": "floating-power-pin",
+      "fixture_id": "erc-single-pin"
+    },
+    {
+      "code": "footprint-library-missing",
+      "fixture_id": "erc-single-pin"
+    },
+    {
       "code": "net-connectivity",
+      "fixture_id": "erc-single-pin"
+    },
+    {
+      "code": "orphan-interface",
+      "fixture_id": "erc-single-pin"
+    },
+    {
+      "code": "bus-completeness",
       "fixture_id": "i2c-missing-pullups"
     },
     {
-      "code": "single-pin-net",
+      "code": "floating-input-pin",
       "fixture_id": "i2c-missing-pullups"
     },
     {
-      "code": "net-connectivity",
-      "fixture_id": "i2c-pulled-up"
-    },
-    {
-      "code": "single-pin-net",
+      "code": "floating-input-pin",
       "fixture_id": "i2c-pulled-up"
     },
     {
@@ -598,19 +646,39 @@
       "fixture_id": "protection-underrated-tvs"
     },
     {
-      "code": "unresolved-component",
+      "code": "floating-input-pin",
       "fixture_id": "spi-chip-select-connected"
     },
     {
-      "code": "unresolved-component",
+      "code": "footprint-library-missing",
+      "fixture_id": "spi-chip-select-connected"
+    },
+    {
+      "code": "bus-completeness",
       "fixture_id": "spi-floating-chip-select"
     },
     {
-      "code": "unresolved-component",
+      "code": "floating-input-pin",
+      "fixture_id": "spi-floating-chip-select"
+    },
+    {
+      "code": "floating-power-pin",
+      "fixture_id": "spi-floating-chip-select"
+    },
+    {
+      "code": "footprint-library-missing",
+      "fixture_id": "spi-floating-chip-select"
+    },
+    {
+      "code": "floating-input-pin",
       "fixture_id": "uart-paired"
     },
     {
-      "code": "unresolved-component",
+      "code": "bus-completeness",
+      "fixture_id": "uart-unpaired-tx"
+    },
+    {
+      "code": "floating-input-pin",
       "fixture_id": "uart-unpaired-tx"
     }
   ]

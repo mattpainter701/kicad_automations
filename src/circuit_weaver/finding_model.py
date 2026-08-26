@@ -18,7 +18,7 @@ from typing import Any
 from .evidence_policy import EVIDENCE_ID_PATTERN
 from .finding_contract import RULE_ID_PATTERN
 
-FINDING_SCHEMA_VERSION = "circuit-weaver-findings/v1"
+FINDING_SCHEMA_VERSION = "circuit-weaver-findings/v2"
 SARIF_VERSION = "2.1.0"
 SARIF_SCHEMA_URI = "https://json.schemastore.org/sarif-2.1.0.json"
 
@@ -37,9 +37,7 @@ _ARTIFACT_KINDS = frozenset(
 )
 _SEVERITIES = frozenset({"blocker", "major", "minor", "info"})
 _SEVERITY_RANK = {"info": 0, "minor": 1, "major": 2, "blocker": 3}
-_CONFIDENCES = frozenset(
-    {"verified", "corroborated", "single_source", "heuristic", "stub", "conflicting"}
-)
+_CONFIDENCES = frozenset({"verified", "corroborated", "single_source", "heuristic", "stub", "conflicting"})
 # Deduplication is deliberately conservative: another weak observation cannot
 # silently promote the normalized root cause.
 _CONFIDENCE_RANK = {
@@ -55,6 +53,9 @@ _REMEDIATION_KINDS = frozenset({"manual", "repair_plan", "unsupported"})
 _RISKS = frozenset({"low", "medium", "high"})
 _SOURCE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{0,95}$")
 _REMEDIATION_ID_PATTERN = re.compile(r"^REM-[a-z0-9][a-z0-9-]{2,63}$")
+# Native suppressions use SUP-* while authoritative DRC overrides use OVR-*.
+# Both are stable, audited identifiers and must survive normalization intact.
+_SUPPRESSION_ID_PATTERN = re.compile(r"^(?:SUP-[a-z0-9][a-z0-9-]{2,63}|OVR-[A-Za-z0-9][A-Za-z0-9_.:-]{0,63})$")
 
 
 class FindingModelError(ValueError):
@@ -222,9 +223,7 @@ class FindingObservation:
         if self.severity not in _SEVERITIES:
             raise FindingModelError(f"unsupported finding severity: {self.severity!r}")
         if self.detection_confidence not in _CONFIDENCES:
-            raise FindingModelError(
-                f"unsupported finding detection_confidence: {self.detection_confidence!r}"
-            )
+            raise FindingModelError(f"unsupported finding detection_confidence: {self.detection_confidence!r}")
         object.__setattr__(self, "evidence_ids", _evidence_ids(self.evidence_ids))
         if self.observed_value is not None and not isinstance(self.observed_value, str):
             raise FindingModelError("observation observed_value must be a string or None")
@@ -258,6 +257,9 @@ class UnifiedFinding:
     verification_status: str = "unverified"
     suppressed: bool = False
     suppression_id: str | None = None
+    # Keep every applied suppression for auditability.  suppression_id remains
+    # as the backwards-compatible primary identifier.
+    suppression_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.rule_id, str) or not RULE_ID_PATTERN.fullmatch(self.rule_id):
@@ -269,13 +271,9 @@ class UnifiedFinding:
         if self.severity not in _SEVERITIES:
             raise FindingModelError(f"unsupported finding severity: {self.severity!r}")
         if self.detection_confidence not in _CONFIDENCES:
-            raise FindingModelError(
-                f"unsupported finding detection_confidence: {self.detection_confidence!r}"
-            )
+            raise FindingModelError(f"unsupported finding detection_confidence: {self.detection_confidence!r}")
         if self.verification_status not in _VERIFICATION_STATUSES:
-            raise FindingModelError(
-                f"unsupported finding verification_status: {self.verification_status!r}"
-            )
+            raise FindingModelError(f"unsupported finding verification_status: {self.verification_status!r}")
         if not isinstance(self.observations, tuple) or not self.observations:
             raise FindingModelError("finding requires at least one supporting observation")
         if not all(isinstance(item, FindingObservation) for item in self.observations):
@@ -285,10 +283,35 @@ class UnifiedFinding:
         ):
             raise FindingModelError("finding remediation_options must use RemediationOption")
         object.__setattr__(self, "evidence_ids", _evidence_ids(self.evidence_ids))
-        if self.suppressed and not self.suppression_id:
+        raw_suppression_ids = tuple(self.suppression_ids)
+        if any(
+            not isinstance(value, str) or not _SUPPRESSION_ID_PATTERN.fullmatch(value) for value in raw_suppression_ids
+        ):
+            raise FindingModelError("suppression_ids must contain stable SUP-/OVR- identifiers")
+        suppression_ids = tuple(sorted(set(raw_suppression_ids)))
+        if self.suppression_id is not None:
+            if not isinstance(self.suppression_id, str) or not _SUPPRESSION_ID_PATTERN.fullmatch(self.suppression_id):
+                raise FindingModelError("suppression_id must be a stable SUP-/OVR- identifier")
+            suppression_ids = tuple(sorted(set(suppression_ids + (self.suppression_id,))))
+        object.__setattr__(self, "suppression_ids", suppression_ids)
+        if self.suppressed and not suppression_ids:
             raise FindingModelError("suppressed finding requires suppression_id")
-        if self.suppression_id is not None and not isinstance(self.suppression_id, str):
-            raise FindingModelError("suppression_id must be a string or None")
+        # A merged root cause stays actionable when any observation is
+        # unsuppressed, but IDs applied to sibling observations remain audit
+        # evidence.  ``suppression_id`` is only the active aggregate override;
+        # ``suppression_ids`` is the complete historical set.
+        if not self.suppressed and self.suppression_id is not None:
+            raise FindingModelError("unsuppressed finding cannot carry an active suppression_id")
+
+        expected_severity = max((item.severity for item in self.observations), key=_SEVERITY_RANK.__getitem__)
+        expected_confidence = min(
+            (item.detection_confidence for item in self.observations),
+            key=_CONFIDENCE_RANK.__getitem__,
+        )
+        if self.severity != expected_severity:
+            raise FindingModelError("finding severity does not match supporting observations")
+        if self.detection_confidence != expected_confidence:
+            raise FindingModelError("finding detection_confidence does not match supporting observations")
 
     @property
     def id(self) -> str:
@@ -300,10 +323,16 @@ class UnifiedFinding:
         digest = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()[:12]
         return f"FND-{digest}"
 
-    def to_dict(self) -> dict[str, object]:
+    @property
+    def content_integrity(self) -> str:
+        """Digest of mutable finding content, deliberately separate from ``id``."""
+
+        payload = self._serialized_content()
+        return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+    def _serialized_content(self) -> dict[str, object]:
         return {
             "schema_version": FINDING_SCHEMA_VERSION,
-            "id": self.id,
             "rule_id": self.rule_id,
             "root_cause_key": self.root_cause_key,
             "message": self.message,
@@ -316,7 +345,11 @@ class UnifiedFinding:
             "observations": [item.to_dict() for item in self.observations],
             "suppressed": self.suppressed,
             "suppression_id": self.suppression_id,
+            "suppression_ids": list(self.suppression_ids),
         }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._serialized_content(), "id": self.id, "content_integrity": self.content_integrity}
 
 
 def _remediation_id(summary: str) -> str:
@@ -578,9 +611,7 @@ def deduplicate_findings(findings: Iterable[UnifiedFinding]) -> tuple[UnifiedFin
             for observation in finding.observations
         }
         options_by_payload = {
-            _canonical_json(option.to_dict()): option
-            for finding in group
-            for option in finding.remediation_options
+            _canonical_json(option.to_dict()): option for finding in group for option in finding.remediation_options
         }
         evidence_ids = tuple(sorted({item for finding in group for item in finding.evidence_ids}))
         severity = max((finding.severity for finding in group), key=_SEVERITY_RANK.__getitem__)
@@ -605,7 +636,14 @@ def deduplicate_findings(findings: Iterable[UnifiedFinding]) -> tuple[UnifiedFin
             ),
         )
         suppressed = all(finding.suppressed for finding in group)
-        suppression_ids = {finding.suppression_id for finding in group if finding.suppression_id}
+        suppression_ids = {
+            suppression_id
+            for finding in group
+            for suppression_id in (
+                finding.suppression_ids or ((finding.suppression_id,) if finding.suppression_id else ())
+            )
+        }
+        primary_suppression_id = min(suppression_ids) if suppressed and suppression_ids else None
         merged.append(
             UnifiedFinding(
                 rule_id=base.rule_id,
@@ -619,7 +657,8 @@ def deduplicate_findings(findings: Iterable[UnifiedFinding]) -> tuple[UnifiedFin
                 remediation_options=tuple(options_by_payload[key] for key in sorted(options_by_payload)),
                 verification_status=verification_status,
                 suppressed=suppressed,
-                suppression_id=next(iter(suppression_ids)) if suppressed and len(suppression_ids) == 1 else None,
+                suppression_id=primary_suppression_id,
+                suppression_ids=tuple(sorted(suppression_ids)),
             )
         )
     return tuple(merged)
@@ -643,9 +682,7 @@ def findings_json(findings: Iterable[UnifiedFinding]) -> str:
 def _sarif_location(location: FindingLocation) -> dict[str, object] | None:
     result: dict[str, object] = {}
     if location.artifact_path:
-        physical: dict[str, object] = {
-            "artifactLocation": {"uri": location.artifact_path, "uriBaseId": "%SRCROOT%"}
-        }
+        physical: dict[str, object] = {"artifactLocation": {"uri": location.artifact_path, "uriBaseId": "%SRCROOT%"}}
         if location.line is not None:
             region: dict[str, object] = {"startLine": location.line}
             if location.column is not None:
@@ -687,6 +724,7 @@ def findings_sarif(findings: Iterable[UnifiedFinding]) -> dict[str, object]:
             "partialFingerprints": {"circuitWeaverFindingId/v1": finding.id},
             "properties": {
                 "finding_id": finding.id,
+                "content_integrity": finding.content_integrity,
                 "schema_version": FINDING_SCHEMA_VERSION,
                 "severity": finding.severity,
                 "detection_confidence": finding.detection_confidence,
@@ -695,6 +733,7 @@ def findings_sarif(findings: Iterable[UnifiedFinding]) -> dict[str, object]:
                 "location": finding.location.to_dict(),
                 "remediation_options": [item.to_dict() for item in finding.remediation_options],
                 "observations": [item.to_dict() for item in finding.observations],
+                "suppression_ids": list(finding.suppression_ids),
             },
         }
         location = _sarif_location(finding.location)
@@ -721,6 +760,7 @@ def findings_sarif(findings: Iterable[UnifiedFinding]) -> dict[str, object]:
                         "rules": rules,
                     }
                 },
+                "originalUriBaseIds": {"%SRCROOT%": {"uri": "./"}},
                 "results": results,
             }
         ],
@@ -748,6 +788,10 @@ def write_findings_sarif(path: str | Path, findings: Iterable[UnifiedFinding]) -
 def finding_from_dict(payload: Mapping[str, Any]) -> UnifiedFinding:
     """Strictly load the frozen per-finding JSON shape."""
 
+    if not isinstance(payload, Mapping):
+        raise FindingModelError("finding JSON must be an object")
+    if payload.get("schema_version") != FINDING_SCHEMA_VERSION:
+        raise FindingModelError("unsupported finding schema_version")
     required = {
         "schema_version",
         "id",
@@ -763,11 +807,36 @@ def finding_from_dict(payload: Mapping[str, Any]) -> UnifiedFinding:
         "observations",
         "suppressed",
         "suppression_id",
+        "suppression_ids",
+        "content_integrity",
     }
-    if not isinstance(payload, Mapping) or set(payload) != required:
+    if set(payload) != required:
         raise FindingModelError("finding JSON does not match the frozen schema")
-    if payload.get("schema_version") != FINDING_SCHEMA_VERSION:
-        raise FindingModelError("unsupported finding schema_version")
+    string_fields = {
+        "id",
+        "content_integrity",
+        "rule_id",
+        "root_cause_key",
+        "message",
+        "severity",
+        "detection_confidence",
+        "verification_status",
+    }
+    if any(not isinstance(payload.get(field), str) for field in string_fields):
+        raise FindingModelError("finding JSON string fields must not be coerced")
+    if not isinstance(payload.get("suppressed"), bool):
+        raise FindingModelError("finding suppressed must be a boolean")
+    if payload.get("suppression_id") is not None and not isinstance(payload.get("suppression_id"), str):
+        raise FindingModelError("finding suppression_id must be a string or null")
+    for field in ("evidence_ids", "remediation_options", "observations", "suppression_ids"):
+        if not isinstance(payload.get(field), list):
+            raise FindingModelError(f"finding {field} must be a list")
+    serialized_content = dict(payload)
+    serialized_content.pop("id", None)
+    serialized_integrity = serialized_content.pop("content_integrity", None)
+    expected_serialized_integrity = hashlib.sha256(_canonical_json(serialized_content).encode("utf-8")).hexdigest()
+    if serialized_integrity != expected_serialized_integrity:
+        raise FindingModelError("finding content_integrity does not match serialized content")
     raw_location = payload.get("location")
     if not isinstance(raw_location, Mapping):
         raise FindingModelError("finding location must be an object")
@@ -795,6 +864,12 @@ def finding_from_dict(payload: Mapping[str, Any]) -> UnifiedFinding:
         else (_ for _ in ()).throw(FindingModelError("remediation option must be an object"))
         for item in raw_options
     )
+    serialized_status = payload["verification_status"]
+    if serialized_status not in _VERIFICATION_STATUSES:
+        raise FindingModelError("unsupported finding verification_status")
+    # Verification is an assertion made by the current analysis run, not a
+    # fact that can be carried forward from an untrusted export.  Re-reading
+    # an export therefore always starts unverified.
     finding = UnifiedFinding(
         rule_id=str(payload["rule_id"]),
         root_cause_key=str(payload["root_cause_key"]),
@@ -805,10 +880,11 @@ def finding_from_dict(payload: Mapping[str, Any]) -> UnifiedFinding:
         observations=tuple(observations),
         evidence_ids=tuple(payload.get("evidence_ids", ())),
         remediation_options=options,
-        verification_status=str(payload["verification_status"]),
+        verification_status="unverified",
         suppressed=bool(payload["suppressed"]),
         suppression_id=payload.get("suppression_id"),
+        suppression_ids=tuple(payload.get("suppression_ids", ())),
     )
     if payload.get("id") != finding.id:
-        raise FindingModelError("finding id does not match canonical content")
+        raise FindingModelError("finding id does not match stable identity")
     return finding

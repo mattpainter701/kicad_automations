@@ -14,6 +14,7 @@ import pytest
 from circuit_weaver import design_import
 from circuit_weaver.design_import import ArchiveLimits, analyze_design, import_design, safe_extract_zip
 from circuit_weaver.dispatcher import _handle_design_workflow
+from circuit_weaver.finding_model import FINDING_SCHEMA_VERSION
 from circuit_weaver.logging_bridge import _resolve_log_dir
 from circuit_weaver.project_discovery import detect_project_type, discover_projects, get_project_status
 from circuit_weaver.project_state import (
@@ -307,7 +308,7 @@ def test_analyze_exports_normalized_findings_as_json_and_sarif(
     findings = json.loads(Path(result["findings_json"]).read_text(encoding="utf-8"))
     sarif = json.loads(Path(result["findings_sarif"]).read_text(encoding="utf-8"))
     index = json.loads(Path(result["analysis_index"]).read_text(encoding="utf-8"))
-    assert findings["schema_version"] == "circuit-weaver-findings/v1"
+    assert findings["schema_version"] == FINDING_SCHEMA_VERSION
     assert findings["finding_count"] == 1
     finding = findings["findings"][0]
     assert finding["rule_id"] == "CW-DFM-001"

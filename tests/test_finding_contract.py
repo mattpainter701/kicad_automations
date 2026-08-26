@@ -112,7 +112,7 @@ def test_suppression_marks_but_never_removes_a_finding() -> None:
         approved_by="reviewer",
     )
 
-    output = apply_suppressions((issue,), (suppression,))
+    output = apply_suppressions((issue,), (suppression,), now=NOW)
 
     assert len(output) == 1
     assert output[0].suppressed is True

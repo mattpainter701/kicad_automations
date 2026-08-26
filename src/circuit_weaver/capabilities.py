@@ -274,6 +274,14 @@ CAPABILITIES: Final[tuple[CapabilityRecord, ...]] = (
         verification_prereq=NOT_APPLICABLE,
         output_guarantee=NOT_APPLICABLE,
     ),
+    _record(
+        "repair",
+        "repair",
+        maturity="experimental",
+        python="circuit_weaver.repair_service:apply_no_connect",
+        evidence_kinds=("command-contract", "static-parse"),
+        since_version="0.34.0",
+    ),
     _record("confidence", "confidence", maturity="review_only", skill="circuit-weaver"),
     _record(
         "manufacturing-readiness",

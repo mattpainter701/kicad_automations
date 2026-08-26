@@ -195,14 +195,28 @@ Every sprint below must preserve these cross-cutting rules:
 
 **Goal:** Turn import analysis from a report-only feature into a high-value, human-reviewable remediation workflow without making uncontrolled edits to customer designs.
 
-### T253. Unify findings across generated and imported artifacts (P1, MEDIUM)
+### T253. Unify findings across generated and imported artifacts (P1, MEDIUM) — REMEDIATION CLOSED; INTEGRATION PARTIAL
 
-- [ ] Normalize schematic, PCB, Gerber, ERC, DRC, DFM, sourcing, and evidence conflicts into one versioned finding model.
-- [ ] Include stable rule/finding IDs, severity, detection confidence, exact object/location, evidence, remediation options, and verification status.
-- [ ] Deduplicate the same root cause across analyzers while retaining every supporting observation.
-- [ ] Add SARIF and JSON export for CI/code-review integration without weakening the native HTML report.
+_Landed in `782e9de` (finding_model.py 814L + tests + design_import wiring). Planner review (2026-07-29) verified deterministic IDs, dedup-retains-observations, SARIF/JSON mapping, part-neutrality/fail-closed, and field completeness all CLEAN — but found the finding model is a frozen cross-epic contract with a trust-boundary hole. **T253 REMEDIATION below must close before T254 is built on this contract and before the PR merges.**_
+
+#### T253 REMEDIATION (blocks T254 + merge)
+
+- [x] **T253.R1 (HIGH) — `finding_from_dict` trusts deserialized trust axes; round-trip test is false-green.** `finding_model.py:293-301` (id = sha256 of rule_id + root_cause_key + location only) + `748-814` (`finding_from_dict`, tamper check `812-813`). The `id` correctly excludes severity/confidence so same-root-cause findings dedup — but that means the `id != finding.id` re-read check gives **zero integrity for severity / detection_confidence / verification_status / message**, the exact axes this model exists to normalize. `analyze_design` runs `finding_from_dict` on every pass (`design_import.py:939-945`), so a hand-edited/version-skewed `findings.json`/SARIF silently accepts blocker→info or failed→verified with a matching id. False-green test `test_unified_finding_model.py:175-187` only mutates `root_cause_key` (which *does* feed the id). **Fix:** (a) bind the DERIVABLE axes to observations on both constructor AND deserialize paths — assert `severity == max(obs.severity)` and `detection_confidence == min(obs.confidence)` in `__post_init__` (same rule `deduplicate_findings` already applies); (b) the NON-derivable axes (`verification_status`, `message`) must NOT be advertised as tamper-evident — either cover all fields with a separate integrity/content hash distinct from the dedup id, or treat `verification_status` as untrusted-on-read and re-derive it from actual verification, never trust the JSON (same shape as the C.R1 fix: re-run the check, don't trust the serialized state string). Add a regression test that mutates each trust axis (and an observation severity) through the deserialize path and asserts rejection or re-derivation.
+- [x] **T253.R2 (MED) — `deduplicate_findings` hard-crashes merging two suppressed same-root-cause findings with different suppression IDs.** `finding_model.py:607-608, 622` vs `288-289`: an all-suppressed group with >1 distinct `suppression_id` sets `suppression_id = None` (the `len==1` guard fails), then `__post_init__` raises `suppressed finding requires suppression_id` on valid input. Because dedup runs over the whole analyzer aggregate (`design_import.py:939`), one such pair takes down the entire findings document + SARIF export. Decide the merge rule (retain both suppression IDs, or keep the group suppressed under a merged/primary ID) and add the multi-suppression-id merge test.
+- [x] **T253.R3 (LOW) — SARIF `uriBaseId: "%SRCROOT%"` has no matching `originalUriBaseIds` on the run.** `finding_model.py:647` sets the id on every physical location but the run object (`715-726`) defines no `originalUriBaseIds` map, so strict SARIF 2.1.0 consumers (GitHub code scanning) can't resolve the base. Add `runs[0].originalUriBaseIds = {"%SRCROOT%": {...}}` or drop the `uriBaseId`.
+
+_Remediation closed on 2026-08-26 with the v2 content-integrity boundary, observation-derived trust axes, deterministic multi-suppression retention (including authoritative `OVR-*` IDs), and a declared SARIF source root._
+
+- [ ] Normalize schematic, PCB, Gerber, ERC, DRC, DFM, sourcing, and evidence conflicts into one versioned finding model. (The v2 boundary and adapters are implemented; production import wiring remains limited to the existing PCB DFM/Gerber paths.)
+- [ ] Include stable rule/finding IDs, severity, detection confidence, exact object/location, evidence, remediation options, and verification status across every producer. (The model enforces the shape; not every production producer is wired yet.)
+- [x] Deduplicate the same root cause across analyzers while retaining every supporting observation. (`deduplicate_findings`, conservative merge.)
+- [x] Add SARIF and JSON export for CI/code-review integration without weakening the native HTML report. (`findings_sarif` 2.1.0 + `findings_sarif_json`.)
 
 ### T254. Generate bounded, transactional repair plans (P0, HIGH)
+
+> **PLANNER REVIEW FOCUS (mandatory before merge):** T254 is the only task in this epic that mutates customer KiCad files. The `approved plan hash` gate must **recompute** the plan hash from the actual staged operations and compare — never trust a self-reported `approved: true` flag or a hash carried on the plan object. This is the same trust-boundary/re-read defect species as R1/R4/C.R1–R3 (producer path tested, re-read path false-green). Build the re-read/deserialize regression test alongside the gate.
+
+_Execution slice (2026-08-26): explicit no-connect repair is available through shared service functions and `repair suggest|preview|apply|verify`. A versioned, content-addressed metadata producer binds exact source/analyzer bytes to a validated finding and evidence manifest. Plans bind component/pin geometry, semantic pre/postconditions, rollback data, and the expected post-image. Apply requires an out-of-band approved hash, holds cooperative source/audit locks, keeps an exact hard-linked preimage, publishes only verified staged bytes, and records recoverable prepared/committed audit events. Other repair kinds, non-cooperating editor locks, visual review, and API/MCP parity remain open._
 
 - [ ] Convert supported findings into explicit operations with prerequisites, affected objects/nets, expected postconditions, risk, and rollback data.
 - [ ] Separate `suggest`, `preview`, `apply`, and `verify`; require an explicit approved plan hash before mutating imported KiCad files.

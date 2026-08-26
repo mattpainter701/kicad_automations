@@ -1,8 +1,8 @@
 # Electrical benchmark scorecard
 
-Fixtures: 40
+Fixtures: 42
 Validated suppressions: 0 (marked findings remain scored)
-Supported rules: 14; explicit unsupported rules: 19
+Supported rules: 18; explicit unsupported rules: 15
 Supported aggregate: precision 1.000, recall 1.000 (gate >=0.95 / >=0.90) - PASS
 
 | Rule | Domain | Status |
@@ -11,11 +11,11 @@ Supported aggregate: precision 1.000, recall 1.000 (gate >=0.95 / >=0.90) - PASS
 | CW-ANALOG-002 | analog | unsupported: no complete labelled executable population |
 | CW-ANALOG-003 | analog | unsupported: no complete labelled executable population |
 | CW-CLK-001 | clock | unsupported: no complete labelled executable population |
-| CW-ERC-001 | erc | unsupported: no complete labelled executable population |
+| CW-ERC-001 | erc | scored |
 | CW-ERC-002 | erc | unsupported: no complete labelled executable population |
 | CW-ERC-003 | erc | unsupported: no complete labelled executable population |
 | CW-ERC-004 | erc | unsupported: no complete labelled executable population |
-| CW-I2C-001 | i2c | unsupported: no complete labelled executable population |
+| CW-I2C-001 | i2c | scored |
 | CW-ID-001 | identity | scored |
 | CW-ID-002 | identity | scored |
 | CW-ID-003 | identity | scored |
@@ -38,5 +38,5 @@ Supported aggregate: precision 1.000, recall 1.000 (gate >=0.95 / >=0.90) - PASS
 | CW-PWR-011 | power | unsupported: no complete labelled executable population |
 | CW-PWR-012 | power | unsupported: no complete labelled executable population |
 | CW-PWR-013 | power | unsupported: no complete labelled executable population |
-| CW-SPI-001 | spi | unsupported: no complete labelled executable population |
-| CW-UART-001 | uart | unsupported: no complete labelled executable population |
+| CW-SPI-001 | spi | scored |
+| CW-UART-001 | uart | scored |
