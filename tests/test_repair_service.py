@@ -776,6 +776,7 @@ def test_publication_preserves_supported_source_metadata(tmp_path: Path) -> None
     assert published.st_mtime_ns == original.st_mtime_ns
 
 
+@pytest.mark.skip_category("platform")
 @pytest.mark.skipif(os.name != "nt", reason="Windows security descriptor regression")
 def test_windows_security_metadata_is_preserved_for_source_and_audit(tmp_path: Path) -> None:
     source = fixture(tmp_path)
@@ -799,6 +800,7 @@ def test_windows_security_metadata_is_preserved_for_source_and_audit(tmp_path: P
     assert repair_service._windows_security_descriptor(audit) == audit_security
 
 
+@pytest.mark.skip_category("platform")
 @pytest.mark.skipif(os.name != "nt", reason="Windows security descriptor regression")
 def test_windows_post_publication_security_read_failure_restores_source(tmp_path: Path, monkeypatch) -> None:
     source = fixture(tmp_path)
