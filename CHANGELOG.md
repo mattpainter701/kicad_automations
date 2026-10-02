@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### PCB placement and routing search
+
+- Compare multiple seeded placement candidates after overlap repair and bounded fine refinement. Retain a legal baseline, prioritize constraint satisfaction, normalize shared-bus attraction, and report candidate scores and before/after component-center routing estimates.
+- Preserve precise fixed coordinates and reserve fixed support parts before movable owners. Move support parts with displaced owners, honor edge constraints during legalization, apply the requested component gap once, and bound arbitrary footprint rotations conservatively.
+- Add `autoroute --attempts` with consecutive seeds, a shared routing timeout, per-attempt diagnostics, best-session selection, input-change detection, and atomic publication. Failed or inferior attempts cannot replace a better session; preview rejection and the KiCad DRC requirement remain enforced.
+- Add a reproducible three-design placement benchmark and document search controls, measurement limits, and runtime tradeoffs.
+
 ## [0.35.0] - 2026-08-26
 
 ### Imported-design finding trust

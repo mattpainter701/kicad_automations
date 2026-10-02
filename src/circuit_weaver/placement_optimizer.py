@@ -165,6 +165,8 @@ class PlacementConfig:
     initial_temp: float = 100.0
     cooling_rate: float = 0.995
     seed: int | None = None
+    restarts: int = 3
+    refinement_passes: int = 2
 
 
 @dataclass
@@ -700,10 +702,11 @@ def _overlap_area(a: ComponentPlacement, b: ComponentPlacement, gap: float = 0.0
     """Calculate overlap area between two components (including gap)."""
     aw, ah = _effective_dimensions(a)
     bw, bh = _effective_dimensions(b)
-    ax1, ay1 = a.x - aw / 2 - gap, a.y - ah / 2 - gap
-    ax2, ay2 = a.x + aw / 2 + gap, a.y + ah / 2 + gap
-    bx1, by1 = b.x - bw / 2 - gap, b.y - bh / 2 - gap
-    bx2, by2 = b.x + bw / 2 + gap, b.y + bh / 2 + gap
+    # Split the requested edge-to-edge gap between the two courtyards.
+    ax1, ay1 = a.x - (aw + gap) / 2, a.y - (ah + gap) / 2
+    ax2, ay2 = a.x + (aw + gap) / 2, a.y + (ah + gap) / 2
+    bx1, by1 = b.x - (bw + gap) / 2, b.y - (bh + gap) / 2
+    bx2, by2 = b.x + (bw + gap) / 2, b.y + (bh + gap) / 2
 
     dx = min(ax2, bx2) - max(ax1, bx1)
     dy = min(ay2, by2) - max(ay1, by1)
@@ -713,12 +716,17 @@ def _overlap_area(a: ComponentPlacement, b: ComponentPlacement, gap: float = 0.0
 
 
 def _effective_dimensions(placement: ComponentPlacement) -> tuple[float, float]:
-    """Return the axis-aligned footprint extent after orthogonal rotation."""
-    rotation = int(round(placement.rotation)) % 180
+    """Conservative axis-aligned extent, including non-orthogonal rotation."""
+    rotation = placement.rotation % 180
+    if rotation == 0:
+        return placement.width, placement.height
+    if rotation == 90:
+        return placement.height, placement.width
+    angle = math.radians(rotation)
+    cosine, sine = abs(math.cos(angle)), abs(math.sin(angle))
     return (
-        (placement.height, placement.width)
-        if rotation == 90
-        else (placement.width, placement.height)
+        round(placement.width * cosine + placement.height * sine, 12),
+        round(placement.width * sine + placement.height * cosine, 12),
     )
 
 
@@ -867,7 +875,9 @@ def _build_connectivity_pairs(components: list[ComponentDef]) -> dict[tuple[str,
             continue
         for a, b in combinations(block_refs, 2):
             key = tuple(sorted((a, b)))
-            pair_weights[key] = pair_weights.get(key, 0.0) + weight
+            # A shared bus must not grow quadratically stronger than an
+            # equally important point-to-point net as its fanout increases.
+            pair_weights[key] = pair_weights.get(key, 0.0) + weight / (len(block_refs) - 1)
     return pair_weights
 
 
@@ -918,11 +928,12 @@ def _cost_edge_affinity(placements: list[ComponentPlacement], config: PlacementC
     for placement in placements:
         if placement.category not in {"connector", "usb", "debug", "rf"}:
             continue
+        width, height = _effective_dimensions(placement)
         distances = (
-            placement.x - placement.width / 2,
-            config.board_width_mm - (placement.x + placement.width / 2),
-            placement.y - placement.height / 2,
-            config.board_height_mm - (placement.y + placement.height / 2),
+            placement.x - width / 2,
+            config.board_width_mm - (placement.x + width / 2),
+            placement.y - height / 2,
+            config.board_height_mm - (placement.y + height / 2),
         )
         nearest_edge = max(0.0, min(distances))
         target = config.edge_clearance_mm + (3.0 if placement.category == "rf" else 1.0)
@@ -1047,7 +1058,8 @@ def _total_cost(
 
 
 def _perturb(
-    placements: list[ComponentPlacement], config: PlacementConfig, rng: random.Random
+    placements: list[ComponentPlacement], config: PlacementConfig, rng: random.Random,
+    move_scale: float = 1.0,
 ) -> list[ComponentPlacement]:
     """Create a neighbor solution by moving one component."""
     new = [ComponentPlacement(**p.__dict__) for p in placements]
@@ -1075,8 +1087,8 @@ def _perturb(
             ]
         )
         if group:
-            dx = rng.gauss(0, 8.0)
-            dy = rng.gauss(0, 8.0)
+            dx = rng.gauss(0, 8.0 * move_scale)
+            dy = rng.gauss(0, 8.0 * move_scale)
             margin = config.edge_clearance_mm
             minimum_dx = max(
                 margin + _effective_dimensions(item)[0] / 2 - item.x for item in group
@@ -1100,8 +1112,8 @@ def _perturb(
             return new
     if move_type < 0.55:
         # Small move
-        p.x += rng.gauss(0, 2.0)
-        p.y += rng.gauss(0, 2.0)
+        p.x += rng.gauss(0, 2.0 * move_scale)
+        p.y += rng.gauss(0, 2.0 * move_scale)
     elif move_type < 0.75:
         # Occasional broad moves let sparse zone seeds converge on a compact
         # layout instead of remaining isolated across a large default canvas.
@@ -1172,18 +1184,28 @@ def _legalize_overlaps(
         for _index, placement in sorted(
             enumerate(state),
             key=lambda item: (
-                bool(item[1].parent_ref),
                 not item[1].constraint_locked,
+                bool(item[1].parent_ref),
                 item[0],
             ),
         )
     ]
     for original in ordered:
         placement = ComponentPlacement(**original.__dict__)
+        # Follow an owner displaced by legalization instead of leaving its
+        # passives stranded around the owner's old coordinates.
+        parent = next((p for p in legalized if p.ref == placement.parent_ref), None)
+        old_parent = next((p for p in state if p.ref == placement.parent_ref), None)
+        if parent is not None and old_parent is not None and not placement.constraint_locked:
+            placement.x += parent.x - old_parent.x
+            placement.y += parent.y - old_parent.y
         desired_x, desired_y = placement.x, placement.y
 
         def is_free() -> bool:
             if not _inside_board(placement, config, constraint_plan):
+                return False
+            edge = (constraint_plan.edges if constraint_plan else {}).get(placement.ref)
+            if edge and _distance_to_edge(placement, edge["edge"], config) > edge["max_distance_mm"] + 0.001:
                 return False
             for other in legalized:
                 if _overlap_area(placement, other, config.min_component_gap_mm) > 0:
@@ -1327,6 +1349,133 @@ def _constraint_evaluation(
     }
 
 
+def _validate_config(config: PlacementConfig) -> None:
+    """Reject invalid search budgets and geometry before any optimization."""
+    for name in ("board_width_mm", "board_height_mm", "initial_temp"):
+        raw = getattr(config, name)
+        value = _finite_number(raw) if isinstance(raw, (int, float)) else None
+        if value is None or value <= 0:
+            raise ValueError(f"{name} must be a finite positive number")
+    for name in ("edge_clearance_mm", "min_component_gap_mm", "support_body_clearance_mm"):
+        raw = getattr(config, name)
+        value = _finite_number(raw) if isinstance(raw, (int, float)) else None
+        if value is None or value < 0:
+            raise ValueError(f"{name} must be a finite nonnegative number")
+    for name, minimum, maximum in (("iterations", 0, 1_000_000), ("restarts", 1, 32), ("refinement_passes", 0, 20)):
+        value = getattr(config, name)
+        if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+            raise ValueError(f"{name} must be an integer from {minimum} through {maximum}")
+    rate = _finite_number(config.cooling_rate) if isinstance(config.cooling_rate, (int, float)) else None
+    if rate is None or not 0 < rate <= 1:
+        raise ValueError("cooling_rate must be greater than zero and at most one")
+    if config.strategy not in {"simple", "balanced", "thermal", "si", "cost"}:
+        raise ValueError("Unknown placement strategy")
+    if config.seed is not None and (isinstance(config.seed, bool) or not isinstance(config.seed, int)):
+        raise ValueError("seed must be an integer or None")
+
+
+def _quantize_state(state: list[ComponentPlacement]) -> list[ComponentPlacement]:
+    # Score precisely the coordinates that will be published. Fixed positions
+    # retain their supplied precision and are never snapped to a different site.
+    return [
+        replace(p, x=round(p.x, 2), y=round(p.y, 2)) if not p.constraint_locked else replace(p)
+        for p in state
+    ]
+
+
+def _placement_rank(
+    state: list[ComponentPlacement], config: PlacementConfig,
+    pairs: dict[tuple[str, str], float], plan: _ConstraintPlan,
+) -> tuple[int, float]:
+    """Hard defects outrank every weighted placement preference."""
+    by_ref = {p.ref: p for p in state}
+    defects = sum(not _inside_board(p, config) for p in state)
+    defects += sum(_overlap_area(a, b, config.min_component_gap_mm) > 0 for a, b in combinations(state, 2))
+    for p in state:
+        if p.parent_ref:
+            parent = by_ref.get(p.parent_ref)
+            defects += parent is None or _rectangle_clearance(p, parent) + 0.001 < config.support_body_clearance_mm
+    defects += len(_constraint_evaluation(state, config, plan)["violations"])
+    return int(defects), _total_cost(state, config, pairs, plan)
+
+
+def _refine_placement(
+    state: list[ComponentPlacement], config: PlacementConfig,
+    pairs: dict[tuple[str, str], float], plan: _ConstraintPlan,
+) -> tuple[list[ComponentPlacement], int]:
+    """Polish legal candidates with deterministic component and block moves."""
+    rank = _placement_rank(state, config, pairs, plan)
+    evaluations = 0
+    for pass_index in range(config.refinement_passes):
+        step = 1.0 / (2 ** pass_index)
+        changed = False
+        for index, placement in enumerate(state):
+            if placement.constraint_locked:
+                continue
+            groups = [[index]]
+            family = [i for i, p in enumerate(state) if p.ref == placement.ref or p.parent_ref == placement.ref]
+            if len(family) > 1 and not any(state[i].constraint_locked for i in family):
+                groups.append(family)
+            for group in groups:
+                moves = [(step, 0), (-step, 0), (0, step), (0, -step)]
+                if not placement.parent_ref:
+                    by_ref = {p.ref: p for p in state}
+                    neighbors = []
+                    for (a, b), weight in pairs.items():
+                        other = b if a == placement.ref else a if b == placement.ref else None
+                        if other in by_ref:
+                            neighbors.append((by_ref[other], weight))
+                    total_weight = sum(weight for _, weight in neighbors)
+                    if total_weight:
+                        dx = sum((p.x - state[index].x) * w for p, w in neighbors) / total_weight
+                        dy = sum((p.y - state[index].y) * w for p, w in neighbors) / total_weight
+                        # Try a connected-block attraction as well as fine
+                        # steps. Only a legal improvement can be accepted.
+                        moves.extend([(dx / 2, dy / 2), (dx / 2, 0), (0, dy / 2)])
+                for dx, dy in moves:
+                    candidate = [replace(p) for p in state]
+                    for i in group:
+                        candidate[i].x += dx
+                        candidate[i].y += dy
+                    candidate = _quantize_state(candidate)
+                    candidate_rank = _placement_rank(candidate, config, pairs, plan)
+                    evaluations += 1
+                    if candidate_rank < rank:
+                        state, rank = candidate, candidate_rank
+                        changed = True
+            for rotation in (90, 180, 270):
+                candidate = [replace(p) for p in state]
+                candidate[index].rotation = (state[index].rotation + rotation) % 360
+                candidate_rank = _placement_rank(candidate, config, pairs, plan)
+                evaluations += 1
+                if candidate_rank < rank:
+                    state, rank = candidate, candidate_rank
+                    changed = True
+        if not changed:
+            break
+    return state, evaluations
+
+
+def _routing_estimate(state: list[ComponentPlacement], components: list[ComponentDef]) -> dict[str, Any]:
+    """Center-based net spans are routing estimates, never routed copper lengths."""
+    by_ref = {p.ref: p for p in state}
+    spans = []
+    for name, refs in sorted(_build_net_component_map(components).items()):
+        points = [by_ref[ref] for ref in sorted(set(refs)) if ref in by_ref]
+        if len(points) < 2 or _net_weight(name) <= 0:
+            continue
+        span = max(p.x for p in points) - min(p.x for p in points)
+        span += max(p.y for p in points) - min(p.y for p in points)
+        spans.append({"net": name, "component_count": len(points), "hpwl_mm": round(span, 3)})
+    return {
+        "model": "component_center_hpwl",
+        "estimated": True,
+        "excludes_ground_nets": True,
+        "total_hpwl_mm": round(sum(row["hpwl_mm"] for row in spans), 3),
+        "nets": spans,
+    }
+
+
 def optimize_placement(
     components: list[ComponentDef],
     *,
@@ -1358,7 +1507,9 @@ def optimize_placement(
     """
     if config is None:
         config = PlacementConfig()
+    _validate_config(config)
     config, constraint_plan = _build_constraint_plan(components, config, constraints)
+    _validate_config(config)
 
     specs_path = Path(specs_dir) if specs_dir else None
     thermal_specs = _load_thermal_specs(specs_path)
@@ -1395,9 +1546,9 @@ def optimize_placement(
 
     if config.strategy == "simple":
         # Skip optimization, return initial zone-based placement
-        legalized, moved = _legalize_overlaps(state, config, constraint_plan)
+        legalized, moved = _legalize_overlaps(_quantize_state(state), config, constraint_plan)
         return _build_result(
-            legalized,
+            _quantize_state(legalized),
             config,
             0,
             0.0,
@@ -1406,38 +1557,70 @@ def optimize_placement(
             constraint_plan=constraint_plan,
         )
 
-    rng = random.Random(config.seed)
-    current_cost = _total_cost(state, config, connectivity_pairs, constraint_plan)
-    initial_cost = current_cost
-    best_state = state
-    best_cost = current_cost
-    temp = config.initial_temp
-
-    for i in range(config.iterations):
-        candidate = _perturb(state, config, rng)
-        candidate_cost = _total_cost(candidate, config, connectivity_pairs, constraint_plan)
-        delta = candidate_cost - current_cost
-
-        if delta < 0 or rng.random() < math.exp(-delta / max(temp, 0.001)):
-            state = candidate
-            current_cost = candidate_cost
-            if current_cost < best_cost:
-                best_state = state
-                best_cost = current_cost
-
-        temp *= config.cooling_rate
-
-    legalized, moved = _legalize_overlaps(best_state, config, constraint_plan)
-    legalized_cost = _total_cost(legalized, config, connectivity_pairs, constraint_plan)
-    return _build_result(
-        legalized,
+    # Keep the legal initial layout as a fallback. Every trial is compared
+    # after legalization, so a cheaper but physically worse layout cannot win.
+    initial_state = state
+    baseline, baseline_moves = _legalize_overlaps(_quantize_state(state), config, constraint_plan)
+    baseline = _quantize_state(baseline)
+    initial_cost = _total_cost(initial_state, config, connectivity_pairs, constraint_plan)
+    winner = baseline
+    winner_rank = _placement_rank(winner, config, connectivity_pairs, constraint_plan)
+    winner_index, winner_moves = 0, baseline_moves
+    trials = [{"candidate": 0, "kind": "legalized_baseline", "defects": winner_rank[0],
+               "cost": round(winner_rank[1], 2), "iterations": 0}]
+    refinement_evaluations = 0
+    restarts = min(config.restarts, config.iterations)
+    seed_rng = random.Random(config.seed)
+    for restart in range(restarts):
+        budget = config.iterations // restarts + (restart < config.iterations % restarts)
+        trial_seed = config.seed if restart == 0 else seed_rng.getrandbits(63)
+        rng = random.Random(trial_seed)
+        state = [replace(p) for p in baseline]
+        current_cost = _total_cost(state, config, connectivity_pairs, constraint_plan)
+        best_state, best_cost = state, current_cost
+        temp = config.initial_temp
+        for i in range(budget):
+            scale = max(0.1, 1.0 - i / max(1, budget))
+            candidate = _perturb(state, config, rng, move_scale=scale)
+            candidate_cost = _total_cost(candidate, config, connectivity_pairs, constraint_plan)
+            delta = candidate_cost - current_cost
+            if delta < 0 or rng.random() < math.exp(-delta / max(temp, 0.001)):
+                state, current_cost = candidate, candidate_cost
+                if current_cost < best_cost:
+                    best_state, best_cost = state, current_cost
+            temp *= config.cooling_rate ** restarts
+        candidate, moved = _legalize_overlaps(_quantize_state(best_state), config, constraint_plan)
+        candidate, evaluations = _refine_placement(
+            _quantize_state(candidate), config, connectivity_pairs, constraint_plan,
+        )
+        refinement_evaluations += evaluations
+        rank = _placement_rank(candidate, config, connectivity_pairs, constraint_plan)
+        trials.append({"candidate": restart + 1, "kind": "annealed", "seed": trial_seed,
+                       "iterations": budget, "defects": rank[0], "cost": round(rank[1], 2)})
+        if rank < winner_rank:
+            winner, winner_rank = candidate, rank
+            winner_index, winner_moves = restart + 1, moved
+    result = _build_result(
+        winner,
         config,
         config.iterations,
         initial_cost,
-        legalized_cost,
-        legalization_moves=moved,
+        winner_rank[1],
+        legalization_moves=winner_moves,
         constraint_plan=constraint_plan,
     )
+    result["search"] = {
+        "selected_candidate": winner_index,
+        "restarts": restarts,
+        "iteration_budget": config.iterations,
+        "refinement_evaluations": refinement_evaluations,
+        "candidates": trials,
+    }
+    result["routing_estimate"] = {
+        "initial": _routing_estimate(baseline, components),
+        "final": _routing_estimate(winner, components),
+    }
+    return result
 
 
 def _build_result(
@@ -1485,8 +1668,8 @@ def _build_result(
 
     for p in state:
         placements[p.ref] = {
-            "x": round(p.x, 2),
-            "y": round(p.y, 2),
+            "x": p.x if p.constraint_locked else round(p.x, 2),
+            "y": p.y if p.constraint_locked else round(p.y, 2),
             "rotation": p.rotation,
             "layer": p.layer,
             "locked": p.locked,

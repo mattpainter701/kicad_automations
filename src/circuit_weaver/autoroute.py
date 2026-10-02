@@ -15,6 +15,7 @@ rules file, not a direct KiCad routing mode.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -22,6 +23,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -990,6 +992,84 @@ def _route_specctra(
         _remove_staging_file(staging)
 
 
+def _routing_rank(stats: dict[str, Any]) -> tuple[float, ...]:
+    """Prefer complete routes, reported-clear routes, then fewer vias/traces.
+
+    Missing measurements cannot beat a measured zero. Segment count is only
+    a final tie-breaker, not a claim about copper length or signal integrity.
+    """
+    return (
+        stats["incomplete"],
+        0 if stats["clearance_violations"] == 0 else 1,
+        stats["vias"] if stats["vias"] is not None else math.inf,
+        stats["traces"] if stats["traces"] is not None else math.inf,
+    )
+
+
+def _route_candidates(
+    dsn_path: Path, ses_path: Path, command: list[str], *, attempts: int,
+    timeout_seconds: float, overwrite: bool, seed: int | None, **options: Any,
+) -> dict[str, Any]:
+    """Run an isolated portfolio and atomically publish its best valid session."""
+    if attempts == 1:
+        return _route_specctra(
+            dsn_path, ses_path, command, timeout_seconds=timeout_seconds,
+            overwrite=overwrite, seed=seed, **options,
+        )
+    deadline = time.perf_counter() + timeout_seconds
+    attempt_rows: list[dict[str, Any]] = []
+    winner: dict[str, Any] | None = None
+    winner_path: Path | None = None
+    winner_index: int | None = None
+    base_seed = 0 if seed is None else seed
+    try:
+        input_hash = hashlib.sha256(dsn_path.read_bytes()).hexdigest()
+        # Same filesystem as the destination allows atomic final publication.
+        # The context also cleans up losing sessions and interrupted attempts.
+        with tempfile.TemporaryDirectory(prefix=".cw-routing-", dir=ses_path.parent) as temporary:
+            for index in range(attempts):
+                remaining = deadline - time.perf_counter()
+                if remaining <= 0:
+                    break
+                path = Path(temporary) / f"candidate-{index + 1}.ses"
+                allowance = remaining / (attempts - index)
+                result = _route_specctra(
+                    dsn_path, path, command, timeout_seconds=allowance,
+                    overwrite=False, seed=base_seed + index, **options,
+                )
+                row = {"attempt": index + 1, "seed": base_seed + index,
+                       "status": result["status"], "timeout_seconds": allowance}
+                if "stats" in result:
+                    row["stats"] = result["stats"]
+                if "message" in result:
+                    row["message"] = result["message"]
+                attempt_rows.append(row)
+                if hashlib.sha256(dsn_path.read_bytes()).hexdigest() != input_hash:
+                    return _result_error("Routing input changed during candidate search; no session was published",
+                                         attempts=attempt_rows)
+                if result["status"] == "ok" and (
+                    winner is None or _routing_rank(result["stats"]) < _routing_rank(winner["stats"])
+                ):
+                    winner, winner_path, winner_index = result, path, index + 1
+            search = {
+                "requested_attempts": attempts,
+                "completed_attempts": len(attempt_rows),
+                "selected_attempt": winner_index,
+                "timeout_budget_seconds": timeout_seconds,
+                "ranking": ["incomplete", "clearance_unreported", "vias", "traces"],
+                "attempts": attempt_rows,
+            }
+            if winner is None or winner_path is None:
+                return _result_error("No routing attempt produced a verified usable session", search=search)
+            error = _publish_staged_file(winner_path, ses_path, overwrite=overwrite)
+            if error:
+                return _result_error(error, search=search)
+            winner["artifact"]["path"] = str(ses_path)
+            return {**winner, "search": search}
+    except OSError as exc:
+        return _result_error(f"Could not stage routing candidates: {exc}", attempts=attempt_rows)
+
+
 def autoroute_pcb(
     pcb_path: str | Path,
     output_path: str | None = None,
@@ -1005,6 +1085,7 @@ def autoroute_pcb(
     optimizer_item_selection: str | None = None,
     optimizer_improvement_threshold: float | None = None,
     seed: int | None = None,
+    attempts: int = 1,
     freerouting_path: str | Path | None = None,
     kicad_cli_path: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -1018,6 +1099,8 @@ def autoroute_pcb(
     timeout_error = _validate_timeout(timeout_seconds, "Routing")
     if timeout_error:
         return _result_error(timeout_error)
+    if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= 32:
+        return _result_error("attempts must be an integer from 1 through 32")
     source = Path(pcb_path)
     if not source.exists() or not source.is_file():
         return _result_error(f"Routing input not found: {source}")
@@ -1054,6 +1137,8 @@ def autoroute_pcb(
         not isinstance(seed, int) or isinstance(seed, bool) or not 0 <= seed <= 9_223_372_036_854_775_807
     ):
         return _result_error("seed must be an integer from 0 through 9223372036854775807")
+    if seed is not None and seed + attempts - 1 > 9_223_372_036_854_775_807:
+        return _result_error("seed plus attempts exceeds the Freerouting seed range")
     if not isinstance(headless, bool):
         return _result_error("headless must be a boolean")
     if not isinstance(overwrite, bool):
@@ -1118,32 +1203,15 @@ def autoroute_pcb(
         freerouting_command,
         timeout_seconds=min(timeout_seconds, 10),
     )
-    if seed is not None and (not capability_probe["probe_ok"] or not capability_probe["seed"]):
+    if (seed is not None or attempts > 1) and (not capability_probe["probe_ok"] or not capability_probe["seed"]):
         return _result_error(
             "The installed Freerouting build does not advertise -random_seed; "
-            "remove --seed or install a build whose -help output includes that option.",
+            "use one attempt without --seed or install a build whose -help output includes that option.",
             router=capability_probe,
         )
 
     start_time = time.perf_counter()
-    if source_suffix == ".dsn":
-        route_result = _route_specctra(
-            dsn_path,
-            ses_path,
-            freerouting_command,
-            passes=passes,
-            timeout_seconds=timeout_seconds,
-            overwrite=overwrite,
-            headless=headless,
-            optimization_threads=optimization_threads,
-            optimizer_strategy=optimizer_strategy,
-            optimizer_hybrid_ratio=optimizer_hybrid_ratio,
-            optimizer_item_selection=optimizer_item_selection,
-            optimizer_improvement_threshold=optimizer_improvement_threshold,
-            seed=seed,
-            capability_probe=capability_probe,
-        )
-    else:
+    if source_suffix != ".dsn":
         export_result = export_dsn(
             source,
             dsn_path,
@@ -1153,22 +1221,23 @@ def autoroute_pcb(
         )
         if export_result["status"] != "ok":
             return {**export_result, "preflight": preflight, "input": input_validation}
-        route_result = _route_specctra(
-            dsn_path,
-            ses_path,
-            freerouting_command,
-            passes=passes,
-            timeout_seconds=timeout_seconds,
-            overwrite=overwrite,
-            headless=headless,
-            optimization_threads=optimization_threads,
-            optimizer_strategy=optimizer_strategy,
-            optimizer_hybrid_ratio=optimizer_hybrid_ratio,
-            optimizer_item_selection=optimizer_item_selection,
-            optimizer_improvement_threshold=optimizer_improvement_threshold,
-            seed=seed,
-            capability_probe=capability_probe,
-        )
+    route_result = _route_candidates(
+        dsn_path,
+        ses_path,
+        freerouting_command,
+        attempts=attempts,
+        passes=passes,
+        timeout_seconds=timeout_seconds,
+        overwrite=overwrite,
+        headless=headless,
+        optimization_threads=1 if attempts > 1 and optimization_threads is None else optimization_threads,
+        optimizer_strategy=optimizer_strategy,
+        optimizer_hybrid_ratio=optimizer_hybrid_ratio,
+        optimizer_item_selection=optimizer_item_selection,
+        optimizer_improvement_threshold=optimizer_improvement_threshold,
+        seed=seed,
+        capability_probe=capability_probe,
+    )
 
     elapsed = time.perf_counter() - start_time
     if route_result["status"] != "ok":
@@ -1204,4 +1273,5 @@ def autoroute_pcb(
         "routing_complete": incomplete == 0,
         "fabrication_ready": False,
         "requires_kicad_drc": True,
+        **({"search": route_result["search"]} if "search" in route_result else {}),
     }
