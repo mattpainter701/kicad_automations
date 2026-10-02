@@ -1361,5 +1361,9 @@ def autoroute_pcb(
         if imported["status"] != "ok":
             return {**result, "status": "error", "message": imported["message"], "board_import": imported}
         return {**result, **imported, "session_path": str(ses_path), "requires_kicad_drc": False,
+                "session_artifact": result["artifact"],
+                "artifact": {"valid": True, "kind": "kicad_pcb", "path": imported["output_path"],
+                             "sha256": imported["drc"]["board_sha256"]},
+                "verification": {**result["verification"], "requires_kicad_drc": False, "kicad_drc": "passed"},
                 "message": "Routing imported into a separate PCB and verified with KiCad DRC"}
     return result

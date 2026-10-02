@@ -52,6 +52,8 @@ def test_real_placement_route_import_and_drc(tmp_path, native_tools, case):
     route = _cli("autoroute", placed, "--routed-board", routed, "--max-passes", 10,
                  "--timeout", 90, "--attempts", 3, "--kicad-python-path", python)
     assert route["output_kind"] == "routed_kicad_board"
+    assert route["artifact"]["path"] == route["output_path"]
+    assert route["verification"]["requires_kicad_drc"] is False
     assert route["routing_complete"] is True
     assert route["drc"]["passed"] is True
     assert route["drc"]["blocker_count"] == 0
