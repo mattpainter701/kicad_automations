@@ -45,6 +45,8 @@ class FootprintGeometry:
     content_hash: str
     evidence_kind: str = "footprint_lib"
     confidence: str = "verified"
+    center_x_mm: float = 0.0
+    center_y_mm: float = 0.0
 
 
 class KiCadFootprintLibrary:
@@ -134,7 +136,10 @@ class KiCadFootprintLibrary:
             courtyard_points.extend(_coordinate_pairs(block))
         if courtyard_points:
             width, height = _bounds(courtyard_points)
-            geometry = FootprintGeometry(width, height, "courtyard", digest)
+            xs, ys = zip(*courtyard_points)
+            geometry = FootprintGeometry(width, height, "courtyard", digest,
+                                         center_x_mm=(min(xs) + max(xs)) / 2,
+                                         center_y_mm=(min(ys) + max(ys)) / 2)
             self._geometry_cache[cache_key] = geometry
             return geometry
 
@@ -150,7 +155,10 @@ class KiCadFootprintLibrary:
         if not pad_points:
             raise ValueError(f"footprint {footprint} has neither courtyard geometry nor measurable pads")
         width, height = _bounds(pad_points)
-        geometry = FootprintGeometry(width, height, "pads", digest)
+        xs, ys = zip(*pad_points)
+        geometry = FootprintGeometry(width, height, "pads", digest,
+                                     center_x_mm=(min(xs) + max(xs)) / 2,
+                                     center_y_mm=(min(ys) + max(ys)) / 2)
         self._geometry_cache[cache_key] = geometry
         return geometry
 

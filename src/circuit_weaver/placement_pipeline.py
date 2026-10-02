@@ -254,6 +254,21 @@ def build_placement_inventory(
         raise PlacementPipelineError(
             "Flat placement inventory references do not exactly match the assembly manifest"
         )
+    from .footprint_lib import KiCadFootprintLibrary
+
+    library = KiCadFootprintLibrary()
+    for component in flat_components:
+        if not library.footprint_exists(component.footprint):
+            continue
+        try:
+            geometry = library.geometry(component.footprint)
+        except ValueError:
+            continue
+        # Use actual library courtyard/pad extents, enclosing them about the
+        # footprint origin. Connectors often use pin 1 rather than body center.
+        component.placement_width_mm = geometry.width_mm + 2 * abs(geometry.center_x_mm)
+        component.placement_height_mm = geometry.height_mm + 2 * abs(geometry.center_y_mm)
+        component.placement_geometry_status = "library_" + geometry.source
     return PlacementInventory(manifest=manifest, components=flat_components)
 
 

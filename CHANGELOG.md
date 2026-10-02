@@ -2,11 +2,18 @@
 
 ## [Unreleased]
 
+### Real-board placement and routing completion
+
+- Add `place-pcb` for unrouted rectangular KiCad boards. Use actual courtyard envelopes and rotated pad endpoints; preserve locked parts, board sides, pad/net identity, source files, and project rules. Publish placements only after physical DRC.
+- Recognize KiCad 10 named pad nets and use KiCad's native Python API when the CLI cannot export Specctra. Add `autoroute --routed-board` to import the selected session into a separate PCB and require final KiCad DRC before publishing it.
+- Support current Freerouting final-score logs and optimizer strategies when seeds are unavailable. Measure missing via/trace counts from the validated session, isolate router settings, disable analytics, and prevent default fine-pitch fanout/necking from violating imported widths.
+- Add real LED, divider, RC, back-side, and SOIC placement-to-routing regression circuits, including locked connectors, offset outlines, and custom project rules. Run them with pinned Freerouting in KiCad 8/9/10 CI and release validation.
+
 ### PCB placement and routing search
 
 - Compare multiple seeded placement candidates after overlap repair and bounded fine refinement. Retain a legal baseline, prioritize constraint satisfaction, normalize shared-bus attraction, and report candidate scores and before/after component-center routing estimates.
 - Preserve precise fixed coordinates and reserve fixed support parts before movable owners. Move support parts with displaced owners, honor edge constraints during legalization, apply the requested component gap once, and bound arbitrary footprint rotations conservatively.
-- Add `autoroute --attempts` with consecutive seeds, a shared routing timeout, per-attempt diagnostics, best-session selection, input-change detection, and atomic publication. Failed or inferior attempts cannot replace a better session; preview rejection and the KiCad DRC requirement remain enforced.
+- Add `autoroute --attempts` with seeds or optimizer strategies, a shared routing timeout, per-attempt diagnostics, best-session selection, input-change detection, and atomic publication. Failed or inferior attempts cannot replace a better session; preview rejection and the KiCad DRC requirement remain enforced.
 - Add a reproducible three-design placement benchmark and document search controls, measurement limits, and runtime tradeoffs.
 
 ## [0.35.0] - 2026-08-26

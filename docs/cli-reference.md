@@ -397,6 +397,22 @@ circuit-weaver design-wizard [--output <file>] [--dry-run] [--resume <path>] \
 
 ---
 
+## place-pcb
+
+Place actual footprints on an unrouted rectangular board and check physical DRC.
+
+```bash
+circuit-weaver place-pcb board.kicad_pcb -o board_placed.kicad_pcb --iterations 5000 --seed 7
+```
+
+Requires real pads, nets, a closed rectangular Edge.Cuts outline, and KiCad's
+`pcbnew` Python API. Copper tracks and zones must be absent. Locked footprints
+and board sides are preserved. `--output` is required and must differ from the
+source. `--overwrite` allows replacement of a previous output; failures preserve
+it. `--kicad-python-path` overrides interpreter discovery. The returned DRC may
+include expected unconnected items because placement precedes routing; all other
+DRC errors block publication. Project `.kicad_pro` and `.kicad_dru` files are copied.
+
 ## autoroute
 
 Route a real KiCad PCB or user-exported Specctra DSN using Freerouting.
@@ -412,7 +428,7 @@ circuit-weaver autoroute <board.kicad_pcb|design.dsn> [--output <file.ses>] \
 | `--effort` | Pass preset: `fast=100`, `medium=500` (default), `high=1000` |
 | `--max-passes` | Exact pass limit overriding `--effort`; 0 means unlimited |
 | `--timeout` | Routing timeout in seconds (default: 300) |
-| `--attempts` | 1-32 seeded candidates sharing the routing timeout (default: 1); requires `-random_seed` support |
+| `--attempts` | 1-32 candidates sharing the routing timeout (default: 1); uses seeds or optimizer strategies |
 | `--overwrite` | Atomically replace existing DSN/SES outputs |
 | `--headless`, `--no-headless` | Enable/disable Freerouting GUI (headless by default) |
 | `--optimization-threads` | Optimizer thread count; 0 disables optimization |
@@ -423,30 +439,36 @@ circuit-weaver autoroute <board.kicad_pcb|design.dsn> [--output <file.ses>] \
 | `--seed` | Seed only when the installed router advertises `-random_seed` |
 | `--freerouting-path` | Freerouting launcher/JAR path |
 | `--kicad-cli-path` | `kicad-cli` used only after a Specctra capability probe |
+| `--kicad-python-path` | Native KiCad Python interpreter, also settable with `CIRCUIT_WEAVER_KICAD_PYTHON` |
+| `--routed-board` | Separate `.kicad_pcb` output: import the session and require KiCad DRC before publication |
 
 Requires Freerouting to be installed separately.
 
-For a broader search, use `--attempts 4 --seed 42 --timeout 600`. Each attempt
+For a broader search, use `--attempts 3 --timeout 600`. Each attempt
 receives an equal share of the remaining routing time; failed attempts do not
 discard earlier successes. The selected session minimizes incomplete connections,
 then prefers reported-clear routing, fewer vias, and fewer trace segments.
 Segment count is a tie-breaker, not a wire-length measurement. Missing measurements
 never count as zero. The JSON `search` object records every attempt and its seed.
-Multiple attempts default to one optimizer thread, and use consecutive seeds
-starting at `--seed` (or zero). Tool version and explicit thread settings still
+Multiple attempts default to one optimizer thread. Builds advertising seed support
+use consecutive seeds starting at `--seed` (or zero); other builds cycle through
+greedy, global, and hybrid strategies unless an explicit strategy was supplied.
+Explicit `--seed` still requires advertised support. Tool version and thread settings
 affect reproducibility. Input changes during search abort publication.
 
 The board preflight rejects review/preview files, missing pads, missing named
-nets, and mismatched pad-net declarations. Direct `.kicad_pcb` routing is
-never attempted: automatic board input works only when the installed
-`kicad-cli` advertises Specctra export. Otherwise export `.dsn` in KiCad PCB
-Editor and pass that DSN to this command.
+nets, and mismatched pad-net declarations, including KiCad 10's named-pad format.
+Native `pcbnew` performs automatic DSN export when `kicad-cli` lacks that command.
+You can also export `.dsn` in KiCad PCB Editor and pass it directly.
 
 The command stages output, validates the DSN and SES structure and net
 correlation, requires known connection-completeness and clearance statistics,
 and publishes only after those checks. `status: partial` exits 2 when the
 router truthfully reports incomplete connections. A successful output is still
-a Specctra session; import it in KiCad and run DRC. Power, switching loops,
+a Specctra session unless `--routed-board` is supplied with a source PCB. That
+option imports routes, checks source/settings hashes, and publishes a separate
+PCB only after native KiCad DRC passes. Otherwise import the session in KiCad
+and run DRC. Power, switching loops,
 differential pairs, RF, clocks, crystals, and other critical nets require
 manual engineering rather than blanket autorouting.
 

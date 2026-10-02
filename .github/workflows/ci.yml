@@ -229,3 +229,28 @@ jobs:
 
       - name: Round-trip authoritative 2-layer and 4-layer PCB goldens
         run: python -m pytest tests/test_pcb_handoff.py -q -k golden_round_trip
+
+      - name: Setup routing runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Verify pinned Freerouting and route real basic circuits
+        env:
+          CIRCUIT_WEAVER_KICAD_PYTHON: /usr/bin/python3
+          CIRCUIT_WEAVER_FREEROUTING: /tmp/freerouting-2.4.1.jar
+          CW_REQUIRE_NATIVE_PCB_TESTS: "1"
+          CW_NATIVE_PCB_EVIDENCE: .ci-kicad/native-pcb
+        run: |
+          curl --fail --location --retry 3 https://github.com/freerouting/freerouting/releases/download/v2.4.1/freerouting-2.4.1.jar -o /tmp/freerouting-2.4.1.jar
+          echo '251101c3eeac22d7e7dfcf6796603279e5d1000283eb82d8f093780f7afc6aa9  /tmp/freerouting-2.4.1.jar' | sha256sum --check
+          python -m pytest tests/test_native_pcb_workflow.py -q
+
+      - name: Preserve real PCB validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-pcb-kicad-${{ matrix.kicad-major }}
+          path: .ci-kicad/native-pcb
+          if-no-files-found: warn

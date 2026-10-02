@@ -106,3 +106,14 @@ def test_custom_footprint_suggestion_uses_advanced_mode_caveat(tmp_path: Path):
 
     assert "advanced/custom-footprint mode" in suggestion
     assert "trusted vendor or project .pretty" in suggestion
+
+
+def test_library_geometry_preserves_offset_footprint_origin(tmp_path):
+    pretty = tmp_path / "Test.pretty"
+    pretty.mkdir()
+    (pretty / "Offset.kicad_mod").write_text(
+        '(footprint "Offset" (fp_rect (start -2 -1) (end 2 7) (layer "F.CrtYd")))', encoding="utf-8",
+    )
+    geometry = KiCadFootprintLibrary(tmp_path).geometry("Test:Offset")
+    assert (geometry.width_mm, geometry.height_mm) == (4, 8)
+    assert (geometry.center_x_mm, geometry.center_y_mm) == (0, 3)

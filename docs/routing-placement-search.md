@@ -1,9 +1,43 @@
 # PCB placement and routing search
 
-The upgrade addresses two search limits: a single placement trajectory selected
-before overlap repair, and a single routing attempt with no comparison against
-alternatives. Implementation follows three stages: generate bounded candidates,
-validate their physical constraints, then publish the best measured result.
+Use a real KiCad board with footprints, pads, nets, and a rectangular Edge.Cuts
+outline. Lock parts whose physical position must stay fixed, such as connectors.
+
+```sh
+circuit-weaver place-pcb board.kicad_pcb -o placed.kicad_pcb --seed 7
+circuit-weaver autoroute placed.kicad_pcb --attempts 3 --routed-board routed.kicad_pcb
+```
+
+The first command places real footprints and checks physical DRC, allowing only
+the expected unrouted connections. The second exports DSN, routes, imports SES,
+and publishes the finished PCB only after KiCad DRC passes. Original files remain
+unchanged. Project settings and custom rules travel with the output, and changing
+the source or settings during routing prevents board publication. Existing output
+requires `--overwrite`.
+
+## Tool setup
+
+Install KiCad with its Python API and standard footprint libraries. Windows
+KiCad 8/9/10 Python installations and Linux `/usr/bin/python3` are discovered
+automatically; use `--kicad-python-path` or `CIRCUIT_WEAVER_KICAD_PYTHON` to select
+another installation. The application Python does not need to import pcbnew.
+
+Install [Freerouting](https://github.com/freerouting/freerouting/releases) and its
+required Java runtime. Set `CIRCUIT_WEAVER_FREEROUTING` to the JAR or launcher and
+`CIRCUIT_WEAVER_JAVA` to Java when it is not on PATH. A portable installation may
+instead use `~/.freerouting/freerouting.jar` and `~/.freerouting/runtime/bin/java`
+(`java.exe` on Windows). CI pins Freerouting 2.4.1 with Java 25.
+
+## Supported scope
+
+`place-pcb` currently accepts unrouted rectangular boards without copper zones.
+It preserves locked footprints, board sides, and pad/net identity. Real courtyard
+envelopes include off-center footprint origins. Its connectivity cost uses rotated
+pad endpoints, so orientation affects the search. DRC checks actual copper and
+project constraints after placement and again after routing. Passing these checks
+does not replace review of switching loops, high-speed constraints, thermal design,
+silkscreen warnings, or fabrication readiness. Padless generated placement previews
+must first be forward-annotated into a real electrical PCB in KiCad.
 
 ## Placement
 
@@ -25,7 +59,9 @@ Unresolved or impossible constraints remain visible as review blockers.
 The existing objective still balances thermal separation, connectivity, parent
 affinity, edge access, compactness, and zoning. Shared-net attractions are divided
 by fanout minus one to prevent a large bus overwhelming point-to-point nets.
-This is heuristic placement with estimated geometry, not pad-aware PCB routing.
+Spec-based placement uses library courtyard geometry when available and explicit
+estimates otherwise. Real-board placement uses geometry and pad locations from
+the board. Neither search is a signal-integrity solver.
 
 ```sh
 circuit-weaver optimize-placement design.yaml --iterations 6000 --restarts 4 --seed 7 --json
@@ -33,9 +69,9 @@ circuit-weaver placement-viewer design.yaml -o placement.html --restarts 4 --see
 python benchmarks/placement_search.py --output .test-tmp/placement-search.json
 ```
 
-## Measured comparison
+## Historical search comparison
 
-The local comparison uses full generated physical assembly inventories from
+The earlier search-only comparison at `bff0f74` uses full generated physical assembly inventories from
 three checked-in examples, seed 7, 3,000 total annealing iterations, and the same
 declared constraints. The baseline is commit `2d036c3`. HPWL is the sum of
 component-center net bounding-box width plus height, excluding ground nets.
@@ -55,12 +91,14 @@ increases runtime. Use fewer restarts/refinement passes when latency matters.
 ## Routing
 
 ```sh
-circuit-weaver autoroute board.dsn --attempts 4 --seed 42 --timeout 600 -o selected.ses
+circuit-weaver autoroute board.dsn --attempts 3 --timeout 600 -o selected.ses
 ```
 
-The default remains one attempt. Multiple attempts require a Freerouting build
-whose help advertises `-random_seed`. They use consecutive seeds (zero-based if
-unspecified) and default to one optimization thread. The timeout is a shared
+The default remains one attempt. Builds advertising `-random_seed` use consecutive
+seeds (zero-based if unspecified). Other builds cycle through greedy, global, and
+hybrid optimizer strategies unless a strategy was explicitly selected. An explicit
+seed requires advertised seed support. Multiple attempts default to one optimizer
+thread. The timeout is a shared
 budget for routing attempts; capability probes and optional DSN export have
 their existing separate limits. Each attempt receives the remaining time divided
 by the remaining attempts, so time saved by early completion can be reused.
@@ -77,9 +115,24 @@ Candidates stay in an isolated temporary directory until selection. The winner
 is published atomically, losing sessions are removed, and all-attempt failure
 preserves any existing output. A changing source DSN aborts publication. The
 returned `search` object explains the selection and failed attempts. The final
-artifact is a Specctra session that must be imported into KiCad and checked with
-DRC. No fabrication readiness or controlled-impedance guarantee is inferred.
+artifact is a Specctra session by default. `--routed-board` performs the import
+and native DRC automatically when the input is a real PCB. No fabrication
+readiness or controlled-impedance guarantee is inferred.
 
-Local routing validation uses controlled router-process fixtures for selection,
-timeout, cleanup, and failure behavior; real Freerouting quality improvement
-requires a compatible installed router and representative real boards.
+## Real-board regression corpus
+
+`tests/test_native_pcb_workflow.py` executes the public CLI against real KiCad and
+Freerouting for five circuits: LED, resistor divider, RC filter with custom width
+rules, back-side RC components, and a SOIC fanout network. The corpus starts with
+overlapping movable parts, an offset outline, and locked through-hole connectors.
+It requires legal placement, complete routing, zero final DRC errors, preserved
+pad/net identity and board sides, unchanged locked placements, and unchanged
+source files. CI and release jobs run it on KiCad 8, 9, and 10; missing tools fail
+those jobs. Tool-independent tests cover timeout, malformed outputs, stale inputs,
+and preservation of existing output on failure.
+
+Current router final-stage summaries establish connection and clearance counts;
+missing via/trace counts are measured from the validated SES. Each routing process
+gets isolated settings and disabled analytics. On Freerouting 2.4+, automatic
+necking and the default fine-pitch fanout pass are disabled so routing uses the
+imported DSN widths/vias. Final KiCad DRC remains the acceptance gate.
