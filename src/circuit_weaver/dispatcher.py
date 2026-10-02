@@ -4005,6 +4005,10 @@ def main() -> None:
     )
     autoroute_p.add_argument("--overwrite", action="store_true", help="Atomically replace existing DSN/SES outputs")
     autoroute_p.add_argument(
+        "--attempts", type=int, default=1,
+        help="Seeded routing candidates sharing --timeout (1-32; requires router seed support)",
+    )
+    autoroute_p.add_argument(
         "--headless",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -4150,6 +4154,8 @@ def main() -> None:
     opt_p.add_argument("--specs-dir", help="Path to specs/ directory with thermal/SI JSON")
     opt_p.add_argument("--iterations", type=int, default=5000, help="SA iterations (default: 5000)")
     opt_p.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
+    opt_p.add_argument("--restarts", type=int, default=3, help="Placement candidates sharing --iterations (default: 3)")
+    opt_p.add_argument("--refinement-passes", type=int, default=2, help="Bounded fine-placement passes (default: 2)")
     opt_p.add_argument("--json", dest="json_output", action="store_true", default=False, help="Output raw JSON")
 
     viewer_p = subparsers.add_parser("placement-viewer", help="Generate interactive HTML PCB placement viewer")
@@ -4161,6 +4167,10 @@ def main() -> None:
     viewer_p.add_argument("--strategy", choices=["simple", "thermal", "si", "cost", "balanced"], default="balanced")
     viewer_p.add_argument("--iterations", type=int, default=5000, help="SA iterations (default: 5000)")
     viewer_p.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility (default: 0)")
+    viewer_p.add_argument(
+        "--restarts", type=int, default=3, help="Placement candidates sharing --iterations (default: 3)",
+    )
+    viewer_p.add_argument("--refinement-passes", type=int, default=2, help="Bounded fine-placement passes (default: 2)")
 
     # Sprint 16 P1/P2: SI constraints, thermal analysis, dual-sided CPL, panelization
     si_p = subparsers.add_parser(
@@ -5293,6 +5303,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 optimizer_item_selection=args.optimizer_item_selection,
                 optimizer_improvement_threshold=args.optimizer_improvement_threshold,
                 seed=args.seed,
+                attempts=args.attempts,
                 freerouting_path=args.freerouting_path,
                 kicad_cli_path=args.kicad_cli_path,
             )
@@ -5430,7 +5441,7 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
         from .placement_pipeline import build_placement_inventory
 
         spec = _load_spec_file(args.spec)
-        compiled = compile_design_ir(spec)
+        compiled = _run_with_stderr_capture(lambda: compile_design_ir(spec))
         inventory = build_placement_inventory(compiled.components)
         cfg = PlacementConfig(
             board_width_mm=args.board_width,
@@ -5438,6 +5449,8 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             strategy=args.strategy,
             iterations=args.iterations,
             seed=args.seed,
+            restarts=args.restarts,
+            refinement_passes=args.refinement_passes,
         )
         result = _run_with_stderr_capture(
             lambda: optimize_placement(
@@ -5495,6 +5508,8 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             strategy=args.strategy,
             iterations=args.iterations,
             seed=args.seed,
+            restarts=args.restarts,
+            refinement_passes=args.refinement_passes,
         )
         placement_constraints = list(compiled.ir.pcb_constraints)
         opt_result = optimize_placement(

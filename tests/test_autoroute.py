@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 from circuit_weaver.autoroute import (
     _find_freerouting_command,
     _find_freerouting_jar,
@@ -145,6 +147,141 @@ def _fake_freerouting_success(output: str | None = None, ses_text: str = VALID_S
         return mock.Mock(returncode=0, stdout=output or _routing_output(), stderr="")
 
     return run
+
+
+def _portfolio_runner(outputs, seen, *, after_attempt=None):
+    def run(command, **kwargs):
+        if "-help" in command:
+            return mock.Mock(returncode=0, stdout="Freerouting v2.2.4\n-random_seed seed", stderr="")
+        seen.append((command, kwargs))
+        output = outputs[len(seen) - 1]
+        if isinstance(output, Exception):
+            raise output
+        path = Path(command[command.index("-do") + 1])
+        path.write_text(VALID_SES.replace("  (routes", " " * len(seen) + "(routes"), encoding="utf-8")
+        if after_attempt:
+            after_attempt()
+        return mock.Mock(returncode=0, stdout=output, stderr="")
+    return run
+
+
+def test_portfolio_publishes_best_complete_candidate_and_removes_losers(tmp_path):
+    source = _write_dsn(tmp_path)
+    seen = []
+    outputs = [_routing_output(incomplete=2, vias=0), _routing_output(vias=5), _routing_output(vias=1)]
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("subprocess.run", side_effect=_portfolio_runner(outputs, seen)):
+        result = autoroute_pcb(source, attempts=3, seed=10, timeout_seconds=90)
+    assert result["status"] == "ok"
+    assert result["search"]["selected_attempt"] == 3
+    assert result["stats"]["vias"] == 1
+    assert "\n   (routes" in source.with_suffix(".ses").read_text(encoding="utf-8")
+    assert [int(cmd[cmd.index("-random_seed") + 1]) for cmd, _ in seen] == [10, 11, 12]
+    assert all(cmd[cmd.index("-mt") + 1] == "1" for cmd, _ in seen)
+    assert seen[0][1]["timeout"] <= 30
+    assert not list(tmp_path.glob(".cw-routing-*"))
+    assert result["artifact"]["path"] == str(source.with_suffix(".ses"))
+
+
+def test_portfolio_retains_success_after_timeout_and_preserves_partial_status(tmp_path):
+    source = _write_dsn(tmp_path)
+    seen = []
+    outputs = [_routing_output(incomplete=1), subprocess.TimeoutExpired("freerouting", 1)]
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("subprocess.run", side_effect=_portfolio_runner(outputs, seen)):
+        result = autoroute_pcb(source, attempts=2)
+    assert result["status"] == "partial"
+    assert result["search"]["selected_attempt"] == 1
+    assert result["search"]["attempts"][1]["status"] == "error"
+    assert result["fabrication_ready"] is False
+
+
+def test_portfolio_prioritizes_reported_clearance_over_via_count(tmp_path):
+    source = _write_dsn(tmp_path)
+    seen = []
+    outputs = ["incomplete: 0 vias: 0 traces: 1", _routing_output(vias=20)]
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("subprocess.run", side_effect=_portfolio_runner(outputs, seen)):
+        result = autoroute_pcb(source, attempts=2)
+    assert result["search"]["selected_attempt"] == 2
+    assert result["status"] == "ok"
+
+
+@pytest.mark.parametrize("change_input", [False, True])
+def test_failed_or_changed_input_portfolio_preserves_existing_output(tmp_path, change_input):
+    source = _write_dsn(tmp_path)
+    destination = source.with_suffix(".ses")
+    destination.write_bytes(b"previous reviewed session")
+    seen = []
+    def change():
+        source.write_text(VALID_DSN + "\n; changed", encoding="utf-8")
+    outputs = [_routing_output(clearance_violations=0 if change_input else 2)] * 2
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("subprocess.run", side_effect=_portfolio_runner(
+                outputs, seen, after_attempt=change if change_input else None,
+            )):
+        result = autoroute_pcb(source, attempts=2, overwrite=True)
+    assert result["status"] == "error"
+    assert destination.read_bytes() == b"previous reviewed session"
+    assert not list(tmp_path.glob(".cw-routing-*"))
+
+
+def test_portfolio_requires_seed_capability_before_routing(tmp_path):
+    source = _write_dsn(tmp_path)
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("subprocess.run", side_effect=_fake_freerouting_success()) as run:
+        result = autoroute_pcb(source, attempts=2)
+    assert result["status"] == "error"
+    assert "-random_seed" in result["message"]
+    assert run.call_count == 1
+    assert not source.with_suffix(".ses").exists()
+
+
+@pytest.mark.parametrize("attempts", [0, 33, True, 1.5])
+def test_invalid_portfolio_budget_is_rejected(tmp_path, attempts):
+    source = _write_dsn(tmp_path)
+    result = autoroute_pcb(source, attempts=attempts)
+    assert result["status"] == "error"
+    assert "attempts" in result["message"]
+
+
+def test_portfolio_rejects_seed_overflow(tmp_path):
+    result = autoroute_pcb(_write_dsn(tmp_path), attempts=2, seed=9_223_372_036_854_775_807)
+    assert result["status"] == "error"
+    assert "seed" in result["message"]
+
+
+def test_portfolio_shares_elapsed_budget_and_keeps_stable_tie(tmp_path):
+    source = _write_dsn(tmp_path)
+    seen = []
+    clock = [0.0]
+    def advance():
+        clock[0] += 8.0
+    outputs = [_routing_output()] * 3
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("circuit_weaver.autoroute.time.perf_counter", side_effect=lambda: clock[0]), \
+            mock.patch("subprocess.run", side_effect=_portfolio_runner(outputs, seen, after_attempt=advance)):
+        result = autoroute_pcb(source, attempts=3, timeout_seconds=30, optimization_threads=2)
+    assert result["search"]["selected_attempt"] == 1
+    assert [kwargs["timeout"] for _, kwargs in seen] == [10, 11, 14]
+    assert all(cmd[cmd.index("-mt") + 1] == "2" for cmd, _ in seen)
+    assert result["stats"]["routing_time_seconds"] == 24
+
+
+def test_portfolio_does_not_replace_destination_created_during_search(tmp_path):
+    source = _write_dsn(tmp_path)
+    destination = source.with_suffix(".ses")
+    seen = []
+    def create_destination():
+        destination.write_bytes(b"concurrent user session")
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("subprocess.run", side_effect=_portfolio_runner(
+                [_routing_output()] * 2, seen, after_attempt=create_destination,
+            )):
+        result = autoroute_pcb(source, attempts=2)
+    assert result["status"] == "error"
+    assert destination.read_bytes() == b"concurrent user session"
+    assert not list(tmp_path.glob(".cw-routing-*"))
 
 
 class TestPreflight:

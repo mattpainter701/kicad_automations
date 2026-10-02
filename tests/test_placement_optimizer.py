@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 
@@ -31,6 +32,149 @@ def test_optimize_empty_components():
     result = optimize_placement([], config=PlacementConfig())
     assert result["status"] == "ok"
     assert result["placements"] == {}
+
+
+@pytest.mark.parametrize("name,value", [
+    ("restarts", 0), ("restarts", True), ("restarts", 33),
+    ("iterations", -1), ("refinement_passes", 21),
+    ("board_width_mm", float("nan")), ("board_width_mm", "30"), ("min_component_gap_mm", -0.5),
+    ("cooling_rate", 0), ("seed", True),
+])
+def test_invalid_search_configuration_fails_before_placement(name, value):
+    from circuit_weaver.placement_optimizer import PlacementConfig, optimize_placement
+
+    with pytest.raises(ValueError):
+        optimize_placement([_make_comp("U1")], config=PlacementConfig(**{name: value}))
+
+
+def test_search_shares_iteration_budget_and_selects_a_legal_candidate():
+    from circuit_weaver.placement_optimizer import PlacementConfig, optimize_placement
+
+    components = [_make_comp(f"U{i}") for i in range(1, 9)]
+    config = PlacementConfig(iterations=301, restarts=3, seed=12)
+    result = optimize_placement(components, config=config)
+    search = result["search"]
+    assert sum(row["iterations"] for row in search["candidates"]) == 301
+    assert len(search["candidates"]) == 4
+    assert search["refinement_evaluations"] > 0
+    selected = search["candidates"][search["selected_candidate"]]
+    assert selected["defects"] == 0
+    assert selected["cost"] <= search["candidates"][0]["cost"]
+    assert not result["quality"]["review_required"]
+    assert result == optimize_placement(components, config=config)
+
+
+def test_more_restarts_than_iterations_do_not_exceed_budget():
+    from circuit_weaver.placement_optimizer import PlacementConfig, optimize_placement
+
+    result = optimize_placement([_make_comp("U1")], config=PlacementConfig(iterations=2, restarts=8, seed=0))
+    assert result["search"]["restarts"] == 2
+    assert sum(row["iterations"] for row in result["search"]["candidates"]) == 2
+
+
+def test_gap_is_edge_to_edge_and_oblique_footprint_extent_is_conservative():
+    from circuit_weaver.placement_optimizer import ComponentPlacement, _effective_dimensions, _overlap_area
+
+    a = ComponentPlacement("U1", 10, 10, width=2, height=2)
+    b = ComponentPlacement("U2", 12.5, 10, width=2, height=2)
+    assert _overlap_area(a, b, gap=0.5) == 0
+    b.x -= 0.01
+    assert _overlap_area(a, b, gap=0.5) > 0
+    a.rotation = 45
+    assert _effective_dimensions(a) == pytest.approx((math.sqrt(8), math.sqrt(8)))
+
+
+def test_locked_support_reserves_space_before_movable_owner():
+    from circuit_weaver.placement_optimizer import (
+        ComponentPlacement,
+        PlacementConfig,
+        _legalize_overlaps,
+        _overlap_area,
+    )
+
+    owner = ComponentPlacement("U1", 20, 20, width=6, height=6)
+    fixed = ComponentPlacement("C1", 20, 20, parent_ref="U1", constraint_locked=True)
+    result, _ = _legalize_overlaps([owner, fixed], PlacementConfig())
+    by_ref = {p.ref: p for p in result}
+    assert (by_ref["C1"].x, by_ref["C1"].y) == (20, 20)
+    assert _overlap_area(by_ref["U1"], by_ref["C1"], 0.5) == 0
+
+
+def test_subcentimeter_fixed_coordinates_remain_exact_and_conflict_is_reported():
+    from circuit_weaver.placement_optimizer import PlacementConfig, optimize_placement
+
+    fixed = {"kind": "placement", "target": "U1", "x_mm": 25.1234, "y_mm": 25.5678}
+    result = optimize_placement(
+        [_make_comp("U1"), _make_comp("U2")],
+        config=PlacementConfig(iterations=30, seed=0),
+        constraints=[fixed, {**fixed, "target": "U2"}],
+    )
+    for p in result["placements"].values():
+        assert (p["x"], p["y"]) == (25.1234, 25.5678)
+    assert result["quality"]["overlaps"]
+    assert result["quality"]["review_required"]
+
+
+def test_fanout_does_not_overweight_each_connected_component():
+    from circuit_weaver.placement_optimizer import _build_connectivity_pairs
+
+    components = [_make_comp(f"U{i}") for i in range(1, 7)]
+    for comp in components:
+        comp.pin_nets = {"1": "DATA_BUS"}
+    pairs = _build_connectivity_pairs(components)
+    assert sum(weight for pair, weight in pairs.items() if "U1" in pair) == pytest.approx(1.0)
+
+
+def test_routing_estimate_measures_real_support_refs_but_excludes_ground():
+    from circuit_weaver.placement_optimizer import ComponentPlacement, _routing_estimate
+
+    components = [_make_comp("U1"), _make_comp("C1"), _make_comp("J1")]
+    for comp in components:
+        comp.pin_nets = {"1": "SIGNAL", "2": "GND"}
+    components[1].placement_parent_ref = "U1"
+    state = [ComponentPlacement("U1", 10, 10), ComponentPlacement("C1", 12, 20),
+             ComponentPlacement("J1", 30, 15)]
+    result = _routing_estimate(state, components)
+    assert result["estimated"] is True
+    assert result["total_hpwl_mm"] == 30
+    assert result["nets"] == [{"net": "SIGNAL", "component_count": 3, "hpwl_mm": 30}]
+
+
+def test_refinement_never_trades_a_hard_constraint_for_connectivity():
+    from circuit_weaver.placement_optimizer import (
+        ComponentPlacement,
+        PlacementConfig,
+        _ConstraintPlan,
+        _placement_rank,
+        _refine_placement,
+    )
+
+    config = PlacementConfig(refinement_passes=3)
+    # U2 is on its declared left edge; U1 attracts it strongly across a keepout.
+    state = [ComponentPlacement("U1", 70, 40, constraint_locked=True),
+             ComponentPlacement("U2", 2, 40)]
+    plan = _ConstraintPlan(edges={"U2": {"edge": "left", "max_distance_mm": 0}})
+    pairs = {("U1", "U2"): 1000.0}
+    before = _placement_rank(state, config, pairs, plan)
+    refined, _ = _refine_placement(state, config, pairs, plan)
+    assert _placement_rank(refined, config, pairs, plan) <= before
+    assert refined[1].x == 2
+    assert (refined[0].x, refined[0].y) == (70, 40)
+
+
+def test_placement_cli_exposes_bounded_search_controls():
+    from pathlib import Path
+
+    spec = Path(__file__).resolve().parent.parent / "samples/usb_regulated_supply/usb_regulated_supply.yaml"
+    process = subprocess.run(
+        [sys.executable, "-m", "circuit_weaver", "optimize-placement", str(spec),
+         "--iterations", "20", "--restarts", "2", "--refinement-passes", "0", "--seed", "7", "--json"],
+        capture_output=True, text=True, check=True,
+    )
+    result = json.loads(process.stdout)
+    assert result["search"]["restarts"] == 2
+    assert result["search"]["refinement_evaluations"] == 0
+    assert result["reference_reconciliation"]["exact_match"] is True
 
 
 def test_optimize_single_component():
