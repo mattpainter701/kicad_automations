@@ -65,11 +65,14 @@ for ref, library_id, names in parts:
 output.parent.mkdir(parents=True, exist_ok=True)
 assert pcbnew.SaveBoard(str(output), board)
 if case == "rc":
-    output.with_suffix(".kicad_pro").write_text(json.dumps({
-        "board": {"design_settings": {"rules": {"min_track_width": 0.3, "min_clearance": 0.25}}},
-        "net_settings": {"classes": [{"name": "Default", "track_width": 0.35, "clearance": 0.25,
-                                      "via_diameter": 0.7, "via_drill": 0.3}]},
-    }))
+    # Preserve the installed KiCad version's native project/schema metadata.
+    # A hand-written partial project triggers different migrations in 8/9/10.
+    project_path = output.with_suffix(".kicad_pro")
+    project = json.loads(project_path.read_text())
+    project["board"]["design_settings"]["rules"].update(min_track_width=0.3, min_clearance=0.25)
+    default_class = next(c for c in project["net_settings"]["classes"] if c["name"] == "Default")
+    default_class.update(track_width=0.35, clearance=0.25, via_diameter=0.7, via_drill=0.3)
+    project_path.write_text(json.dumps(project))
     output.with_suffix(".kicad_dru").write_text(
         '(version 1)\n(rule "min-track" (constraint track_width (min 0.3mm)))\n')
 print(json.dumps({"board": str(output), "case": case, "version": pcbnew.Version()}))
