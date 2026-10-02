@@ -189,6 +189,7 @@ class ComponentPlacement:
     locked: bool = False
     constraint_locked: bool = False
     geometry_status: str = "estimated"
+    net_pad_offsets: dict[str, list[tuple[float, float]]] | None = None
 
 
 @dataclass
@@ -242,6 +243,10 @@ def estimate_footprint_size(footprint: str, reference: str = "") -> tuple[float,
 
 def estimate_component_size(comp: ComponentDef) -> tuple[float, float]:
     """Estimate component physical size using the shared footprint model."""
+    width = getattr(comp, "placement_width_mm", None)
+    height = getattr(comp, "placement_height_mm", None)
+    if all(isinstance(v, (float, int)) and math.isfinite(v) and v > 0 for v in (width, height)):
+        return float(width), float(height)
     return estimate_footprint_size(comp.footprint, comp.source_ref)
 
 
@@ -650,7 +655,7 @@ def _init_placements(
         fixed = (constraint_plan.fixed if constraint_plan else {}).get(comp.source_ref)
         edge_constraint = (constraint_plan.edges if constraint_plan else {}).get(comp.source_ref)
         rotation = float(fixed.get("rotation", 0.0)) if fixed else 0.0
-        layer = str(fixed.get("layer", "front")) if fixed else "front"
+        layer = str(fixed.get("layer", "front")) if fixed else str(getattr(comp, "placement_layer", "front"))
         effective_w, effective_h = (h, w) if int(round(rotation)) % 180 == 90 else (w, h)
         if edge_constraint:
             edge = edge_constraint["edge"]
@@ -688,6 +693,7 @@ def _init_placements(
             placement_role=placement_role,
             locked=bool(fixed),
             constraint_locked=bool(fixed),
+            net_pad_offsets=getattr(comp, "placement_pad_offsets", None),
             geometry_status=str(
                 getattr(comp, "placement_geometry_status", "estimated") or "estimated"
             ),
@@ -886,6 +892,26 @@ def _cost_connectivity(
     connectivity_pairs: dict[tuple[str, str], float],
 ) -> float:
     """Penalty for placing connected components far apart."""
+    if placements and all(p.net_pad_offsets is not None for p in placements):
+        # Real-board placement evaluates the rotated pad endpoints. Component
+        # centers cannot distinguish a useful 180-degree rotation from one
+        # that points every signal pad away from its destination.
+        endpoints: dict[str, list[tuple[float, float]]] = {}
+        for p in placements:
+            angle = math.radians(p.rotation)
+            c, s = math.cos(angle), math.sin(angle)
+            for net, offsets in (p.net_pad_offsets or {}).items():
+                endpoints.setdefault(net, []).extend(
+                    (p.x + x * c + y * s, p.y - x * s + y * c) for x, y in offsets
+                )
+        total = 0.0
+        for net, points in endpoints.items():
+            if len(points) < 2:
+                continue
+            xs, ys = zip(*points)
+            hpwl = max(xs) - min(xs) + max(ys) - min(ys)
+            total += hpwl * hpwl * _net_weight(net) / (len(points) - 1)
+        return total * 0.2
     if not connectivity_pairs:
         return 0.0
     placement_by_ref = {p.ref: p for p in placements}

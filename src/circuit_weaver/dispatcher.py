@@ -3974,6 +3974,14 @@ def main() -> None:
         help="Filter by entry type (default: all)",
     )
 
+    place_p = subparsers.add_parser("place-pcb", help="Place real footprints on an unrouted rectangular KiCad board")
+    place_p.add_argument("kicad_pcb", help="Real .kicad_pcb with footprints, pads, nets, and Edge.Cuts")
+    place_p.add_argument("--output", "-o", required=True, help="Separate placed .kicad_pcb output")
+    place_p.add_argument("--iterations", type=int, default=5000)
+    place_p.add_argument("--seed", type=int, default=0)
+    place_p.add_argument("--overwrite", action="store_true")
+    place_p.add_argument("--kicad-python-path", help="Python interpreter with KiCad pcbnew installed")
+
     autoroute_p = subparsers.add_parser(
         "autoroute", help="Route PCB using Freerouting (optional; requires Freerouting JAR)"
     )
@@ -4006,7 +4014,7 @@ def main() -> None:
     autoroute_p.add_argument("--overwrite", action="store_true", help="Atomically replace existing DSN/SES outputs")
     autoroute_p.add_argument(
         "--attempts", type=int, default=1,
-        help="Seeded routing candidates sharing --timeout (1-32; requires router seed support)",
+        help="Routing candidates sharing --timeout (1-32; varies seeds or supported optimizer strategies)",
     )
     autoroute_p.add_argument(
         "--headless",
@@ -4050,6 +4058,10 @@ def main() -> None:
     autoroute_p.add_argument(
         "--kicad-cli-path",
         help="kicad-cli executable used only when its capability probe advertises Specctra export",
+    )
+    autoroute_p.add_argument("--kicad-python-path", help="Python interpreter with KiCad pcbnew installed")
+    autoroute_p.add_argument(
+        "--routed-board", help="Import routes into this separate .kicad_pcb and require KiCad DRC before publishing",
     )
 
     install_p = subparsers.add_parser(
@@ -5285,6 +5297,16 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
             print(f"[!] Error reading project log: {e}", file=sys.stderr)
             raise SystemExit(1)
 
+    if args.command == "place-pcb":
+        from .pcb_layout import place_pcb
+
+        result = _run_with_stderr_capture(lambda: place_pcb(
+            args.kicad_pcb, args.output, iterations=args.iterations, seed=args.seed,
+            overwrite=args.overwrite, kicad_python_path=args.kicad_python_path,
+        ))
+        _print_json(result)
+        raise SystemExit(0 if result["status"] == "ok" else 1)
+
     if args.command == "autoroute":
         from .autoroute import autoroute_pcb
 
@@ -5306,6 +5328,8 @@ def _main_dispatch(args, log_workflow_step):  # noqa: C901  # large CLI dispatch
                 attempts=args.attempts,
                 freerouting_path=args.freerouting_path,
                 kicad_cli_path=args.kicad_cli_path,
+                kicad_python_path=args.kicad_python_path,
+                routed_board_path=args.routed_board,
             )
         )
 

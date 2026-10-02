@@ -214,6 +214,23 @@ jobs:
           python -m pip install pytest
           python -m pytest tests/test_pcb_handoff.py -q -k golden_round_trip
 
+      - name: Setup routing runtime
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Route real basic circuits with the exact release wheel
+        env:
+          CIRCUIT_WEAVER_TEST_PACKAGE: wheel
+          CIRCUIT_WEAVER_KICAD_PYTHON: /usr/bin/python3
+          CIRCUIT_WEAVER_FREEROUTING: /tmp/freerouting-2.4.1.jar
+          CW_REQUIRE_NATIVE_PCB_TESTS: "1"
+        run: |
+          curl --fail --location --retry 3 https://github.com/freerouting/freerouting/releases/download/v2.4.1/freerouting-2.4.1.jar -o /tmp/freerouting-2.4.1.jar
+          echo '251101c3eeac22d7e7dfcf6796603279e5d1000283eb82d8f093780f7afc6aa9  /tmp/freerouting-2.4.1.jar' | sha256sum --check
+          python -m pytest tests/test_native_pcb_workflow.py -q
+
   publish:
     name: Publish exact tested distributions
     needs: [build, test-wheel, kicad-validation]

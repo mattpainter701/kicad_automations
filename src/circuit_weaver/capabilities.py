@@ -195,6 +195,8 @@ CAPABILITIES: Final[tuple[CapabilityRecord, ...]] = (
         **_NON_DESIGN,
     ),
     _record("design-wizard", "design-wizard", maturity="experimental", skill="design-wizard"),
+    _record("place-pcb", "place-pcb", maturity="experimental", skill="circuit-weaver",
+            evidence_kinds=("command-contract", "external-tool", "user-supplied")),
     _record("log-status", "log-status", **_NON_DESIGN),
     _record("log-view", "log-view", **_NON_DESIGN),
     _record(

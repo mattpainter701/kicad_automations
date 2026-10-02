@@ -59,6 +59,7 @@ Verification is conservative: a capability only claims the evidence level its pu
 | `status` | beta | CLI: `status`; Python: `circuit_weaver.project_state:get_project_state_summary`; Skill: `circuit-weaver` | not applicable (operational) | `command-contract` | 0.32.1 |
 | `resume` | experimental | CLI: `resume`; Python: `circuit_weaver.project_state:resume_project`; Skill: `circuit-weaver` | not applicable (operational) | `command-contract` | 0.32.1 |
 | `design-wizard` | experimental | CLI: `design-wizard`; Skill: `design-wizard` | `static-parse` → `static-parse` | `command-contract`, `static-parse` | 0.32.1 |
+| `place-pcb` | experimental | CLI: `place-pcb`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `external-tool`, `user-supplied` | 0.32.1 |
 | `log-status` | beta | CLI: `log-status` | not applicable (operational) | `command-contract` | 0.32.1 |
 | `log-view` | beta | CLI: `log-view` | not applicable (operational) | `command-contract` | 0.32.1 |
 | `autoroute` | review_only | CLI: `autoroute`; Skill: `circuit-weaver` | `static-parse` → `static-parse` | `command-contract`, `external-tool`, `user-supplied` | 0.32.1 |
@@ -348,19 +349,25 @@ circuit-weaver import-placement subset.svg board.kicad_pcb \
     -o board_placed.kicad_pcb --allow-partial
 ```
 
-### 5 — Optional KiCad API placement
+### 5 — Place and route the real board
 
-If a compatible KiCad Python API is installed, first check availability and unpack its `(available, message)` result:
+After forward annotation, add a rectangular Edge.Cuts outline and lock connectors
+that must remain fixed. Place the actual library footprints, route, import the
+tracks, and check the final PCB:
 
-```python
-from circuit_weaver import check_kicad_available, update_board_placements
-
-available, message = check_kicad_available()
-if available:
-    update_board_placements("design.kicad_pcb", placements)
-else:
-    print(message)
+```bash
+circuit-weaver place-pcb board.kicad_pcb -o board_placed.kicad_pcb --seed 7
+circuit-weaver autoroute board_placed.kicad_pcb --attempts 3 \
+    --routed-board board_routed.kicad_pcb
 ```
+
+KiCad's native Python is discovered separately from your application Python.
+Freerouting and a compatible Java runtime are required for routing. The input
+board must have real pads and nets; padless previews are rejected. Placement
+currently requires an unrouted rectangular board without zones. It preserves
+locked footprints and board sides, uses real courtyards and rotated pad locations,
+and checks physical DRC. Routing publishes the final board only after KiCad DRC
+passes, preserving project rules. See [setup and limits](docs/routing-placement-search.md).
 
 ### 6 — DFM check and panelization
 

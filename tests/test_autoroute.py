@@ -226,15 +226,16 @@ def test_failed_or_changed_input_portfolio_preserves_existing_output(tmp_path, c
     assert not list(tmp_path.glob(".cw-routing-*"))
 
 
-def test_portfolio_requires_seed_capability_before_routing(tmp_path):
+def test_portfolio_varies_optimizer_when_seed_is_not_supported(tmp_path):
     source = _write_dsn(tmp_path)
     with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
             mock.patch("subprocess.run", side_effect=_fake_freerouting_success()) as run:
         result = autoroute_pcb(source, attempts=2)
-    assert result["status"] == "error"
-    assert "-random_seed" in result["message"]
-    assert run.call_count == 1
-    assert not source.with_suffix(".ses").exists()
+    assert result["status"] == "ok"
+    assert [row["optimizer_strategy"] for row in result["search"]["attempts"]] == ["greedy", "global"]
+    assert run.call_count == 3
+    assert all("-random_seed" not in call.args[0] for call in run.call_args_list)
+    assert source.with_suffix(".ses").exists()
 
 
 @pytest.mark.parametrize("attempts", [0, 33, True, 1.5])
@@ -441,7 +442,9 @@ class TestArtifactValidation:
 
 
 class TestCommandDiscovery:
-    def test_home_jar_uses_discovered_java(self, tmp_path):
+    def test_home_jar_uses_discovered_java(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("CIRCUIT_WEAVER_FREEROUTING", raising=False)
+        monkeypatch.delenv("FREEROUTING_PATH", raising=False)
         jar = tmp_path / ".freerouting" / "freerouting.jar"
         jar.parent.mkdir()
         jar.write_bytes(b"PK\x03\x04fake-jar-content")
@@ -496,7 +499,8 @@ class TestExportDsn:
         assert "placement preview" in result["message"].lower()
         find_cli.assert_not_called()
 
-    def test_missing_or_incapable_cli_has_manual_export_remediation(self, tmp_path):
+    @mock.patch("circuit_weaver.kicad_bridge.run_kicad", return_value={"status": "error", "message": "unavailable"})
+    def test_missing_or_incapable_cli_has_manual_export_remediation(self, native, tmp_path):
         board = _write_routable_board(tmp_path)
         with mock.patch("circuit_weaver.autoroute._find_kicad_cli", return_value=None):
             missing = export_dsn(board, tmp_path / "missing-cli.dsn")
@@ -505,7 +509,8 @@ class TestExportDsn:
                 incapable = export_dsn(board, tmp_path / "incapable-cli.dsn")
 
         assert "PCB Editor" in missing["message"]
-        assert "does not advertise" in incapable["message"]
+        assert "pcbnew" in incapable["message"]
+        assert native.call_count == 2
 
     def test_export_is_staged_and_existing_output_requires_explicit_overwrite(self, tmp_path):
         board = _write_routable_board(tmp_path)
@@ -655,8 +660,8 @@ class TestAutoroute:
                         result = autoroute_pcb(board)
 
         assert result["status"] == "error"
-        assert "does not support direct .kicad_pcb input" in result["message"]
-        run.assert_not_called()
+        assert "pcbnew" in result["message"]
+        assert not any("-de" in call.args[0] for call in run.call_args_list)
 
     def test_capable_kicad_cli_exports_staged_dsn_then_routes_ses(self, tmp_path):
         board = _write_routable_board(tmp_path)
@@ -919,3 +924,41 @@ def test_stat_parser_understands_current_freerouting_cli_summary():
     assert stats["incomplete"] == 1
     assert stats["clearance_violations"] is None
     assert stats["statistics_source"] == "text_summary"
+
+
+def test_kicad_10_named_pad_nets_without_legacy_net_table(tmp_path):
+    import re
+
+    board = ROUTABLE_PCB.replace("20240108", "20260206")
+    board = re.sub(r'^  \(net .*\)\n', '', board, flags=re.MULTILINE)
+    board = re.sub(r'\(net \d+ ("[^"]*")\)', r'(net \1)', board)
+    path = tmp_path / "kicad10.kicad_pcb"
+    path.write_text(board, encoding="utf-8")
+    result = preflight_pcb(path)
+    assert result["routable"] is True
+    assert result["stats"]["nets"] == 2
+    path.write_text(board.replace("20260206", "20240108"), encoding="utf-8")
+    assert preflight_pcb(path)["routable"] is False
+
+
+def test_current_router_final_scores_and_geometry_counts(tmp_path):
+    def run(command, **kwargs):
+        if "-help" in command:
+            return mock.Mock(returncode=0, stdout="Freerouting v2.4.1", stderr="")
+        assert "--router.fanout.enabled=false" in command
+        assert "--router.automatic_neckdown=false" in command
+        assert "--router.optimizer.improvement_threshold=0.1" in command
+        assert "-da" in command
+        Path(command[command.index("-do") + 1]).write_text(VALID_SES)
+        return mock.Mock(returncode=0, stdout=(
+            "Fanout stage completed: final score: 100 (4 unrouted and 0 violations)\n"
+            "Optimizer stage completed: final score: 50 (0 unrouted and 0 violations)\n"
+        ), stderr="")
+    with mock.patch("circuit_weaver.autoroute._find_freerouting_command", return_value=["freerouting"]), \
+            mock.patch("subprocess.run", side_effect=run):
+        result = autoroute_pcb(_write_dsn(tmp_path), optimizer_improvement_threshold=0.1)
+    assert result["status"] == "ok"
+    assert result["stats"]["incomplete"] == 0
+    assert result["stats"]["vias"] == 0
+    assert result["stats"]["traces"] == 2
+    assert not list(tmp_path.glob(".cw-router-*"))
