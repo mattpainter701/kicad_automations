@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -43,10 +44,21 @@ def run_kicad(
     if executable is None:
         return {"status": "error", "message": "KiCad Python (pcbnew) is unavailable; set CIRCUIT_WEAVER_KICAD_PYTHON"}
     try:
-        process = subprocess.run(
-            [executable, str(Path(__file__).with_name("_kicad_worker.py"))],
-            input=json.dumps({"operation": operation, **request}), capture_output=True, text=True, timeout=timeout,
-        )
+        # Native KiCad can save project/UI settings even during an export.
+        # Load an isolated copy so a read/route operation cannot touch originals.
+        with tempfile.TemporaryDirectory(prefix="cw-kicad-") as folder:
+            source = Path(request["board"]).resolve()
+            board_copy = Path(folder) / source.name
+            shutil.copy2(source, board_copy)
+            for suffix in (".kicad_pro", ".kicad_dru"):
+                settings = source.with_suffix(suffix)
+                if settings.is_file():
+                    shutil.copy2(settings, board_copy.with_suffix(suffix))
+            process = subprocess.run(
+                [executable, str(Path(__file__).with_name("_kicad_worker.py"))],
+                input=json.dumps({"operation": operation, **request, "board": str(board_copy)}),
+                capture_output=True, text=True, timeout=timeout,
+            )
         for line in reversed(process.stdout.splitlines()):
             if line.startswith("CW_KICAD_RESULT="):
                 result = json.loads(line.partition("=")[2])

@@ -42,6 +42,8 @@ def test_real_placement_route_import_and_drc(tmp_path, native_tools, case):
     fixture = Path(__file__).parent / "fixtures" / "make_basic_pcbs.py"
     subprocess.run([python, str(fixture), str(root), str(source), case], check=True, capture_output=True, text=True)
     original = source.read_bytes()
+    settings_before = {suffix: source.with_suffix(suffix).read_bytes()
+                       for suffix in (".kicad_pro", ".kicad_dru") if source.with_suffix(suffix).exists()}
     before = run_kicad("inspect", board=str(source), python_path=python)
     placed, routed = tmp_path / "placed.kicad_pcb", tmp_path / "routed.kicad_pcb"
     placement = _cli("place-pcb", source, "--output", placed, "--iterations", 1500,
@@ -58,8 +60,9 @@ def test_real_placement_route_import_and_drc(tmp_path, native_tools, case):
     assert route["search"]["completed_attempts"] == 3
     assert source.read_bytes() == original
     for suffix in (".kicad_pro", ".kicad_dru"):
-        if source.with_suffix(suffix).exists():
-            assert source.with_suffix(suffix).read_bytes() == routed.with_suffix(suffix).read_bytes()
+        if suffix in settings_before:
+            assert source.with_suffix(suffix).read_bytes() == settings_before[suffix]
+            assert routed.with_suffix(suffix).read_bytes() == settings_before[suffix]
     after = run_kicad("inspect", board=str(routed), python_path=python)
     by_ref = {f["ref"]: f for f in after["footprints"]}
     assert after["track_count"] > 0

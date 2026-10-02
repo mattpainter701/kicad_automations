@@ -76,10 +76,34 @@ def test_original_board_is_never_replaced(tmp_path):
 
 
 @pytest.mark.parametrize("stdout", ['CW_KICAD_RESULT=[]', 'CW_KICAD_RESULT={"status":"invalid"}', 'unexpected stdout'])
-def test_worker_malformed_output_is_a_structured_error(monkeypatch, stdout):
+def test_worker_malformed_output_is_a_structured_error(tmp_path, monkeypatch, stdout):
     from types import SimpleNamespace
 
     monkeypatch.setattr("circuit_weaver.kicad_bridge.find_kicad_python", lambda *a: "python")
     monkeypatch.setattr("circuit_weaver.kicad_bridge.subprocess.run", lambda *a, **k: SimpleNamespace(
         returncode=0, stdout=stdout, stderr=""))
-    assert run_kicad("inspect", board="example.kicad_pcb")["status"] == "error"
+    board = tmp_path / "example.kicad_pcb"
+    board.write_bytes(b"board")
+    assert run_kicad("inspect", board=str(board))["status"] == "error"
+
+
+def test_native_worker_cannot_modify_original_project(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    board = tmp_path / "input.kicad_pcb"
+    project = board.with_suffix(".kicad_pro")
+    board.write_bytes(b"board")
+    project.write_bytes(b"settings")
+    monkeypatch.setattr("circuit_weaver.kicad_bridge.find_kicad_python", lambda *a: "python")
+    def worker(*args, **kwargs):
+        request = json.loads(kwargs["input"])
+        copy = Path(request["board"])
+        assert copy != board
+        copy.write_bytes(b"mutated by native library")
+        copy.with_suffix(".kicad_pro").write_bytes(b"updated UI paths")
+        return SimpleNamespace(returncode=0, stdout='CW_KICAD_RESULT={"status":"ok"}', stderr="")
+    monkeypatch.setattr("circuit_weaver.kicad_bridge.subprocess.run", worker)
+    assert run_kicad("inspect", board=str(board))["status"] == "ok"
+    assert board.read_bytes() == b"board"
+    assert project.read_bytes() == b"settings"

@@ -39,6 +39,18 @@ def _check_snapshots(snapshots: dict[Path, str | None]) -> None:
             raise ValueError("Source board, session, or project settings changed during processing")
 
 
+def _restore_settings(source: Path, staged: Path, snapshots: dict[Path, str | None]) -> None:
+    _check_snapshots(snapshots)
+    for suffix in (".kicad_pro", ".kicad_dru"):
+        origin, target = source.with_suffix(suffix), staged.with_suffix(suffix)
+        if origin.is_file():
+            shutil.copy2(origin, target)
+        elif target.exists():
+            # Discard defaults/UI state emitted by native SaveBoard. The
+            # source had no project here; validate with the same defaults.
+            target.unlink()
+
+
 def _publish(staged: Path, destination: Path, snapshots: dict[Path, str | None], overwrite: bool) -> None:
     publications = [(staged, destination)]
     for suffix in (".kicad_pro", ".kicad_dru"):
@@ -128,6 +140,7 @@ def place_pcb(
                                 python_path=kicad_python_path)
             if applied["status"] != "ok":
                 return applied
+            _restore_settings(source, staged, snapshots)
             drc = run_drc(staged, evidence_ledger=EvidenceLedger())
             # An unrouted board necessarily has unconnected pads. All other
             # DRC errors still prevent publication, including pad clearances.
@@ -168,6 +181,7 @@ def import_routing_session(
                                  python_path=kicad_python_path)
             if imported["status"] != "ok":
                 return imported
+            _restore_settings(source, staged, snapshots)
             drc = run_drc(staged, evidence_ledger=EvidenceLedger())
             if not drc.passed:
                 return {"status": "error", "message": "Imported routing failed KiCad DRC; board was not published",
